@@ -28,11 +28,29 @@ final class CosensePreviewWindowController {
             displayedURL = url
         }
 
-        let origin = NSPoint(
-            x: candidateFrame.maxX + 8,
-            y: candidateFrame.maxY
+        let screen = NSScreen.screens.first {
+            $0.frame.intersects(candidateFrame)
+        } ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame ?? candidateFrame
+        let panelSize = panel.frame.size
+        let spacing: CGFloat = 8
+
+        let rightOriginX = candidateFrame.maxX + spacing
+        let leftOriginX = candidateFrame.minX - panelSize.width - spacing
+        let preferredX = rightOriginX + panelSize.width <= visibleFrame.maxX
+            ? rightOriginX
+            : leftOriginX
+        let x = min(
+            max(preferredX, visibleFrame.minX),
+            visibleFrame.maxX - panelSize.width
         )
-        panel.setFrameTopLeftPoint(origin)
+
+        let preferredY = candidateFrame.maxY - panelSize.height
+        let y = min(
+            max(preferredY, visibleFrame.minY),
+            visibleFrame.maxY - panelSize.height
+        )
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
         panel.orderFrontRegardless()
     }
 

@@ -52,7 +52,7 @@ final class CandidateWindowController: NSObject {
         let height = CGFloat(visibleRows) * tableView.rowHeight
         panel.setContentSize(NSSize(width: 260, height: height))
         panel.setFrameTopLeftPoint(
-            NSPoint(x: anchorFrame.minX, y: anchorFrame.maxY)
+            NSPoint(x: anchorFrame.minX, y: anchorFrame.minY)
         )
         select(index: selectedIndex)
         panel.orderFrontRegardless()

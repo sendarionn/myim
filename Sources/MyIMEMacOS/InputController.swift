@@ -43,7 +43,7 @@ final class InputController: IMKInputController {
 
         switch event.keyCode {
         case 49:
-            return handleSpace()
+            return handleSpace(client: sender)
         case 36, 76:
             return commitFirstCandidateOrInput(to: sender)
         case 51:
@@ -126,7 +126,7 @@ final class InputController: IMKInputController {
         super.inputControllerWillClose()
     }
 
-    private func beginConversion() -> Bool {
+    private func beginConversion(client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
             return false
         }
@@ -137,10 +137,7 @@ final class InputController: IMKInputController {
         }
 
         selectedCandidateIndex = 0
-        candidatePanel.update()
-        candidatePanel.show(kIMKLocateCandidatesBelowHint)
-        let anchorFrame = candidatePanel.candidateFrame()
-        candidatePanel.hide()
+        let anchorFrame = inputLocation(for: sender)
         candidateWindow.show(
             candidates: currentCandidates,
             selectedIndex: 0,
@@ -150,13 +147,13 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func handleSpace() -> Bool {
+    private func handleSpace(client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
             return false
         }
 
         if currentCandidates.isEmpty {
-            return beginConversion()
+            return beginConversion(client: sender)
         }
 
         let nextIndex = ((selectedCandidateIndex ?? -1) + 1)
@@ -165,6 +162,19 @@ final class InputController: IMKInputController {
         candidateWindow.select(index: nextIndex)
         showPreview(for: currentCandidates[nextIndex])
         return true
+    }
+
+    private func inputLocation(for sender: Any) -> NSRect {
+        guard let textClient = sender as? IMKTextInput else {
+            return .zero
+        }
+
+        var lineRect = NSRect.zero
+        _ = textClient.attributes(
+            forCharacterIndex: 0,
+            lineHeightRectangle: &lineRect
+        )
+        return lineRect
     }
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
