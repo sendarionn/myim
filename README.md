@@ -88,3 +88,54 @@ swift run my-ime /path/to/dictionary.txt
 ```shell
 swift test
 ```
+
+## macOS IME
+
+macOS版はInputMethodKitを使用します
+
+事前にコマンドライン版でCosense辞書を同期します
+
+```shell
+swift run my-ime sync
+```
+
+IMEバンドルを作成します
+
+```shell
+./Scripts/build-macos-ime.sh
+```
+
+次の場所にアドホック署名済みバンドルが作成されます
+
+```text
+.build/my-ime.app
+```
+
+動作確認する場合は手動でインストールします
+
+```shell
+mkdir -p "$HOME/Library/Input Methods"
+cp -R .build/my-ime.app "$HOME/Library/Input Methods/"
+```
+
+インストール後に一度ログアウトして再ログインします
+
+「システム設定」→「キーボード」→「テキスト入力」→「編集」から`my-ime`を追加します
+
+更新したバンドルをインストールする場合は、既存のバンドルを削除してからコピーします
+
+```shell
+rm -rf "$HOME/Library/Input Methods/my-ime.app"
+cp -R .build/my-ime.app "$HOME/Library/Input Methods/"
+```
+
+### 操作
+
+- 英字キーで読みを入力すると未確定文字列が表示されます
+- Spaceで完全一致する変換候補が表示されます
+- 候補を移動すると対応するCosenseページが小窓に表示されます
+- Enterで先頭候補または入力中の文字列を確定します
+- Deleteで入力中の文字を削除します
+- Escapeで入力を取り消します
+
+現段階ではローマ字からかなへの変換を行わず、`miru`のような辞書の読みを直接入力します

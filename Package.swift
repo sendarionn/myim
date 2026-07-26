@@ -8,7 +8,8 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "my-ime", targets: ["MyIME"])
+        .executable(name: "my-ime", targets: ["MyIME"]),
+        .executable(name: "my-ime-macos", targets: ["MyIMEMacOS"])
     ],
     targets: [
         .target(name: "MyIMECore"),
@@ -17,6 +18,17 @@ let package = Package(
             dependencies: ["MyIMECore"],
             resources: [
                 .copy("Resources/dictionary.txt")
+            ]
+        ),
+        .executableTarget(
+            name: "MyIMEMacOS",
+            dependencies: ["MyIMECore"],
+            swiftSettings: [
+                .swiftLanguageMode(.v5)
+            ],
+            linkerSettings: [
+                .linkedFramework("InputMethodKit"),
+                .linkedFramework("WebKit")
             ]
         ),
         .testTarget(
