@@ -1,12 +1,49 @@
 import Foundation
 import MyIMECore
 
-private let projectName = "sendarionn"
+private let dictionarySource = CosenseDictionarySource(
+    project: "sendarionn-public",
+    pageTitle: "dictionary"
+)
 
 do {
+    let arguments = Array(CommandLine.arguments.dropFirst())
+    let cache = try DictionaryCache.applicationSupport()
+
+    if arguments.first == "sync" {
+        let dictionaryText = try await CosenseDictionaryClient().fetch(
+            from: dictionarySource
+        )
+        let entries = try DictionaryParser().parse(dictionaryText)
+
+        guard !entries.isEmpty else {
+            throw CosenseDictionaryError.emptyDictionary
+        }
+
+        let syncedAt = Date()
+        try cache.save(
+            dictionaryText: dictionaryText,
+            metadata: DictionaryCacheMetadata(
+                syncedAt: syncedAt,
+                entryCount: entries.count
+            )
+        )
+
+        print("同期しました")
+        print("登録読み数: \(entries.count)")
+        print("保存先: \(cache.dictionaryURL.path)")
+        exit(EXIT_SUCCESS)
+    }
+
     let dictionaryURL: URL
-    if CommandLine.arguments.count >= 2 {
-        dictionaryURL = URL(fileURLWithPath: CommandLine.arguments[1])
+    let dictionarySourceDescription: String
+
+    if let dictionaryPath = arguments.first {
+        dictionaryURL = URL(fileURLWithPath: dictionaryPath)
+        dictionarySourceDescription = dictionaryURL.path
+    } else if cache.containsDictionary() {
+        dictionaryURL = cache.dictionaryURL
+        dictionarySourceDescription = "Cosenseキャッシュ"
     } else {
         guard let bundledURL = Bundle.module.url(
             forResource: "dictionary",
@@ -15,6 +52,7 @@ do {
             throw CLIError.bundledDictionaryNotFound
         }
         dictionaryURL = bundledURL
+        dictionarySourceDescription = "同梱テスト辞書"
     }
 
     let dictionaryText = try String(contentsOf: dictionaryURL, encoding: .utf8)
@@ -22,6 +60,11 @@ do {
     let engine = ConversionEngine(entries: entries)
 
     print("my-ime")
+    print("辞書: \(dictionarySourceDescription)")
+    if arguments.isEmpty, let metadata = try? cache.loadMetadata() {
+        print("登録読み数: \(metadata.entryCount)")
+        print("最終同期: \(metadata.syncedAt.formatted())")
+    }
     print("読みを入力してください")
     print("終了するには空のままEnterを押してください")
 
@@ -55,7 +98,7 @@ do {
         print("確定: \(selectedCandidate)")
 
         if let url = CosensePageURL.make(
-            project: projectName,
+            project: dictionarySource.project,
             pageTitle: selectedCandidate
         ) {
             print("Cosense: \(url.absoluteString)")

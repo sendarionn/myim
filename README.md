@@ -9,6 +9,8 @@
 
 ## 実行
 
+初回は同梱テスト辞書を使用します
+
 ```shell
 swift run my-ime
 ```
@@ -25,12 +27,36 @@ my-ime
 3  観る
 候補番号> 1
 確定: 見る
-Cosense: https://scrapbox.io/sendarionn/%E8%A6%8B%E3%82%8B
+Cosense: https://scrapbox.io/sendarionn-public/%E8%A6%8B%E3%82%8B
 ```
 
 空のままEnterを押すと終了します
 
-## 辞書
+## Cosense辞書
+
+次の公開ページを辞書として使用します
+
+```text
+https://scrapbox.io/sendarionn-public/dictionary
+```
+
+手動で同期します
+
+```shell
+swift run my-ime sync
+```
+
+取得した辞書は次の場所へ保存されます
+
+```text
+~/Library/Application Support/my-ime/dictionary.txt
+```
+
+同期に成功すると、次回からキャッシュ済み辞書を使用します
+
+通信または辞書解析に失敗した場合、既存のキャッシュは上書きされません
+
+## 辞書形式
 
 同梱辞書は`Sources/MyIME/Resources/dictionary.txt`にあります
 
