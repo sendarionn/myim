@@ -11,6 +11,7 @@ final class InputController: IMKInputController {
 
     private var inputBuffer = ""
     private var currentCandidates: [String] = []
+    private var selectedCandidateIndex: Int?
     private let conversionEngine: ConversionEngine
     private let candidatePanel: IMKCandidates
     private let previewWindow = CosensePreviewWindowController()
@@ -25,6 +26,9 @@ final class InputController: IMKInputController {
         super.init(server: server, delegate: delegate, client: inputClient)
 
         candidatePanel.setDismissesAutomatically(true)
+        candidatePanel.setAttributes([
+            IMKCandidatesSendServerKeyEventFirst: true
+        ])
     }
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
@@ -38,7 +42,7 @@ final class InputController: IMKInputController {
 
         switch event.keyCode {
         case 49:
-            return beginConversion()
+            return handleSpace()
         case 36, 76:
             return commitFirstCandidateOrInput(to: sender)
         case 51:
@@ -66,6 +70,7 @@ final class InputController: IMKInputController {
 
         inputBuffer += characters.lowercased()
         currentCandidates = []
+        selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
@@ -82,6 +87,7 @@ final class InputController: IMKInputController {
             return
         }
 
+        selectedCandidateIndex = currentCandidates.firstIndex(of: candidate)
         showPreview(for: candidate)
     }
 
@@ -126,10 +132,40 @@ final class InputController: IMKInputController {
             return true
         }
 
+        selectedCandidateIndex = 0
         candidatePanel.update()
         candidatePanel.show(kIMKLocateCandidatesBelowHint)
+        selectCandidate(at: 0)
         showPreview(for: firstCandidate)
         return true
+    }
+
+    private func handleSpace() -> Bool {
+        guard !inputBuffer.isEmpty else {
+            return false
+        }
+
+        if currentCandidates.isEmpty {
+            return beginConversion()
+        }
+
+        let nextIndex = ((selectedCandidateIndex ?? -1) + 1)
+            % currentCandidates.count
+        selectedCandidateIndex = nextIndex
+        selectCandidate(at: nextIndex)
+        showPreview(for: currentCandidates[nextIndex])
+        return true
+    }
+
+    private func selectCandidate(at index: Int) {
+        guard currentCandidates.indices.contains(index) else {
+            return
+        }
+
+        let identifier = candidatePanel.candidateStringIdentifier(
+            currentCandidates[index]
+        )
+        candidatePanel.selectCandidate(withIdentifier: identifier)
     }
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
@@ -137,7 +173,10 @@ final class InputController: IMKInputController {
             return false
         }
 
-        let value = currentCandidates.first ?? inputBuffer
+        let value = selectedCandidateIndex
+            .flatMap { currentCandidates.indices.contains($0) ? currentCandidates[$0] : nil }
+            ?? currentCandidates.first
+            ?? inputBuffer
         commit(value, to: sender)
         return true
     }
@@ -149,6 +188,7 @@ final class InputController: IMKInputController {
 
         inputBuffer.removeLast()
         currentCandidates = []
+        selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
@@ -162,6 +202,7 @@ final class InputController: IMKInputController {
 
         inputBuffer = ""
         currentCandidates = []
+        selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
         setMarkedText("", in: sender)
@@ -179,6 +220,7 @@ final class InputController: IMKInputController {
         )
         inputBuffer = ""
         currentCandidates = []
+        selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
     }

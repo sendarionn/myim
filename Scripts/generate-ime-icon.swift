@@ -9,7 +9,7 @@ guard CommandLine.arguments.count == 2 else {
 }
 
 let outputURL = URL(fileURLWithPath: CommandLine.arguments[1])
-var mediaBox = CGRect(x: 0, y: 0, width: 128, height: 128)
+var mediaBox = CGRect(x: 0, y: 0, width: 16, height: 16)
 
 guard
     let consumer = CGDataConsumer(url: outputURL as CFURL),
@@ -27,29 +27,25 @@ else {
 
 context.beginPDFPage(nil)
 
-context.setFillColor(
-    CGColor(red: 0.12, green: 0.35, blue: 0.72, alpha: 1)
-)
-context.fill(CGRect(x: 0, y: 0, width: 128, height: 128))
-
 context.setStrokeColor(
-    CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+    CGColor(gray: 0, alpha: 1)
 )
-context.setLineWidth(10)
+context.setLineWidth(1.5)
 context.setLineCap(.round)
+context.setLineJoin(.round)
 
-context.move(to: CGPoint(x: 34, y: 34))
-context.addLine(to: CGPoint(x: 34, y: 94))
-context.move(to: CGPoint(x: 34, y: 64))
-context.addLine(to: CGPoint(x: 78, y: 64))
-context.move(to: CGPoint(x: 78, y: 40))
-context.addLine(to: CGPoint(x: 78, y: 88))
+context.move(to: CGPoint(x: 3.5, y: 3.5))
+context.addLine(to: CGPoint(x: 3.5, y: 12.5))
+context.move(to: CGPoint(x: 3.5, y: 8))
+context.addLine(to: CGPoint(x: 9.5, y: 8))
+context.move(to: CGPoint(x: 9.5, y: 4.5))
+context.addLine(to: CGPoint(x: 9.5, y: 11.5))
 context.strokePath()
 
 context.setFillColor(
-    CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+    CGColor(gray: 0, alpha: 1)
 )
-context.fillEllipse(in: CGRect(x: 90, y: 82, width: 10, height: 10))
+context.fillEllipse(in: CGRect(x: 12, y: 10.5, width: 1.5, height: 1.5))
 
 context.endPDFPage()
 context.closePDF()

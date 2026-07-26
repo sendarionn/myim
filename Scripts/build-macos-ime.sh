@@ -33,6 +33,7 @@ for developer_rpath in "${developer_rpaths[@]}"; do
     install_name_tool -delete_rpath "$developer_rpath" "$ime_executable"
 done
 cp "macOS/Info.plist" "$contents_directory/Info.plist"
+cp "macOS/InfoPlist.strings" "$resources_directory/InfoPlist.strings"
 xcrun swift "Scripts/generate-ime-icon.swift" "$resources_directory/icon.pdf"
 sips -s format png -z 16 16 "$resources_directory/icon.pdf" \
     --out "$iconset_directory/icon_16x16.png" >/dev/null
