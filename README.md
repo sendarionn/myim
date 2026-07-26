@@ -115,7 +115,7 @@ IMEバンドルを作成します
 
 ```shell
 mkdir -p "$HOME/Library/Input Methods"
-cp -R .build/my-ime.app "$HOME/Library/Input Methods/"
+ditto .build/my-ime.app "$HOME/Library/Input Methods/my-ime.app"
 ```
 
 インストール後に一度ログアウトして再ログインします
@@ -125,8 +125,13 @@ cp -R .build/my-ime.app "$HOME/Library/Input Methods/"
 更新したバンドルをインストールする場合は、既存のバンドルを削除してからコピーします
 
 ```shell
-rm -rf "$HOME/Library/Input Methods/my-ime.app"
-cp -R .build/my-ime.app "$HOME/Library/Input Methods/"
+ditto .build/my-ime.app "$HOME/Library/Input Methods/my-ime.app"
+```
+
+Bundle IdentifierはInputMethodKitが入力ソースとして分類できる形式にします
+
+```text
+io.github.sendarionn.inputmethod.myime
 ```
 
 ### 操作

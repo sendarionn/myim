@@ -11,7 +11,7 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
-    <string>io.github.sendarionn.my-ime</string>
+    <string>io.github.sendarionn.inputmethod.myime</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -25,7 +25,7 @@
         <string>MacOSX</string>
     </array>
     <key>CFBundleVersion</key>
-    <string>6</string>
+    <string>7</string>
     <key>ComponentInputModeDict</key>
     <dict>
         <key>TISUnifiedUIForInputMethodEnabling</key>
@@ -35,7 +35,7 @@
             <key>com.apple.inputmethod.Japanese</key>
             <dict>
                 <key>TISInputSourceID</key>
-                <string>io.github.sendarionn.my-ime.Japanese</string>
+                <string>io.github.sendarionn.inputmethod.myime.Japanese</string>
                 <key>TISIntendedLanguage</key>
                 <string>ja</string>
                 <key>tsInputModeDefaultStateKey</key>
@@ -54,7 +54,7 @@
         </array>
     </dict>
     <key>InputMethodConnectionName</key>
-    <string>io.github.sendarionn.my-ime.connection</string>
+    <string>io.github.sendarionn.inputmethod.myime_Connection</string>
     <key>InputMethodServerControllerClass</key>
     <string>MyIMEInputController</string>
     <key>InputMethodServerDelegateClass</key>
