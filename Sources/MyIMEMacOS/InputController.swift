@@ -14,6 +14,7 @@ final class InputController: IMKInputController {
     private var selectedCandidateIndex: Int?
     private let conversionEngine: ConversionEngine
     private let candidatePanel: IMKCandidates
+    private let candidateWindow = CandidateWindowController()
     private let previewWindow = CosensePreviewWindowController()
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
@@ -72,6 +73,7 @@ final class InputController: IMKInputController {
         currentCandidates = []
         selectedCandidateIndex = nil
         candidatePanel.hide()
+        candidateWindow.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
         return true
@@ -112,12 +114,14 @@ final class InputController: IMKInputController {
             commit(inputBuffer, to: sender as Any)
         }
         candidatePanel.hide()
+        candidateWindow.hide()
         previewWindow.hide()
         super.deactivateServer(sender)
     }
 
     override func inputControllerWillClose() {
         candidatePanel.hide()
+        candidateWindow.hide()
         previewWindow.hide()
         super.inputControllerWillClose()
     }
@@ -135,7 +139,13 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = 0
         candidatePanel.update()
         candidatePanel.show(kIMKLocateCandidatesBelowHint)
-        selectCandidate(at: 0)
+        let anchorFrame = candidatePanel.candidateFrame()
+        candidatePanel.hide()
+        candidateWindow.show(
+            candidates: currentCandidates,
+            selectedIndex: 0,
+            near: anchorFrame
+        )
         showPreview(for: firstCandidate)
         return true
     }
@@ -152,20 +162,9 @@ final class InputController: IMKInputController {
         let nextIndex = ((selectedCandidateIndex ?? -1) + 1)
             % currentCandidates.count
         selectedCandidateIndex = nextIndex
-        selectCandidate(at: nextIndex)
+        candidateWindow.select(index: nextIndex)
         showPreview(for: currentCandidates[nextIndex])
         return true
-    }
-
-    private func selectCandidate(at index: Int) {
-        guard currentCandidates.indices.contains(index) else {
-            return
-        }
-
-        let identifier = candidatePanel.candidateStringIdentifier(
-            currentCandidates[index]
-        )
-        candidatePanel.selectCandidate(withIdentifier: identifier)
     }
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
@@ -190,6 +189,7 @@ final class InputController: IMKInputController {
         currentCandidates = []
         selectedCandidateIndex = nil
         candidatePanel.hide()
+        candidateWindow.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
         return true
@@ -204,6 +204,7 @@ final class InputController: IMKInputController {
         currentCandidates = []
         selectedCandidateIndex = nil
         candidatePanel.hide()
+        candidateWindow.hide()
         previewWindow.hide()
         setMarkedText("", in: sender)
         return true
@@ -222,6 +223,7 @@ final class InputController: IMKInputController {
         currentCandidates = []
         selectedCandidateIndex = nil
         candidatePanel.hide()
+        candidateWindow.hide()
         previewWindow.hide()
     }
 
@@ -252,7 +254,7 @@ final class InputController: IMKInputController {
 
         previewWindow.show(
             url: url,
-            beside: candidatePanel.candidateFrame()
+            beside: candidateWindow.frame
         )
     }
 
