@@ -1,5 +1,12 @@
 @preconcurrency import AppKit
 
+enum CandidateNavigationDirection {
+    case left
+    case right
+    case up
+    case down
+}
+
 private final class CandidateCollectionItem: NSCollectionViewItem {
     private let label = NSTextField(labelWithString: "")
 
@@ -156,6 +163,66 @@ final class CandidateWindowController: NSObject {
             at: [indexPath],
             scrollPosition: [.nearestHorizontalEdge, .nearestVerticalEdge]
         )
+    }
+
+    func adjacentIndex(
+        from index: Int,
+        direction: CandidateNavigationDirection
+    ) -> Int? {
+        guard candidates.indices.contains(index) else {
+            return nil
+        }
+
+        collectionView.layoutSubtreeIfNeeded()
+        let currentPath = IndexPath(item: index, section: 0)
+        guard let currentFrame = layout.layoutAttributesForItem(
+            at: currentPath
+        )?.frame else {
+            return nil
+        }
+
+        let currentCenter = NSPoint(
+            x: currentFrame.midX,
+            y: currentFrame.midY
+        )
+        let rowTolerance = Self.itemHeight / 2
+        var best: (index: Int, primary: CGFloat, secondary: CGFloat)?
+
+        for candidateIndex in candidates.indices where candidateIndex != index {
+            let path = IndexPath(item: candidateIndex, section: 0)
+            guard let frame = layout.layoutAttributesForItem(at: path)?.frame else {
+                continue
+            }
+
+            let deltaX = frame.midX - currentCenter.x
+            let deltaY = frame.midY - currentCenter.y
+            let isFlipped = collectionView.isFlipped
+            let score: (CGFloat, CGFloat)?
+
+            switch direction {
+            case .left where deltaX < 0 && abs(deltaY) < rowTolerance:
+                score = (abs(deltaX), abs(deltaY))
+            case .right where deltaX > 0 && abs(deltaY) < rowTolerance:
+                score = (abs(deltaX), abs(deltaY))
+            case .up where (isFlipped ? deltaY < 0 : deltaY > 0):
+                score = (abs(deltaY), abs(deltaX))
+            case .down where (isFlipped ? deltaY > 0 : deltaY < 0):
+                score = (abs(deltaY), abs(deltaX))
+            default:
+                score = nil
+            }
+
+            guard let score else {
+                continue
+            }
+            if best == nil
+                || score.0 < best!.primary
+                || (score.0 == best!.primary && score.1 < best!.secondary) {
+                best = (candidateIndex, score.0, score.1)
+            }
+        }
+
+        return best?.index
     }
 
     func clearSelection() {

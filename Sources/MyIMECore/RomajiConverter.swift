@@ -164,10 +164,45 @@ public enum JapaneseSymbolConverter {
 
 public enum RomanizedReadingNormalizer {
     public static func dictionaryReading(from input: String) -> String {
+        var normalized = input.lowercased()
+        let protectedSyllables = [
+            ("shu", "__MYIM_SHU__"),
+            ("chu", "__MYIM_CHU__"),
+            ("thu", "__MYIM_THU__"),
+            ("dhu", "__MYIM_DHU__")
+        ]
+        for (syllable, placeholder) in protectedSyllables {
+            normalized = normalized.replacingOccurrences(
+                of: syllable,
+                with: placeholder
+            )
+        }
+        let aliases = [
+            ("tu", "tsu"), ("hu", "fu"), ("si", "shi"),
+            ("ti", "chi"), ("zi", "ji"),
+            ("sya", "sha"), ("syu", "shu"), ("syo", "sho"),
+            ("tya", "cha"), ("tyu", "chu"), ("tyo", "cho"),
+            ("cya", "cha"), ("cyu", "chu"), ("cyo", "cho"),
+            ("zya", "ja"), ("zyu", "ju"), ("zyo", "jo"),
+            ("jya", "ja"), ("jyu", "ju"), ("jyo", "jo")
+        ]
+        for (source, destination) in aliases {
+            normalized = normalized.replacingOccurrences(
+                of: source,
+                with: destination
+            )
+        }
+        for (syllable, placeholder) in protectedSyllables {
+            normalized = normalized.replacingOccurrences(
+                of: placeholder,
+                with: syllable
+            )
+        }
+
         var result = ""
         var lastVowel: Character?
 
-        for character in input.lowercased() {
+        for character in normalized {
             if character == "-", let lastVowel {
                 result.append(lastVowel)
                 continue

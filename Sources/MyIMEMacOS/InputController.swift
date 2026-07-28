@@ -17,7 +17,8 @@ final class InputController: IMKInputController {
     private var dictionarySource: CosenseDictionarySource
     private var basicEntries: [DictionaryEntry]
     private var extensionEntries: [DictionaryEntry]
-    private var conversionEngine: ConversionEngine
+    private var extensionConversionEngine: ConversionEngine
+    private var basicConversionEngine: ConversionEngine
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
     private let candidatePanel: IMKCandidates
@@ -34,9 +35,10 @@ final class InputController: IMKInputController {
         dictionarySource = source
         basicEntries = bundledEntries
         extensionEntries = cachedExtensionEntries
-        conversionEngine = ConversionEngine(
-            layers: [cachedExtensionEntries, bundledEntries]
+        extensionConversionEngine = ConversionEngine(
+            entries: cachedExtensionEntries
         )
+        basicConversionEngine = ConversionEngine(entries: bundledEntries)
         candidatePanel = IMKCandidates(
             server: server,
             panelType: kIMKSingleColumnScrollingCandidatePanel
@@ -73,10 +75,14 @@ final class InputController: IMKInputController {
         switch event.keyCode {
         case 49:
             return handleSpace(client: sender)
-        case 123, 126:
-            return moveCandidate(by: -1, client: sender)
-        case 124, 125:
-            return moveCandidate(by: 1, client: sender)
+        case 123:
+            return moveCandidate(.left, client: sender)
+        case 124:
+            return moveCandidate(.right, client: sender)
+        case 125:
+            return moveCandidate(.down, client: sender)
+        case 126:
+            return moveCandidate(.up, client: sender)
         case 36, 76:
             return commitFirstCandidateOrInput(to: sender)
         case 51:
@@ -377,10 +383,22 @@ final class InputController: IMKInputController {
     }
 
     private func handleSpace(client sender: Any) -> Bool {
-        moveCandidate(by: 1, client: sender)
+        guard !inputBuffer.isEmpty else {
+            return false
+        }
+        guard !currentCandidates.isEmpty else {
+            return true
+        }
+
+        let nextIndex = ((selectedCandidateIndex ?? -1) + 1)
+            % currentCandidates.count
+        return selectCandidate(index: nextIndex, client: sender)
     }
 
-    private func moveCandidate(by offset: Int, client sender: Any) -> Bool {
+    private func moveCandidate(
+        _ direction: CandidateNavigationDirection,
+        client sender: Any
+    ) -> Bool {
         guard !inputBuffer.isEmpty else {
             return false
         }
@@ -389,18 +407,54 @@ final class InputController: IMKInputController {
             return true
         }
 
-        let startingIndex = selectedCandidateIndex
-            ?? (offset > 0 ? -1 : 0)
-        let nextIndex = (
-            startingIndex + offset + currentCandidates.count
-        ) % currentCandidates.count
-        selectedCandidateIndex = nextIndex
+        guard let selectedCandidateIndex else {
+            return selectCandidate(index: 0, client: sender)
+        }
+
+        let pageStart = selectedCandidateIndex
+            / Self.maximumCandidateCount
+            * Self.maximumCandidateCount
+        let localIndex = selectedCandidateIndex - pageStart
+        let fallbackOffset: Int
+        switch direction {
+        case .left:
+            fallbackOffset = -1
+        case .right:
+            fallbackOffset = 1
+        case .up:
+            fallbackOffset = -Self.maximumCandidateCount
+        case .down:
+            fallbackOffset = Self.maximumCandidateCount
+        }
+        let nextIndex: Int
+        if let localNextIndex = candidateWindow.adjacentIndex(
+            from: localIndex,
+            direction: direction
+        ) {
+            nextIndex = pageStart + localNextIndex
+        } else {
+            nextIndex = (
+                selectedCandidateIndex
+                    + fallbackOffset
+                    + currentCandidates.count
+            ) % currentCandidates.count
+        }
+
+        return selectCandidate(index: nextIndex, client: sender)
+    }
+
+    private func selectCandidate(index: Int, client sender: Any) -> Bool {
+        guard currentCandidates.indices.contains(index) else {
+            return true
+        }
+
+        selectedCandidateIndex = index
         showCandidateWindow(client: sender)
         setMarkedText(
-            currentCandidates[nextIndex] + conversionSuffix,
+            currentCandidates[index] + conversionSuffix,
             in: sender
         )
-        showPreview(for: currentCandidates[nextIndex])
+        showPreview(for: currentCandidates[index])
         return true
     }
 
@@ -417,34 +471,48 @@ final class InputController: IMKInputController {
         let normalizedReading = RomanizedReadingNormalizer.dictionaryReading(
             from: conversionReading
         )
-        var candidates = conversionEngine.candidates(
+        let extensionCandidates = extensionConversionEngine.candidates(
             matching: normalizedReading,
             limit: .max
         )
+        let basicCandidates = basicConversionEngine.candidates(
+            matching: normalizedReading,
+            limit: .max
+        )
+        let basicExactCandidates = basicConversionEngine.candidates(
+            for: normalizedReading
+        )
+        let basicPrefixCandidates = basicCandidates.filter {
+            !basicExactCandidates.contains($0)
+        }
+        let englishCandidates = englishCompletions(for: conversionReading)
+        var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(
             from: conversionReading
         ) {
             let katakana = romajiConverter.katakana(
                 from: conversionReading
             )
-            let kanaCandidates = [hiragana, katakana]
+            kanaCandidates = [hiragana, katakana]
                 .compactMap { $0 }
-                .filter { !candidates.contains($0) }
-            let exactCandidateCount = conversionEngine.candidates(
-                for: normalizedReading
-            ).count
-            let insertionIndex = hiragana.count == 1
-                ? 0
-                : min(
-                    exactCandidateCount,
-                    Self.maximumCandidateCount - kanaCandidates.count
-                )
-            candidates.insert(
-                contentsOf: kanaCandidates,
-                at: insertionIndex
-            )
         }
-        currentCandidates = candidates
+        var seen = Set<String>()
+        let orderedCandidates: [String]
+        if kanaCandidates.first?.count == 1 {
+            orderedCandidates = extensionCandidates
+                + kanaCandidates
+                + basicExactCandidates
+                + englishCandidates
+                + basicPrefixCandidates
+        } else {
+            orderedCandidates = extensionCandidates
+                + basicExactCandidates
+                + kanaCandidates
+                + englishCandidates
+                + basicPrefixCandidates
+        }
+        currentCandidates = orderedCandidates
+        .filter { seen.insert($0).inserted }
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
@@ -454,6 +522,27 @@ final class InputController: IMKInputController {
         }
 
         showCandidateWindow(client: sender)
+    }
+
+    private func englishCompletions(for input: String) -> [String] {
+        guard
+            !input.isEmpty,
+            input.unicodeScalars.allSatisfy({
+                CharacterSet.letters.contains($0) && $0.isASCII
+            })
+        else {
+            return []
+        }
+
+        return NSSpellChecker.shared.completions(
+            forPartialWordRange: NSRange(
+                location: 0,
+                length: input.utf16.count
+            ),
+            in: input,
+            language: "en",
+            inSpellDocumentWithTag: 0
+        ) ?? []
     }
 
     private func showCandidateWindow(client sender: Any) {
@@ -577,9 +666,10 @@ final class InputController: IMKInputController {
     }
 
     private func rebuildConversionEngine() {
-        conversionEngine = ConversionEngine(
-            layers: [extensionEntries, basicEntries]
+        extensionConversionEngine = ConversionEngine(
+            entries: extensionEntries
         )
+        basicConversionEngine = ConversionEngine(entries: basicEntries)
     }
 
     private var conversionReading: String {
