@@ -9,6 +9,7 @@ struct RomajiConverterTests {
 
         #expect(converter.hiragana(from: "thi") == "てぃ")
         #expect(converter.katakana(from: "thi") == "ティ")
+        #expect(converter.hiragana(from: "Tsuujou") == "つうじょう")
         #expect(converter.hiragana(from: "cha-to") == "ちゃーと")
         #expect(converter.hiragana(from: "matcha") == "まっちゃ")
     }

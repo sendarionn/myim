@@ -3,28 +3,26 @@
 import MyIMECore
 
 final class CosensePreviewWindowController {
-    private let panel: NSPanel
+    private static let spacing: CGFloat = 8
+
+    private let definitionPanel: NSPanel
+    private let cosensePanel: NSPanel
     private let webView: WKWebView
     private let definitionTextView: NSTextView
     private var displayedURL: URL?
     private var requestID = UUID()
 
     init() {
-        webView = WKWebView(frame: .zero)
         definitionTextView = NSTextView(frame: .zero)
-        panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 560),
-            styleMask: [.titled, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
+        webView = WKWebView(frame: .zero)
+        definitionPanel = Self.makePanel(
+            title: "macOS辞書",
+            size: NSSize(width: 420, height: 220)
         )
-
-        let definitionTitle = NSTextField(labelWithString: "macOS辞書")
-        definitionTitle.font = .systemFont(
-            ofSize: NSFont.smallSystemFontSize,
-            weight: .semibold
+        cosensePanel = Self.makePanel(
+            title: "Cosense",
+            size: NSSize(width: 420, height: 420)
         )
-        definitionTitle.translatesAutoresizingMaskIntoConstraints = false
 
         definitionTextView.isEditable = false
         definitionTextView.isSelectable = true
@@ -37,52 +35,8 @@ final class CosensePreviewWindowController {
         definitionScrollView.hasVerticalScroller = true
         definitionScrollView.autohidesScrollers = true
         definitionScrollView.drawsBackground = false
-        definitionScrollView.translatesAutoresizingMaskIntoConstraints = false
-
-        let container = NSView()
-        definitionTitle.translatesAutoresizingMaskIntoConstraints = false
-        definitionScrollView.translatesAutoresizingMaskIntoConstraints = false
-        webView.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(definitionTitle)
-        container.addSubview(definitionScrollView)
-        container.addSubview(webView)
-        NSLayoutConstraint.activate([
-            definitionTitle.topAnchor.constraint(
-                equalTo: container.topAnchor,
-                constant: 6
-            ),
-            definitionTitle.leadingAnchor.constraint(
-                equalTo: container.leadingAnchor,
-                constant: 8
-            ),
-            definitionTitle.trailingAnchor.constraint(
-                lessThanOrEqualTo: container.trailingAnchor,
-                constant: -8
-            ),
-            definitionScrollView.topAnchor.constraint(
-                equalTo: definitionTitle.bottomAnchor,
-                constant: 3
-            ),
-            definitionScrollView.leadingAnchor.constraint(
-                equalTo: container.leadingAnchor
-            ),
-            definitionScrollView.trailingAnchor.constraint(
-                equalTo: container.trailingAnchor
-            ),
-            definitionScrollView.heightAnchor.constraint(equalToConstant: 160),
-            webView.topAnchor.constraint(
-                equalTo: definitionScrollView.bottomAnchor
-            ),
-            webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: container.bottomAnchor)
-        ])
-
-        panel.title = "辞書・Cosense"
-        panel.contentView = container
-        panel.hidesOnDeactivate = false
-        panel.level = .floating
-        panel.isReleasedWhenClosed = false
+        definitionPanel.contentView = definitionScrollView
+        cosensePanel.contentView = webView
     }
 
     func showIfPageExists(
@@ -94,19 +48,17 @@ final class CosensePreviewWindowController {
     ) {
         let currentRequestID = UUID()
         requestID = currentRequestID
-        webView.isHidden = true
-        definitionTextView.textStorage?.setAttributedString(
-            attributedDefinitions(definitions)
-        )
-        definitionTextView.scrollToBeginningOfDocument(nil)
+        cosensePanel.orderOut(nil)
 
         if definitions.isEmpty {
-            panel.orderOut(nil)
+            definitionPanel.orderOut(nil)
         } else {
-            showPanel(
-                height: 220,
-                beside: candidateFrame
+            definitionTextView.textStorage?.setAttributedString(
+                attributedDefinitions(definitions)
             )
+            definitionTextView.scrollToBeginningOfDocument(nil)
+            positionDefinitionPanel(near: candidateFrame)
+            definitionPanel.orderFrontRegardless()
         }
 
         Task { @MainActor [weak self] in
@@ -121,75 +73,99 @@ final class CosensePreviewWindowController {
             else {
                 return
             }
-            showWithCosense(
-                url: url,
-                definitions: definitions,
-                beside: candidateFrame
-            )
+
+            if displayedURL != url {
+                webView.load(URLRequest(url: url))
+                displayedURL = url
+            }
+            positionCosensePanel(near: candidateFrame)
+            cosensePanel.orderFrontRegardless()
         }
     }
 
-    private func showWithCosense(
-        url: URL,
-        definitions: [SystemDictionaryDefinition],
-        beside candidateFrame: NSRect
-    ) {
-        webView.isHidden = false
-        if displayedURL != url {
-            webView.load(URLRequest(url: url))
-            displayedURL = url
-        }
-        definitionTextView.textStorage?.setAttributedString(
-            attributedDefinitions(definitions)
+    func hide() {
+        requestID = UUID()
+        definitionPanel.orderOut(nil)
+        cosensePanel.orderOut(nil)
+    }
+
+    private static func makePanel(
+        title: String,
+        size: NSSize
+    ) -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
         )
-        definitionTextView.scrollToBeginningOfDocument(nil)
-        showPanel(height: 560, beside: candidateFrame)
+        panel.title = title
+        panel.hidesOnDeactivate = false
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+        return panel
     }
 
-    private func showPanel(
-        height: CGFloat,
-        beside candidateFrame: NSRect
-    ) {
-        panel.setContentSize(NSSize(width: 420, height: height))
+    private func positionDefinitionPanel(near candidateFrame: NSRect) {
+        let visibleFrame = visibleFrame(near: candidateFrame)
+        let panelSize = definitionPanel.frame.size
+        let aboveY = candidateFrame.maxY + Self.spacing
+        let belowY = candidateFrame.minY - panelSize.height - Self.spacing
+        let preferredY = aboveY + panelSize.height <= visibleFrame.maxY
+            ? aboveY
+            : belowY
+        let x = clamped(
+            candidateFrame.minX,
+            minimum: visibleFrame.minX,
+            maximum: visibleFrame.maxX - panelSize.width
+        )
+        let y = clamped(
+            preferredY,
+            minimum: visibleFrame.minY,
+            maximum: visibleFrame.maxY - panelSize.height
+        )
+        definitionPanel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func positionCosensePanel(near candidateFrame: NSRect) {
+        let visibleFrame = visibleFrame(near: candidateFrame)
+        let panelSize = cosensePanel.frame.size
+        let rightX = candidateFrame.maxX + Self.spacing
+        let leftX = candidateFrame.minX - panelSize.width - Self.spacing
+        let preferredX = rightX + panelSize.width <= visibleFrame.maxX
+            ? rightX
+            : leftX
+        let x = clamped(
+            preferredX,
+            minimum: visibleFrame.minX,
+            maximum: visibleFrame.maxX - panelSize.width
+        )
+        let y = clamped(
+            candidateFrame.maxY - panelSize.height,
+            minimum: visibleFrame.minY,
+            maximum: visibleFrame.maxY - panelSize.height
+        )
+        cosensePanel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func visibleFrame(near candidateFrame: NSRect) -> NSRect {
         let screen = NSScreen.screens.first {
             $0.frame.intersects(candidateFrame)
         } ?? NSScreen.main
-        let visibleFrame = screen?.visibleFrame ?? candidateFrame
-        let panelSize = panel.frame.size
-        let spacing: CGFloat = 8
+        return screen?.visibleFrame ?? candidateFrame
+    }
 
-        let rightOriginX = candidateFrame.maxX + spacing
-        let leftOriginX = candidateFrame.minX - panelSize.width - spacing
-        let preferredX = rightOriginX + panelSize.width <= visibleFrame.maxX
-            ? rightOriginX
-            : leftOriginX
-        let x = min(
-            max(preferredX, visibleFrame.minX),
-            visibleFrame.maxX - panelSize.width
-        )
-
-        let preferredY = candidateFrame.maxY - panelSize.height
-        let y = min(
-            max(preferredY, visibleFrame.minY),
-            visibleFrame.maxY - panelSize.height
-        )
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
-        panel.orderFrontRegardless()
+    private func clamped(
+        _ value: CGFloat,
+        minimum: CGFloat,
+        maximum: CGFloat
+    ) -> CGFloat {
+        min(max(value, minimum), max(minimum, maximum))
     }
 
     private func attributedDefinitions(
         _ definitions: [SystemDictionaryDefinition]
     ) -> NSAttributedString {
-        guard !definitions.isEmpty else {
-            return NSAttributedString(
-                string: "指定した辞書に語義が見つかりません",
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 13),
-                    .foregroundColor: NSColor.secondaryLabelColor
-                ]
-            )
-        }
-
         let result = NSMutableAttributedString()
         for (index, definition) in definitions.enumerated() {
             if index > 0 {
@@ -200,12 +176,14 @@ final class CosensePreviewWindowController {
                     )
                 )
             }
-
             result.append(
                 NSAttributedString(
                     string: definition.dictionaryName + "\n",
                     attributes: [
-                        .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                        .font: NSFont.systemFont(
+                            ofSize: 13,
+                            weight: .semibold
+                        ),
                         .foregroundColor: NSColor.labelColor
                     ]
                 )
@@ -221,10 +199,5 @@ final class CosensePreviewWindowController {
             )
         }
         return result
-    }
-
-    func hide() {
-        requestID = UUID()
-        panel.orderOut(nil)
     }
 }

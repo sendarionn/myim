@@ -49,6 +49,9 @@ final class InputController: IMKInputController {
             IMKCandidatesSendServerKeyEventFirst: true
         ])
 
+        basicDictionaryStatus = bundledEntries.isEmpty
+            ? "読込失敗"
+            : "読込済み（\(bundledEntries.count)読み）"
         updateBasicDictionaryIfNeeded(nil)
     }
 
@@ -70,6 +73,10 @@ final class InputController: IMKInputController {
         switch event.keyCode {
         case 49:
             return handleSpace(client: sender)
+        case 123, 126:
+            return moveCandidate(by: -1, client: sender)
+        case 124, 125:
+            return moveCandidate(by: 1, client: sender)
         case 36, 76:
             return commitFirstCandidateOrInput(to: sender)
         case 51:
@@ -105,11 +112,7 @@ final class InputController: IMKInputController {
             commit(selectedValue, to: sender)
         }
 
-        inputBuffer += characters.unicodeScalars.allSatisfy({
-            CharacterSet.letters.contains($0) && $0.isASCII
-        })
-            ? characters.lowercased()
-            : characters
+        inputBuffer += characters
         selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
@@ -190,7 +193,10 @@ final class InputController: IMKInputController {
             return
         }
 
-        commit(candidate + conversionSuffix, to: client() as Any)
+        commit(
+            candidateValueForCommit(candidate) + conversionSuffix,
+            to: client() as Any
+        )
     }
 
     override func commitComposition(_ sender: Any!) {
@@ -332,7 +338,12 @@ final class InputController: IMKInputController {
                 guard currentRevision.map({
                     snapshot.generatedAt > $0
                 }) ?? true else {
-                    self?.basicDictionaryStatus = "最新版"
+                    if let self, basicEntries.isEmpty {
+                        basicEntries = snapshot.entries
+                        rebuildConversionEngine()
+                    }
+                    self?.basicDictionaryStatus =
+                        "最新版（\(snapshot.entries.count)読み）"
                     return
                 }
 
@@ -366,6 +377,10 @@ final class InputController: IMKInputController {
     }
 
     private func handleSpace(client sender: Any) -> Bool {
+        moveCandidate(by: 1, client: sender)
+    }
+
+    private func moveCandidate(by offset: Int, client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
             return false
         }
@@ -374,10 +389,13 @@ final class InputController: IMKInputController {
             return true
         }
 
-        let nextIndex = ((selectedCandidateIndex ?? -1) + 1)
-            % currentCandidates.count
+        let startingIndex = selectedCandidateIndex
+            ?? (offset > 0 ? -1 : 0)
+        let nextIndex = (
+            startingIndex + offset + currentCandidates.count
+        ) % currentCandidates.count
         selectedCandidateIndex = nextIndex
-        candidateWindow.select(index: nextIndex)
+        showCandidateWindow(client: sender)
         setMarkedText(
             currentCandidates[nextIndex] + conversionSuffix,
             in: sender
@@ -391,14 +409,8 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !symbolCandidates.isEmpty {
-            currentCandidates = Array(
-                symbolCandidates.prefix(Self.maximumCandidateCount)
-            )
-            candidateWindow.show(
-                candidates: currentCandidates,
-                selectedIndex: selectedCandidateIndex,
-                near: inputLocation(for: sender)
-            )
+            currentCandidates = symbolCandidates
+            showCandidateWindow(client: sender)
             return
         }
 
@@ -407,18 +419,30 @@ final class InputController: IMKInputController {
         )
         var candidates = conversionEngine.candidates(
             matching: normalizedReading,
-            limit: Self.maximumCandidateCount
+            limit: .max
         )
-        if candidates.isEmpty,
-           let hiragana = romajiConverter.hiragana(
+        if let hiragana = romajiConverter.hiragana(
+            from: conversionReading
+        ) {
+            let katakana = romajiConverter.katakana(
                 from: conversionReading
-           ) {
-            candidates.append(hiragana)
-            if let katakana = romajiConverter.katakana(
-                from: conversionReading
-            ), katakana != hiragana {
-                candidates.append(katakana)
-            }
+            )
+            let kanaCandidates = [hiragana, katakana]
+                .compactMap { $0 }
+                .filter { !candidates.contains($0) }
+            let exactCandidateCount = conversionEngine.candidates(
+                for: normalizedReading
+            ).count
+            let insertionIndex = hiragana.count == 1
+                ? 0
+                : min(
+                    exactCandidateCount,
+                    Self.maximumCandidateCount - kanaCandidates.count
+                )
+            candidates.insert(
+                contentsOf: kanaCandidates,
+                at: insertionIndex
+            )
         }
         currentCandidates = candidates
 
@@ -429,9 +453,25 @@ final class InputController: IMKInputController {
             return
         }
 
+        showCandidateWindow(client: sender)
+    }
+
+    private func showCandidateWindow(client sender: Any) {
+        let selectedIndex = selectedCandidateIndex ?? 0
+        let pageStart = selectedIndex / Self.maximumCandidateCount
+            * Self.maximumCandidateCount
+        let pageEnd = min(
+            pageStart + Self.maximumCandidateCount,
+            currentCandidates.count
+        )
+        guard pageStart < pageEnd else {
+            candidateWindow.hide()
+            return
+        }
+
         candidateWindow.show(
-            candidates: currentCandidates,
-            selectedIndex: selectedCandidateIndex,
+            candidates: Array(currentCandidates[pageStart..<pageEnd]),
+            selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender)
         )
     }
@@ -565,7 +605,13 @@ final class InputController: IMKInputController {
                     ? currentCandidates[$0]
                     : nil
             }
-            .map { $0 + conversionSuffix }
+            .map {
+                candidateValueForCommit($0) + conversionSuffix
+            }
+    }
+
+    private func candidateValueForCommit(_ candidate: String) -> String {
+        CandidateCommitNormalizer.value(from: candidate)
     }
 
     private func showInvalidProjectURLAlert() {
@@ -601,7 +647,7 @@ final class InputController: IMKInputController {
         }
 
         guard
-            let dictionaryURL = Bundle.main.url(
+            let dictionaryURL = inputMethodResourceURL(
                 forResource: "basic-dictionary",
                 withExtension: "txt"
             ),
@@ -619,7 +665,7 @@ final class InputController: IMKInputController {
 
     private static func bundledBasicDictionaryRevision() -> String? {
         guard
-            let metadataURL = Bundle.main.url(
+            let metadataURL = inputMethodResourceURL(
                 forResource: "basic-dictionary-source",
                 withExtension: "json"
             ),
@@ -633,6 +679,56 @@ final class InputController: IMKInputController {
         }
 
         return metadata.generated
+    }
+
+    private static func inputMethodResourceURL(
+        forResource name: String,
+        withExtension fileExtension: String
+    ) -> URL? {
+        let bundleIdentifier = "io.github.sendarionn.inputmethod.myime"
+        var bundles: [Bundle] = []
+        if let identifierBundle = Bundle(identifier: bundleIdentifier) {
+            bundles.append(identifierBundle)
+        }
+        bundles.append(Bundle(for: InputController.self))
+
+        let executableURL = URL(
+            fileURLWithPath: CommandLine.arguments.first ?? ""
+        )
+        let executableBundleURL = executableURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        if let executableBundle = Bundle(url: executableBundleURL) {
+            bundles.append(executableBundle)
+        }
+
+        let installedBundleURLs = [
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(
+                    "Library/Input Methods/myim.app",
+                    isDirectory: true
+                ),
+            URL(
+                fileURLWithPath: "/Library/Input Methods/myim.app",
+                isDirectory: true
+            )
+        ]
+        bundles.append(
+            contentsOf: installedBundleURLs.compactMap(Bundle.init(url:))
+        )
+
+        for bundle in bundles {
+            if let url = bundle.url(
+                forResource: name,
+                withExtension: fileExtension
+            ) {
+                return url
+            }
+        }
+
+        NSLog("myimのリソースが見つかりません: %@.%@", name, fileExtension)
+        return nil
     }
 
     private static func loadExtensionEntries(

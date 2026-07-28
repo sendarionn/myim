@@ -73,4 +73,12 @@ struct ConversionEngineTests {
         #expect(engine.candidates(matching: "m", limit: 2) == ["見る", "診る"])
         #expect(engine.candidates(matching: "m", limit: 0).isEmpty)
     }
+
+    @Test
+    func returnsAllCandidatesWithoutLimit() {
+        #expect(
+            engine.candidates(matching: "m")
+                == ["見る", "診る", "観る"]
+        )
+    }
 }
