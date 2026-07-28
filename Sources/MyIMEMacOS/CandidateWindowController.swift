@@ -46,15 +46,18 @@ final class CandidateWindowController: NSObject {
     private static let itemIdentifier = NSUserInterfaceItemIdentifier(
         "candidateItem"
     )
-    private static let itemWidth: CGFloat = 140
     private static let itemHeight: CGFloat = 30
-    private static let maximumColumns = 4
+    private static let minimumItemWidth: CGFloat = 52
+    private static let maximumItemWidth: CGFloat = 240
+    private static let maximumPanelWidth: CGFloat = 560
     private static let maximumRows = 6
+    private static let itemSpacing: CGFloat = 2
 
     private let panel: NSPanel
     private let collectionView: NSCollectionView
     private let layout: NSCollectionViewFlowLayout
     private var candidates: [String] = []
+    private var itemSizes: [NSSize] = []
 
     override init() {
         collectionView = NSCollectionView()
@@ -68,8 +71,8 @@ final class CandidateWindowController: NSObject {
 
         super.init()
 
-        layout.minimumInteritemSpacing = 0
-        layout.minimumLineSpacing = 0
+        layout.minimumInteritemSpacing = Self.itemSpacing
+        layout.minimumLineSpacing = Self.itemSpacing
         layout.scrollDirection = .vertical
         collectionView.collectionViewLayout = layout
         collectionView.dataSource = self
@@ -103,6 +106,7 @@ final class CandidateWindowController: NSObject {
 
     func show(candidates: [String], selectedIndex: Int?, near anchorFrame: NSRect) {
         self.candidates = candidates
+        itemSizes = candidates.map { itemSize(for: $0) }
 
         let screen = NSScreen.screens.first {
             $0.frame.intersects(anchorFrame)
@@ -110,26 +114,17 @@ final class CandidateWindowController: NSObject {
         let visibleFrame = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
 
-        let columns = columnCount(
-            candidateCount: candidates.count,
-            availableWidth: visibleFrame.width
+        let contentSize = packedContentSize(
+            itemSizes: itemSizes,
+            availableWidth: min(
+                Self.maximumPanelWidth,
+                visibleFrame.width
+            )
         )
-        let rows = max(
-            1,
-            Int(ceil(Double(candidates.count) / Double(columns)))
-        )
-        let visibleRows = min(rows, Self.maximumRows)
-        let panelWidth = min(
-            CGFloat(columns) * Self.itemWidth,
-            visibleFrame.width
-        )
+        let panelWidth = contentSize.width
         let panelHeight = min(
-            CGFloat(visibleRows) * Self.itemHeight,
-            visibleFrame.height
-        )
-        layout.itemSize = NSSize(
-            width: floor(panelWidth / CGFloat(columns)),
-            height: Self.itemHeight
+            contentSize.height,
+            CGFloat(Self.maximumRows) * (Self.itemHeight + Self.itemSpacing)
         )
 
         panel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
@@ -171,22 +166,67 @@ final class CandidateWindowController: NSObject {
         panel.orderOut(nil)
     }
 
-    private func columnCount(
-        candidateCount: Int,
+    private func itemSize(for candidate: String) -> NSSize {
+        let textWidth = ceil(
+            (candidate as NSString).size(
+                withAttributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
+            ).width
+        )
+        return NSSize(
+            width: min(
+                max(textWidth + 20, Self.minimumItemWidth),
+                Self.maximumItemWidth
+            ),
+            height: Self.itemHeight
+        )
+    }
+
+    private func packedContentSize(
+        itemSizes: [NSSize],
         availableWidth: CGFloat
-    ) -> Int {
-        let columnsForCandidates = max(
-            1,
-            Int(ceil(Double(candidateCount) / Double(Self.maximumRows)))
+    ) -> NSSize {
+        guard !itemSizes.isEmpty else {
+            return NSSize(width: Self.minimumItemWidth, height: Self.itemHeight)
+        }
+
+        let totalWidth = itemSizes.reduce(0) { $0 + $1.width }
+            + CGFloat(max(itemSizes.count - 1, 0)) * Self.itemSpacing
+        let widestItem = itemSizes.map(\.width).max() ?? Self.minimumItemWidth
+        let balancedWidth = ceil(
+            sqrt(
+                totalWidth
+                    * (Self.itemHeight + Self.itemSpacing)
+                    * 2
+            )
         )
-        let columnsForScreen = max(
-            1,
-            Int(floor(availableWidth / Self.itemWidth))
+        let targetWidth = min(
+            availableWidth,
+            max(widestItem, balancedWidth)
         )
-        return min(
-            Self.maximumColumns,
-            columnsForCandidates,
-            columnsForScreen
+
+        var rowWidth: CGFloat = 0
+        var widestRow: CGFloat = 0
+        var rowCount = 1
+
+        for itemSize in itemSizes {
+            let nextWidth = rowWidth == 0
+                ? itemSize.width
+                : rowWidth + Self.itemSpacing + itemSize.width
+
+            if rowWidth > 0, nextWidth > targetWidth {
+                widestRow = max(widestRow, rowWidth)
+                rowCount += 1
+                rowWidth = itemSize.width
+            } else {
+                rowWidth = nextWidth
+            }
+        }
+        widestRow = max(widestRow, rowWidth)
+
+        return NSSize(
+            width: min(max(widestRow, widestItem), availableWidth),
+            height: CGFloat(rowCount) * Self.itemHeight
+                + CGFloat(max(rowCount - 1, 0)) * Self.itemSpacing
         )
     }
 
@@ -236,4 +276,19 @@ extension CandidateWindowController: NSCollectionViewDataSource {
     }
 }
 
-extension CandidateWindowController: NSCollectionViewDelegate {}
+extension CandidateWindowController: NSCollectionViewDelegateFlowLayout {
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        layout collectionViewLayout: NSCollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> NSSize {
+        guard itemSizes.indices.contains(indexPath.item) else {
+            return NSSize(
+                width: Self.minimumItemWidth,
+                height: Self.itemHeight
+            )
+        }
+
+        return itemSizes[indexPath.item]
+    }
+}
