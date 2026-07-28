@@ -8,8 +8,20 @@ struct RomajiConverterTests {
         let converter = RomajiConverter()
 
         #expect(converter.hiragana(from: "thi") == "てぃ")
+        #expect(converter.katakana(from: "thi") == "ティ")
         #expect(converter.hiragana(from: "cha-to") == "ちゃーと")
         #expect(converter.hiragana(from: "matcha") == "まっちゃ")
+    }
+
+    @Test
+    func createsJapaneseSymbolCandidates() {
+        #expect(
+            JapaneseSymbolConverter.candidates(for: ",") == ["、", "，"]
+        )
+        #expect(
+            JapaneseSymbolConverter.candidates(for: "[") == ["「", "『", "【", "［"]
+        )
+        #expect(JapaneseSymbolConverter.candidates(for: "a").isEmpty)
     }
 
     @Test

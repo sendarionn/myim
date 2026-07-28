@@ -100,10 +100,9 @@ final class InputController: IMKInputController {
             }
             return false
         }
-        guard !inputBuffer.isEmpty || characters.unicodeScalars.allSatisfy({
-            CharacterSet.letters.contains($0) && $0.isASCII
-        }) else {
-            return false
+
+        if let selectedValue = selectedCandidateValue {
+            commit(selectedValue, to: sender)
         }
 
         inputBuffer += characters.unicodeScalars.allSatisfy({
@@ -191,7 +190,7 @@ final class InputController: IMKInputController {
             return
         }
 
-        commit(candidate, to: client() as Any)
+        commit(candidate + conversionSuffix, to: client() as Any)
     }
 
     override func commitComposition(_ sender: Any!) {
@@ -388,6 +387,21 @@ final class InputController: IMKInputController {
     }
 
     private func refreshCandidates(client sender: Any) {
+        let symbolCandidates = JapaneseSymbolConverter.candidates(
+            for: inputBuffer
+        )
+        if !symbolCandidates.isEmpty {
+            currentCandidates = Array(
+                symbolCandidates.prefix(Self.maximumCandidateCount)
+            )
+            candidateWindow.show(
+                candidates: currentCandidates,
+                selectedIndex: selectedCandidateIndex,
+                near: inputLocation(for: sender)
+            )
+            return
+        }
+
         let normalizedReading = RomanizedReadingNormalizer.dictionaryReading(
             from: conversionReading
         )
@@ -395,12 +409,16 @@ final class InputController: IMKInputController {
             matching: normalizedReading,
             limit: Self.maximumCandidateCount
         )
-        if let hiragana = romajiConverter.hiragana(from: conversionReading),
-           !candidates.contains(hiragana) {
-            if candidates.count == Self.maximumCandidateCount {
-                candidates.removeLast()
-            }
+        if candidates.isEmpty,
+           let hiragana = romajiConverter.hiragana(
+                from: conversionReading
+           ) {
             candidates.append(hiragana)
+            if let katakana = romajiConverter.katakana(
+                from: conversionReading
+            ), katakana != hiragana {
+                candidates.append(katakana)
+            }
         }
         currentCandidates = candidates
 
@@ -436,10 +454,7 @@ final class InputController: IMKInputController {
             return false
         }
 
-        let value = selectedCandidateIndex
-            .flatMap { currentCandidates.indices.contains($0) ? currentCandidates[$0] : nil }
-            .map { $0 + conversionSuffix }
-            ?? inputBuffer
+        let value = selectedCandidateValue ?? inputBuffer
         commit(value, to: sender)
         return true
     }
@@ -537,7 +552,20 @@ final class InputController: IMKInputController {
     }
 
     private var conversionSuffix: String {
-        String(inputBuffer.dropFirst(conversionReading.count))
+        if !JapaneseSymbolConverter.candidates(for: inputBuffer).isEmpty {
+            return ""
+        }
+        return String(inputBuffer.dropFirst(conversionReading.count))
+    }
+
+    private var selectedCandidateValue: String? {
+        selectedCandidateIndex
+            .flatMap {
+                currentCandidates.indices.contains($0)
+                    ? currentCandidates[$0]
+                    : nil
+            }
+            .map { $0 + conversionSuffix }
     }
 
     private func showInvalidProjectURLAlert() {

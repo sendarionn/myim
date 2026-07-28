@@ -65,6 +65,22 @@ public struct RomajiConverter: Sendable {
         return result
     }
 
+    public func katakana(from input: String) -> String? {
+        guard let hiragana = hiragana(from: input) else {
+            return nil
+        }
+
+        return String(
+            hiragana.unicodeScalars.map { scalar in
+                if (0x3041...0x3096).contains(scalar.value),
+                   let converted = UnicodeScalar(scalar.value + 0x60) {
+                    return Character(converted)
+                }
+                return Character(scalar)
+            }
+        )
+    }
+
     private func isConsonant(_ character: Character) -> Bool {
         character.isASCII
             && character.isLetter
@@ -111,6 +127,38 @@ public struct RomajiConverter: Sendable {
         "xya": "ゃ", "xyu": "ゅ", "xyo": "ょ", "xtsu": "っ", "xtu": "っ",
         "la": "ぁ", "li": "ぃ", "lu": "ぅ", "le": "ぇ", "lo": "ぉ",
         "lya": "ゃ", "lyu": "ゅ", "lyo": "ょ", "ltsu": "っ", "ltu": "っ"
+    ]
+}
+
+public enum JapaneseSymbolConverter {
+    public static func candidates(for input: String) -> [String] {
+        mapping[input] ?? []
+    }
+
+    private static let mapping: [String: [String]] = [
+        ",": ["、", "，"],
+        ".": ["。", "．", "…"],
+        "/": ["・", "／"],
+        "\\": ["￥", "＼"],
+        "[": ["「", "『", "【", "［"],
+        "]": ["」", "』", "】", "］"],
+        "(": ["（"],
+        ")": ["）"],
+        "{": ["｛"],
+        "}": ["｝"],
+        "<": ["〈", "《", "＜"],
+        ">": ["〉", "》", "＞"],
+        "!": ["！"],
+        "?": ["？"],
+        ":": ["："],
+        ";": ["；"],
+        "~": ["〜", "～"],
+        "-": ["ー", "−", "—"],
+        "_": ["＿"],
+        "\"": ["“", "”", "〝", "〟"],
+        "'": ["‘", "’"],
+        "...": ["…", "⋯"],
+        "--": ["—", "−"]
     ]
 }
 
