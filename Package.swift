@@ -27,6 +27,7 @@ let package = Package(
                 .swiftLanguageMode(.v5)
             ],
             linkerSettings: [
+                .linkedFramework("CoreServices"),
                 .linkedFramework("InputMethodKit"),
                 .linkedFramework("WebKit")
             ]

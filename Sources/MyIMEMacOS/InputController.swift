@@ -17,6 +17,7 @@ final class InputController: IMKInputController {
     private let candidatePanel: IMKCandidates
     private let candidateWindow = CandidateWindowController()
     private let previewWindow = CosensePreviewWindowController()
+    private let definitionProvider = SystemDictionaryDefinitionProvider()
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         conversionEngine = Self.loadConversionEngine()
@@ -211,6 +212,7 @@ final class InputController: IMKInputController {
             % currentCandidates.count
         selectedCandidateIndex = nextIndex
         candidateWindow.select(index: nextIndex)
+        setMarkedText(currentCandidates[nextIndex], in: sender)
         showPreview(for: currentCandidates[nextIndex])
         return true
     }
@@ -327,6 +329,7 @@ final class InputController: IMKInputController {
 
         previewWindow.show(
             url: url,
+            definitions: definitionProvider.definitions(for: candidate),
             beside: candidateWindow.frame
         )
     }
