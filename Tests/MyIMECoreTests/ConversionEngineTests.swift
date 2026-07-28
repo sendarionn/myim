@@ -47,4 +47,30 @@ struct ConversionEngineTests {
         #expect(engine.candidates(matching: "").isEmpty)
         #expect(engine.candidates(matching: "unknown").isEmpty)
     }
+
+    @Test
+    func mergesLayersWithEarlierLayerFirst() {
+        let engine = ConversionEngine(layers: [
+            [
+                DictionaryEntry(
+                    reading: "miru",
+                    candidates: ["観る", "見る"]
+                )
+            ],
+            [
+                DictionaryEntry(
+                    reading: "miru",
+                    candidates: ["見る", "診る"]
+                )
+            ]
+        ])
+
+        #expect(engine.candidates(for: "miru") == ["観る", "見る", "診る"])
+    }
+
+    @Test
+    func limitsPrefixCandidates() {
+        #expect(engine.candidates(matching: "m", limit: 2) == ["見る", "診る"])
+        #expect(engine.candidates(matching: "m", limit: 0).isEmpty)
+    }
 }

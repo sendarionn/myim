@@ -1,11 +1,13 @@
 @preconcurrency import AppKit
 @preconcurrency import WebKit
+import MyIMECore
 
 final class CosensePreviewWindowController {
     private let panel: NSPanel
     private let webView: WKWebView
     private let definitionTextView: NSTextView
     private var displayedURL: URL?
+    private var requestID = UUID()
 
     init() {
         webView = WKWebView(frame: .zero)
@@ -83,11 +85,56 @@ final class CosensePreviewWindowController {
         panel.isReleasedWhenClosed = false
     }
 
-    func show(
+    func showIfPageExists(
+        project: String,
+        pageTitle: String,
         url: URL,
         definitions: [SystemDictionaryDefinition],
         beside candidateFrame: NSRect
     ) {
+        let currentRequestID = UUID()
+        requestID = currentRequestID
+        webView.isHidden = true
+        definitionTextView.textStorage?.setAttributedString(
+            attributedDefinitions(definitions)
+        )
+        definitionTextView.scrollToBeginningOfDocument(nil)
+
+        if definitions.isEmpty {
+            panel.orderOut(nil)
+        } else {
+            showPanel(
+                height: 220,
+                beside: candidateFrame
+            )
+        }
+
+        Task { @MainActor [weak self] in
+            let exists = await CosensePageClient().exists(
+                project: project,
+                pageTitle: pageTitle
+            )
+            guard
+                let self,
+                requestID == currentRequestID,
+                exists
+            else {
+                return
+            }
+            showWithCosense(
+                url: url,
+                definitions: definitions,
+                beside: candidateFrame
+            )
+        }
+    }
+
+    private func showWithCosense(
+        url: URL,
+        definitions: [SystemDictionaryDefinition],
+        beside candidateFrame: NSRect
+    ) {
+        webView.isHidden = false
         if displayedURL != url {
             webView.load(URLRequest(url: url))
             displayedURL = url
@@ -96,7 +143,14 @@ final class CosensePreviewWindowController {
             attributedDefinitions(definitions)
         )
         definitionTextView.scrollToBeginningOfDocument(nil)
+        showPanel(height: 560, beside: candidateFrame)
+    }
 
+    private func showPanel(
+        height: CGFloat,
+        beside candidateFrame: NSRect
+    ) {
+        panel.setContentSize(NSSize(width: 420, height: height))
         let screen = NSScreen.screens.first {
             $0.frame.intersects(candidateFrame)
         } ?? NSScreen.main
@@ -170,6 +224,7 @@ final class CosensePreviewWindowController {
     }
 
     func hide() {
+        requestID = UUID()
         panel.orderOut(nil)
     }
 }

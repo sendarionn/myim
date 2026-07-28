@@ -59,7 +59,7 @@ do {
     let entries = try DictionaryParser().parse(dictionaryText)
     let engine = ConversionEngine(entries: entries)
 
-    print("my-ime")
+    print("myim")
     print("辞書: \(dictionarySourceDescription)")
     if arguments.isEmpty, let metadata = try? cache.loadMetadata() {
         print("登録読み数: \(metadata.entryCount)")

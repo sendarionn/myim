@@ -1,0 +1,8 @@
+TKG Japanese-English Learner’s Dictionary
+https://github.com/tkgally/je-dict-1
+
+Creative Commons Zero v1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+
+The source dictionary and its files are released under CC0 1.0 Universal
+The bundled basic-dictionary.txt was generated from entries_index.json

@@ -3,13 +3,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "my-ime",
+    name: "myim",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "my-ime", targets: ["MyIME"]),
-        .executable(name: "my-ime-macos", targets: ["MyIMEMacOS"])
+        .executable(name: "myim", targets: ["MyIME"]),
+        .executable(name: "myim-macos", targets: ["MyIMEMacOS"])
     ],
     targets: [
         .target(name: "MyIMECore"),
@@ -23,6 +23,9 @@ let package = Package(
         .executableTarget(
             name: "MyIMEMacOS",
             dependencies: ["MyIMECore"],
+            exclude: [
+                "Resources"
+            ],
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ],

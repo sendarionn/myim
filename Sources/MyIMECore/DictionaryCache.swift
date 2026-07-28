@@ -3,10 +3,19 @@ import Foundation
 public struct DictionaryCacheMetadata: Codable, Equatable, Sendable {
     public let syncedAt: Date
     public let entryCount: Int
+    public let sourceRevision: String?
+    public let sourceEntryCount: Int?
 
-    public init(syncedAt: Date, entryCount: Int) {
+    public init(
+        syncedAt: Date,
+        entryCount: Int,
+        sourceRevision: String? = nil,
+        sourceEntryCount: Int? = nil
+    ) {
         self.syncedAt = syncedAt
         self.entryCount = entryCount
+        self.sourceRevision = sourceRevision
+        self.sourceEntryCount = sourceEntryCount
     }
 }
 
@@ -18,6 +27,7 @@ public struct DictionaryCache: Sendable {
     }
 
     public static func applicationSupport(
+        applicationName: String = "myim",
         fileManager: FileManager = .default
     ) throws -> DictionaryCache {
         guard let applicationSupportURL = fileManager.urls(
@@ -29,7 +39,7 @@ public struct DictionaryCache: Sendable {
 
         return DictionaryCache(
             directoryURL: applicationSupportURL.appendingPathComponent(
-                "my-ime",
+                applicationName,
                 isDirectory: true
             )
         )

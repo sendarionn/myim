@@ -3,19 +3,19 @@
 set -euo pipefail
 
 repository_root=${0:A:h:h}
-application_bundle="$repository_root/.build/my-ime.app"
+application_bundle="$repository_root/.build/myim.app"
 contents_directory="$application_bundle/Contents"
 executable_directory="$contents_directory/MacOS"
 resources_directory="$contents_directory/Resources"
-iconset_directory="$repository_root/.build/my-ime.iconset"
-ime_executable="$executable_directory/my-ime"
+iconset_directory="$repository_root/.build/myim.iconset"
+ime_executable="$executable_directory/myim"
 
 cd "$repository_root"
-swift build -c release --product my-ime-macos
+swift build -c release --product myim-macos
 
 mkdir -p "$executable_directory" "$resources_directory"
 mkdir -p "$iconset_directory"
-cp ".build/release/my-ime-macos" "$ime_executable"
+cp ".build/release/myim-macos" "$ime_executable"
 
 developer_rpaths=("${(@f)$(otool -l "$ime_executable" | awk '
     /cmd LC_RPATH/ {
@@ -34,6 +34,15 @@ for developer_rpath in "${developer_rpaths[@]}"; do
 done
 cp "macOS/Info.plist" "$contents_directory/Info.plist"
 cp "macOS/InfoPlist.strings" "$resources_directory/InfoPlist.strings"
+cp \
+    "Sources/MyIMEMacOS/Resources/basic-dictionary.txt" \
+    "$resources_directory/basic-dictionary.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/basic-dictionary-LICENSE.txt" \
+    "$resources_directory/basic-dictionary-LICENSE.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/basic-dictionary-source.json" \
+    "$resources_directory/basic-dictionary-source.json"
 xcrun swift "Scripts/generate-ime-icon.swift" "$resources_directory/icon.pdf"
 sips -s format png -z 16 16 "$resources_directory/icon.pdf" \
     --out "$iconset_directory/icon_16x16.png" >/dev/null
@@ -63,7 +72,7 @@ codesign \
     --force \
     --deep \
     --sign - \
-    --entitlements "macOS/my-ime.entitlements" \
+    --entitlements "macOS/myim.entitlements" \
     "$application_bundle"
 
 echo "$application_bundle"
