@@ -1,6 +1,8 @@
-# my-ime
+# myim
 
-共有辞書を使うIMEのコマンドライン版モックアップ
+共有辞書を使うInput Method
+
+実装の更新履歴は`HISTORY.md`を参照してください
 
 ## 必要環境
 
@@ -46,6 +48,17 @@ https://scrapbox.io/sendarionn-public/dictionary
 swift run my-ime sync
 ```
 
+macOS版IMの実行中は次のどちらかで更新できます
+
+- 入力ソースメニューから「Cosense辞書を更新」を選択
+- `Command＋Shift＋R`を押す
+
+更新に成功するとキャッシュと実行中の変換辞書が同時に更新されます
+
+IMの再起動は不要です
+
+入力ソースメニューには更新中、完了、失敗の状態が表示されます
+
 取得した辞書は次の場所へ保存されます
 
 ```text
@@ -89,9 +102,9 @@ swift run my-ime /path/to/dictionary.txt
 swift test
 ```
 
-## macOS IME
+## macOS IM
 
-macOS版はInputMethodKitを使用します
+macOS版IMはInputMethodKitを使用します
 
 事前にコマンドライン版でCosense辞書を同期します
 
@@ -99,7 +112,7 @@ macOS版はInputMethodKitを使用します
 swift run my-ime sync
 ```
 
-IMEバンドルを作成します
+IMバンドルを作成します
 
 ```shell
 ./Scripts/build-macos-ime.sh
@@ -136,11 +149,20 @@ io.github.sendarionn.inputmethod.myime
 
 ### 操作
 
-- 英字キーで読みを入力すると未確定文字列が表示されます
-- Spaceで完全一致する変換候補が表示されます
+- 英字キーで読みを入力すると未確定のローマ字が表示されます
+- 入力中は読みの前方一致候補が常に表示されます
+- 候補は1文字入力または削除するたびに更新されます
+- 候補数が多い場合は縦横のグリッドに最大4列で表示されます
+- 候補パネルは入力位置に近い画面内へ収まるよう配置されます
+- 候補表示直後は何も選択されていません
+- Spaceで先頭候補を選択し、続けて押すと次候補へ移動します
 - 候補を移動すると対応するCosenseページが小窓に表示されます
-- Enterで先頭候補または入力中の文字列を確定します
-- Deleteで入力中の文字を削除します
-- Escapeで入力を取り消します
+- 候補選択中にReturnを押すと選択候補を確定します
+- 候補未選択でReturnを押すと入力したローマ字を確定します
+- Deleteで入力中の文字を削除し、候補を再検索します
+- Escapeで候補選択を解除し、ローマ字表示へ戻します
+- `Command＋Shift＋R`でCosense辞書を更新します
 
 現段階ではローマ字からかなへの変換を行わず、`miru`のような辞書の読みを直接入力します
+
+英語の予測変換とIMからCosense辞書へ登録する機能は今後実装します

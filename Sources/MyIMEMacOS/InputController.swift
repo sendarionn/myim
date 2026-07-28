@@ -12,7 +12,8 @@ final class InputController: IMKInputController {
     private var inputBuffer = ""
     private var currentCandidates: [String] = []
     private var selectedCandidateIndex: Int?
-    private let conversionEngine: ConversionEngine
+    private var conversionEngine: ConversionEngine
+    private var dictionarySyncStatus = "未実行"
     private let candidatePanel: IMKCandidates
     private let candidateWindow = CandidateWindowController()
     private let previewWindow = CosensePreviewWindowController()
@@ -39,6 +40,12 @@ final class InputController: IMKInputController {
 
         guard event.type == .keyDown else {
             return false
+        }
+
+        if event.keyCode == 15,
+           event.modifierFlags.contains([.command, .shift]) {
+            syncCosenseDictionary(nil)
+            return true
         }
 
         switch event.keyCode {
@@ -70,17 +77,37 @@ final class InputController: IMKInputController {
         }
 
         inputBuffer += characters.lowercased()
-        currentCandidates = []
         selectedCandidateIndex = nil
         candidatePanel.hide()
-        candidateWindow.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
+        refreshCandidates(client: sender)
         return true
     }
 
     override func candidates(_ sender: Any!) -> [Any]! {
         currentCandidates
+    }
+
+    override func menu() -> NSMenu! {
+        let menu = NSMenu()
+        let syncItem = NSMenuItem(
+            title: "Cosense辞書を更新",
+            action: #selector(syncCosenseDictionary(_:)),
+            keyEquivalent: "r"
+        )
+        syncItem.keyEquivalentModifierMask = [.command, .shift]
+        syncItem.target = self
+        menu.addItem(syncItem)
+
+        let statusItem = NSMenuItem(
+            title: "辞書更新: \(dictionarySyncStatus)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        statusItem.isEnabled = false
+        menu.addItem(statusItem)
+        return menu
     }
 
     override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
@@ -126,25 +153,49 @@ final class InputController: IMKInputController {
         super.inputControllerWillClose()
     }
 
-    private func beginConversion(client sender: Any) -> Bool {
-        guard !inputBuffer.isEmpty else {
-            return false
+    @objc
+    private func syncCosenseDictionary(_ sender: Any?) {
+        guard dictionarySyncStatus != "更新中" else {
+            return
         }
 
-        currentCandidates = conversionEngine.candidates(for: inputBuffer)
-        guard let firstCandidate = currentCandidates.first else {
-            return true
-        }
+        dictionarySyncStatus = "更新中"
 
-        selectedCandidateIndex = 0
-        let anchorFrame = inputLocation(for: sender)
-        candidateWindow.show(
-            candidates: currentCandidates,
-            selectedIndex: 0,
-            near: anchorFrame
-        )
-        showPreview(for: firstCandidate)
-        return true
+        Task { @MainActor [weak self] in
+            do {
+                let dictionaryText = try await CosenseDictionaryClient().fetch(
+                    from: Self.dictionarySource
+                )
+                let entries = try DictionaryParser().parse(dictionaryText)
+                guard !entries.isEmpty else {
+                    throw CosenseDictionaryError.emptyDictionary
+                }
+
+                let cache = try DictionaryCache.applicationSupport()
+                try cache.save(
+                    dictionaryText: dictionaryText,
+                    metadata: DictionaryCacheMetadata(
+                        syncedAt: Date(),
+                        entryCount: entries.count
+                    )
+                )
+
+                guard let self else {
+                    return
+                }
+                conversionEngine = ConversionEngine(entries: entries)
+                dictionarySyncStatus = "完了（\(entries.count)読み）"
+
+                if !inputBuffer.isEmpty, let inputClient = client() {
+                    selectedCandidateIndex = nil
+                    previewWindow.hide()
+                    refreshCandidates(client: inputClient)
+                }
+            } catch {
+                self?.dictionarySyncStatus = "失敗"
+                NSLog("Cosense辞書の更新に失敗: %@", error.localizedDescription)
+            }
+        }
     }
 
     private func handleSpace(client sender: Any) -> Bool {
@@ -152,8 +203,8 @@ final class InputController: IMKInputController {
             return false
         }
 
-        if currentCandidates.isEmpty {
-            return beginConversion(client: sender)
+        guard !currentCandidates.isEmpty else {
+            return true
         }
 
         let nextIndex = ((selectedCandidateIndex ?? -1) + 1)
@@ -162,6 +213,23 @@ final class InputController: IMKInputController {
         candidateWindow.select(index: nextIndex)
         showPreview(for: currentCandidates[nextIndex])
         return true
+    }
+
+    private func refreshCandidates(client sender: Any) {
+        currentCandidates = conversionEngine.candidates(matching: inputBuffer)
+
+        guard !currentCandidates.isEmpty else {
+            selectedCandidateIndex = nil
+            candidateWindow.hide()
+            previewWindow.hide()
+            return
+        }
+
+        candidateWindow.show(
+            candidates: currentCandidates,
+            selectedIndex: selectedCandidateIndex,
+            near: inputLocation(for: sender)
+        )
     }
 
     private func inputLocation(for sender: Any) -> NSRect {
@@ -184,7 +252,6 @@ final class InputController: IMKInputController {
 
         let value = selectedCandidateIndex
             .flatMap { currentCandidates.indices.contains($0) ? currentCandidates[$0] : nil }
-            ?? currentCandidates.first
             ?? inputBuffer
         commit(value, to: sender)
         return true
@@ -196,12 +263,11 @@ final class InputController: IMKInputController {
         }
 
         inputBuffer.removeLast()
-        currentCandidates = []
         selectedCandidateIndex = nil
         candidatePanel.hide()
-        candidateWindow.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
+        refreshCandidates(client: sender)
         return true
     }
 
@@ -210,13 +276,10 @@ final class InputController: IMKInputController {
             return false
         }
 
-        inputBuffer = ""
-        currentCandidates = []
         selectedCandidateIndex = nil
-        candidatePanel.hide()
-        candidateWindow.hide()
+        candidateWindow.clearSelection()
         previewWindow.hide()
-        setMarkedText("", in: sender)
+        updateMarkedText(in: sender)
         return true
     }
 
