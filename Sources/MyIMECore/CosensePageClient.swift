@@ -30,14 +30,32 @@ public struct CosensePageClient: Sendable {
                     request.setValue(value, forHTTPHeaderField: field)
                 }
             }
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(
+                for: request
+            )
             guard let HTTPResponse = response as? HTTPURLResponse else {
                 return false
             }
             return (200..<300).contains(HTTPResponse.statusCode)
+                && Self.responseRepresentsExistingPage(data)
         } catch {
             return false
         }
+    }
+
+    static func responseRepresentsExistingPage(_ data: Data) -> Bool {
+        struct PageState: Decodable {
+            let persistent: Bool?
+            let commitId: String?
+        }
+
+        guard let state = try? JSONDecoder().decode(
+            PageState.self,
+            from: data
+        ) else {
+            return false
+        }
+        return state.persistent == true || state.commitId != nil
     }
 
     public static func APIURL(

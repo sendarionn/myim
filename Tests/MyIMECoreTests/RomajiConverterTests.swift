@@ -105,4 +105,40 @@ struct RomajiConverterTests {
             ) == ["修正"]
         )
     }
+
+    @Test
+    func createsUnvoicedInitialLookupForRendaku() {
+        #expect(
+            RomanizedReadingNormalizer.dictionaryLookupReadings(
+                from: "doori"
+            ) == ["doori", "toori"]
+        )
+        #expect(
+            RomanizedReadingNormalizer.dictionaryLookupReadings(
+                from: "gawa"
+            ) == ["gawa", "kawa"]
+        )
+        #expect(
+            RomanizedReadingNormalizer.dictionaryLookupReadings(
+                from: "tsuujou"
+            ) == ["tsuujou"]
+        )
+    }
+
+    @Test
+    func rendakuLookupFindsUnvoicedDictionaryCandidate() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "doori", candidates: ["どおり"]),
+            DictionaryEntry(reading: "toori", candidates: ["通り"])
+        ])
+        let candidates =
+            RomanizedReadingNormalizer.dictionaryLookupReadings(
+                from: "doori"
+            )
+            .flatMap {
+                engine.candidates(for: $0)
+            }
+
+        #expect(candidates == ["どおり", "通り"])
+    }
 }

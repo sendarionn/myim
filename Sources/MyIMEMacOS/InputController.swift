@@ -25,6 +25,8 @@ final class InputController: IMKInputController {
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let credentialStore: CosenseCredentialStore
     private var cosenseCredential: CosenseCredential?
+    private var candidateSelectionRanks: [String: Int]
+    private var nextCandidateSelectionRank: Int
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
     private let candidatePanel: IMKCandidates
@@ -41,6 +43,7 @@ final class InputController: IMKInputController {
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.loadBasicEntries()
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
+        let selectionRanks = Self.loadCandidateSelectionRanks()
 
         dictionarySource = source
         self.credentialStore = credentialStore
@@ -48,6 +51,8 @@ final class InputController: IMKInputController {
         userEntries = cachedUserEntries
         basicEntries = bundledEntries
         extensionEntries = cachedExtensionEntries
+        candidateSelectionRanks = selectionRanks
+        nextCandidateSelectionRank = (selectionRanks.values.max() ?? 0) + 1
         userConversionEngine = ConversionEngine(entries: cachedUserEntries)
         extensionConversionEngine = ConversionEngine(
             entries: cachedExtensionEntries
@@ -141,6 +146,7 @@ final class InputController: IMKInputController {
         }
 
         if let selectedValue = selectedCandidateValue {
+            recordSelectedCandidate()
             commit(selectedValue, to: sender)
         }
 
@@ -257,6 +263,7 @@ final class InputController: IMKInputController {
             return
         }
 
+        recordCandidateSelection(candidate)
         commit(
             candidateValueForCommit(candidate) + conversionSuffix,
             to: client() as Any
@@ -659,7 +666,7 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !symbolCandidates.isEmpty {
-            currentCandidates = symbolCandidates
+            currentCandidates = candidatesOrderedByRecency(symbolCandidates)
             showCandidateWindow(client: sender)
             return
         }
@@ -667,27 +674,52 @@ final class InputController: IMKInputController {
         let normalizedReading = RomanizedReadingNormalizer.dictionaryReading(
             from: conversionReading
         )
-        let userCandidates = userConversionEngine.candidates(
-            matching: normalizedReading,
-            limit: .max
+        let lookupReadings =
+            RomanizedReadingNormalizer.dictionaryLookupReadings(
+                from: normalizedReading
+            )
+        let userCandidates = mergedCandidates(
+            lookup: {
+                userConversionEngine.candidates(
+                    matching: $0,
+                    limit: .max
+                )
+            },
+            readings: lookupReadings
         )
-        let extensionCandidates = extensionConversionEngine.candidates(
-            matching: normalizedReading,
-            limit: .max
+        let extensionCandidates = mergedCandidates(
+            lookup: {
+                extensionConversionEngine.candidates(
+                    matching: $0,
+                    limit: .max
+                )
+            },
+            readings: lookupReadings
         )
-        let basicCandidates = basicConversionEngine.candidates(
-            matching: normalizedReading,
-            limit: .max
+        let basicCandidates = mergedCandidates(
+            lookup: {
+                basicConversionEngine.candidates(
+                    matching: $0,
+                    limit: .max
+                )
+            },
+            readings: lookupReadings
         )
-        let basicExactCandidates = basicConversionEngine.candidates(
-            for: normalizedReading
+        let basicExactCandidates = mergedCandidates(
+            lookup: {
+                basicConversionEngine.candidates(for: $0)
+            },
+            readings: lookupReadings
         )
         let basicPrefixCandidates = basicCandidates.filter {
             !basicExactCandidates.contains($0)
         }
         let englishCandidates = englishCompletions(for: conversionReading)
-        let inflectionCandidates = verbInflectionGenerator.candidates(
-            for: normalizedReading
+        let inflectionCandidates = mergedCandidates(
+            lookup: {
+                verbInflectionGenerator.candidates(for: $0)
+            },
+            readings: lookupReadings
         )
         var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(
@@ -701,22 +733,27 @@ final class InputController: IMKInputController {
         }
         var seen = Set<String>()
         let orderedCandidates: [String]
+        let rankedUserCandidates = candidatesOrderedByRecency(userCandidates)
         if kanaCandidates.first?.count == 1 {
-            orderedCandidates = userCandidates
-                + extensionCandidates
-                + kanaCandidates
-                + basicExactCandidates
-                + inflectionCandidates
-                + englishCandidates
-                + basicPrefixCandidates
+            orderedCandidates = kanaCandidates
+                + rankedUserCandidates
+                + candidatesOrderedByRecency(
+                    extensionCandidates
+                        + basicExactCandidates
+                        + inflectionCandidates
+                        + englishCandidates
+                        + basicPrefixCandidates
+                )
         } else {
-            orderedCandidates = userCandidates
-                + extensionCandidates
-                + basicExactCandidates
-                + inflectionCandidates
-                + kanaCandidates
-                + englishCandidates
-                + basicPrefixCandidates
+            orderedCandidates = rankedUserCandidates
+                + candidatesOrderedByRecency(
+                    extensionCandidates
+                        + basicExactCandidates
+                        + inflectionCandidates
+                        + kanaCandidates
+                        + englishCandidates
+                        + basicPrefixCandidates
+                )
         }
         currentCandidates = orderedCandidates
         .filter { seen.insert($0).inserted }
@@ -884,8 +921,51 @@ final class InputController: IMKInputController {
         }
 
         let value = selectedCandidateValue ?? inputBuffer
+        recordSelectedCandidate()
         commit(value, to: sender)
         return true
+    }
+
+    private func recordSelectedCandidate() {
+        guard
+            let selectedCandidateIndex,
+            currentCandidates.indices.contains(selectedCandidateIndex)
+        else {
+            return
+        }
+        recordCandidateSelection(currentCandidates[selectedCandidateIndex])
+    }
+
+    private func recordCandidateSelection(_ candidate: String) {
+        candidateSelectionRanks[candidate] = nextCandidateSelectionRank
+        nextCandidateSelectionRank += 1
+        do {
+            try Self.saveCandidateSelectionRanks(candidateSelectionRanks)
+        } catch {
+            NSLog(
+                "候補選択履歴の保存に失敗: %@",
+                error.localizedDescription
+            )
+        }
+    }
+
+    private func candidatesOrderedByRecency(
+        _ candidates: [String]
+    ) -> [String] {
+        CandidateRecencyOrderer.ordered(
+            candidates,
+            ranks: candidateSelectionRanks
+        )
+    }
+
+    private func mergedCandidates(
+        lookup: (String) -> [String],
+        readings: [String]
+    ) -> [String] {
+        var seen = Set<String>()
+        return readings.flatMap(lookup).filter {
+            seen.insert($0).inserted
+        }
     }
 
     private func deleteBackward(from sender: Any) -> Bool {
@@ -1261,6 +1341,45 @@ final class InputController: IMKInputController {
             directoryURL: applicationCache.directoryURL
                 .appendingPathComponent("user", isDirectory: true)
         )
+    }
+
+    private static func loadCandidateSelectionRanks() -> [String: Int] {
+        guard
+            let data = try? Data(contentsOf: candidateSelectionHistoryURL()),
+            let ranks = try? JSONDecoder().decode(
+                [String: Int].self,
+                from: data
+            )
+        else {
+            return [:]
+        }
+        return ranks
+    }
+
+    private static func saveCandidateSelectionRanks(
+        _ ranks: [String: Int]
+    ) throws {
+        let fileManager = FileManager.default
+        let fileURL = candidateSelectionHistoryURL()
+        try fileManager.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try JSONEncoder().encode(ranks).write(to: fileURL, options: .atomic)
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+    }
+
+    private static func candidateSelectionHistoryURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(
+                "Library/Application Support/myim/user",
+                isDirectory: true
+            )
+            .appendingPathComponent("candidate-selection-history.json")
     }
 
     private static func legacyExtensionCache(

@@ -35,6 +35,8 @@
 - Cosenseパネル内をクリック、スクロール、キーボードで操作
 - Cosenseパネル内のログインCookieを保存し、次回表示でも再利用
 - CosenseパネルとOS辞書パネルが重ならないよう配置と高さを調整
+- Cosenseに実在しない候補ページではCosenseパネルを非表示
+- HTTP `200`でも未作成状態のページは実在ページとして扱わない
 - 候補選択中のReturnで選択候補を確定
 - 候補未選択のReturnで入力したローマ字を確定
 - Deleteで入力中の文字を削除して候補を再検索
@@ -59,6 +61,16 @@
 ```text
 ~/Library/Application Support/myim/user/dictionary.txt
 ```
+
+ユーザー辞書候補は通常の入力で最優先し、同じ階層では直近に選択した順で表示します
+
+候補選択履歴の保存先
+
+```text
+~/Library/Application Support/myim/user/candidate-selection-history.json
+```
+
+平仮名一文字になる入力だけは、平仮名と片仮名をユーザー辞書候補より優先します
 
 Cosenseの`dictionary`ページへの書き込みは次の実装段階です
 

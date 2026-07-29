@@ -173,6 +173,16 @@ public enum JapaneseSymbolConverter {
 }
 
 public enum RomanizedReadingNormalizer {
+    public static func dictionaryLookupReadings(
+        from input: String
+    ) -> [String] {
+        let normalized = dictionaryReading(from: input)
+        guard let unvoiced = unvoicedInitialReading(normalized) else {
+            return [normalized]
+        }
+        return [normalized, unvoiced]
+    }
+
     public static func dictionaryReading(from input: String) -> String {
         var normalized = input.lowercased()
         let protectedSyllables = [
@@ -224,5 +234,29 @@ public enum RomanizedReadingNormalizer {
         }
 
         return result
+    }
+
+    private static func unvoicedInitialReading(
+        _ reading: String
+    ) -> String? {
+        let replacements = [
+            ("gya", "kya"), ("gyu", "kyu"), ("gyo", "kyo"),
+            ("ja", "sha"), ("ju", "shu"), ("jo", "sho"),
+            ("ga", "ka"), ("gi", "ki"), ("gu", "ku"),
+            ("ge", "ke"), ("go", "ko"),
+            ("za", "sa"), ("ji", "shi"), ("zu", "su"),
+            ("ze", "se"), ("zo", "so"),
+            ("da", "ta"), ("de", "te"), ("do", "to"),
+            ("ba", "ha"), ("bi", "hi"), ("bu", "fu"),
+            ("be", "he"), ("bo", "ho"),
+            ("pa", "ha"), ("pi", "hi"), ("pu", "fu"),
+            ("pe", "he"), ("po", "ho")
+        ]
+        guard let replacement = replacements.first(where: {
+            reading.hasPrefix($0.0)
+        }) else {
+            return nil
+        }
+        return replacement.1 + reading.dropFirst(replacement.0.count)
     }
 }
