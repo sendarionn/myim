@@ -179,7 +179,7 @@ public enum RomanizedReadingNormalizer {
         }
         let aliases = [
             ("tu", "tsu"), ("hu", "fu"), ("si", "shi"),
-            ("ti", "chi"), ("zi", "ji"),
+            ("ti", "chi"), ("zi", "ji"), ("du", "zu"),
             ("sya", "sha"), ("syu", "shu"), ("syo", "sho"),
             ("tya", "cha"), ("tyu", "chu"), ("tyo", "cho"),
             ("cya", "cha"), ("cyu", "chu"), ("cyo", "cho"),

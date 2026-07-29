@@ -14,14 +14,18 @@ public struct ConversionEngine: Sendable {
 
         for layer in layers {
             for entry in layer {
-                if mergedCandidates[entry.reading] == nil {
-                    readingOrder.append(entry.reading)
-                    mergedCandidates[entry.reading] = []
+                let normalizedReading =
+                    RomanizedReadingNormalizer.dictionaryReading(
+                        from: entry.reading
+                    )
+                if mergedCandidates[normalizedReading] == nil {
+                    readingOrder.append(normalizedReading)
+                    mergedCandidates[normalizedReading] = []
                 }
 
                 for candidate in entry.candidates
-                where mergedCandidates[entry.reading]?.contains(candidate) == false {
-                    mergedCandidates[entry.reading]?.append(candidate)
+                where mergedCandidates[normalizedReading]?.contains(candidate) == false {
+                    mergedCandidates[normalizedReading]?.append(candidate)
                 }
             }
         }
@@ -36,21 +40,25 @@ public struct ConversionEngine: Sendable {
     }
 
     public func candidates(for reading: String) -> [String] {
-        candidatesByReading[reading] ?? []
+        let normalizedReading =
+            RomanizedReadingNormalizer.dictionaryReading(from: reading)
+        return candidatesByReading[normalizedReading] ?? []
     }
 
     public func candidates(
         matching readingPrefix: String,
         limit: Int = .max
     ) -> [String] {
-        guard !readingPrefix.isEmpty, limit > 0 else {
+        let normalizedPrefix =
+            RomanizedReadingNormalizer.dictionaryReading(from: readingPrefix)
+        guard !normalizedPrefix.isEmpty, limit > 0 else {
             return []
         }
 
         var seen = Set<String>()
         var result: [String] = []
 
-        if let exactCandidates = candidatesByReading[readingPrefix] {
+        if let exactCandidates = candidatesByReading[normalizedPrefix] {
             for candidate in exactCandidates where seen.insert(candidate).inserted {
                 result.append(candidate)
                 if result.count == limit {
@@ -60,8 +68,8 @@ public struct ConversionEngine: Sendable {
         }
 
         for entry in entries
-        where entry.reading != readingPrefix
-            && entry.reading.hasPrefix(readingPrefix) {
+        where entry.reading != normalizedPrefix
+            && entry.reading.hasPrefix(normalizedPrefix) {
             for candidate in entry.candidates where seen.insert(candidate).inserted {
                 result.append(candidate)
                 if result.count == limit {

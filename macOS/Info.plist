@@ -25,7 +25,7 @@
         <string>MacOSX</string>
     </array>
     <key>CFBundleVersion</key>
-    <string>36</string>
+    <string>42</string>
     <key>ComponentInputModeDict</key>
     <dict>
         <key>TISUnifiedUIForInputMethodEnabling</key>
@@ -38,6 +38,12 @@
                 <string>io.github.sendarionn.inputmethod.myime.Japanese</string>
                 <key>TISIntendedLanguage</key>
                 <string>ja</string>
+                <key>tsInputModeAlternateMenuIconFileKey</key>
+                <string>myim-mode-42.tiff</string>
+                <key>tsInputModeMenuIconFileKey</key>
+                <string>myim-mode-42.tiff</string>
+                <key>tsInputModePaletteIconFileKey</key>
+                <string>myim-mode-42.tiff</string>
                 <key>tsInputModeDefaultStateKey</key>
                 <true/>
                 <key>tsInputModeIsVisibleKey</key>
@@ -73,6 +79,10 @@
         <string>Latn</string>
     </array>
     <key>tsInputMethodIconFileKey</key>
-    <string>icon.pdf</string>
+    <string>myim-mode-42.tiff</string>
+    <key>tsInputMethodAlternateIconFileKey</key>
+    <string>myim-mode-42.tiff</string>
+    <key>tsInputMethodPaletteIconFileKey</key>
+    <string>myim-mode-42.tiff</string>
 </dict>
 </plist>

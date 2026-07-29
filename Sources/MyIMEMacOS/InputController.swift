@@ -12,13 +12,17 @@ final class InputController: IMKInputController {
     private static let maximumCandidateCount = 7
 
     private var inputBuffer = ""
+    private var activatedAt: TimeInterval?
     private var currentCandidates: [String] = []
     private var selectedCandidateIndex: Int?
     private var dictionarySource: CosenseDictionarySource
+    private var userEntries: [DictionaryEntry]
     private var basicEntries: [DictionaryEntry]
     private var extensionEntries: [DictionaryEntry]
+    private var userConversionEngine: ConversionEngine
     private var extensionConversionEngine: ConversionEngine
     private var basicConversionEngine: ConversionEngine
+    private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
     private let candidatePanel: IMKCandidates
@@ -29,16 +33,22 @@ final class InputController: IMKInputController {
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let source = Self.loadDictionarySource()
+        let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.loadBasicEntries()
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
 
         dictionarySource = source
+        userEntries = cachedUserEntries
         basicEntries = bundledEntries
         extensionEntries = cachedExtensionEntries
+        userConversionEngine = ConversionEngine(entries: cachedUserEntries)
         extensionConversionEngine = ConversionEngine(
             entries: cachedExtensionEntries
         )
         basicConversionEngine = ConversionEngine(entries: bundledEntries)
+        verbInflectionGenerator = VerbInflectionCandidateGenerator(
+            entries: bundledEntries
+        )
         candidatePanel = IMKCandidates(
             server: server,
             panelType: kIMKSingleColumnScrollingCandidatePanel
@@ -72,8 +82,19 @@ final class InputController: IMKInputController {
             return true
         }
 
+        if event.keyCode == 9,
+           event.modifierFlags.contains(.command),
+           !inputBuffer.isEmpty {
+            registerClipboardInUserDictionary(client: sender)
+            return true
+        }
+
         switch event.keyCode {
         case 49:
+            if inputBuffer.isEmpty, shouldSuppressActivationSpace(event) {
+                activatedAt = nil
+                return true
+            }
             return handleSpace(client: sender)
         case 123:
             return moveCandidate(.left, client: sender)
@@ -158,6 +179,14 @@ final class InputController: IMKInputController {
         updateBasicItem.target = self
         menu.addItem(updateBasicItem)
 
+        let userDictionaryItem = NSMenuItem(
+            title: "ユーザー辞書: \(userEntries.count)読み",
+            action: nil,
+            keyEquivalent: ""
+        )
+        userDictionaryItem.isEnabled = false
+        menu.addItem(userDictionaryItem)
+
         let projectItem = NSMenuItem(
             title: "拡張辞書: \(dictionarySource.projectURLDescription)",
             action: nil,
@@ -211,6 +240,11 @@ final class InputController: IMKInputController {
         }
 
         commit(inputBuffer, to: sender)
+    }
+
+    override func activateServer(_ sender: Any!) {
+        activatedAt = ProcessInfo.processInfo.systemUptime
+        super.activateServer(sender)
     }
 
     override func deactivateServer(_ sender: Any!) {
@@ -395,6 +429,19 @@ final class InputController: IMKInputController {
         return selectCandidate(index: nextIndex, client: sender)
     }
 
+    private func shouldSuppressActivationSpace(_ event: NSEvent) -> Bool {
+        let switchModifiers: NSEvent.ModifierFlags = [
+            .command, .control, .option
+        ]
+        if !event.modifierFlags.intersection(switchModifiers).isEmpty {
+            return true
+        }
+        guard let activatedAt else {
+            return false
+        }
+        return ProcessInfo.processInfo.systemUptime - activatedAt < 0.2
+    }
+
     private func moveCandidate(
         _ direction: CandidateNavigationDirection,
         client sender: Any
@@ -471,6 +518,10 @@ final class InputController: IMKInputController {
         let normalizedReading = RomanizedReadingNormalizer.dictionaryReading(
             from: conversionReading
         )
+        let userCandidates = userConversionEngine.candidates(
+            matching: normalizedReading,
+            limit: .max
+        )
         let extensionCandidates = extensionConversionEngine.candidates(
             matching: normalizedReading,
             limit: .max
@@ -486,6 +537,9 @@ final class InputController: IMKInputController {
             !basicExactCandidates.contains($0)
         }
         let englishCandidates = englishCompletions(for: conversionReading)
+        let inflectionCandidates = verbInflectionGenerator.candidates(
+            for: normalizedReading
+        )
         var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(
             from: conversionReading
@@ -499,14 +553,18 @@ final class InputController: IMKInputController {
         var seen = Set<String>()
         let orderedCandidates: [String]
         if kanaCandidates.first?.count == 1 {
-            orderedCandidates = extensionCandidates
+            orderedCandidates = userCandidates
+                + extensionCandidates
                 + kanaCandidates
                 + basicExactCandidates
+                + inflectionCandidates
                 + englishCandidates
                 + basicPrefixCandidates
         } else {
-            orderedCandidates = extensionCandidates
+            orderedCandidates = userCandidates
+                + extensionCandidates
                 + basicExactCandidates
+                + inflectionCandidates
                 + kanaCandidates
                 + englishCandidates
                 + basicPrefixCandidates
@@ -543,6 +601,60 @@ final class InputController: IMKInputController {
             language: "en",
             inSpellDocumentWithTag: 0
         ) ?? []
+    }
+
+    private func registerClipboardInUserDictionary(client sender: Any) {
+        let reading = conversionReading.lowercased()
+        let candidate = NSPasteboard.general.string(
+            forType: .string
+        )?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !reading.isEmpty, !candidate.isEmpty else {
+            NSSound.beep()
+            return
+        }
+
+        let normalizedReading =
+            RomanizedReadingNormalizer.dictionaryReading(from: reading)
+        if let index = userEntries.firstIndex(where: {
+            RomanizedReadingNormalizer.dictionaryReading(from: $0.reading)
+                == normalizedReading
+        }) {
+            var candidates = userEntries[index].candidates
+            if !candidates.contains(candidate) {
+                candidates.append(candidate)
+            }
+            userEntries[index] = DictionaryEntry(
+                reading: userEntries[index].reading,
+                candidates: candidates
+            )
+        } else {
+            userEntries.append(
+                DictionaryEntry(
+                    reading: reading,
+                    candidates: [candidate]
+                )
+            )
+        }
+
+        do {
+            let cache = try Self.userDictionaryCache()
+            try cache.save(
+                dictionaryText: DictionarySerializer.text(from: userEntries),
+                metadata: DictionaryCacheMetadata(
+                    syncedAt: Date(),
+                    entryCount: userEntries.count
+                )
+            )
+            rebuildConversionEngine()
+            commit(candidate, to: sender)
+        } catch {
+            NSLog(
+                "ユーザー辞書の保存に失敗: %@",
+                error.localizedDescription
+            )
+            NSSound.beep()
+        }
     }
 
     private func showCandidateWindow(client sender: Any) {
@@ -666,10 +778,14 @@ final class InputController: IMKInputController {
     }
 
     private func rebuildConversionEngine() {
+        userConversionEngine = ConversionEngine(entries: userEntries)
         extensionConversionEngine = ConversionEngine(
             entries: extensionEntries
         )
         basicConversionEngine = ConversionEngine(entries: basicEntries)
+        verbInflectionGenerator = VerbInflectionCandidateGenerator(
+            entries: basicEntries
+        )
     }
 
     private var conversionReading: String {
@@ -751,6 +867,13 @@ final class InputController: IMKInputController {
         }
 
         return entries
+    }
+
+    private static func loadUserEntries() -> [DictionaryEntry] {
+        guard let cache = try? userDictionaryCache() else {
+            return []
+        }
+        return loadEntries(from: cache) ?? []
     }
 
     private static func bundledBasicDictionaryRevision() -> String? {
@@ -877,6 +1000,14 @@ final class InputController: IMKInputController {
         return DictionaryCache(
             directoryURL: applicationCache.directoryURL
                 .appendingPathComponent("basic", isDirectory: true)
+        )
+    }
+
+    private static func userDictionaryCache() throws -> DictionaryCache {
+        let applicationCache = try DictionaryCache.applicationSupport()
+        return DictionaryCache(
+            directoryURL: applicationCache.directoryURL
+                .appendingPathComponent("user", isDirectory: true)
         )
     }
 

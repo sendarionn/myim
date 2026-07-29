@@ -81,4 +81,14 @@ struct ConversionEngineTests {
                 == ["見る", "診る", "観る"]
         )
     }
+
+    @Test
+    func normalizesInputAndDictionaryReadings() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "hizuke", candidates: ["日付"])
+        ])
+
+        #expect(engine.candidates(for: "hiduke") == ["日付"])
+        #expect(engine.candidates(matching: "hidu") == ["日付"])
+    }
 }

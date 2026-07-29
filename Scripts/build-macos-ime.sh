@@ -11,6 +11,7 @@ iconset_directory="$repository_root/.build/myim.iconset"
 ime_executable="$executable_directory/myim"
 
 cd "$repository_root"
+"$repository_root/Scripts/verify-history-date.sh"
 swift build -c release --product myim-macos
 
 mkdir -p "$executable_directory" "$resources_directory"
@@ -44,6 +45,9 @@ cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary-source.json" \
     "$resources_directory/basic-dictionary-source.json"
 xcrun swift "Scripts/generate-ime-icon.swift" "$resources_directory/icon.pdf"
+sips -s format tiff -z 32 32 -s dpiWidth 144 -s dpiHeight 144 \
+    "$resources_directory/icon.pdf" \
+    --out "$resources_directory/myim-mode-42.tiff" >/dev/null
 sips -s format png -z 16 16 "$resources_directory/icon.pdf" \
     --out "$iconset_directory/icon_16x16.png" >/dev/null
 sips -s format png -z 32 32 "$resources_directory/icon.pdf" \

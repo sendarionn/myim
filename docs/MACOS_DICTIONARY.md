@@ -48,7 +48,9 @@ Dictionary Servicesの公開APIが提供する操作は次の2つです
 
 ## 英語予測
 
-英語の前方一致候補には`NSSpellChecker`の単語補完APIを使用する予定です
+英語の前方一致候補には`NSSpellChecker`の単語補完APIを使用します
+
+日本語入力から英語候補を生成する機能は未実装です
 
 このAPIは入力途中の文字列から補完候補を返しますが、Dictionary Servicesの辞書本文を検索するものではありません
 

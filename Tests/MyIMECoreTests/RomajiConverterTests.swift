@@ -56,6 +56,10 @@ struct RomajiConverterTests {
             RomanizedReadingNormalizer.dictionaryReading(from: "shuusei")
                 == "shuusei"
         )
+        #expect(
+            RomanizedReadingNormalizer.dictionaryReading(from: "hiduke")
+                == "hizuke"
+        )
     }
 
     @Test
@@ -63,7 +67,8 @@ struct RomajiConverterTests {
         let engine = ConversionEngine(entries: [
             DictionaryEntry(reading: "tsuujou", candidates: ["通常"]),
             DictionaryEntry(reading: "fukumu", candidates: ["含む"]),
-            DictionaryEntry(reading: "shuusei", candidates: ["修正"])
+            DictionaryEntry(reading: "shuusei", candidates: ["修正"]),
+            DictionaryEntry(reading: "hizuke", candidates: ["日付"])
         ])
 
         #expect(
@@ -87,6 +92,7 @@ struct RomajiConverterTests {
                 )
             ) == ["修正"]
         )
+        #expect(engine.candidates(for: "hiduke") == ["日付"])
         #expect(
             engine.candidates(
                 for: RomanizedReadingNormalizer.dictionaryReading(
