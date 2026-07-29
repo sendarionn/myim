@@ -65,7 +65,7 @@ final class InputController: IMKInputController {
 
         candidatePanel.setDismissesAutomatically(true)
         candidatePanel.setAttributes([
-            IMKCandidatesSendServerKeyEventFirst: true
+            IMKCandidatesSendServerKeyEventFirst: false
         ])
 
         basicDictionaryStatus = bundledEntries.isEmpty
@@ -89,11 +89,9 @@ final class InputController: IMKInputController {
             return true
         }
 
-        if event.keyCode == 9,
-           event.modifierFlags.contains(.command),
+        if isUserDictionaryRegistrationShortcut(event),
            !inputBuffer.isEmpty {
-            registerClipboardInUserDictionary(client: sender)
-            return true
+            return !registerClipboardInUserDictionary(client: sender)
         }
 
         switch event.keyCode {
@@ -761,7 +759,7 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func registerClipboardInUserDictionary(client sender: Any) {
+    private func registerClipboardInUserDictionary(client sender: Any) -> Bool {
         let reading = conversionReading.lowercased()
         let candidate = NSPasteboard.general.string(
             forType: .string
@@ -769,7 +767,7 @@ final class InputController: IMKInputController {
         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !reading.isEmpty, !candidate.isEmpty else {
             NSSound.beep()
-            return
+            return false
         }
 
         let normalizedReading =
@@ -805,14 +803,46 @@ final class InputController: IMKInputController {
                 )
             )
             rebuildConversionEngine()
-            commit(candidate, to: sender)
+            clearCompositionForSystemPaste(in: sender)
+            return true
         } catch {
             NSLog(
                 "ユーザー辞書の保存に失敗: %@",
                 error.localizedDescription
             )
             NSSound.beep()
+            return false
         }
+    }
+
+    private func clearCompositionForSystemPaste(in sender: Any) {
+        guard let textClient = sender as? IMKTextInput else {
+            return
+        }
+        textClient.setMarkedText(
+            "",
+            selectionRange: NSRange(location: 0, length: 0),
+            replacementRange: NSRange(location: NSNotFound, length: NSNotFound)
+        )
+        inputBuffer = ""
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        candidatePanel.hide()
+        candidateWindow.hide()
+        previewWindow.hide()
+    }
+
+    private func isUserDictionaryRegistrationShortcut(
+        _ event: NSEvent
+    ) -> Bool {
+        let deviceIndependentFlags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        guard deviceIndependentFlags == [.command] else {
+            return false
+        }
+        return event.keyCode == 9
+            || event.charactersIgnoringModifiers?.lowercased() == "v"
     }
 
     private func showCandidateWindow(client sender: Any) {
