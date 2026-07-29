@@ -22,6 +22,10 @@ struct RomajiConverterTests {
         #expect(
             JapaneseSymbolConverter.candidates(for: "[") == ["「", "『", "【", "［"]
         )
+        #expect(JapaneseSymbolConverter.candidates(for: "zl") == ["→"])
+        #expect(JapaneseSymbolConverter.candidates(for: "zh") == ["←"])
+        #expect(JapaneseSymbolConverter.candidates(for: "zk") == ["↑"])
+        #expect(JapaneseSymbolConverter.candidates(for: "zj") == ["↓"])
         #expect(JapaneseSymbolConverter.candidates(for: "a").isEmpty)
     }
 

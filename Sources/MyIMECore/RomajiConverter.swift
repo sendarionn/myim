@@ -136,6 +136,16 @@ public enum JapaneseSymbolConverter {
     }
 
     private static let mapping: [String: [String]] = [
+        "zh": ["←"],
+        "zj": ["↓"],
+        "zk": ["↑"],
+        "zl": ["→"],
+        "z-": ["〜"],
+        "z[": ["『"],
+        "z]": ["』"],
+        "z,": ["‥"],
+        "z.": ["…"],
+        "z/": ["・"],
         ",": ["、", "，"],
         ".": ["。", "．", "…"],
         "/": ["・", "／"],

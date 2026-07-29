@@ -592,15 +592,22 @@ final class InputController: IMKInputController {
             return []
         }
 
-        return NSSpellChecker.shared.completions(
+        let lookupInput = input.lowercased()
+        let candidates = NSSpellChecker.shared.completions(
             forPartialWordRange: NSRange(
                 location: 0,
-                length: input.utf16.count
+                length: lookupInput.utf16.count
             ),
-            in: input,
+            in: lookupInput,
             language: "en",
             inSpellDocumentWithTag: 0
         ) ?? []
+        return candidates.map {
+            EnglishCandidateCaseRestorer.restore(
+                typedInput: input,
+                in: $0
+            )
+        }
     }
 
     private func registerClipboardInUserDictionary(client sender: Any) {
