@@ -761,11 +761,12 @@ final class InputController: IMKInputController {
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
             candidateWindow.hide()
-            previewWindow.hide()
+            showInputPreview(client: sender)
             return
         }
 
         showCandidateWindow(client: sender)
+        showInputPreview(client: sender)
     }
 
     private func englishCompletions(for input: String) -> [String] {
@@ -989,8 +990,8 @@ final class InputController: IMKInputController {
 
         selectedCandidateIndex = nil
         candidateWindow.clearSelection()
-        previewWindow.hide()
         updateMarkedText(in: sender)
+        showInputPreview(client: sender)
         return true
     }
 
@@ -1027,7 +1028,37 @@ final class InputController: IMKInputController {
         )
     }
 
+    private func showInputPreview(client sender: Any) {
+        guard let pageTitle = PreviewPageTitleResolver.pageTitle(
+            input: conversionReading,
+            selectedCandidate: nil
+        ) else {
+            previewWindow.hide()
+            return
+        }
+        let anchorFrame = currentCandidates.isEmpty
+            ? inputLocation(for: sender)
+            : candidateWindow.frame
+        showPreview(
+            for: pageTitle,
+            beside: anchorFrame,
+            includeDefinitions: false
+        )
+    }
+
     private func showPreview(for candidate: String) {
+        showPreview(
+            for: candidate,
+            beside: candidateWindow.frame,
+            includeDefinitions: true
+        )
+    }
+
+    private func showPreview(
+        for candidate: String,
+        beside anchorFrame: NSRect,
+        includeDefinitions: Bool
+    ) {
         guard let url = CosensePageURL.make(
             project: dictionarySource.project,
             pageTitle: candidate
@@ -1041,8 +1072,10 @@ final class InputController: IMKInputController {
             pageTitle: candidate,
             url: url,
             credential: cosenseCredential,
-            definitions: definitionProvider.definitions(for: candidate),
-            beside: candidateWindow.frame
+            definitions: includeDefinitions
+                ? definitionProvider.definitions(for: candidate)
+                : [],
+            beside: anchorFrame
         )
     }
 
