@@ -23,21 +23,28 @@ final class InputController: IMKInputController {
     private var extensionConversionEngine: ConversionEngine
     private var basicConversionEngine: ConversionEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
+    private let credentialStore: CosenseCredentialStore
+    private var cosenseCredential: CosenseCredential?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
     private let candidatePanel: IMKCandidates
     private let candidateWindow = CandidateWindowController()
     private let previewWindow = CosensePreviewWindowController()
+    private let cosenseLoginWindow = CosenseLoginWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private let romajiConverter = RomajiConverter()
+    private weak var authenticationTokenInput: NSSecureTextField?
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let source = Self.loadDictionarySource()
+        let credentialStore = CosenseCredentialStore()
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.loadBasicEntries()
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
 
         dictionarySource = source
+        self.credentialStore = credentialStore
+        cosenseCredential = credentialStore.load(for: source.project)
         userEntries = cachedUserEntries
         basicEntries = bundledEntries
         extensionEntries = cachedExtensionEntries
@@ -171,6 +178,22 @@ final class InputController: IMKInputController {
         configureItem.target = self
         menu.addItem(configureItem)
 
+        let loginItem = NSMenuItem(
+            title: "Cosenseへログイン…",
+            action: #selector(openCosenseLogin(_:)),
+            keyEquivalent: ""
+        )
+        loginItem.target = self
+        menu.addItem(loginItem)
+
+        let authenticationItem = NSMenuItem(
+            title: "Cosense認証を設定…",
+            action: #selector(configureCosenseAuthentication(_:)),
+            keyEquivalent: ""
+        )
+        authenticationItem.target = self
+        menu.addItem(authenticationItem)
+
         let updateBasicItem = NSMenuItem(
             title: "TKGJE基本辞書を更新",
             action: #selector(updateBasicDictionaryIfNeeded(_:)),
@@ -194,6 +217,14 @@ final class InputController: IMKInputController {
         )
         projectItem.isEnabled = false
         menu.addItem(projectItem)
+
+        let authenticationStatusItem = NSMenuItem(
+            title: "Cosense認証: \(cosenseAuthenticationStatus)",
+            action: nil,
+            keyEquivalent: ""
+        )
+        authenticationStatusItem.isEnabled = false
+        menu.addItem(authenticationStatusItem)
 
         let statusItem = NSMenuItem(
             title: "Cosense更新: \(cosenseSyncStatus)",
@@ -248,6 +279,9 @@ final class InputController: IMKInputController {
     }
 
     override func deactivateServer(_ sender: Any!) {
+        if previewWindow.isCosenseInteractionActive {
+            return
+        }
         if !inputBuffer.isEmpty {
             commit(inputBuffer, to: sender as Any)
         }
@@ -280,8 +314,10 @@ final class InputController: IMKInputController {
         alert.addButton(withTitle: "キャンセル")
         alert.window.level = .floating
 
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else {
+        guard runModalAlert(
+            alert,
+            firstResponder: input
+        ) == .alertFirstButtonReturn else {
             return
         }
 
@@ -294,6 +330,9 @@ final class InputController: IMKInputController {
         }
 
         dictionarySource = configuration.dictionarySource
+        cosenseCredential = credentialStore.load(
+            for: configuration.project
+        )
         UserDefaults.standard.set(
             configuration.project,
             forKey: Self.projectDefaultsKey
@@ -309,6 +348,111 @@ final class InputController: IMKInputController {
         }
 
         syncCosenseDictionary(nil)
+        cosenseLoginWindow.show(project: dictionarySource.project)
+    }
+
+    @objc
+    private func openCosenseLogin(_ sender: Any?) {
+        cosenseLoginWindow.show(project: dictionarySource.project)
+    }
+
+    @objc
+    private func configureCosenseAuthentication(_ sender: Any?) {
+        let kindPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        kindPopup.addItems(
+            withTitles: [
+                "Personal Access Token",
+                "Service Account"
+            ]
+        )
+        if cosenseCredential?.kind == .serviceAccount {
+            kindPopup.selectItem(at: 1)
+        }
+
+        let tokenInput = NSSecureTextField(frame: .zero)
+        tokenInput.placeholderString = "トークンまたはアクセスキー"
+        tokenInput.frame.size.width = 420
+        authenticationTokenInput = tokenInput
+
+        let pasteButton = NSButton(
+            title: "クリップボードから貼り付け",
+            target: self,
+            action: #selector(pasteCosenseCredential(_:))
+        )
+        let stack = NSStackView(views: [kindPopup, tokenInput, pasteButton])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.frame = NSRect(x: 0, y: 0, width: 420, height: 92)
+
+        let alert = NSAlert()
+        alert.messageText = "Cosense認証"
+        alert.informativeText =
+            "Service Accountは現在のプロジェクトだけに使用"
+        alert.accessoryView = stack
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "削除")
+        alert.addButton(withTitle: "キャンセル")
+        alert.window.level = .floating
+
+        let response = runModalAlert(
+            alert,
+            firstResponder: tokenInput
+        )
+        let kind: CosenseCredential.Kind =
+            kindPopup.indexOfSelectedItem == 1
+                ? .serviceAccount
+                : .personalAccessToken
+
+        do {
+            if response == .alertFirstButtonReturn {
+                guard let credential = CosenseCredential(
+                    kind: kind,
+                    value: tokenInput.stringValue
+                ) else {
+                    NSSound.beep()
+                    return
+                }
+                try credentialStore.save(
+                    credential,
+                    project: dictionarySource.project
+                )
+            } else if response == .alertSecondButtonReturn {
+                try credentialStore.delete(
+                    kind: kind,
+                    project: dictionarySource.project
+                )
+            } else {
+                return
+            }
+
+            cosenseCredential = credentialStore.load(
+                for: dictionarySource.project
+            )
+            cosenseSyncStatus = "未実行"
+            syncCosenseDictionary(nil)
+        } catch {
+            NSLog(
+                "Cosense認証情報の保存に失敗: %@",
+                error.localizedDescription
+            )
+            NSSound.beep()
+        }
+    }
+
+    @objc
+    private func pasteCosenseCredential(_ sender: Any?) {
+        guard
+            let value = NSPasteboard.general.string(forType: .string),
+            !value.isEmpty
+        else {
+            NSSound.beep()
+            return
+        }
+        authenticationTokenInput?.stringValue = value
+        authenticationTokenInput?.window?.makeFirstResponder(
+            authenticationTokenInput
+        )
     }
 
     @objc
@@ -323,7 +467,8 @@ final class InputController: IMKInputController {
         Task { @MainActor [weak self] in
             do {
                 let dictionaryText = try await CosenseDictionaryClient().fetch(
-                    from: source
+                    from: source,
+                    credential: self?.cosenseCredential
                 )
                 let entries = try DictionaryParser().parse(dictionaryText)
                 guard !entries.isEmpty else {
@@ -355,7 +500,13 @@ final class InputController: IMKInputController {
                     refreshCandidates(client: inputClient)
                 }
             } catch {
-                self?.cosenseSyncStatus = "失敗"
+                if case CosenseDictionaryError.HTTPStatus(401) = error {
+                    self?.cosenseSyncStatus = "認証が必要"
+                } else if case CosenseDictionaryError.HTTPStatus(403) = error {
+                    self?.cosenseSyncStatus = "権限なし"
+                } else {
+                    self?.cosenseSyncStatus = "失敗"
+                }
                 NSLog("Cosense辞書の更新に失敗: %@", error.localizedDescription)
             }
         }
@@ -779,6 +930,7 @@ final class InputController: IMKInputController {
             project: dictionarySource.project,
             pageTitle: candidate,
             url: url,
+            credential: cosenseCredential,
             definitions: definitionProvider.definitions(for: candidate),
             beside: candidateWindow.frame
         )
@@ -823,6 +975,17 @@ final class InputController: IMKInputController {
             }
     }
 
+    private var cosenseAuthenticationStatus: String {
+        switch cosenseCredential?.kind {
+        case .personalAccessToken:
+            return "Personal Access Token"
+        case .serviceAccount:
+            return "Service Account"
+        case nil:
+            return "なし"
+        }
+    }
+
     private func candidateValueForCommit(_ candidate: String) -> String {
         CandidateCommitNormalizer.value(from: candidate)
     }
@@ -835,6 +998,58 @@ final class InputController: IMKInputController {
         alert.addButton(withTitle: "OK")
         alert.window.level = .floating
         alert.runModal()
+    }
+
+    private func runModalAlert(
+        _ alert: NSAlert,
+        firstResponder: NSView
+    ) -> NSApplication.ModalResponse {
+        let previousPolicy = NSApp.activationPolicy()
+        let changedPolicy = previousPolicy == .prohibited
+            && NSApp.setActivationPolicy(.accessory)
+
+        alert.window.initialFirstResponder = firstResponder
+        NSRunningApplication.current.activate(
+            options: [.activateIgnoringOtherApps, .activateAllWindows]
+        )
+        NSApp.activate(ignoringOtherApps: true)
+        alert.window.makeKeyAndOrderFront(nil)
+        alert.window.makeFirstResponder(firstResponder)
+        let pasteMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: .keyDown
+        ) { event in
+            guard
+                event.keyCode == 9,
+                event.modifierFlags.contains(.command),
+                let textField = firstResponder as? NSTextField,
+                let value = NSPasteboard.general.string(forType: .string)
+            else {
+                return event
+            }
+
+            if let editor = textField.currentEditor() as? NSTextView {
+                editor.insertText(
+                    value,
+                    replacementRange: editor.selectedRange()
+                )
+            } else {
+                textField.stringValue = value
+            }
+            return nil
+        }
+        DispatchQueue.main.async {
+            alert.window.makeKey()
+            alert.window.makeFirstResponder(firstResponder)
+        }
+
+        let response = alert.runModal()
+        if let pasteMonitor {
+            NSEvent.removeMonitor(pasteMonitor)
+        }
+        if changedPolicy {
+            NSApp.setActivationPolicy(previousPolicy)
+        }
+        return response
     }
 
     private static func loadDictionarySource() -> CosenseDictionarySource {

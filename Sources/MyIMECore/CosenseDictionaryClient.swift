@@ -3,12 +3,17 @@ import Foundation
 public struct CosenseDictionaryClient: Sendable {
     public init() {}
 
-    public func fetch(from source: CosenseDictionarySource) async throws -> String {
+    public func fetch(
+        from source: CosenseDictionarySource,
+        credential: CosenseCredential? = nil
+    ) async throws -> String {
         guard let url = source.APIURL else {
             throw CosenseDictionaryError.invalidAPIURL
         }
 
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let request = credential?.authenticatedRequest(url: url)
+            ?? URLRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let HTTPResponse = response as? HTTPURLResponse else {
             throw CosenseDictionaryError.invalidResponse

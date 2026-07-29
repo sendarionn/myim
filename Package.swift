@@ -9,7 +9,11 @@ let package = Package(
     ],
     products: [
         .executable(name: "myim", targets: ["MyIME"]),
-        .executable(name: "myim-macos", targets: ["MyIMEMacOS"])
+        .executable(name: "myim-macos", targets: ["MyIMEMacOS"]),
+        .executable(
+            name: "myim-cosense-login",
+            targets: ["MyIMCosenseLogin"]
+        )
     ],
     targets: [
         .target(name: "MyIMECore"),
@@ -32,6 +36,16 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("CoreServices"),
                 .linkedFramework("InputMethodKit"),
+                .linkedFramework("WebKit")
+            ]
+        ),
+        .executableTarget(
+            name: "MyIMCosenseLogin",
+            dependencies: ["MyIMECore"],
+            swiftSettings: [
+                .swiftLanguageMode(.v5)
+            ],
+            linkerSettings: [
                 .linkedFramework("WebKit")
             ]
         ),

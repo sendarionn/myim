@@ -32,6 +32,9 @@
 - OS辞書パネルは候補パネルの上、収まらない場合は下へ表示
 - Cosenseパネルは候補パネルの右、収まらない場合は左へ表示
 - OS辞書とCosenseを独立したパネルとして表示
+- Cosenseパネル内をクリック、スクロール、キーボードで操作
+- Cosenseパネル内のログインCookieを保存し、次回表示でも再利用
+- CosenseパネルとOS辞書パネルが重ならないよう配置と高さを調整
 - 候補選択中のReturnで選択候補を確定
 - 候補未選択のReturnで入力したローマ字を確定
 - Deleteで入力中の文字を削除して候補を再検索
@@ -82,6 +85,39 @@ https://scrapbox.io/project-name
 設定直後に自動同期し、プロジェクトURLは次回起動時も保持します
 
 プロジェクトごとの拡張辞書はローカルへ個別にキャッシュします
+
+Cosenseプロジェクトを設定すると、ログイン専用の補助アプリが開きます
+
+ログイン後に「ログイン完了」を押すと、CosenseのCookieだけをmyimへ保存して補助アプリを終了します
+
+ログインとGoogle認証はmyimとは別プロセスで動作するため、入力処理へ負荷を与えません
+
+保存したCookieはページの存在確認とCosenseパネルの両方で使用します
+
+Web Cookieがある場合は、ページ表示の存在確認でPATよりCookieを優先します
+
+Web Cookieを使う存在確認ではURLSessionの自動Cookie処理を無効にし、保存Cookieだけを送信します
+
+再ログインする場合は入力ソースメニューの「Cosenseへログイン…」を開きます
+
+プライベートプロジェクトを使用する場合は、入力ソースメニューの「Cosense認証を設定…」を開きます
+
+- Personal Access Tokenは`https://scrapbox.io`上の参加プロジェクトで共通使用
+- Service Accountは現在選択しているプロジェクトだけで使用
+- Service Accountが設定されている場合はPersonal Access Tokenより優先
+- 認証情報はユーザーだけが読み書きできる権限`0600`のファイルへ保存
+
+設定または削除後に`dictionary`ページを自動で再同期します
+
+認証情報は`Command＋V`または「クリップボードから貼り付け」で入力します
+
+保存先
+
+```text
+~/Library/Application Support/myim/credentials/cosense.json
+```
+
+HTTP 401は「認証が必要」、HTTP 403は「権限なし」として入力ソースメニューへ表示します
 
 `dictionary`ページでは読みをインデントなしで記述し、その候補を1文字以上インデントします
 
