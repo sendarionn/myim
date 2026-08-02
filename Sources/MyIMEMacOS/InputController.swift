@@ -311,7 +311,7 @@ final class InputController: IMKInputController {
             to: menu
         )
         addExperimentalToggle(
-            title: "Apple翻訳で英語候補を取得",
+            title: "日本語入力から英語の変換候補を取得",
             action: #selector(toggleAppleTranslation(_:)),
             enabled: isAppleTranslationEnabled,
             to: menu

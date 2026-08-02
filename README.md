@@ -190,7 +190,7 @@ macOS標準辞書の利用範囲と変換候補への利用方針は`docs/MACOS_
 - 「Cosense拡張辞書を使用」で同期済み拡張辞書候補をオン・オフ
 - 「英語補完を使用」でmacOSの英語補完候補をオン・オフ
 - 「Wikipedia候補を取得」でWikipediaの記事名候補をオン・オフ
-- 「Apple翻訳で英語候補を取得」で日本語から英語への翻訳候補をオン・オフ
+- 「日本語入力から英語の変換候補を取得」でApple Translation frameworkによる英訳候補をオン・オフ
 - 「Azure英訳候補を取得」でAzure Translator Dictionary Lookupの複数英訳をオン・オフ
 - 「Web検索を使用」で`Command＋Return`によるブラウザ検索をオン・オフ
 - 「次入力候補を使用」で学習と表示をオン・オフ
