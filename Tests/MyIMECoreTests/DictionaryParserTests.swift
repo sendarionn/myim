@@ -42,6 +42,25 @@ struct DictionaryParserTests {
     }
 
     @Test
+    func normalizesPlaceholderCandidatesWhileLoadingExistingDictionary() throws {
+        let text = """
+        nado
+         〜など
+         など
+
+        wave
+         〜
+        """
+
+        let entries = try DictionaryParser().parse(text)
+
+        #expect(entries == [
+            DictionaryEntry(reading: "nado", candidates: ["など"]),
+            DictionaryEntry(reading: "wave", candidates: ["〜"])
+        ])
+    }
+
+    @Test
     func rejectsCandidateWithoutReading() {
         #expect(throws: DictionaryParserError.candidateWithoutReading(line: 1)) {
             try DictionaryParser().parse(" 見る")

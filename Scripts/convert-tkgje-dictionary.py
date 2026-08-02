@@ -20,6 +20,12 @@ def split_alternatives(headword: str) -> list[str]:
     return parts if len(parts) >= 2 else [headword]
 
 
+def normalize_candidate(value: str) -> str:
+    if len(value) <= 1:
+        return value
+    return value.replace("〜", "").replace("～", "")
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="TKGJEのentries_index.jsonをmyim辞書形式へ変換"
@@ -74,7 +80,9 @@ def convert(source: Path, output: Path, tiers: set[str]) -> tuple[int, int]:
         candidates = candidates_by_reading.setdefault(reading, [])
         if not headword or "\n" in headword:
             continue
-        for candidate in split_alternatives(headword):
+        for candidate in map(normalize_candidate, split_alternatives(headword)):
+            if not candidate:
+                continue
             if candidate not in candidates:
                 candidates.append(candidate)
 

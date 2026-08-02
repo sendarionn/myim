@@ -59,8 +59,12 @@ public struct DictionaryParser: Sendable {
                 guard currentReading != nil else {
                     throw DictionaryParserError.candidateWithoutReading(line: lineNumber)
                 }
-                if !currentCandidates.contains(value) {
-                    currentCandidates.append(value)
+                let normalizedCandidate = CandidateCommitNormalizer.value(
+                    from: value
+                )
+                if !normalizedCandidate.isEmpty,
+                   !currentCandidates.contains(normalizedCandidate) {
+                    currentCandidates.append(normalizedCandidate)
                 }
                 continue
             }

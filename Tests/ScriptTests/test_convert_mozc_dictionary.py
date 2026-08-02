@@ -28,6 +28,18 @@ class ConvertMozcDictionaryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             MODULE.convert(Path("."), maximum_candidates=0)
 
+    def test_removes_placeholder_wave_dash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / "dictionary00.txt").write_text(
+                "こ\t1\t1\t1000\t〜個\n"
+                "から\t1\t1\t1000\t〜\n",
+                encoding="utf-8",
+            )
+            result = MODULE.convert(source, maximum_candidates=2)
+            self.assertEqual(result["こ"], ["個"])
+            self.assertEqual(result["から"], ["〜"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,6 +32,12 @@ def is_kana_reading(value: str) -> bool:
     )
 
 
+def normalize_candidate(value: str) -> str:
+    if len(value) <= 1:
+        return value
+    return value.replace("〜", "").replace("～", "")
+
+
 def convert(
     source: Path,
     maximum_candidates: int,
@@ -51,6 +57,7 @@ def convert(
                 if len(columns) < 5:
                     raise ValueError(f"{source_file.name}:{line_number} の列数が不正です")
                 reading, _, _, cost_text, candidate = columns[:5]
+                candidate = normalize_candidate(candidate)
                 if not is_kana_reading(reading) or not candidate or "\n" in candidate:
                     continue
                 if candidate == reading:

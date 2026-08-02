@@ -42,14 +42,13 @@ ha
 
 hon
  本
- 〜本
 
 ii
  いい
 
 iku
  行く
- 幾〜
+ 幾
  逝く
 
 kajitsu
@@ -69,8 +68,8 @@ kazu
  数
 
 ko
- 小〜
- 〜個
+ 小
+ 個
  子
 
 kuru
@@ -132,7 +131,7 @@ wakaru
 
 yasui
  安い
- ～やすい
+ やすい
 
 hanasu
  話す
@@ -165,7 +164,7 @@ hito
 
 kaku
  書く
- 各〜
+ 各
  掻く
  核
  格
@@ -347,9 +346,9 @@ hana
 ki
  木
  気
- 〜機
+ 機
  黄
- 既〜
+ 既
 
 me
  目
@@ -374,7 +373,6 @@ chikai
 
 hajimeru
  始める
- ～始める
 
 kariru
  借りる
@@ -415,7 +413,7 @@ ban
 
 dou
  どう
- 同〜
+ 同
  銅
 
 gogo
@@ -501,7 +499,6 @@ chichi
 
 owaru
  終わる
- ～終わる
 
 oriru
  降りる
@@ -609,7 +606,7 @@ tokidoki
 
 yoku
  よく
- 翌〜
+ 翌
  欲
 
 mou
@@ -677,10 +674,9 @@ atsui
  篤い
 
 dai
- 〜台
- 第〜
  台
- 〜代
+ 第
+ 代
 
 doyoubi
  土曜日
@@ -764,8 +760,8 @@ magaru
  曲がる
 
 mai
- 〜枚
- 毎〜
+ 枚
+ 毎
 
 megane
  眼鏡
@@ -791,7 +787,7 @@ nigatsu
  二月
 
 nin
- 〜人
+ 人
 
 nishi
  西
@@ -809,7 +805,7 @@ sangatsu
  三月
 
 satsu
- 〜冊
+ 冊
  札
 
 shichigatsu
@@ -892,7 +888,7 @@ dame
 fuku
  服
  吹く
- 副〜
+ 副
  拭く
  噴く
 
@@ -902,7 +898,7 @@ genki
 go
  五
  碁
- 〜語
+ 語
  ご
  後
 
@@ -1033,7 +1029,7 @@ roku
 
 san
  三
- 〜さん
+ さん
  酸
 
 semai
@@ -1196,7 +1192,7 @@ sen
  線
  腺
  栓
- 〜戦
+ 戦
 
 senaka
  背中
@@ -1305,7 +1301,6 @@ massugu
 
 naosu
  直す
- ～直す
  治す
 
 nedan
@@ -1661,9 +1656,8 @@ ude
 
 wa
  羽
- 和〜
- 輪
  和
+ 輪
  我
 
 yonjuu
@@ -1742,7 +1736,7 @@ itai
 
 nai
  ない
- 〜内
+ 内
 
 ooi
  多い
@@ -1765,7 +1759,7 @@ aa
 
 kou
  こう
- 高〜
+ 高
  香
  乞う
 
@@ -1779,7 +1773,7 @@ mieru
 
 sou
  そう
- 総〜
+ 総
  層
  沿う
  添う
@@ -1901,7 +1895,7 @@ ten
  点
  店
  天
- 〜展
+ 展
 
 a
  あ
@@ -1922,8 +1916,8 @@ shi
  詩
  し
  死
- 〜士
- 〜史
+ 士
+ 史
 
 ji
  字
@@ -1937,14 +1931,14 @@ sonna
 
 chi
  血
- 〜地
+ 地
 
 achikochi
  あちこち
 
 i
  胃
- 〜位
+ 位
  異
  威
 
@@ -2216,7 +2210,6 @@ kin
  金
  菌
  禁
- 〜金
 
 kokuban
  黒板
@@ -2402,7 +2395,6 @@ tooka
 
 toki
  時
- 〜時
  とき
  朱鷺
 
@@ -2540,28 +2532,28 @@ ja
  じゃ
 
 koro
- 〜ころ
+ ころ
 
 zutsu
- 〜ずつ
+ ずつ
 
 dake
- 〜だけ
+ だけ
 
 nado
- 〜など
+ など
 
 o
- お〜
+ お
  尾
  緒
 
 nan
- 何〜
+ 何
  難
 
 teshimau
- 〜てしまう
+ てしまう
 
 mokuyou
  木曜
@@ -2598,7 +2590,7 @@ youbi
  曜日
 
 kon
- 今〜
+ 今
  紺
 
 kana
@@ -2639,8 +2631,8 @@ ka
  か
  蚊
  課
- 〜化
- 〜家
+ 化
+ 家
 
 ne
  ね
@@ -3403,10 +3395,10 @@ kan
  缶
  勘
  管
- 〜観
+ 観
  館
- 〜間
- 〜感
+ 間
+ 感
  貫
 
 kissaten
@@ -3483,7 +3475,7 @@ hen
  変
  辺
  偏
- 〜編
+ 編
 
 kibishii
  厳しい
@@ -3610,8 +3602,6 @@ hakkiri
 
 tsuzukeru
  続ける
- 〜続ける
- ～続ける
 
 utsuru
  移る
@@ -4475,29 +4465,26 @@ yahari
  やはり
 
 ken
- 〜軒
+ 軒
  券
- ～軒
  県
  件
  剣
  圏
 
 nikui
- 〜にくい
- ～にくい
+ にくい
  憎い
 
 bakari
- 〜ばかり
+ ばかり
 
 mama
- 〜まま
+ まま
  ママ
 
 ikuratemo
- いくら〜ても
- いくら～ても
+ いくらても
 
 itaru
  至る
@@ -4650,8 +4637,7 @@ nigoru
 
 oki
  沖
- 〜おき
- ～おき
+ おき
 
 tsuno
  角
@@ -4982,7 +4968,7 @@ kachi
 
 gai
  害
- 外〜
+ 外
 
 gaishutsu
  外出
@@ -5000,7 +4986,7 @@ omowazu
 
 on
  恩
- 御〜
+ 御
  オン
 
 kanji
@@ -5070,7 +5056,7 @@ kinen
 
 kuu
  食う
- 空〜
+ 空
 
 kusari
  鎖
@@ -5476,10 +5462,10 @@ soudesu
  そうです
 
 nitsuite
- 〜について
+ について
 
 niyoruto
- 〜によると
+ によると
 
 zenjitsu
  前日
@@ -5986,8 +5972,8 @@ nochi
 
 teki
  敵
- 〜滴
- 〜的
+ 滴
+ 的
 
 haka
  墓
@@ -6161,7 +6147,7 @@ honoo
 
 bou
  棒
- 防〜
+ 防
  某
 
 maa
@@ -6183,7 +6169,7 @@ mame
 
 mi
  実
- 未〜
+ 未
  身
 
 miokuri
@@ -6349,8 +6335,7 @@ makura
 
 mei
  姪
- 〜名
- 名〜
+ 名
  銘
 
 mochi
@@ -6436,7 +6421,7 @@ naninani
  何々
 
 mon
- 〜問
+ 問
  紋
  門
  文
@@ -6445,7 +6430,7 @@ sashimi
  刺身
 
 tsuu
- 〜通
+ 通
 
 koyubi
  小指
@@ -6749,11 +6734,11 @@ nanboku
 
 chou
  蝶
- 〜長
+ 長
  帳
  兆
  腸
- 超〜
+ 超
 
 ari
  蟻
@@ -9116,7 +9101,7 @@ hirosa
  広さ
 
 ho
- 〜歩
+ 歩
 
 hoomu
  ホーム
@@ -9631,7 +9616,7 @@ raberu
  ラベル
 
 rai
- 来〜
+ 来
 
 raitaa
  ライター
@@ -9759,7 +9744,7 @@ urami
  恨み
 
 uwa
- 上〜
+ 上
 
 uyamau
  敬う
@@ -9808,7 +9793,7 @@ arai
  荒い
 
 bu
- 〜部
+ 部
 
 fukushi
  副詞
@@ -9846,8 +9831,8 @@ tokuchou
 zen
  善
  禅
- 前〜
- 全〜
+ 前
+ 全
 
 boorupen
  ボールペン
@@ -9900,7 +9885,7 @@ fuooku
 furu
  降る
  振る
- 古〜
+ 古
 
 gomi
  ゴミ
@@ -10014,7 +9999,7 @@ wakareru
 
 you
  よう
- 〜用
+ 用
  要
  酔う
  洋
@@ -11474,44 +11459,38 @@ konpyuuta
  コンピュータ
 
 in
- 〜員
- ～員
+ 員
  韻
 
 gakubu
- 〜学部
- ～学部
  学部
 
 ku
- 〜区
+ 区
  句
 
 kun
- 〜君
+ 君
 
 shiki
- 〜式
+ 式
  指揮
  四季
  士気
- 式
  史記
 
 sei
- 〜製
+ 製
  正
  性
  せい
  姓
 
 date
- 〜建て
- ～建て
+ 建て
 
 chan
- 〜ちゃん
- ～ちゃん
+ ちゃん
 
 uragiru
  裏切る
@@ -12428,7 +12407,7 @@ kyougi
 
 gaku
  額
- 〜学
+ 学
 
 kyuushuu
  吸収
@@ -12565,7 +12544,7 @@ kyoku
 kei
  計
  刑
- 〜系
+ 系
 
 keiki
  景気
@@ -12795,8 +12774,8 @@ goukei
 
 sai
  際
- 再〜
- 最〜
+ 再
+ 最
  歳
  差異
 
@@ -13051,13 +13030,13 @@ senmonka
  専門家
 
 garu
- 〜がる
+ がる
 
 gawa
- 〜側
+ 側
 
 ya
- 〜屋
+ 屋
  や
  矢
 
@@ -13296,7 +13275,7 @@ shou
  礁
  升
  商
- 〜性
+ 性
  笙
 
 shougakukin
@@ -13502,7 +13481,7 @@ juushi
 
 jun
  順
- 純〜
+ 純
 
 jou
  情
@@ -13660,7 +13639,7 @@ dairi
 
 dan
  段
- 〜団
+ 団
  壇
 
 dantai
@@ -13681,7 +13660,7 @@ chigai
 
 chuu
  注
- 〜中
+ 中
  宙
 
 tsutome
@@ -14167,7 +14146,7 @@ hane
 han
  班
  版
- 反〜
+ 反
  半
  藩
 
@@ -14626,28 +14605,28 @@ jettoki
  ジェット機
 
 gen
- 現〜
+ 現
  弦
 
 sho
- 初〜
- 諸〜
- 〜所
- 〜書
+ 初
+ 諸
+ 所
+ 書
 
 tan
- 短〜
+ 短
  痰
 
 tei
- 低〜
+ 低
  邸
 
 naga
- 長〜
+ 長
 
 waga
- 我が〜
+ 我が
 
 betsubetsu
  別々
@@ -14728,13 +14707,13 @@ yuuyuu
  悠々
 
 goto
- 〜毎
+ 毎
 
 zumi
- 〜済み
+ 済み
 
 ron
- 〜論
+ 論
 
 eiwa
  英和
@@ -14754,13 +14733,12 @@ keigo
  警護
 
 gou
- 〜号
  号
  合
  業
 
 hatsu
- 〜発
+ 発
  初
 
 kouchi
@@ -15994,8 +15972,8 @@ sasaeau
  支え合う
 
 sha
- 〜社
- 〜者
+ 社
+ 者
  車
 
 kumitateru
@@ -16233,7 +16211,7 @@ kuraudo
 
 gachi
  ガチ
- 〜がち
+ がち
 
 nettowaaku
  ネットワーク
@@ -29783,10 +29761,10 @@ kaimonokago
  買い物かご
 
 do
- 〜度
+ 度
 
 jin
- 〜人
+ 人
  仁
 
 shotoku
@@ -52574,13 +52552,13 @@ itagamu
  板ガム
 
 zurai
- ～づらい
+ づらい
 
 darake
- ～だらけ
+ だらけ
 
 dakedenaku
- ～だけでなく
+ だけでなく
 
 gokurousama
  ご苦労様
@@ -61894,17 +61872,17 @@ tabeyasui
  食べやすい
 
 tsutsu
- 〜つつ
+ つつ
  筒
 
 heimei
  平明
 
 niokeru
- 〜における
+ における
 
 nite
- 〜にて
+ にて
 
 akarasamani
  あからさまに
@@ -80201,7 +80179,7 @@ tameni
  ために
 
 butsu
- 〜物
+ 物
 
 dakeni
  だけに
@@ -80213,7 +80191,7 @@ hyakusen
  百戦
 
 chin
- 〜賃
+ 賃
 
 jitsu
  実
@@ -80222,7 +80200,7 @@ sachi
  幸
 
 zai
- 〜材
+ 材
 
 niyoru
  による
@@ -80244,16 +80222,16 @@ yuuen
  有塩
 
 buri
- 〜ぶり
+ ぶり
 
 nenme
- 〜年目
+ 年目
 
 mukon
  無根
 
 shugisha
- 〜主義者
+ 主義者
 
 ikutsuka
  いくつか
@@ -80517,7 +80495,7 @@ taketori
  竹取
 
 biki
- 〜引き
+ 引き
 
 hirayadate
  平屋建て
@@ -81030,7 +81008,7 @@ gikochinakunaru
  ぎこちなくなる
 
 dakede
- 〜だけで
+ だけで
 
 ossha
  おっしゃ
@@ -82390,13 +82368,13 @@ beshi
  べし
 
 nebanaranai
- 〜ねばならない
+ ねばならない
 
 nakyanaranai
- 〜なきゃならない
+ なきゃならない
 
 youniiu
- 〜ように言う
+ ように言う
 
 dokodoko
  どこどこ

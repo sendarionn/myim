@@ -62,4 +62,22 @@ struct TKGDictionaryClientTests {
             DictionaryEntry(reading: "hayai", candidates: ["速い", "早い"])
         ])
     }
+
+    @Test
+    func removesPlaceholderWaveDashFromHeadword() throws {
+        let source = """
+        {
+          "metadata": {"generated": "2026-08-02", "total_entries": 1},
+          "entries": [{
+            "id": "basic_nado",
+            "headword": "〜など",
+            "vocabulary_tier": "basic"
+          }]
+        }
+        """
+        let snapshot = try TKGDictionaryClient().convert(Data(source.utf8))
+        #expect(snapshot.entries == [
+            DictionaryEntry(reading: "nado", candidates: ["など"])
+        ])
+    }
 }

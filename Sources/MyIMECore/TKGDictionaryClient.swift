@@ -71,8 +71,17 @@ public struct TKGDictionaryClient: Sendable {
             }
             for candidate in DictionaryCandidateSplitter.alternatives(
                 from: entry.headword
-            ) where candidatesByReading[reading]?.contains(candidate) == false {
-                candidatesByReading[reading]?.append(candidate)
+            ) {
+                let normalizedCandidate = CandidateCommitNormalizer.value(
+                    from: candidate
+                )
+                guard
+                    !normalizedCandidate.isEmpty,
+                    candidatesByReading[reading]?.contains(normalizedCandidate) == false
+                else {
+                    continue
+                }
+                candidatesByReading[reading]?.append(normalizedCandidate)
             }
         }
 

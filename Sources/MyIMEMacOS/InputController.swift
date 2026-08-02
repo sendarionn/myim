@@ -1861,7 +1861,9 @@ final class InputController: IMKInputController {
         }
 
         candidateWindow.show(
-            candidates: Array(currentCandidates[pageStart..<pageEnd]),
+            candidates: currentCandidates[pageStart..<pageEnd].map {
+                candidateValueForCommit($0)
+            },
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender)
         )
