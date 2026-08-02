@@ -125,6 +125,12 @@ final class InputController: IMKInputController {
             return !registerClipboardInUserDictionary(client: sender)
         }
 
+        if isUserDictionaryDeletionShortcut(event),
+           !inputBuffer.isEmpty {
+            removeSelectedUserDictionaryCandidate(client: sender)
+            return true
+        }
+
         switch event.keyCode {
         case 48:
             return handleTab(event, client: sender)
@@ -1273,6 +1279,65 @@ final class InputController: IMKInputController {
         rebuildConversionEngine()
     }
 
+    private func removeSelectedUserDictionaryCandidate(client sender: Any) {
+        guard
+            let selectedCandidateIndex,
+            currentCandidates.indices.contains(selectedCandidateIndex)
+        else {
+            NSSound.beep()
+            return
+        }
+        let candidate = currentCandidates[selectedCandidateIndex]
+        let normalizedReading =
+            RomanizedReadingNormalizer.dictionaryReading(
+                from: conversionReading
+            )
+        let lookupReadings =
+            RomanizedReadingNormalizer.dictionaryLookupReadings(
+                from: normalizedReading
+            )
+        let updatedEntries = UserDictionaryEditor.removing(
+            candidate: candidate,
+            matchingReadings: lookupReadings,
+            from: userEntries
+        )
+        guard updatedEntries != userEntries else {
+            NSSound.beep()
+            return
+        }
+
+        do {
+            userEntries = updatedEntries
+            try persistUserDictionary()
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(candidate, forType: .string)
+            self.selectedCandidateIndex = nil
+            updateMarkedText(in: sender)
+            refreshCandidates(client: sender)
+        } catch {
+            NSLog(
+                "ユーザー辞書候補の削除に失敗: %@",
+                error.localizedDescription
+            )
+            userEntries = Self.loadUserEntries()
+            rebuildConversionEngine()
+            NSSound.beep()
+        }
+    }
+
+    private func persistUserDictionary() throws {
+        let cache = try Self.userDictionaryCache()
+        try cache.save(
+            dictionaryText: DictionarySerializer.text(from: userEntries),
+            metadata: DictionaryCacheMetadata(
+                syncedAt: Date(),
+                entryCount: userEntries.count
+            )
+        )
+        rebuildConversionEngine()
+    }
+
     private func clearCompositionForSystemPaste(in sender: Any) {
         guard let textClient = sender as? IMKTextInput else {
             return
@@ -1301,6 +1366,17 @@ final class InputController: IMKInputController {
         }
         return event.keyCode == 9
             || event.charactersIgnoringModifiers?.lowercased() == "v"
+    }
+
+    private func isUserDictionaryDeletionShortcut(_ event: NSEvent) -> Bool {
+        let deviceIndependentFlags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        guard deviceIndependentFlags == [.command] else {
+            return false
+        }
+        return event.keyCode == 7
+            || event.charactersIgnoringModifiers?.lowercased() == "x"
     }
 
     private func showCandidateWindow(client sender: Any) {

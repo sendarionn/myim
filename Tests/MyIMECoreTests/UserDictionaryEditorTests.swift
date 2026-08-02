@@ -45,4 +45,54 @@ struct UserDictionaryEditorTests {
 
         #expect(result == entries)
     }
+
+    @Test
+    func removesCandidateFromMatchingReading() {
+        let entries = [
+            DictionaryEntry(
+                reading: "kouzou",
+                candidates: ["構造", "構想"]
+            )
+        ]
+        let result = UserDictionaryEditor.removing(
+            candidate: "構造",
+            matchingReadings: ["kouzou"],
+            from: entries
+        )
+
+        #expect(result == [
+            DictionaryEntry(reading: "kouzou", candidates: ["構想"])
+        ])
+    }
+
+    @Test
+    func removesEntryWhenLastCandidateIsRemoved() {
+        let entries = [
+            DictionaryEntry(reading: "kenkyuu", candidates: ["研究"])
+        ]
+        let result = UserDictionaryEditor.removing(
+            candidate: "研究",
+            matchingReadings: ["kenkyuu"],
+            from: entries
+        )
+
+        #expect(result.isEmpty)
+    }
+
+    @Test
+    func leavesCandidatesForOtherReadingsUnchanged() {
+        let entries = [
+            DictionaryEntry(reading: "kouzou", candidates: ["構造"]),
+            DictionaryEntry(reading: "shikumi", candidates: ["構造"])
+        ]
+        let result = UserDictionaryEditor.removing(
+            candidate: "構造",
+            matchingReadings: ["kouzou"],
+            from: entries
+        )
+
+        #expect(result == [
+            DictionaryEntry(reading: "shikumi", candidates: ["構造"])
+        ])
+    }
 }

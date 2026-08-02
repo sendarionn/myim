@@ -30,4 +30,35 @@ public enum UserDictionaryEditor {
         }
         return result
     }
+
+    public static func removing(
+        candidate: String,
+        matchingReadings readings: [String],
+        from entries: [DictionaryEntry]
+    ) -> [DictionaryEntry] {
+        let normalizedReadings = Set(readings.map {
+            RomanizedReadingNormalizer.dictionaryReading(from: $0)
+        })
+        guard !candidate.isEmpty, !normalizedReadings.isEmpty else {
+            return entries
+        }
+
+        return entries.compactMap { entry in
+            let normalizedReading =
+                RomanizedReadingNormalizer.dictionaryReading(
+                    from: entry.reading
+                )
+            guard normalizedReadings.contains(normalizedReading) else {
+                return entry
+            }
+            let candidates = entry.candidates.filter { $0 != candidate }
+            guard !candidates.isEmpty else {
+                return nil
+            }
+            return DictionaryEntry(
+                reading: entry.reading,
+                candidates: candidates
+            )
+        }
+    }
 }
