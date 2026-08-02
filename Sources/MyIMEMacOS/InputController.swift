@@ -25,10 +25,15 @@ final class InputController: IMKInputController {
         "ExtensionDictionaryEnabled"
     private static let englishCompletionEnabledDefaultsKey =
         "EnglishCompletionEnabled"
-    private static let googleSuggestionsEnabledDefaultsKey =
-        "GoogleSuggestionsEnabled"
-    private static let googleSearchEnabledDefaultsKey =
-        "GoogleSearchEnabled"
+    private static let wikipediaSuggestionsEnabledDefaultsKey =
+        "WikipediaSuggestionsEnabled"
+    private static let appleTranslationEnabledDefaultsKey =
+        "AppleTranslationEnabled"
+    private static let azureDictionaryEnabledDefaultsKey =
+        "AzureDictionaryEnabled"
+    private static let azureDictionaryRegionDefaultsKey = "AzureDictionaryRegion"
+    private static let webSearchEnabledDefaultsKey = "WebSearchEnabled"
+    private static let webSearchTemplateDefaultsKey = "WebSearchTemplate"
     private static let cosensePreviewEnabledDefaultsKey =
         "CosensePreviewEnabled"
     private static let systemDictionaryPreviewEnabledDefaultsKey =
@@ -49,6 +54,7 @@ final class InputController: IMKInputController {
     private var basicConversionEngine: ConversionEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let credentialStore: CosenseCredentialStore
+    private let externalCredentialStore = ExternalServiceCredentialStore()
     private var cosenseCredential: CosenseCredential?
     private var candidateSelectionRanks: [String: Int]
     private var nextCandidateSelectionRank: Int
@@ -56,9 +62,9 @@ final class InputController: IMKInputController {
     private var nextInputCandidates: [String] = []
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
-    private var googleSuggestionTask: Task<Void, Never>?
-    private var googleSuggestionQuery = ""
-    private var googleSuggestionCandidates: [String] = []
+    private var officialCandidateTask: Task<Void, Never>?
+    private var officialCandidateQuery = ""
+    private var officialCandidates: [String] = []
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
@@ -150,8 +156,8 @@ final class InputController: IMKInputController {
             return true
         }
 
-        if isGoogleSearchShortcut(event),
-           openSelectedGoogleSearch(client: sender) {
+        if isWebSearchShortcut(event),
+           openSelectedWebSearch(client: sender) {
             return true
         }
 
@@ -299,17 +305,36 @@ final class InputController: IMKInputController {
             to: menu
         )
         addExperimentalToggle(
-            title: "Google検索候補を取得",
-            action: #selector(toggleGoogleSuggestions(_:)),
-            enabled: isGoogleSuggestionsEnabled,
+            title: "Wikipedia候補を取得",
+            action: #selector(toggleWikipediaSuggestions(_:)),
+            enabled: isWikipediaSuggestionsEnabled,
             to: menu
         )
         addExperimentalToggle(
-            title: "Google検索を使用",
-            action: #selector(toggleGoogleSearch(_:)),
-            enabled: isGoogleSearchEnabled,
+            title: "Apple翻訳で英語候補を取得",
+            action: #selector(toggleAppleTranslation(_:)),
+            enabled: isAppleTranslationEnabled,
             to: menu
         )
+        addExperimentalToggle(
+            title: "Azure英訳候補を取得",
+            action: #selector(toggleAzureDictionary(_:)),
+            enabled: isAzureDictionaryEnabled,
+            to: menu
+        )
+        addExperimentalToggle(
+            title: "Web検索を使用",
+            action: #selector(toggleWebSearch(_:)),
+            enabled: isWebSearchEnabled,
+            to: menu
+        )
+        let externalSettingsItem = NSMenuItem(
+            title: "外部候補とWeb検索を設定…",
+            action: #selector(configureExternalCandidates(_:)),
+            keyEquivalent: ""
+        )
+        externalSettingsItem.target = self
+        menu.addItem(externalSettingsItem)
         menu.addItem(.separator())
 
         let nextInputItem = NSMenuItem(
@@ -467,8 +492,8 @@ final class InputController: IMKInputController {
         previewWindow.hide()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
-        googleSuggestionTask?.cancel()
-        googleSuggestionTask = nil
+        officialCandidateTask?.cancel()
+        officialCandidateTask = nil
         nextInputCandidates = []
         selectedNextInputIndex = nil
         nextInputPredictionModel.breakSequence()
@@ -481,8 +506,8 @@ final class InputController: IMKInputController {
         previewWindow.hide()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
-        googleSuggestionTask?.cancel()
-        googleSuggestionTask = nil
+        officialCandidateTask?.cancel()
+        officialCandidateTask = nil
         nextInputCandidates = []
         selectedNextInputIndex = nil
         super.inputControllerWillClose()
@@ -748,18 +773,13 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func toggleGoogleSuggestions(_ sender: Any?) {
-        let enabled = !isGoogleSuggestionsEnabled
+    private func toggleWikipediaSuggestions(_ sender: Any?) {
+        let enabled = !isWikipediaSuggestionsEnabled
         UserDefaults.standard.set(
             enabled,
-            forKey: Self.googleSuggestionsEnabledDefaultsKey
+            forKey: Self.wikipediaSuggestionsEnabledDefaultsKey
         )
-        if !enabled {
-            googleSuggestionTask?.cancel()
-            googleSuggestionTask = nil
-            googleSuggestionQuery = ""
-            googleSuggestionCandidates = []
-        }
+        resetOfficialCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
         }
@@ -769,11 +789,87 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func toggleGoogleSearch(_ sender: Any?) {
+    private func toggleAppleTranslation(_ sender: Any?) {
         UserDefaults.standard.set(
-            !isGoogleSearchEnabled,
-            forKey: Self.googleSearchEnabledDefaultsKey
+            !isAppleTranslationEnabled,
+            forKey: Self.appleTranslationEnabledDefaultsKey
         )
+        resetOfficialCandidates()
+        guard !inputBuffer.isEmpty, let inputClient = client() else { return }
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func toggleAzureDictionary(_ sender: Any?) {
+        UserDefaults.standard.set(
+            !isAzureDictionaryEnabled,
+            forKey: Self.azureDictionaryEnabledDefaultsKey
+        )
+        resetOfficialCandidates()
+        guard !inputBuffer.isEmpty, let inputClient = client() else { return }
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func toggleWebSearch(_ sender: Any?) {
+        UserDefaults.standard.set(!isWebSearchEnabled, forKey: Self.webSearchEnabledDefaultsKey)
+    }
+
+    @objc
+    private func configureExternalCandidates(_ sender: Any?) {
+        let searchTemplate = NSTextField(string: webSearchTemplate)
+        searchTemplate.placeholderString = SearchURLTemplate.defaultValue
+        let azureKey = NSSecureTextField(string: azureDictionaryKey)
+        azureKey.placeholderString = "Azure Translator APIキー"
+        let azureRegion = NSTextField(string: azureDictionaryRegion)
+        azureRegion.placeholderString = "japaneast など  グローバルキーでは空欄"
+        for field in [searchTemplate, azureKey, azureRegion] {
+            field.frame.size.width = 480
+        }
+        let stack = NSStackView(views: [
+            NSTextField(labelWithString: "Web検索URL  %sを検索語へ置換"),
+            searchTemplate,
+            NSTextField(labelWithString: "Azure Translator APIキー"),
+            azureKey,
+            NSTextField(labelWithString: "Azureリージョン"),
+            azureRegion
+        ])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.frame = NSRect(x: 0, y: 0, width: 480, height: 142)
+        let alert = NSAlert()
+        alert.messageText = "外部候補とWeb検索"
+        alert.accessoryView = stack
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "キャンセル")
+        alert.window.level = .floating
+        guard runModalAlert(alert, firstResponder: searchTemplate) == .alertFirstButtonReturn else {
+            return
+        }
+        guard (try? SearchURLTemplate(searchTemplate.stringValue)) != nil else {
+            NSSound.beep()
+            return
+        }
+        UserDefaults.standard.set(searchTemplate.stringValue, forKey: Self.webSearchTemplateDefaultsKey)
+        do {
+            try externalCredentialStore.saveAzureTranslatorKey(azureKey.stringValue)
+        } catch {
+            NSSound.beep()
+            return
+        }
+        UserDefaults.standard.set(azureRegion.stringValue, forKey: Self.azureDictionaryRegionDefaultsKey)
+        resetOfficialCandidates()
+        if !inputBuffer.isEmpty, let inputClient = client() {
+            refreshCandidates(client: inputClient)
+        }
+    }
+
+    private func resetOfficialCandidates() {
+        officialCandidateTask?.cancel()
+        officialCandidateTask = nil
+        officialCandidateQuery = ""
+        officialCandidates = []
     }
 
     private func toggleCandidateSource(
@@ -1332,7 +1428,7 @@ final class InputController: IMKInputController {
 
         let suggestionInput = conversionReading
         defer {
-            updateGoogleSuggestionsIfNeeded(for: suggestionInput)
+            updateOfficialCandidatesIfNeeded(for: suggestionInput)
         }
 
         let normalizedReading = RomanizedReadingNormalizer.dictionaryReading(
@@ -1383,9 +1479,8 @@ final class InputController: IMKInputController {
         let englishCandidates = isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
-        let googleCandidates = isGoogleSuggestionsEnabled
-            && googleSuggestionQuery == conversionReading
-            ? googleSuggestionCandidates
+        let remoteCandidates = officialCandidateQuery == conversionReading
+            ? officialCandidates
             : []
         let inflectionCandidates = isBasicDictionaryEnabled
             ? mergedCandidates(
@@ -1415,7 +1510,7 @@ final class InputController: IMKInputController {
                         + basicExactCandidates
                         + inflectionCandidates
                         + englishCandidates
-                        + googleCandidates
+                        + remoteCandidates
                         + basicPrefixCandidates
                 )
         } else {
@@ -1426,7 +1521,7 @@ final class InputController: IMKInputController {
                         + inflectionCandidates
                         + kanaCandidates
                         + englishCandidates
-                        + googleCandidates
+                        + remoteCandidates
                         + basicPrefixCandidates
                 )
         }
@@ -1472,29 +1567,38 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func updateGoogleSuggestionsIfNeeded(for input: String) {
-        guard isGoogleSuggestionsEnabled,
+    private func updateOfficialCandidatesIfNeeded(for input: String) {
+        guard isWikipediaSuggestionsEnabled || isAppleTranslationEnabled || azureDictionaryIsReady,
               input.count >= 2,
-              googleSuggestionQuery != input else {
+              officialCandidateQuery != input else {
             return
         }
-        googleSuggestionTask?.cancel()
-        googleSuggestionQuery = input
-        googleSuggestionCandidates = []
-        googleSuggestionTask = Task { @MainActor [weak self] in
+        officialCandidateTask?.cancel()
+        officialCandidateQuery = input
+        officialCandidates = []
+        let japaneseInput = romajiConverter.hiragana(from: input) ?? input
+        officialCandidateTask = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(250))
-                let suggestions = try await GoogleSuggestionClient()
-                    .suggestions(for: input)
+                guard let self else { return }
+                async let wikipedia: [String] = isWikipediaSuggestionsEnabled
+                    ? (try? await WikipediaSuggestionClient().suggestions(for: japaneseInput)) ?? []
+                    : []
+                async let azure: [String] = azureDictionaryIsReady
+                    ? (try? await AzureDictionaryClient(
+                        key: azureDictionaryKey,
+                        region: azureDictionaryRegion.isEmpty ? nil : azureDictionaryRegion
+                      ).translations(for: japaneseInput)) ?? []
+                    : []
+                let apple = await appleTranslationCandidate(for: japaneseInput)
+                let suggestions = await wikipedia + apple + azure
                 try Task.checkCancellation()
-                guard let self,
-                      isGoogleSuggestionsEnabled,
+                guard isWikipediaSuggestionsEnabled || isAppleTranslationEnabled || azureDictionaryIsReady,
                       conversionReading == input else {
                     return
                 }
-                googleSuggestionCandidates = Array(
-                    suggestions.prefix(Self.maximumCandidateCount)
-                )
+                var seen = Set<String>()
+                officialCandidates = suggestions.filter { seen.insert($0).inserted }
                 if let inputClient = client() {
                     refreshCandidates(client: inputClient)
                 }
@@ -1502,14 +1606,30 @@ final class InputController: IMKInputController {
                 return
             } catch {
                 NSLog(
-                    "Google検索候補の取得に失敗: %@",
+                    "公式外部候補の取得に失敗: %@",
                     error.localizedDescription
                 )
             }
         }
     }
 
-    private func isGoogleSearchShortcut(_ event: NSEvent) -> Bool {
+    private func appleTranslationCandidate(for text: String) async -> [String] {
+        guard isAppleTranslationEnabled else { return [] }
+#if canImport(Translation)
+        if #available(macOS 15.0, *) {
+            let provider = await MainActor.run {
+                AppleTranslationCandidateProvider()
+            }
+            if let value = await provider.translateJapaneseToEnglish(text),
+               !value.isEmpty {
+                return [value]
+            }
+        }
+#endif
+        return []
+    }
+
+    private func isWebSearchShortcut(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags
             .intersection(.deviceIndependentFlagsMask)
             .subtracting([.capsLock, .numericPad])
@@ -1517,16 +1637,15 @@ final class InputController: IMKInputController {
             && (event.keyCode == 36 || event.keyCode == 76)
     }
 
-    private func openSelectedGoogleSearch(client sender: Any) -> Bool {
-        guard isGoogleSearchEnabled,
+    private func openSelectedWebSearch(client sender: Any) -> Bool {
+        guard isWebSearchEnabled,
               let selectedCandidateIndex,
               currentCandidates.indices.contains(selectedCandidateIndex) else {
             return false
         }
         let candidate = currentCandidates[selectedCandidateIndex]
-        guard let url = try? GoogleSuggestionClient.searchURL(
-            for: candidate
-        ) else {
+        guard let template = try? SearchURLTemplate(webSearchTemplate),
+              let url = try? template.url(for: candidate) else {
             return false
         }
         recordCandidateSelection(candidate)
@@ -2110,26 +2229,57 @@ final class InputController: IMKInputController {
         )
     }
 
-    private var isGoogleSuggestionsEnabled: Bool {
+    private var isWikipediaSuggestionsEnabled: Bool {
         if UserDefaults.standard.object(
-            forKey: Self.googleSuggestionsEnabledDefaultsKey
+            forKey: Self.wikipediaSuggestionsEnabledDefaultsKey
         ) == nil {
             return false
         }
         return UserDefaults.standard.bool(
-            forKey: Self.googleSuggestionsEnabledDefaultsKey
+            forKey: Self.wikipediaSuggestionsEnabledDefaultsKey
         )
     }
 
-    private var isGoogleSearchEnabled: Bool {
+    private var isAppleTranslationEnabled: Bool {
+        if UserDefaults.standard.object(forKey: Self.appleTranslationEnabledDefaultsKey) == nil {
+            return false
+        }
+        return UserDefaults.standard.bool(forKey: Self.appleTranslationEnabledDefaultsKey)
+    }
+
+    private var isAzureDictionaryEnabled: Bool {
         if UserDefaults.standard.object(
-            forKey: Self.googleSearchEnabledDefaultsKey
+            forKey: Self.azureDictionaryEnabledDefaultsKey
         ) == nil {
             return false
         }
         return UserDefaults.standard.bool(
-            forKey: Self.googleSearchEnabledDefaultsKey
+            forKey: Self.azureDictionaryEnabledDefaultsKey
         )
+    }
+
+    private var azureDictionaryKey: String {
+        externalCredentialStore.loadAzureTranslatorKey()
+    }
+
+    private var azureDictionaryRegion: String {
+        UserDefaults.standard.string(forKey: Self.azureDictionaryRegionDefaultsKey) ?? ""
+    }
+
+    private var azureDictionaryIsReady: Bool {
+        isAzureDictionaryEnabled && !azureDictionaryKey.isEmpty
+    }
+
+    private var isWebSearchEnabled: Bool {
+        if UserDefaults.standard.object(forKey: Self.webSearchEnabledDefaultsKey) == nil {
+            return false
+        }
+        return UserDefaults.standard.bool(forKey: Self.webSearchEnabledDefaultsKey)
+    }
+
+    private var webSearchTemplate: String {
+        UserDefaults.standard.string(forKey: Self.webSearchTemplateDefaultsKey)
+            ?? SearchURLTemplate.defaultValue
     }
 
     private var isSystemDictionaryPreviewEnabled: Bool {

@@ -189,8 +189,10 @@ macOS標準辞書の利用範囲と変換候補への利用方針は`docs/MACOS_
 - 「ローカルユーザー辞書を使用」で登録済みユーザー候補をオン・オフ
 - 「Cosense拡張辞書を使用」で同期済み拡張辞書候補をオン・オフ
 - 「英語補完を使用」でmacOSの英語補完候補をオン・オフ
-- 「Google検索候補を取得」でGoogleへの問い合わせと候補表示をオン・オフ
-- 「Google検索を使用」で`Command＋Return`によるブラウザ検索をオン・オフ
+- 「Wikipedia候補を取得」でWikipediaの記事名候補をオン・オフ
+- 「Apple翻訳で英語候補を取得」で日本語から英語への翻訳候補をオン・オフ
+- 「Azure英訳候補を取得」でAzure Translator Dictionary Lookupの複数英訳をオン・オフ
+- 「Web検索を使用」で`Command＋Return`によるブラウザ検索をオン・オフ
 - 「次入力候補を使用」で学習と表示をオン・オフ
 - 「Cosenseパネルを使用」でページ確認と表示をオン・オフ
 - 「macOS辞書パネルを使用」で語義抽出と表示をオン・オフ
@@ -203,37 +205,47 @@ Cosenseパネルを無効にすると、候補選択時のページ存在確認�
 
 設定は保存され、myimの再起動後も維持されます
 
-初回は既存の動作を維持するため、Google検索候補以外を有効にします
+外部通信を伴う候補とWeb検索は初期状態で無効です
 
-Google検索候補の取得とGoogle検索は外部送信を伴うため、初回は無効です
+## 公式外部候補
 
-## Google検索候補
+1. 入力ソースメニューで使用する候補元を有効にする
+2. 2文字以上入力するとローカル候補を先に表示する
+3. 入力停止から250ミリ秒後に外部候補を追加する
+4. 通常の`Return`で候補文字列を確定する
 
-1. 入力ソースメニューで「Google検索候補を取得」を有効にする
-2. 2文字以上入力すると、ローカル候補の表示後にGoogle検索候補が追加される
-3. 通常の`Return`で候補文字列を確定する
+- Wikipedia候補は日本語版WikipediaのOpenSearch APIから記事名を取得
+- Apple翻訳候補はmacOS 15以降のTranslation frameworkを使用
+- Apple翻訳で言語モデルが未導入の場合はmacOSがダウンロード許可を求める
+- Azure英訳候補はAzure TranslatorのDictionary Lookupを使用
+- Azure英訳候補を使う場合は「外部候補とWeb検索を設定…」でAPIキーと必要に応じてリージョンを設定
+- Azure APIキーは`~/Library/Application Support/myim/credentials/azure-translator-key.txt`へ権限`0600`で保存
 
-Google検索候補をブラウザで検索する必要がなければ、「Google検索を使用」は無効のまま利用できます
+問い合わせには入力中のローマ字をひらがなへ変換した文字列を送信します
 
-ブラウザ検索は候補取得と独立して有効にします
+通信失敗や応答形式変更時は該当する外部候補だけを省略し、ローカル変換を継続します
 
-1. 入力ソースメニューで「Google検索を使用」を有効にする
-2. Google候補、基本辞書、ユーザー辞書など任意の候補を選択する
-3. `Command＋Return`を押すと、候補を確定してブラウザで検索する
+非公開のGoogle検索候補エンドポイントは使用しません
 
-「Google検索候補を取得」を無効にしても、表示中のローカル候補をGoogle検索できます
+## Web検索
 
-入力変更から250ミリ秒待って問い合わせ、古いリクエストは破棄します
+1. 入力ソースメニューから「外部候補とWeb検索を設定…」を開く
+2. 検索語を挿入する位置へ`%s`を含めたURLを設定する
+3. 「Web検索を使用」を有効にする
+4. 任意の候補を選択して`Command＋Return`を押す
+5. 候補を確定し、設定したURLを既定ブラウザで開く
 
-候補取得で送信する情報は入力中の文字列です
+初期値は`https://www.google.com/search?q=%s`です
 
-ブラウザ検索で送信する情報は選択した候補文字列です
+設定例
 
-Googleアカウントの認証情報は送信しません
+```text
+https://duckduckgo.com/?q=%s
+https://www.google.com/search?q=site%3Ascrapbox.io%2Fsendarionn-public+%s
+https://ja.wikipedia.org/w/index.php?search=%s
+```
 
-Google公式の一般向けAutocomplete APIは公開されていないため、Google検索画面向けの非公開候補エンドポイントを使用します
-
-取得方式の変更や通信失敗時はGoogle候補だけを省略し、ローカル変換を継続します
+`%s`を含まないURL、HTTPまたはHTTPS以外のURLは保存しません
 
 ## Cosense辞書
 
