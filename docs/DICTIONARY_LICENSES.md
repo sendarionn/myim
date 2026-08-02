@@ -15,9 +15,9 @@ Mozc OSS辞書はIPAdic、沖縄辞書、Mozcで追加された語彙を含み�
 
 ## TKG Japanese-English Learner's Dictionary
 
-- 用途: 日本語学習者向けの日本語候補と英語候補
+- 用途: 日本語学習者向けの日本語候補
 - ライセンス: CC0 1.0
-- 取得元: https://github.com/jamsinclair/open-anki-jlpt-decks
+- 取得元: https://github.com/tkgally/je-dict-1
 - 同梱ライセンス: `Sources/MyIMEMacOS/Resources/basic-dictionary-LICENSE.txt`
 
 ## myim補完辞書
