@@ -1,0 +1,8 @@
+{
+  "source": "google/mozc src/data/dictionary_oss",
+  "sourceRevision": "3f235b4eb6fcff7d14ef5f0fb8ee56de7ee4c732",
+  "maximumCandidatesPerReading": 32,
+  "maximumCost": 7000,
+  "readingCount": 280770,
+  "candidateCount": 383519
+}

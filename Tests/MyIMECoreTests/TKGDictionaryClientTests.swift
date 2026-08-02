@@ -43,4 +43,23 @@ struct TKGDictionaryClientTests {
             ]
         )
     }
+
+    @Test
+    func splitsAlternativeHeadwordSpellings() throws {
+        let source = """
+        {
+          "metadata": {"generated": "2026-08-02", "total_entries": 1},
+          "entries": [{
+            "id": "basic_hayai",
+            "headword": "速い／早い",
+            "vocabulary_tier": "basic"
+          }]
+        }
+        """
+        let data = Data(source.utf8)
+        let snapshot = try TKGDictionaryClient().convert(data)
+        #expect(snapshot.entries == [
+            DictionaryEntry(reading: "hayai", candidates: ["速い", "早い"])
+        ])
+    }
 }

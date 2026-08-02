@@ -69,8 +69,10 @@ public struct TKGDictionaryClient: Sendable {
                 readingOrder.append(reading)
                 candidatesByReading[reading] = []
             }
-            if candidatesByReading[reading]?.contains(entry.headword) == false {
-                candidatesByReading[reading]?.append(entry.headword)
+            for candidate in DictionaryCandidateSplitter.alternatives(
+                from: entry.headword
+            ) where candidatesByReading[reading]?.contains(candidate) == false {
+                candidatesByReading[reading]?.append(candidate)
             }
         }
 

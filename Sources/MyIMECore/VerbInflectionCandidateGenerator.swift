@@ -15,12 +15,24 @@ public struct VerbInflectionCandidateGenerator: Sendable {
     }
 
     public func candidates(for reading: String) -> [String] {
+        Self.candidates(for: reading) { baseReading in
+            candidatesByReading[baseReading] ?? []
+        }
+    }
+
+    public static func candidates(
+        for reading: String,
+        lookup: (String) -> [String]
+    ) -> [String] {
         let normalized = RomanizedReadingNormalizer.dictionaryReading(
             from: reading
         )
         var result: [String] = []
         for rule in Self.rules(for: normalized) {
-            for candidate in candidatesByReading[rule.baseReading] ?? [] {
+            let kanaReading = RomajiConverter().hiragana(from: rule.baseReading)
+            let baseCandidates = lookup(rule.baseReading)
+                + (kanaReading.map(lookup) ?? [])
+            for candidate in baseCandidates {
                 guard candidate.hasSuffix(rule.baseEnding) else {
                     continue
                 }
@@ -44,16 +56,47 @@ public struct VerbInflectionCandidateGenerator: Sendable {
                 ending: String
             )
         ] = [
+            ("te", [("ru", "る")], "て"),
+            ("ta", [("ru", "る")], "た"),
+            ("nai", [("ru", "る")], "ない"),
+            ("nakatta", [("ru", "る")], "なかった"),
+            ("masu", [("ru", "る")], "ます"),
+            ("mashita", [("ru", "る")], "ました"),
+            ("masen", [("ru", "る")], "ません"),
+            ("tai", [("ru", "る")], "たい"),
             ("tte", [("u", "う"), ("tsu", "つ"), ("ru", "る")], "って"),
             ("nde", [("mu", "む"), ("bu", "ぶ"), ("nu", "ぬ")], "んで"),
             ("ite", [("ku", "く")], "いて"),
             ("ide", [("gu", "ぐ")], "いで"),
             ("shite", [("su", "す")], "して"),
+            ("shite", [("suru", "する")], "して"),
             ("tta", [("u", "う"), ("tsu", "つ"), ("ru", "る")], "った"),
             ("nda", [("mu", "む"), ("bu", "ぶ"), ("nu", "ぬ")], "んだ"),
             ("ita", [("ku", "く")], "いた"),
             ("ida", [("gu", "ぐ")], "いだ"),
-            ("shita", [("su", "す")], "した")
+            ("shita", [("su", "す")], "した"),
+            ("shita", [("suru", "する")], "した"),
+            ("shinai", [("suru", "する")], "しない"),
+            ("shimasu", [("suru", "する")], "します"),
+            ("shitai", [("suru", "する")], "したい"),
+            ("wanai", [("u", "う")], "わない"),
+            ("tanai", [("tsu", "つ")], "たない"),
+            ("ranai", [("ru", "る")], "らない"),
+            ("manai", [("mu", "む")], "まない"),
+            ("banai", [("bu", "ぶ")], "ばない"),
+            ("nanai", [("nu", "ぬ")], "なない"),
+            ("kanai", [("ku", "く")], "かない"),
+            ("ganai", [("gu", "ぐ")], "がない"),
+            ("sanai", [("su", "す")], "さない"),
+            ("imasu", [("u", "う")], "います"),
+            ("chimasu", [("tsu", "つ")], "ちます"),
+            ("rimasu", [("ru", "る")], "ります"),
+            ("mimasu", [("mu", "む")], "みます"),
+            ("bimasu", [("bu", "ぶ")], "びます"),
+            ("nimasu", [("nu", "ぬ")], "にます"),
+            ("kimasu", [("ku", "く")], "きます"),
+            ("gimasu", [("gu", "ぐ")], "ぎます"),
+            ("shimasu", [("su", "す")], "します")
         ]
 
         for group in suffixGroups where reading.hasSuffix(group.suffix) {
@@ -83,6 +126,22 @@ public struct VerbInflectionCandidateGenerator: Sendable {
                     baseReading: "iku",
                     baseEnding: "く",
                     inflectedEnding: "った"
+                )
+            )
+        }
+
+        let kuruEndings: [String: String] = [
+            "kite": "来て",
+            "kita": "来た",
+            "konai": "来ない",
+            "kimasu": "来ます"
+        ]
+        if let ending = kuruEndings[reading] {
+            result.append(
+                Rule(
+                    baseReading: "kuru",
+                    baseEnding: "来る",
+                    inflectedEnding: ending
                 )
             )
         }

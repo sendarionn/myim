@@ -39,6 +39,7 @@ final class InputController: IMKInputController {
     private static let systemDictionaryPreviewEnabledDefaultsKey =
         "SystemDictionaryPreviewEnabled"
     private static let maximumCandidateCount = 7
+    private static let maximumIMEDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
 
     private var inputBuffer = ""
@@ -52,6 +53,8 @@ final class InputController: IMKInputController {
     private var userConversionEngine: ConversionEngine
     private var extensionConversionEngine: ConversionEngine
     private var basicConversionEngine: ConversionEngine
+    private let imeConversionEngine: SortedConversionEngine
+    private let supplementalConversionEngine: ConversionEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let credentialStore: CosenseCredentialStore
     private let externalCredentialStore = ExternalServiceCredentialStore()
@@ -81,6 +84,7 @@ final class InputController: IMKInputController {
         let credentialStore = CosenseCredentialStore()
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.loadBasicEntries()
+        let bundledIMEEntries = Self.loadIMEDictionaryEntries()
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
         let selectionRanks = Self.loadCandidateSelectionRanks()
         let nextInputModel = Self.loadNextInputPredictionModel()
@@ -99,6 +103,10 @@ final class InputController: IMKInputController {
             entries: cachedExtensionEntries
         )
         basicConversionEngine = ConversionEngine(entries: bundledEntries)
+        imeConversionEngine = SortedConversionEngine(entries: bundledIMEEntries)
+        supplementalConversionEngine = ConversionEngine(
+            entries: SupplementalDictionary.entries
+        )
         verbInflectionGenerator = VerbInflectionCandidateGenerator(
             entries: bundledEntries
         )
@@ -116,7 +124,7 @@ final class InputController: IMKInputController {
 
         basicDictionaryStatus = bundledEntries.isEmpty
             ? "読込失敗"
-            : "読込済み（\(bundledEntries.count)読み）"
+            : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(bundledIMEEntries.count)読み）"
         updateBasicDictionaryIfNeeded(nil)
     }
 
@@ -281,7 +289,7 @@ final class InputController: IMKInputController {
         menu.addItem(experimentalItem)
 
         addExperimentalToggle(
-            title: "TKGJE基本辞書を使用",
+            title: "ローカル基本辞書で変換候補を取得",
             action: #selector(toggleBasicDictionary(_:)),
             enabled: isBasicDictionaryEnabled,
             to: menu
@@ -1476,6 +1484,34 @@ final class InputController: IMKInputController {
         let basicPrefixCandidates = basicCandidates.filter {
             !basicExactCandidates.contains($0)
         }
+        let kanaLookupReadings = lookupReadings.compactMap {
+            romajiConverter.hiragana(from: $0)
+        }
+        let imeCandidates = isBasicDictionaryEnabled ? mergedCandidates(
+            lookup: {
+                imeConversionEngine.candidates(
+                    matching: $0,
+                    limit: Self.maximumIMEDictionaryPrefixCandidates
+                )
+            },
+            readings: kanaLookupReadings
+        ) : []
+        let imeExactCandidates = isBasicDictionaryEnabled ? mergedCandidates(
+            lookup: { imeConversionEngine.candidates(for: $0) },
+            readings: kanaLookupReadings
+        ) : []
+        let imePrefixCandidates = imeCandidates.filter {
+            !imeExactCandidates.contains($0)
+        }
+        let supplementalCandidates = isBasicDictionaryEnabled ? mergedCandidates(
+            lookup: {
+                supplementalConversionEngine.candidates(
+                    matching: $0,
+                    limit: .max
+                )
+            },
+            readings: lookupReadings
+        ) : []
         let englishCandidates = isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
@@ -1486,6 +1522,9 @@ final class InputController: IMKInputController {
             ? mergedCandidates(
             lookup: {
                 verbInflectionGenerator.candidates(for: $0)
+                    + VerbInflectionCandidateGenerator.candidates(for: $0) {
+                        imeConversionEngine.candidates(for: $0)
+                    }
             },
             readings: lookupReadings
         ) : []
@@ -1507,21 +1546,27 @@ final class InputController: IMKInputController {
                 + rankedUserCandidates
                 + candidatesOrderedByRecency(
                     extensionCandidates
+                        + imeExactCandidates
                         + basicExactCandidates
                         + inflectionCandidates
+                        + supplementalCandidates
                         + englishCandidates
                         + remoteCandidates
+                        + imePrefixCandidates
                         + basicPrefixCandidates
                 )
         } else {
             orderedCandidates = rankedUserCandidates
                 + candidatesOrderedByRecency(
                     extensionCandidates
+                        + imeExactCandidates
                         + basicExactCandidates
                         + inflectionCandidates
+                        + supplementalCandidates
                         + kanaCandidates
                         + englishCandidates
                         + remoteCandidates
+                        + imePrefixCandidates
                         + basicPrefixCandidates
                 )
         }
@@ -2397,6 +2442,20 @@ final class InputController: IMKInputController {
             return []
         }
 
+        return entries
+    }
+
+    private static func loadIMEDictionaryEntries() -> [DictionaryEntry] {
+        guard
+            let dictionaryURL = inputMethodResourceURL(
+                forResource: "ime-dictionary",
+                withExtension: "txt"
+            ),
+            let dictionaryText = try? String(contentsOf: dictionaryURL, encoding: .utf8),
+            let entries = try? DictionaryParser().parse(dictionaryText)
+        else {
+            return []
+        }
         return entries
     }
 

@@ -71,6 +71,18 @@ cp \
 cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary-source.json" \
     "$resources_directory/basic-dictionary-source.json"
+cp \
+    "Sources/MyIMEMacOS/Resources/ime-dictionary.txt" \
+    "$resources_directory/ime-dictionary.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/ime-dictionary-source.json" \
+    "$resources_directory/ime-dictionary-source.json"
+cp \
+    "Sources/MyIMEMacOS/Resources/ime-dictionary-LICENSE.txt" \
+    "$resources_directory/ime-dictionary-LICENSE.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
+    "$resources_directory/mozc-LICENSE.txt"
 xcrun swift "Scripts/generate-ime-icon.swift" "$resources_directory/icon.pdf"
 sips -s format tiff -z 32 32 -s dpiWidth 144 -s dpiHeight 144 \
     "$resources_directory/icon.pdf" \

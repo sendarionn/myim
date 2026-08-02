@@ -7,7 +7,12 @@ struct VerbInflectionCandidateGeneratorTests {
         DictionaryEntry(reading: "utsuru", candidates: ["移る", "写る"]),
         DictionaryEntry(reading: "yomu", candidates: ["読む"]),
         DictionaryEntry(reading: "kaku", candidates: ["書く"]),
-        DictionaryEntry(reading: "iku", candidates: ["行く"])
+        DictionaryEntry(reading: "iku", candidates: ["行く"]),
+        DictionaryEntry(reading: "kangaeru", candidates: ["考える"]),
+        DictionaryEntry(reading: "taberu", candidates: ["食べる"]),
+        DictionaryEntry(reading: "hanasu", candidates: ["話す"]),
+        DictionaryEntry(reading: "benkyousuru", candidates: ["勉強する"]),
+        DictionaryEntry(reading: "kuru", candidates: ["来る"])
     ])
 
     @Test
@@ -22,5 +27,29 @@ struct VerbInflectionCandidateGeneratorTests {
     func createsPastFormCandidates() {
         #expect(generator.candidates(for: "utsutta") == ["移った", "写った"])
         #expect(generator.candidates(for: "yonda") == ["読んだ"])
+    }
+
+    @Test
+    func createsIchidanInflectionCandidates() {
+        #expect(generator.candidates(for: "kangaete") == ["考えて"])
+        #expect(generator.candidates(for: "kangaeta") == ["考えた"])
+        #expect(generator.candidates(for: "tabenai") == ["食べない"])
+        #expect(generator.candidates(for: "tabemasu") == ["食べます"])
+    }
+
+    @Test
+    func createsGodanNegativeAndPoliteCandidates() {
+        #expect(generator.candidates(for: "kakanai") == ["書かない"])
+        #expect(generator.candidates(for: "kakimasu") == ["書きます"])
+        #expect(generator.candidates(for: "hanasanai") == ["話さない"])
+        #expect(generator.candidates(for: "hanashimasu") == ["話します"])
+    }
+
+    @Test
+    func createsIrregularInflectionCandidates() {
+        #expect(generator.candidates(for: "benkyoushite") == ["勉強して"])
+        #expect(generator.candidates(for: "benkyoushinai") == ["勉強しない"])
+        #expect(generator.candidates(for: "kite").contains("来て"))
+        #expect(generator.candidates(for: "konai") == ["来ない"])
     }
 }

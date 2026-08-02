@@ -14,6 +14,12 @@ TIER_ORDER = {
 }
 
 
+def split_alternatives(headword: str) -> list[str]:
+    normalized = headword.replace("／", "/")
+    parts = [part.strip() for part in normalized.split("/") if part.strip()]
+    return parts if len(parts) >= 2 else [headword]
+
+
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="TKGJEのentries_index.jsonをmyim辞書形式へ変換"
@@ -66,8 +72,11 @@ def convert(source: Path, output: Path, tiers: set[str]) -> tuple[int, int]:
 
         reading = romaji_from_entry_id(entry_id)
         candidates = candidates_by_reading.setdefault(reading, [])
-        if headword and "\n" not in headword and headword not in candidates:
-            candidates.append(headword)
+        if not headword or "\n" in headword:
+            continue
+        for candidate in split_alternatives(headword):
+            if candidate not in candidates:
+                candidates.append(candidate)
 
     lines: list[str] = []
     candidate_count = 0
