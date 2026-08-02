@@ -137,6 +137,16 @@ final class InputController: IMKInputController {
             return false
         }
 
+        if isSystemUndoRedoShortcut(event) {
+            if !inputBuffer.isEmpty || tabDictionaryRegistration != nil {
+                clearCompositionForSystemPaste(in: sender)
+            }
+            if !nextInputCandidates.isEmpty {
+                dismissNextInputSuggestions(clearMarkedTextIn: sender)
+            }
+            return false
+        }
+
         if tabDictionaryRegistration != nil {
             return handleTabDictionaryRegistration(event, client: sender)
         }
@@ -1816,11 +1826,23 @@ final class InputController: IMKInputController {
             replacementRange: NSRange(location: NSNotFound, length: NSNotFound)
         )
         inputBuffer = ""
+        tabDictionaryRegistration = nil
         currentCandidates = []
         selectedCandidateIndex = nil
         candidatePanel.hide()
         candidateWindow.hide()
         previewWindow.hide()
+    }
+
+    private func isSystemUndoRedoShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        guard flags == [.command] || flags == [.command, .shift] else {
+            return false
+        }
+        return event.keyCode == 6
+            || event.charactersIgnoringModifiers?.lowercased() == "z"
     }
 
     private func isUserDictionaryRegistrationShortcut(
