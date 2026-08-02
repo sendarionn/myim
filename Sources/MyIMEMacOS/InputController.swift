@@ -1573,8 +1573,9 @@ final class InputController: IMKInputController {
             },
             readings: lookupReadings
         ) : []
+        let basicExactCandidateSet = Set(basicExactCandidates)
         let basicPrefixCandidates = basicCandidates.filter {
-            !basicExactCandidates.contains($0)
+            !basicExactCandidateSet.contains($0)
         }
         let kanaLookupReadings = lookupReadings.compactMap {
             romajiConverter.hiragana(from: $0)
@@ -1592,8 +1593,9 @@ final class InputController: IMKInputController {
             lookup: { imeConversionEngine.candidates(for: $0) },
             readings: kanaLookupReadings
         ) : []
+        let imeExactCandidateSet = Set(imeExactCandidates)
         let imePrefixCandidates = imeCandidates.filter {
-            !imeExactCandidates.contains($0)
+            !imeExactCandidateSet.contains($0)
         }
         let supplementalCandidates = isBasicDictionaryEnabled ? mergedCandidates(
             lookup: {
@@ -1662,8 +1664,11 @@ final class InputController: IMKInputController {
                         + basicPrefixCandidates
                 )
         }
-        currentCandidates = orderedCandidates
-        .filter { seen.insert($0).inserted }
+        currentCandidates = []
+        currentCandidates.reserveCapacity(orderedCandidates.count)
+        for candidate in orderedCandidates where seen.insert(candidate).inserted {
+            currentCandidates.append(candidate)
+        }
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil

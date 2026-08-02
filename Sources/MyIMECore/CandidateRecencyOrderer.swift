@@ -3,13 +3,33 @@ public enum CandidateRecencyOrderer {
         _ candidates: [String],
         ranks: [String: Int]
     ) -> [String] {
-        candidates.enumerated().sorted {
-            let leftRank = ranks[$0.element] ?? Int.min
-            let rightRank = ranks[$1.element] ?? Int.min
-            return leftRank == rightRank
-                ? $0.offset < $1.offset
-                : leftRank > rightRank
+        guard !candidates.isEmpty, !ranks.isEmpty else {
+            return candidates
         }
-        .map(\.element)
+
+        var ranked: [(offset: Int, candidate: String, rank: Int)] = []
+        var unranked: [String] = []
+        ranked.reserveCapacity(min(candidates.count, ranks.count))
+        unranked.reserveCapacity(candidates.count)
+
+        for (offset, candidate) in candidates.enumerated() {
+            if let rank = ranks[candidate] {
+                ranked.append((offset, candidate, rank))
+            } else {
+                unranked.append(candidate)
+            }
+        }
+
+        ranked.sort {
+            $0.rank == $1.rank
+                ? $0.offset < $1.offset
+                : $0.rank > $1.rank
+        }
+
+        var result: [String] = []
+        result.reserveCapacity(candidates.count)
+        result.append(contentsOf: ranked.map(\.candidate))
+        result.append(contentsOf: unranked)
+        return result
     }
 }
