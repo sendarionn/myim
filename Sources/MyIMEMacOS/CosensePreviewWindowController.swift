@@ -14,6 +14,11 @@ final class ExternalInformationWindowController {
     private var installedCookieSignature = ""
     private var requestID = UUID()
     private var displayTask: Task<Void, Never>?
+    private var navigationTask: Task<Void, Never>?
+    private var cachedCosenseCookies: [HTTPCookie] = []
+    private var cookiesLoadedAt = Date.distantPast
+    private static let navigationDebounce: TimeInterval = 0.2
+    private static let cookieCacheLifetime: TimeInterval = 5
 
     init() {
         definitionTextView = NSTextView(frame: .zero)
@@ -58,6 +63,7 @@ final class ExternalInformationWindowController {
         beside candidateFrame: NSRect
     ) {
         displayTask?.cancel()
+        navigationTask?.cancel()
         let currentRequestID = UUID()
         requestID = currentRequestID
         informationPanel.orderOut(nil)
@@ -77,9 +83,7 @@ final class ExternalInformationWindowController {
             return
         }
 
-        let cookies = url.host == "scrapbox.io"
-            ? CosenseWebCookieStore().load()
-            : []
+        let cookies = cookies(for: url)
         let cookieSignature = cookies
             .map { "\($0.name)=\($0.value)" }
             .sorted()
@@ -87,19 +91,36 @@ final class ExternalInformationWindowController {
         informationPanel.title = panelTitle
         if displayedURL != url
             || installedCookieSignature != cookieSignature {
-            var request = URLRequest(url: url)
-            for (field, value) in HTTPCookie.requestHeaderFields(
-                with: cookies
-            ) {
-                request.setValue(value, forHTTPHeaderField: field)
-            }
-            webView.load(request)
-            displayedURL = url
-            installedCookieSignature = cookieSignature
-        }
-        if !cookies.isEmpty {
-            Task { @MainActor [weak self] in
-                await self?.installSharedCosenseCookies(cookies)
+            webView.stopLoading()
+            let navigationDelay = min(
+                Self.navigationDebounce,
+                displayDelay
+            )
+            navigationTask = Task { @MainActor [weak self] in
+                if navigationDelay > 0 {
+                    try? await Task.sleep(
+                        for: .milliseconds(Int(navigationDelay * 1_000))
+                    )
+                }
+                guard
+                    !Task.isCancelled,
+                    let self,
+                    requestID == currentRequestID
+                else {
+                    return
+                }
+                var request = URLRequest(url: url)
+                for (field, value) in HTTPCookie.requestHeaderFields(
+                    with: cookies
+                ) {
+                    request.setValue(value, forHTTPHeaderField: field)
+                }
+                webView.load(request)
+                displayedURL = url
+                if installedCookieSignature != cookieSignature {
+                    installedCookieSignature = cookieSignature
+                    await installSharedCosenseCookies(cookies)
+                }
             }
         }
 
@@ -124,6 +145,18 @@ final class ExternalInformationWindowController {
         }
     }
 
+    private func cookies(for url: URL) -> [HTTPCookie] {
+        guard url.host == "scrapbox.io" else {
+            return []
+        }
+        if Date().timeIntervalSince(cookiesLoadedAt)
+            >= Self.cookieCacheLifetime {
+            cachedCosenseCookies = CosenseWebCookieStore().load()
+            cookiesLoadedAt = Date()
+        }
+        return cachedCosenseCookies
+    }
+
     @MainActor
     private func installSharedCosenseCookies(
         _ cookies: [HTTPCookie]
@@ -141,6 +174,9 @@ final class ExternalInformationWindowController {
     func hide() {
         displayTask?.cancel()
         displayTask = nil
+        navigationTask?.cancel()
+        navigationTask = nil
+        webView.stopLoading()
         requestID = UUID()
         definitionPanel.orderOut(nil)
         informationPanel.orderOut(nil)

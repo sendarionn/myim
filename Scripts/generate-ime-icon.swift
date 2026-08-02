@@ -2,7 +2,7 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-guard CommandLine.arguments.count == 2 || CommandLine.arguments.count == 5 else {
+guard [2, 5, 6].contains(CommandLine.arguments.count) else {
     FileHandle.standardError.write(
         Data("出力先を指定してください\n".utf8)
     )
@@ -10,13 +10,13 @@ guard CommandLine.arguments.count == 2 || CommandLine.arguments.count == 5 else 
 }
 
 let outputURL = URL(fileURLWithPath: CommandLine.arguments[1])
-let width = CommandLine.arguments.count == 5
+let width = CommandLine.arguments.count >= 5
     ? CGFloat(Double(CommandLine.arguments[2]) ?? 16)
     : 16
-let height = CommandLine.arguments.count == 5
+let height = CommandLine.arguments.count >= 5
     ? CGFloat(Double(CommandLine.arguments[3]) ?? 16)
     : 16
-let fontSize = CommandLine.arguments.count == 5
+let fontSize = CommandLine.arguments.count >= 5
     ? CGFloat(Double(CommandLine.arguments[4]) ?? 13)
     : 13
 var mediaBox = CGRect(x: 0, y: 0, width: width, height: height)
@@ -37,6 +37,26 @@ else {
 
 context.beginPDFPage(nil)
 
+let isApplicationIcon = CommandLine.arguments.count == 6
+if isApplicationIcon {
+    let inset = width * 0.06
+    let backgroundRect = CGRect(
+        x: inset,
+        y: inset,
+        width: width - inset * 2,
+        height: height - inset * 2
+    )
+    let backgroundPath = CGPath(
+        roundedRect: backgroundRect,
+        cornerWidth: width * 0.21,
+        cornerHeight: height * 0.21,
+        transform: nil
+    )
+    context.addPath(backgroundPath)
+    context.setFillColor(CGColor(red: 0.12, green: 0.45, blue: 0.86, alpha: 1))
+    context.fillPath()
+}
+
 let font = CTFontCreateWithName(
     "HelveticaNeue-Medium" as CFString,
     fontSize,
@@ -47,7 +67,9 @@ let text = NSAttributedString(
     attributes: [
         NSAttributedString.Key(kCTFontAttributeName as String): font,
         NSAttributedString.Key(kCTForegroundColorAttributeName as String):
-            CGColor(gray: 0, alpha: 1)
+            isApplicationIcon
+                ? CGColor(gray: 1, alpha: 1)
+                : CGColor(gray: 0, alpha: 1)
     ]
 )
 let line = CTLineCreateWithAttributedString(text)

@@ -84,28 +84,41 @@ cp \
     "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
     "$resources_directory/mozc-LICENSE.txt"
 xcrun swift "Scripts/generate-ime-icon.swift" "$resources_directory/icon.pdf"
-sips -s format tiff -z 32 32 -s dpiWidth 144 -s dpiHeight 144 \
-    "$resources_directory/icon.pdf" \
-    --out "$resources_directory/myim-mode-42.tiff" >/dev/null
-sips -s format png -z 16 16 "$resources_directory/icon.pdf" \
+xcrun swift "Scripts/generate-ime-icon.swift" \
+    "$iconset_directory/myim-mode-1x.pdf" 22 16 13
+xcrun swift "Scripts/generate-ime-icon.swift" \
+    "$iconset_directory/myim-mode-2x.pdf" 44 32 26
+xcrun swift "Scripts/generate-ime-icon.swift" \
+    "$resources_directory/app-icon.pdf" 1024 1024 640 app
+sips -s format tiff -s dpiWidth 72 -s dpiHeight 72 \
+    "$iconset_directory/myim-mode-1x.pdf" \
+    --out "$iconset_directory/myim-mode-1x.tiff" >/dev/null
+sips -s format tiff -s dpiWidth 144 -s dpiHeight 144 \
+    "$iconset_directory/myim-mode-2x.pdf" \
+    --out "$iconset_directory/myim-mode-2x.tiff" >/dev/null
+tiffutil -cat \
+    "$iconset_directory/myim-mode-2x.tiff" \
+    "$iconset_directory/myim-mode-1x.tiff" \
+    -out "$resources_directory/myim-mode-48.tiff"
+sips -s format png -z 16 16 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_16x16.png" >/dev/null
-sips -s format png -z 32 32 "$resources_directory/icon.pdf" \
+sips -s format png -z 32 32 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_16x16@2x.png" >/dev/null
-sips -s format png -z 32 32 "$resources_directory/icon.pdf" \
+sips -s format png -z 32 32 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_32x32.png" >/dev/null
-sips -s format png -z 64 64 "$resources_directory/icon.pdf" \
+sips -s format png -z 64 64 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_32x32@2x.png" >/dev/null
-sips -s format png -z 128 128 "$resources_directory/icon.pdf" \
+sips -s format png -z 128 128 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_128x128.png" >/dev/null
-sips -s format png -z 256 256 "$resources_directory/icon.pdf" \
+sips -s format png -z 256 256 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_128x128@2x.png" >/dev/null
-sips -s format png -z 256 256 "$resources_directory/icon.pdf" \
+sips -s format png -z 256 256 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_256x256.png" >/dev/null
-sips -s format png -z 512 512 "$resources_directory/icon.pdf" \
+sips -s format png -z 512 512 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_256x256@2x.png" >/dev/null
-sips -s format png -z 512 512 "$resources_directory/icon.pdf" \
+sips -s format png -z 512 512 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_512x512.png" >/dev/null
-sips -s format png -z 1024 1024 "$resources_directory/icon.pdf" \
+sips -s format png -z 1024 1024 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_512x512@2x.png" >/dev/null
 iconutil -c icns "$iconset_directory" -o "$resources_directory/AppIcon.icns"
 chmod +x "$ime_executable"
