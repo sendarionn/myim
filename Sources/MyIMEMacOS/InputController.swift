@@ -59,7 +59,7 @@ final class InputController: IMKInputController {
     private var userConversionEngine: ConversionEngine
     private var extensionConversionEngine: ConversionEngine
     private var basicConversionEngine: ConversionEngine
-    private let imeConversionEngine: SortedConversionEngine
+    private let imeConversionEngine: IndexedDictionaryEngine
     private let supplementalConversionEngine: ConversionEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let credentialStore: CosenseCredentialStore
@@ -90,7 +90,7 @@ final class InputController: IMKInputController {
         let credentialStore = CosenseCredentialStore()
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.loadBasicEntries()
-        let bundledIMEEntries = Self.loadIMEDictionaryEntries()
+        let indexedIMEEngine = Self.loadIMEDictionaryEngine()
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
         let selectionRanks = Self.loadCandidateSelectionRanks()
         let nextInputModel = Self.loadNextInputPredictionModel()
@@ -109,7 +109,7 @@ final class InputController: IMKInputController {
             entries: cachedExtensionEntries
         )
         basicConversionEngine = ConversionEngine(entries: bundledEntries)
-        imeConversionEngine = SortedConversionEngine(entries: bundledIMEEntries)
+        imeConversionEngine = indexedIMEEngine
         supplementalConversionEngine = ConversionEngine(
             entries: SupplementalDictionary.entries
         )
@@ -130,7 +130,7 @@ final class InputController: IMKInputController {
 
         basicDictionaryStatus = bundledEntries.isEmpty
             ? "読込失敗"
-            : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(bundledIMEEntries.count)読み）"
+            : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(indexedIMEEngine.readingCount)読み）"
         updateBasicDictionaryIfNeeded(nil)
     }
 
@@ -2598,18 +2598,17 @@ final class InputController: IMKInputController {
         return entries
     }
 
-    private static func loadIMEDictionaryEntries() -> [DictionaryEntry] {
+    private static func loadIMEDictionaryEngine() -> IndexedDictionaryEngine {
         guard
             let dictionaryURL = inputMethodResourceURL(
                 forResource: "ime-dictionary",
                 withExtension: "txt"
             ),
-            let dictionaryText = try? String(contentsOf: dictionaryURL, encoding: .utf8),
-            let entries = try? DictionaryParser().parse(dictionaryText)
+            let engine = try? IndexedDictionaryEngine(contentsOf: dictionaryURL)
         else {
-            return []
+            return IndexedDictionaryEngine()
         }
-        return entries
+        return engine
     }
 
     private static func loadUserEntries() -> [DictionaryEntry] {
