@@ -785,7 +785,6 @@ final class InputController: IMKInputController {
                     client: sender
                 )
             }
-            dismissNextInputSuggestions(clearMarkedTextIn: sender)
             return false
         }
         guard !currentCandidates.isEmpty else {
@@ -897,6 +896,15 @@ final class InputController: IMKInputController {
             showTabDictionaryRegistration(client: sender)
             return true
         case 49:
+            if inputBuffer.isEmpty,
+               registration.pastedCandidate == nil {
+                registration.confirmedCandidate =
+                    (registration.confirmedCandidate ?? "") + " "
+                tabDictionaryRegistration = registration
+                setMarkedText(registration.confirmedCandidate ?? "", in: sender)
+                showTabDictionaryRegistration(client: sender)
+                return true
+            }
             registration.pastedCandidate = nil
             tabDictionaryRegistration = registration
             return handleSpace(client: sender)
@@ -1534,7 +1542,7 @@ final class InputController: IMKInputController {
         }
 
         guard let selectedNextInputIndex else {
-            return selectNextInputCandidate(index: 0, client: sender)
+            return false
         }
 
         if let adjacentIndex = candidateWindow.adjacentIndex(
