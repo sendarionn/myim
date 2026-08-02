@@ -25,6 +25,10 @@ final class InputController: IMKInputController {
         "ExtensionDictionaryEnabled"
     private static let englishCompletionEnabledDefaultsKey =
         "EnglishCompletionEnabled"
+    private static let googleSuggestionsEnabledDefaultsKey =
+        "GoogleSuggestionsEnabled"
+    private static let googleSearchEnabledDefaultsKey =
+        "GoogleSearchEnabled"
     private static let cosensePreviewEnabledDefaultsKey =
         "CosensePreviewEnabled"
     private static let systemDictionaryPreviewEnabledDefaultsKey =
@@ -52,6 +56,9 @@ final class InputController: IMKInputController {
     private var nextInputCandidates: [String] = []
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
+    private var googleSuggestionTask: Task<Void, Never>?
+    private var googleSuggestionQuery = ""
+    private var googleSuggestionCandidates: [String] = []
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
@@ -140,6 +147,11 @@ final class InputController: IMKInputController {
         if isUserDictionaryDeletionShortcut(event),
            !inputBuffer.isEmpty {
             removeSelectedUserDictionaryCandidate(client: sender)
+            return true
+        }
+
+        if isGoogleSearchShortcut(event),
+           openSelectedGoogleSearch(client: sender) {
             return true
         }
 
@@ -284,6 +296,18 @@ final class InputController: IMKInputController {
             title: "英語補完を使用",
             action: #selector(toggleEnglishCompletion(_:)),
             enabled: isEnglishCompletionEnabled,
+            to: menu
+        )
+        addExperimentalToggle(
+            title: "Google検索候補を取得",
+            action: #selector(toggleGoogleSuggestions(_:)),
+            enabled: isGoogleSuggestionsEnabled,
+            to: menu
+        )
+        addExperimentalToggle(
+            title: "Google検索を使用",
+            action: #selector(toggleGoogleSearch(_:)),
+            enabled: isGoogleSearchEnabled,
             to: menu
         )
         menu.addItem(.separator())
@@ -443,6 +467,8 @@ final class InputController: IMKInputController {
         previewWindow.hide()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
+        googleSuggestionTask?.cancel()
+        googleSuggestionTask = nil
         nextInputCandidates = []
         selectedNextInputIndex = nil
         nextInputPredictionModel.breakSequence()
@@ -455,6 +481,8 @@ final class InputController: IMKInputController {
         previewWindow.hide()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
+        googleSuggestionTask?.cancel()
+        googleSuggestionTask = nil
         nextInputCandidates = []
         selectedNextInputIndex = nil
         super.inputControllerWillClose()
@@ -716,6 +744,35 @@ final class InputController: IMKInputController {
         toggleCandidateSource(
             defaultsKey: Self.englishCompletionEnabledDefaultsKey,
             currentlyEnabled: isEnglishCompletionEnabled
+        )
+    }
+
+    @objc
+    private func toggleGoogleSuggestions(_ sender: Any?) {
+        let enabled = !isGoogleSuggestionsEnabled
+        UserDefaults.standard.set(
+            enabled,
+            forKey: Self.googleSuggestionsEnabledDefaultsKey
+        )
+        if !enabled {
+            googleSuggestionTask?.cancel()
+            googleSuggestionTask = nil
+            googleSuggestionQuery = ""
+            googleSuggestionCandidates = []
+        }
+        guard !inputBuffer.isEmpty, let inputClient = client() else {
+            return
+        }
+        selectedCandidateIndex = nil
+        updateMarkedText(in: inputClient)
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func toggleGoogleSearch(_ sender: Any?) {
+        UserDefaults.standard.set(
+            !isGoogleSearchEnabled,
+            forKey: Self.googleSearchEnabledDefaultsKey
         )
     }
 
@@ -1273,6 +1330,11 @@ final class InputController: IMKInputController {
             return
         }
 
+        let suggestionInput = conversionReading
+        defer {
+            updateGoogleSuggestionsIfNeeded(for: suggestionInput)
+        }
+
         let normalizedReading = RomanizedReadingNormalizer.dictionaryReading(
             from: conversionReading
         )
@@ -1321,6 +1383,10 @@ final class InputController: IMKInputController {
         let englishCandidates = isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
+        let googleCandidates = isGoogleSuggestionsEnabled
+            && googleSuggestionQuery == conversionReading
+            ? googleSuggestionCandidates
+            : []
         let inflectionCandidates = isBasicDictionaryEnabled
             ? mergedCandidates(
             lookup: {
@@ -1349,6 +1415,7 @@ final class InputController: IMKInputController {
                         + basicExactCandidates
                         + inflectionCandidates
                         + englishCandidates
+                        + googleCandidates
                         + basicPrefixCandidates
                 )
         } else {
@@ -1359,6 +1426,7 @@ final class InputController: IMKInputController {
                         + inflectionCandidates
                         + kanaCandidates
                         + englishCandidates
+                        + googleCandidates
                         + basicPrefixCandidates
                 )
         }
@@ -1402,6 +1470,69 @@ final class InputController: IMKInputController {
                 in: $0
             )
         }
+    }
+
+    private func updateGoogleSuggestionsIfNeeded(for input: String) {
+        guard isGoogleSuggestionsEnabled,
+              input.count >= 2,
+              googleSuggestionQuery != input else {
+            return
+        }
+        googleSuggestionTask?.cancel()
+        googleSuggestionQuery = input
+        googleSuggestionCandidates = []
+        googleSuggestionTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+                let suggestions = try await GoogleSuggestionClient()
+                    .suggestions(for: input)
+                try Task.checkCancellation()
+                guard let self,
+                      isGoogleSuggestionsEnabled,
+                      conversionReading == input else {
+                    return
+                }
+                googleSuggestionCandidates = Array(
+                    suggestions.prefix(Self.maximumCandidateCount)
+                )
+                if let inputClient = client() {
+                    refreshCandidates(client: inputClient)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                NSLog(
+                    "Google検索候補の取得に失敗: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func isGoogleSearchShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        return flags == [.command]
+            && (event.keyCode == 36 || event.keyCode == 76)
+    }
+
+    private func openSelectedGoogleSearch(client sender: Any) -> Bool {
+        guard isGoogleSearchEnabled,
+              let selectedCandidateIndex,
+              currentCandidates.indices.contains(selectedCandidateIndex) else {
+            return false
+        }
+        let candidate = currentCandidates[selectedCandidateIndex]
+        guard let url = try? GoogleSuggestionClient.searchURL(
+            for: candidate
+        ) else {
+            return false
+        }
+        recordCandidateSelection(candidate)
+        commit(candidateValueForCommit(candidate), to: sender)
+        NSWorkspace.shared.open(url)
+        return true
     }
 
     private func registerClipboardInUserDictionary(client sender: Any) -> Bool {
@@ -1976,6 +2107,28 @@ final class InputController: IMKInputController {
     private var isEnglishCompletionEnabled: Bool {
         experimentalFeatureIsEnabled(
             defaultsKey: Self.englishCompletionEnabledDefaultsKey
+        )
+    }
+
+    private var isGoogleSuggestionsEnabled: Bool {
+        if UserDefaults.standard.object(
+            forKey: Self.googleSuggestionsEnabledDefaultsKey
+        ) == nil {
+            return false
+        }
+        return UserDefaults.standard.bool(
+            forKey: Self.googleSuggestionsEnabledDefaultsKey
+        )
+    }
+
+    private var isGoogleSearchEnabled: Bool {
+        if UserDefaults.standard.object(
+            forKey: Self.googleSearchEnabledDefaultsKey
+        ) == nil {
+            return false
+        }
+        return UserDefaults.standard.bool(
+            forKey: Self.googleSearchEnabledDefaultsKey
         )
     }
 

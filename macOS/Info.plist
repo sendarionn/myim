@@ -25,7 +25,7 @@
         <string>MacOSX</string>
     </array>
     <key>CFBundleVersion</key>
-    <string>81</string>
+    <string>83</string>
     <key>ComponentInputModeDict</key>
     <dict>
         <key>TISUnifiedUIForInputMethodEnabling</key>
