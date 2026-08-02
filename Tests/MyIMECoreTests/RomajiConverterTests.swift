@@ -17,10 +17,22 @@ struct RomajiConverterTests {
     @Test
     func createsJapaneseSymbolCandidates() {
         #expect(
-            JapaneseSymbolConverter.candidates(for: ",") == ["、", "，"]
+            JapaneseSymbolConverter.candidates(for: ",") == [",", "、", "，"]
         )
         #expect(
-            JapaneseSymbolConverter.candidates(for: "[") == ["「", "『", "【", "［"]
+            JapaneseSymbolConverter.candidates(for: "[")
+                == ["[", "［", "「", "『", "【"]
+        )
+        #expect(
+            JapaneseSymbolConverter.candidates(for: "-")
+                == ["-", "－", "ー", "―", "−", "—"]
+        )
+        #expect(
+            JapaneseSymbolConverter.candidates(for: "=")
+                == ["=", "＝", "≒", "≠"]
+        )
+        #expect(
+            JapaneseSymbolConverter.candidates(for: "|") == ["|", "｜"]
         )
         #expect(JapaneseSymbolConverter.candidates(for: "zl") == ["→"])
         #expect(JapaneseSymbolConverter.candidates(for: "zh") == ["←"])
