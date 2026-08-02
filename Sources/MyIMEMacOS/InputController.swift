@@ -4,6 +4,13 @@ import MyIMECore
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
+    private struct TabDictionaryRegistration {
+        let originalInput: String
+        let reading: String
+        var pastedCandidate: String?
+        var confirmedCandidate: String?
+    }
+
     private static let defaultDictionarySource = CosenseDictionarySource(
         project: "sendarionn-public",
         pageTitle: "dictionary"
@@ -31,6 +38,7 @@ final class InputController: IMKInputController {
     private var nextInputPredictionModel: NextInputPredictionModel
     private var nextInputCandidates: [String] = []
     private var selectedNextInputIndex: Int?
+    private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
     private let candidatePanel: IMKCandidates
@@ -94,6 +102,16 @@ final class InputController: IMKInputController {
             return false
         }
 
+        if tabDictionaryRegistration != nil {
+            return handleTabDictionaryRegistration(event, client: sender)
+        }
+
+        commitSelectedNextInputBeforeNewInput(event, client: sender)
+
+        if shouldDismissNextInputSuggestions(for: event) {
+            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+        }
+
         if event.keyCode == 15,
            event.modifierFlags.contains([.command, .option, .control]) {
             syncCosenseDictionary(nil)
@@ -153,7 +171,6 @@ final class InputController: IMKInputController {
             return false
         }
 
-        dismissNextInputSuggestions(clearMarkedTextIn: sender)
         if let selectedValue = selectedCandidateValue {
             recordSelectedCandidate()
             commit(selectedValue, to: sender)
@@ -232,6 +249,14 @@ final class InputController: IMKInputController {
         clearNextInputItem.target = self
         menu.addItem(clearNextInputItem)
 
+        let registerSelectionItem = NSMenuItem(
+            title: "選択文字列を辞書登録…",
+            action: #selector(registerSelectedTextInUserDictionary(_:)),
+            keyEquivalent: ""
+        )
+        registerSelectionItem.target = self
+        menu.addItem(registerSelectionItem)
+
         let userDictionaryItem = NSMenuItem(
             title: "ユーザー辞書: \(userEntries.count)読み",
             action: nil,
@@ -297,7 +322,13 @@ final class InputController: IMKInputController {
     }
 
     override func commitComposition(_ sender: Any!) {
-        guard let sender, !inputBuffer.isEmpty else {
+        guard let sender else {
+            return
+        }
+
+        tabDictionaryRegistration = nil
+        if inputBuffer.isEmpty {
+            dismissNextInputSuggestions(clearMarkedTextIn: sender)
             return
         }
 
@@ -577,6 +608,109 @@ final class InputController: IMKInputController {
     }
 
     @objc
+    private func registerSelectedTextInUserDictionary(_ sender: Any?) {
+        let selectedText = selectedTextFromClient()
+        let clipboardText = NSPasteboard.general.string(forType: .string)
+            .flatMap(normalizedRegistrationCandidate)
+        guard let candidate = selectedText ?? clipboardText,
+              !candidate.isEmpty else {
+            showMissingRegistrationCandidateAlert()
+            return
+        }
+
+        let readingInput = NSTextField(frame: .zero)
+        readingInput.placeholderString = "ローマ字の読み"
+        readingInput.frame = NSRect(x: 0, y: 0, width: 420, height: 24)
+
+        let alert = NSAlert()
+        alert.messageText = "ユーザー辞書へ登録"
+        alert.informativeText = selectedText == nil
+            ? "選択文字列を取得できないためクリップボードを使用\n候補: \(candidate)"
+            : "候補: \(candidate)"
+        alert.accessoryView = readingInput
+        alert.addButton(withTitle: "登録")
+        alert.addButton(withTitle: "キャンセル")
+        alert.window.level = .floating
+
+        guard runModalAlert(
+            alert,
+            firstResponder: readingInput
+        ) == .alertFirstButtonReturn else {
+            return
+        }
+
+        let reading = readingInput.stringValue.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard isValidUserDictionaryReading(reading) else {
+            NSSound.beep()
+            return
+        }
+
+        do {
+            try saveUserDictionaryEntry(
+                reading: reading,
+                candidate: candidate
+            )
+            if !inputBuffer.isEmpty, let inputClient = client() {
+                selectedCandidateIndex = nil
+                refreshCandidates(client: inputClient)
+            }
+        } catch {
+            NSLog(
+                "選択文字列の辞書登録に失敗: %@",
+                error.localizedDescription
+            )
+            NSSound.beep()
+        }
+    }
+
+    private func selectedTextFromClient() -> String? {
+        guard let textClient = client() else {
+            return nil
+        }
+        let range = textClient.selectedRange()
+        guard range.location != NSNotFound, range.length > 0 else {
+            return nil
+        }
+        guard let value = textClient.attributedSubstring(from: range)?.string
+        else {
+            return nil
+        }
+        return normalizedRegistrationCandidate(value)
+    }
+
+    private func normalizedRegistrationCandidate(
+        _ value: String
+    ) -> String? {
+        let normalized = value.components(
+            separatedBy: .whitespacesAndNewlines
+        )
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+        return normalized.nilIfEmpty
+    }
+
+    private func isValidUserDictionaryReading(_ reading: String) -> Bool {
+        !reading.isEmpty && reading.unicodeScalars.allSatisfy {
+            $0.isASCII
+                && (CharacterSet.letters.contains($0)
+                    || $0 == "-"
+                    || $0 == "'")
+        }
+    }
+
+    private func showMissingRegistrationCandidateAlert() {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "登録する文字列がありません"
+        alert.informativeText = "文字列を選択するかクリップボードへコピー"
+        alert.addButton(withTitle: "OK")
+        alert.window.level = .floating
+        alert.runModal()
+    }
+
+    @objc
     private func updateBasicDictionaryIfNeeded(_ sender: Any?) {
         guard basicDictionaryStatus != "確認中" else {
             return
@@ -651,12 +785,217 @@ final class InputController: IMKInputController {
         return selectCandidate(index: nextIndex, client: sender)
     }
 
-    private func handleTab(_ event: NSEvent, client sender: Any) -> Bool {
-        guard inputBuffer.isEmpty, !nextInputCandidates.isEmpty else {
+    private func shouldDismissNextInputSuggestions(
+        for event: NSEvent
+    ) -> Bool {
+        guard !nextInputCandidates.isEmpty else {
             return false
         }
-        let offset = event.modifierFlags.contains(.shift) ? -1 : 1
-        return selectNextInputCandidate(offset: offset, client: sender)
+        let nextInputControlKeyCodes: Set<UInt16> = [
+            36, 48, 49, 53, 76, 123, 124, 125, 126
+        ]
+        return !nextInputControlKeyCodes.contains(event.keyCode)
+    }
+
+    private func commitSelectedNextInputBeforeNewInput(
+        _ event: NSEvent,
+        client sender: Any
+    ) {
+        guard
+            shouldDismissNextInputSuggestions(for: event),
+            let selectedNextInputIndex,
+            nextInputCandidates.indices.contains(selectedNextInputIndex),
+            event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+            let characters = event.characters,
+            !characters.isEmpty
+        else {
+            return
+        }
+        commit(nextInputCandidates[selectedNextInputIndex], to: sender)
+    }
+
+    private func handleTab(_ event: NSEvent, client sender: Any) -> Bool {
+        if inputBuffer.isEmpty {
+            guard !nextInputCandidates.isEmpty else {
+                return false
+            }
+            let offset = event.modifierFlags.contains(.shift) ? -1 : 1
+            return selectNextInputCandidate(offset: offset, client: sender)
+        }
+
+        guard selectedCandidateIndex == nil else {
+            return false
+        }
+        tabDictionaryRegistration = TabDictionaryRegistration(
+            originalInput: inputBuffer,
+            reading: conversionReading.lowercased()
+        )
+        inputBuffer = ""
+        currentCandidates = []
+        candidatePanel.hide()
+        previewWindow.hide()
+        setMarkedText("", in: sender)
+        showTabDictionaryRegistration(client: sender)
+        return true
+    }
+
+    private func handleTabDictionaryRegistration(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        guard var registration = tabDictionaryRegistration else {
+            return false
+        }
+
+        switch event.keyCode {
+        case 36, 76:
+            let currentCandidate = registration.pastedCandidate
+                ?? selectedCandidateValue
+                ?? inputBuffer.nilIfEmpty
+            if currentCandidate == nil,
+               let confirmedCandidate = registration.confirmedCandidate {
+                do {
+                    try saveUserDictionaryEntry(
+                        reading: registration.reading,
+                        candidate: confirmedCandidate
+                    )
+                    tabDictionaryRegistration = nil
+                    commit(confirmedCandidate, to: sender)
+                } catch {
+                    NSLog(
+                        "ユーザー辞書の保存に失敗: %@",
+                        error.localizedDescription
+                    )
+                    NSSound.beep()
+                }
+                return true
+            }
+            guard let currentCandidate else {
+                NSSound.beep()
+                return true
+            }
+            registration.confirmedCandidate =
+                (registration.confirmedCandidate ?? "") + currentCandidate
+            registration.pastedCandidate = nil
+            tabDictionaryRegistration = registration
+            inputBuffer = ""
+            currentCandidates = []
+            selectedCandidateIndex = nil
+            setMarkedText(registration.confirmedCandidate ?? "", in: sender)
+            showTabDictionaryRegistration(client: sender)
+            return true
+        case 49:
+            registration.pastedCandidate = nil
+            tabDictionaryRegistration = registration
+            return handleSpace(client: sender)
+        case 123:
+            return moveCandidate(.left, client: sender)
+        case 124:
+            return moveCandidate(.right, client: sender)
+        case 125:
+            return moveCandidate(.down, client: sender)
+        case 126:
+            return moveCandidate(.up, client: sender)
+        case 51:
+            if inputBuffer.isEmpty,
+               registration.pastedCandidate == nil,
+               var confirmedCandidate = registration.confirmedCandidate,
+               !confirmedCandidate.isEmpty {
+                confirmedCandidate.removeLast()
+                registration.confirmedCandidate = confirmedCandidate.nilIfEmpty
+                tabDictionaryRegistration = registration
+                setMarkedText(confirmedCandidate, in: sender)
+                showTabDictionaryRegistration(client: sender)
+                return true
+            }
+            registration.pastedCandidate = nil
+            tabDictionaryRegistration = registration
+            if inputBuffer.isEmpty {
+                return true
+            }
+            return deleteBackward(from: sender)
+        case 53:
+            tabDictionaryRegistration = nil
+            inputBuffer = registration.originalInput
+            currentCandidates = []
+            selectedCandidateIndex = nil
+            updateMarkedText(in: sender)
+            refreshCandidates(client: sender)
+            return true
+        default:
+            break
+        }
+
+        if isUserDictionaryRegistrationShortcut(event) {
+            let pasted = NSPasteboard.general.string(forType: .string)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !pasted.isEmpty else {
+                NSSound.beep()
+                return true
+            }
+            registration.pastedCandidate = pasted
+            tabDictionaryRegistration = registration
+            inputBuffer = ""
+            currentCandidates = []
+            selectedCandidateIndex = nil
+            setMarkedText(
+                (registration.confirmedCandidate ?? "") + pasted,
+                in: sender
+            )
+            showTabDictionaryRegistration(client: sender)
+            return true
+        }
+
+        guard
+            event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+            let characters = event.characters,
+            !characters.isEmpty
+        else {
+            return true
+        }
+        registration.pastedCandidate = nil
+        tabDictionaryRegistration = registration
+        inputBuffer += characters
+        selectedCandidateIndex = nil
+        setMarkedText(
+            (registration.confirmedCandidate ?? "") + inputBuffer,
+            in: sender
+        )
+        refreshCandidates(client: sender)
+        return true
+    }
+
+    private func showTabDictionaryRegistration(client sender: Any) {
+        guard let registration = tabDictionaryRegistration else {
+            return
+        }
+        if let confirmedCandidate = registration.confirmedCandidate,
+           inputBuffer.isEmpty,
+           registration.pastedCandidate == nil {
+            candidateWindow.show(
+                candidates: [
+                    "読み: \(registration.reading)",
+                    "登録: \(confirmedCandidate)",
+                    "候補を続けて入力 / Returnで登録"
+                ],
+                selectedIndex: nil,
+                near: inputLocation(for: sender)
+            )
+            return
+        }
+        let candidate = registration.pastedCandidate ?? inputBuffer.nilIfEmpty
+        let candidateDisplay = candidate == nil
+            ? "候補を入力 / ⌘Vで貼付"
+            : candidate!
+        candidateWindow.show(
+            candidates: [
+                "読み: \(registration.reading)",
+                candidateDisplay,
+                "Returnで登録 / Escで中止"
+            ],
+            selectedIndex: nil,
+            near: inputLocation(for: sender)
+        )
     }
 
     private func shouldSuppressActivationSpace(_ event: NSEvent) -> Bool {
@@ -727,8 +1066,10 @@ final class InputController: IMKInputController {
 
         selectedCandidateIndex = index
         showCandidateWindow(client: sender)
+        let registrationPrefix = tabDictionaryRegistration?
+            .confirmedCandidate ?? ""
         setMarkedText(
-            currentCandidates[index] + conversionSuffix,
+            registrationPrefix + currentCandidates[index] + conversionSuffix,
             in: sender
         )
         showPreview(for: currentCandidates[index])
@@ -882,39 +1223,11 @@ final class InputController: IMKInputController {
             return false
         }
 
-        let normalizedReading =
-            RomanizedReadingNormalizer.dictionaryReading(from: reading)
-        if let index = userEntries.firstIndex(where: {
-            RomanizedReadingNormalizer.dictionaryReading(from: $0.reading)
-                == normalizedReading
-        }) {
-            var candidates = userEntries[index].candidates
-            if !candidates.contains(candidate) {
-                candidates.append(candidate)
-            }
-            userEntries[index] = DictionaryEntry(
-                reading: userEntries[index].reading,
-                candidates: candidates
-            )
-        } else {
-            userEntries.append(
-                DictionaryEntry(
-                    reading: reading,
-                    candidates: [candidate]
-                )
-            )
-        }
-
         do {
-            let cache = try Self.userDictionaryCache()
-            try cache.save(
-                dictionaryText: DictionarySerializer.text(from: userEntries),
-                metadata: DictionaryCacheMetadata(
-                    syncedAt: Date(),
-                    entryCount: userEntries.count
-                )
+            try saveUserDictionaryEntry(
+                reading: reading,
+                candidate: candidate
             )
-            rebuildConversionEngine()
             clearCompositionForSystemPaste(in: sender)
             return true
         } catch {
@@ -925,6 +1238,26 @@ final class InputController: IMKInputController {
             NSSound.beep()
             return false
         }
+    }
+
+    private func saveUserDictionaryEntry(
+        reading: String,
+        candidate: String
+    ) throws {
+        userEntries = UserDictionaryEditor.adding(
+            reading: reading,
+            candidate: candidate,
+            to: userEntries
+        )
+        let cache = try Self.userDictionaryCache()
+        try cache.save(
+            dictionaryText: DictionarySerializer.text(from: userEntries),
+            metadata: DictionaryCacheMetadata(
+                syncedAt: Date(),
+                entryCount: userEntries.count
+            )
+        )
+        rebuildConversionEngine()
     }
 
     private func clearCompositionForSystemPaste(in sender: Any) {
@@ -1059,7 +1392,11 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
-        updateMarkedText(in: sender)
+        setMarkedText(
+            (tabDictionaryRegistration?.confirmedCandidate ?? "")
+                + inputBuffer,
+            in: sender
+        )
         refreshCandidates(client: sender)
         return true
     }
@@ -1090,6 +1427,7 @@ final class InputController: IMKInputController {
             replacementRange: NSRange(location: NSNotFound, length: NSNotFound)
         )
         inputBuffer = ""
+        tabDictionaryRegistration = nil
         currentCandidates = []
         selectedCandidateIndex = nil
         candidatePanel.hide()
@@ -1188,15 +1526,14 @@ final class InputController: IMKInputController {
     private func dismissNextInputSuggestions(
         clearMarkedTextIn sender: Any?
     ) {
-        guard !nextInputCandidates.isEmpty else {
-            return
-        }
         if selectedNextInputIndex != nil, let sender {
             setMarkedText("", in: sender)
         }
         nextInputCandidates = []
         selectedNextInputIndex = nil
+        candidatePanel.hide()
         candidateWindow.hide()
+        previewWindow.hide()
     }
 
     private func updateMarkedText(in sender: Any) {
@@ -1670,6 +2007,12 @@ final class InputController: IMKInputController {
 
 private struct BundledBasicDictionaryMetadata: Decodable {
     let generated: String
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
 }
 
 private extension CosenseDictionarySource {
