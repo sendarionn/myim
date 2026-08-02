@@ -9,6 +9,7 @@ final class InputController: IMKInputController {
         pageTitle: "dictionary"
     )
     private static let projectDefaultsKey = "CosenseExtensionProject"
+    private static let nextInputEnabledDefaultsKey = "NextInputPredictionEnabled"
     private static let maximumCandidateCount = 7
 
     private var inputBuffer = ""
@@ -27,6 +28,9 @@ final class InputController: IMKInputController {
     private var cosenseCredential: CosenseCredential?
     private var candidateSelectionRanks: [String: Int]
     private var nextCandidateSelectionRank: Int
+    private var nextInputPredictionModel: NextInputPredictionModel
+    private var nextInputCandidates: [String] = []
+    private var selectedNextInputIndex: Int?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
     private let candidatePanel: IMKCandidates
@@ -44,6 +48,7 @@ final class InputController: IMKInputController {
         let bundledEntries = Self.loadBasicEntries()
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
         let selectionRanks = Self.loadCandidateSelectionRanks()
+        let nextInputModel = Self.loadNextInputPredictionModel()
 
         dictionarySource = source
         self.credentialStore = credentialStore
@@ -53,6 +58,7 @@ final class InputController: IMKInputController {
         extensionEntries = cachedExtensionEntries
         candidateSelectionRanks = selectionRanks
         nextCandidateSelectionRank = (selectionRanks.values.max() ?? 0) + 1
+        nextInputPredictionModel = nextInputModel
         userConversionEngine = ConversionEngine(entries: cachedUserEntries)
         extensionConversionEngine = ConversionEngine(
             entries: cachedExtensionEntries
@@ -100,6 +106,8 @@ final class InputController: IMKInputController {
         }
 
         switch event.keyCode {
+        case 48:
+            return handleTab(event, client: sender)
         case 49:
             if inputBuffer.isEmpty, shouldSuppressActivationSpace(event) {
                 activatedAt = nil
@@ -145,6 +153,7 @@ final class InputController: IMKInputController {
             return false
         }
 
+        dismissNextInputSuggestions(clearMarkedTextIn: sender)
         if let selectedValue = selectedCandidateValue {
             recordSelectedCandidate()
             commit(selectedValue, to: sender)
@@ -205,6 +214,23 @@ final class InputController: IMKInputController {
         )
         updateBasicItem.target = self
         menu.addItem(updateBasicItem)
+
+        let nextInputItem = NSMenuItem(
+            title: "次入力候補を使用",
+            action: #selector(toggleNextInputPrediction(_:)),
+            keyEquivalent: ""
+        )
+        nextInputItem.target = self
+        nextInputItem.state = isNextInputPredictionEnabled ? .on : .off
+        menu.addItem(nextInputItem)
+
+        let clearNextInputItem = NSMenuItem(
+            title: "次入力履歴を削除",
+            action: #selector(clearNextInputPredictionHistory(_:)),
+            keyEquivalent: ""
+        )
+        clearNextInputItem.target = self
+        menu.addItem(clearNextInputItem)
 
         let userDictionaryItem = NSMenuItem(
             title: "ユーザー辞書: \(userEntries.count)読み",
@@ -293,6 +319,9 @@ final class InputController: IMKInputController {
         candidatePanel.hide()
         candidateWindow.hide()
         previewWindow.hide()
+        nextInputCandidates = []
+        selectedNextInputIndex = nil
+        nextInputPredictionModel.breakSequence()
         super.deactivateServer(sender)
     }
 
@@ -300,6 +329,8 @@ final class InputController: IMKInputController {
         candidatePanel.hide()
         candidateWindow.hide()
         previewWindow.hide()
+        nextInputCandidates = []
+        selectedNextInputIndex = nil
         super.inputControllerWillClose()
     }
 
@@ -518,6 +549,34 @@ final class InputController: IMKInputController {
     }
 
     @objc
+    private func toggleNextInputPrediction(_ sender: Any?) {
+        let enabled = !isNextInputPredictionEnabled
+        UserDefaults.standard.set(
+            enabled,
+            forKey: Self.nextInputEnabledDefaultsKey
+        )
+        if !enabled {
+            dismissNextInputSuggestions(clearMarkedTextIn: client())
+            nextInputPredictionModel.breakSequence()
+        }
+    }
+
+    @objc
+    private func clearNextInputPredictionHistory(_ sender: Any?) {
+        dismissNextInputSuggestions(clearMarkedTextIn: client())
+        nextInputPredictionModel.removeAll()
+        do {
+            try Self.saveNextInputPredictionModel(nextInputPredictionModel)
+        } catch {
+            NSLog(
+                "次入力履歴の削除に失敗: %@",
+                error.localizedDescription
+            )
+            NSSound.beep()
+        }
+    }
+
+    @objc
     private func updateBasicDictionaryIfNeeded(_ sender: Any?) {
         guard basicDictionaryStatus != "確認中" else {
             return
@@ -574,6 +633,13 @@ final class InputController: IMKInputController {
 
     private func handleSpace(client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
+            if selectedNextInputIndex != nil {
+                return selectNextInputCandidate(
+                    offset: 1,
+                    client: sender
+                )
+            }
+            dismissNextInputSuggestions(clearMarkedTextIn: sender)
             return false
         }
         guard !currentCandidates.isEmpty else {
@@ -583,6 +649,14 @@ final class InputController: IMKInputController {
         let nextIndex = ((selectedCandidateIndex ?? -1) + 1)
             % currentCandidates.count
         return selectCandidate(index: nextIndex, client: sender)
+    }
+
+    private func handleTab(_ event: NSEvent, client sender: Any) -> Bool {
+        guard inputBuffer.isEmpty, !nextInputCandidates.isEmpty else {
+            return false
+        }
+        let offset = event.modifierFlags.contains(.shift) ? -1 : 1
+        return selectNextInputCandidate(offset: offset, client: sender)
     }
 
     private func shouldSuppressActivationSpace(_ event: NSEvent) -> Bool {
@@ -603,7 +677,7 @@ final class InputController: IMKInputController {
         client sender: Any
     ) -> Bool {
         guard !inputBuffer.isEmpty else {
-            return false
+            return moveNextInputCandidate(direction, client: sender)
         }
 
         guard !currentCandidates.isEmpty else {
@@ -918,7 +992,14 @@ final class InputController: IMKInputController {
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            return false
+            guard
+                let selectedNextInputIndex,
+                nextInputCandidates.indices.contains(selectedNextInputIndex)
+            else {
+                return false
+            }
+            commit(nextInputCandidates[selectedNextInputIndex], to: sender)
+            return true
         }
 
         let value = selectedCandidateValue ?? inputBuffer
@@ -985,7 +1066,11 @@ final class InputController: IMKInputController {
 
     private func cancelInput(in sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            return false
+            guard !nextInputCandidates.isEmpty else {
+                return false
+            }
+            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+            return true
         }
 
         selectedCandidateIndex = nil
@@ -1010,6 +1095,108 @@ final class InputController: IMKInputController {
         candidatePanel.hide()
         candidateWindow.hide()
         previewWindow.hide()
+        recordCommittedInput(value, client: sender)
+    }
+
+    private func moveNextInputCandidate(
+        _ direction: CandidateNavigationDirection,
+        client sender: Any
+    ) -> Bool {
+        guard !nextInputCandidates.isEmpty else {
+            return false
+        }
+
+        guard let selectedNextInputIndex else {
+            return selectNextInputCandidate(index: 0, client: sender)
+        }
+
+        if let adjacentIndex = candidateWindow.adjacentIndex(
+            from: selectedNextInputIndex,
+            direction: direction
+        ) {
+            return selectNextInputCandidate(
+                index: adjacentIndex,
+                client: sender
+            )
+        }
+
+        let offset: Int
+        switch direction {
+        case .left, .up:
+            offset = -1
+        case .right, .down:
+            offset = 1
+        }
+        return selectNextInputCandidate(offset: offset, client: sender)
+    }
+
+    private func selectNextInputCandidate(
+        offset: Int,
+        client sender: Any
+    ) -> Bool {
+        let currentIndex = selectedNextInputIndex
+            ?? (offset > 0 ? -1 : 0)
+        let nextIndex = (
+            currentIndex + offset + nextInputCandidates.count
+        ) % nextInputCandidates.count
+        return selectNextInputCandidate(index: nextIndex, client: sender)
+    }
+
+    private func selectNextInputCandidate(
+        index: Int,
+        client sender: Any
+    ) -> Bool {
+        guard nextInputCandidates.indices.contains(index) else {
+            return true
+        }
+        selectedNextInputIndex = index
+        candidateWindow.select(index: index)
+        setMarkedText(nextInputCandidates[index], in: sender)
+        showPreview(for: nextInputCandidates[index])
+        return true
+    }
+
+    private func recordCommittedInput(_ value: String, client sender: Any) {
+        guard isNextInputPredictionEnabled else {
+            return
+        }
+        nextInputPredictionModel.record(value)
+        do {
+            try Self.saveNextInputPredictionModel(nextInputPredictionModel)
+        } catch {
+            NSLog(
+                "次入力履歴の保存に失敗: %@",
+                error.localizedDescription
+            )
+        }
+
+        nextInputCandidates = nextInputPredictionModel.candidates(
+            after: value,
+            limit: Self.maximumCandidateCount
+        )
+        selectedNextInputIndex = nil
+        guard !nextInputCandidates.isEmpty else {
+            return
+        }
+        candidateWindow.show(
+            candidates: nextInputCandidates,
+            selectedIndex: nil,
+            near: inputLocation(for: sender)
+        )
+    }
+
+    private func dismissNextInputSuggestions(
+        clearMarkedTextIn sender: Any?
+    ) {
+        guard !nextInputCandidates.isEmpty else {
+            return
+        }
+        if selectedNextInputIndex != nil, let sender {
+            setMarkedText("", in: sender)
+        }
+        nextInputCandidates = []
+        selectedNextInputIndex = nil
+        candidateWindow.hide()
     }
 
     private func updateMarkedText(in sender: Any) {
@@ -1127,6 +1314,17 @@ final class InputController: IMKInputController {
         case nil:
             return "なし"
         }
+    }
+
+    private var isNextInputPredictionEnabled: Bool {
+        if UserDefaults.standard.object(
+            forKey: Self.nextInputEnabledDefaultsKey
+        ) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(
+            forKey: Self.nextInputEnabledDefaultsKey
+        )
     }
 
     private func candidateValueForCommit(_ candidate: String) -> String {
@@ -1413,6 +1611,47 @@ final class InputController: IMKInputController {
                 isDirectory: true
             )
             .appendingPathComponent("candidate-selection-history.json")
+    }
+
+    private static func loadNextInputPredictionModel()
+        -> NextInputPredictionModel {
+        guard
+            let data = try? Data(contentsOf: nextInputPredictionModelURL()),
+            var model = try? JSONDecoder().decode(
+                NextInputPredictionModel.self,
+                from: data
+            )
+        else {
+            return NextInputPredictionModel()
+        }
+        model.breakSequence()
+        return model
+    }
+
+    private static func saveNextInputPredictionModel(
+        _ model: NextInputPredictionModel
+    ) throws {
+        let fileManager = FileManager.default
+        let fileURL = nextInputPredictionModelURL()
+        try fileManager.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try JSONEncoder().encode(model).write(to: fileURL, options: .atomic)
+        try fileManager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+    }
+
+    private static func nextInputPredictionModelURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(
+                "Library/Application Support/myim/user",
+                isDirectory: true
+            )
+            .appendingPathComponent("next-input-model.json")
     }
 
     private static func legacyExtensionCache(
