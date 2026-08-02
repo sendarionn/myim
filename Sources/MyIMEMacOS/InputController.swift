@@ -18,6 +18,7 @@ final class InputController: IMKInputController {
     private static let projectDefaultsKey = "CosenseExtensionProject"
     private static let nextInputEnabledDefaultsKey = "NextInputPredictionEnabled"
     private static let maximumCandidateCount = 7
+    private static let nextInputDismissInterval: TimeInterval = 5
 
     private var inputBuffer = ""
     private var activatedAt: TimeInterval?
@@ -38,6 +39,7 @@ final class InputController: IMKInputController {
     private var nextInputPredictionModel: NextInputPredictionModel
     private var nextInputCandidates: [String] = []
     private var selectedNextInputIndex: Int?
+    private var nextInputDismissTimer: Timer?
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
@@ -350,6 +352,8 @@ final class InputController: IMKInputController {
         candidatePanel.hide()
         candidateWindow.hide()
         previewWindow.hide()
+        nextInputDismissTimer?.invalidate()
+        nextInputDismissTimer = nil
         nextInputCandidates = []
         selectedNextInputIndex = nil
         nextInputPredictionModel.breakSequence()
@@ -360,6 +364,8 @@ final class InputController: IMKInputController {
         candidatePanel.hide()
         candidateWindow.hide()
         previewWindow.hide()
+        nextInputDismissTimer?.invalidate()
+        nextInputDismissTimer = nil
         nextInputCandidates = []
         selectedNextInputIndex = nil
         super.inputControllerWillClose()
@@ -1498,6 +1504,7 @@ final class InputController: IMKInputController {
         candidateWindow.select(index: index)
         setMarkedText(nextInputCandidates[index], in: sender)
         showPreview(for: nextInputCandidates[index])
+        scheduleNextInputDismissal()
         return true
     }
 
@@ -1521,6 +1528,8 @@ final class InputController: IMKInputController {
         )
         selectedNextInputIndex = nil
         guard !nextInputCandidates.isEmpty else {
+            nextInputDismissTimer?.invalidate()
+            nextInputDismissTimer = nil
             return
         }
         candidateWindow.show(
@@ -1528,11 +1537,27 @@ final class InputController: IMKInputController {
             selectedIndex: nil,
             near: inputLocation(for: sender)
         )
+        scheduleNextInputDismissal()
+    }
+
+    private func scheduleNextInputDismissal() {
+        nextInputDismissTimer?.invalidate()
+        nextInputDismissTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.nextInputDismissInterval,
+            repeats: false
+        ) { [weak self] _ in
+            guard let self else {
+                return
+            }
+            dismissNextInputSuggestions(clearMarkedTextIn: client())
+        }
     }
 
     private func dismissNextInputSuggestions(
         clearMarkedTextIn sender: Any?
     ) {
+        nextInputDismissTimer?.invalidate()
+        nextInputDismissTimer = nil
         if selectedNextInputIndex != nil, let sender {
             setMarkedText("", in: sender)
         }
