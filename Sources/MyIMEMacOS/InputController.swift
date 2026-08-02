@@ -323,7 +323,7 @@ final class InputController: IMKInputController {
             to: menu
         )
         addExperimentalToggle(
-            title: "Web検索を使用",
+            title: "Command＋ReturnでWeb検索",
             action: #selector(toggleWebSearch(_:)),
             enabled: isWebSearchEnabled,
             to: menu

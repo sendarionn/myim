@@ -192,7 +192,7 @@ macOS標準辞書の利用範囲と変換候補への利用方針は`docs/MACOS_
 - 「Wikipedia候補を取得」でWikipediaの記事名候補をオン・オフ
 - 「日本語入力から英語の変換候補を取得」でApple Translation frameworkによる英訳候補をオン・オフ
 - 「Azure英訳候補を取得」でAzure Translator Dictionary Lookupの複数英訳をオン・オフ
-- 「Web検索を使用」で`Command＋Return`によるブラウザ検索をオン・オフ
+- 「Command＋ReturnでWeb検索」で候補確定とブラウザ検索をオン・オフ
 - 「次入力候補を使用」で学習と表示をオン・オフ
 - 「Cosenseパネルを使用」でページ確認と表示をオン・オフ
 - 「macOS辞書パネルを使用」で語義抽出と表示をオン・オフ
@@ -231,7 +231,7 @@ Cosenseパネルを無効にすると、候補選択時のページ存在確認�
 
 1. 入力ソースメニューから「外部候補とWeb検索を設定…」を開く
 2. 検索語を挿入する位置へ`%s`を含めたURLを設定する
-3. 「Web検索を使用」を有効にする
+3. 「Command＋ReturnでWeb検索」を有効にする
 4. 任意の候補を選択して`Command＋Return`を押す
 5. 候補を確定し、設定したURLを既定ブラウザで開く
 
@@ -246,6 +246,8 @@ https://ja.wikipedia.org/w/index.php?search=%s
 ```
 
 `%s`を含まないURL、HTTPまたはHTTPS以外のURLは保存しません
+
+入力ソースメニューは「操作キー＋実行結果」など、操作後の動作が分かる名前を使用します
 
 ## Cosense辞書
 
