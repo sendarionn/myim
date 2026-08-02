@@ -17,6 +17,18 @@ final class InputController: IMKInputController {
     )
     private static let projectDefaultsKey = "CosenseExtensionProject"
     private static let nextInputEnabledDefaultsKey = "NextInputPredictionEnabled"
+    private static let basicDictionaryEnabledDefaultsKey =
+        "BasicDictionaryEnabled"
+    private static let userDictionaryEnabledDefaultsKey =
+        "UserDictionaryEnabled"
+    private static let extensionDictionaryEnabledDefaultsKey =
+        "ExtensionDictionaryEnabled"
+    private static let englishCompletionEnabledDefaultsKey =
+        "EnglishCompletionEnabled"
+    private static let cosensePreviewEnabledDefaultsKey =
+        "CosensePreviewEnabled"
+    private static let systemDictionaryPreviewEnabledDefaultsKey =
+        "SystemDictionaryPreviewEnabled"
     private static let maximumCandidateCount = 7
     private static let nextInputDismissInterval: TimeInterval = 5
 
@@ -240,6 +252,42 @@ final class InputController: IMKInputController {
         updateBasicItem.target = self
         menu.addItem(updateBasicItem)
 
+        menu.addItem(.separator())
+
+        let experimentalItem = NSMenuItem(
+            title: "実験機能",
+            action: nil,
+            keyEquivalent: ""
+        )
+        experimentalItem.isEnabled = false
+        menu.addItem(experimentalItem)
+
+        addExperimentalToggle(
+            title: "TKGJE基本辞書を使用",
+            action: #selector(toggleBasicDictionary(_:)),
+            enabled: isBasicDictionaryEnabled,
+            to: menu
+        )
+        addExperimentalToggle(
+            title: "ローカルユーザー辞書を使用",
+            action: #selector(toggleUserDictionary(_:)),
+            enabled: isUserDictionaryEnabled,
+            to: menu
+        )
+        addExperimentalToggle(
+            title: "Cosense拡張辞書を使用",
+            action: #selector(toggleExtensionDictionary(_:)),
+            enabled: isExtensionDictionaryEnabled,
+            to: menu
+        )
+        addExperimentalToggle(
+            title: "英語補完を使用",
+            action: #selector(toggleEnglishCompletion(_:)),
+            enabled: isEnglishCompletionEnabled,
+            to: menu
+        )
+        menu.addItem(.separator())
+
         let nextInputItem = NSMenuItem(
             title: "次入力候補を使用",
             action: #selector(toggleNextInputPrediction(_:)),
@@ -248,6 +296,25 @@ final class InputController: IMKInputController {
         nextInputItem.target = self
         nextInputItem.state = isNextInputPredictionEnabled ? .on : .off
         menu.addItem(nextInputItem)
+
+        let cosensePreviewItem = NSMenuItem(
+            title: "Cosenseパネルを使用",
+            action: #selector(toggleCosensePreview(_:)),
+            keyEquivalent: ""
+        )
+        cosensePreviewItem.target = self
+        cosensePreviewItem.state = isCosensePreviewEnabled ? .on : .off
+        menu.addItem(cosensePreviewItem)
+
+        let systemDictionaryPreviewItem = NSMenuItem(
+            title: "macOS辞書パネルを使用",
+            action: #selector(toggleSystemDictionaryPreview(_:)),
+            keyEquivalent: ""
+        )
+        systemDictionaryPreviewItem.target = self
+        systemDictionaryPreviewItem.state = isSystemDictionaryPreviewEnabled
+            ? .on : .off
+        menu.addItem(systemDictionaryPreviewItem)
 
         let clearNextInputItem = NSMenuItem(
             title: "次入力履歴を削除",
@@ -305,6 +372,22 @@ final class InputController: IMKInputController {
         basicStatusItem.isEnabled = false
         menu.addItem(basicStatusItem)
         return menu
+    }
+
+    private func addExperimentalToggle(
+        title: String,
+        action: Selector,
+        enabled: Bool,
+        to menu: NSMenu
+    ) {
+        let item = NSMenuItem(
+            title: title,
+            action: action,
+            keyEquivalent: ""
+        )
+        item.target = self
+        item.state = enabled ? .on : .off
+        menu.addItem(item)
     }
 
     override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
@@ -601,6 +684,83 @@ final class InputController: IMKInputController {
         if !enabled {
             dismissNextInputSuggestions(clearMarkedTextIn: client())
             nextInputPredictionModel.breakSequence()
+        }
+    }
+
+    @objc
+    private func toggleBasicDictionary(_ sender: Any?) {
+        toggleCandidateSource(
+            defaultsKey: Self.basicDictionaryEnabledDefaultsKey,
+            currentlyEnabled: isBasicDictionaryEnabled
+        )
+    }
+
+    @objc
+    private func toggleUserDictionary(_ sender: Any?) {
+        toggleCandidateSource(
+            defaultsKey: Self.userDictionaryEnabledDefaultsKey,
+            currentlyEnabled: isUserDictionaryEnabled
+        )
+    }
+
+    @objc
+    private func toggleExtensionDictionary(_ sender: Any?) {
+        toggleCandidateSource(
+            defaultsKey: Self.extensionDictionaryEnabledDefaultsKey,
+            currentlyEnabled: isExtensionDictionaryEnabled
+        )
+    }
+
+    @objc
+    private func toggleEnglishCompletion(_ sender: Any?) {
+        toggleCandidateSource(
+            defaultsKey: Self.englishCompletionEnabledDefaultsKey,
+            currentlyEnabled: isEnglishCompletionEnabled
+        )
+    }
+
+    private func toggleCandidateSource(
+        defaultsKey: String,
+        currentlyEnabled: Bool
+    ) {
+        UserDefaults.standard.set(!currentlyEnabled, forKey: defaultsKey)
+        guard !inputBuffer.isEmpty, let inputClient = client() else {
+            return
+        }
+        selectedCandidateIndex = nil
+        previewWindow.hide()
+        updateMarkedText(in: inputClient)
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func toggleCosensePreview(_ sender: Any?) {
+        UserDefaults.standard.set(
+            !isCosensePreviewEnabled,
+            forKey: Self.cosensePreviewEnabledDefaultsKey
+        )
+        refreshExperimentalPreview()
+    }
+
+    @objc
+    private func toggleSystemDictionaryPreview(_ sender: Any?) {
+        UserDefaults.standard.set(
+            !isSystemDictionaryPreviewEnabled,
+            forKey: Self.systemDictionaryPreviewEnabledDefaultsKey
+        )
+        refreshExperimentalPreview()
+    }
+
+    private func refreshExperimentalPreview() {
+        previewWindow.hide()
+        guard !inputBuffer.isEmpty, let inputClient = client() else {
+            return
+        }
+        if let selectedCandidateIndex,
+           currentCandidates.indices.contains(selectedCandidateIndex) {
+            showPreview(for: currentCandidates[selectedCandidateIndex])
+        } else {
+            showInputPreview(client: inputClient)
         }
     }
 
@@ -1120,7 +1280,7 @@ final class InputController: IMKInputController {
             RomanizedReadingNormalizer.dictionaryLookupReadings(
                 from: normalizedReading
             )
-        let userCandidates = mergedCandidates(
+        let userCandidates = isUserDictionaryEnabled ? mergedCandidates(
             lookup: {
                 userConversionEngine.candidates(
                     matching: $0,
@@ -1128,8 +1288,9 @@ final class InputController: IMKInputController {
                 )
             },
             readings: lookupReadings
-        )
-        let extensionCandidates = mergedCandidates(
+        ) : []
+        let extensionCandidates = isExtensionDictionaryEnabled
+            ? mergedCandidates(
             lookup: {
                 extensionConversionEngine.candidates(
                     matching: $0,
@@ -1137,8 +1298,8 @@ final class InputController: IMKInputController {
                 )
             },
             readings: lookupReadings
-        )
-        let basicCandidates = mergedCandidates(
+        ) : []
+        let basicCandidates = isBasicDictionaryEnabled ? mergedCandidates(
             lookup: {
                 basicConversionEngine.candidates(
                     matching: $0,
@@ -1146,23 +1307,27 @@ final class InputController: IMKInputController {
                 )
             },
             readings: lookupReadings
-        )
-        let basicExactCandidates = mergedCandidates(
+        ) : []
+        let basicExactCandidates = isBasicDictionaryEnabled
+            ? mergedCandidates(
             lookup: {
                 basicConversionEngine.candidates(for: $0)
             },
             readings: lookupReadings
-        )
+        ) : []
         let basicPrefixCandidates = basicCandidates.filter {
             !basicExactCandidates.contains($0)
         }
-        let englishCandidates = englishCompletions(for: conversionReading)
-        let inflectionCandidates = mergedCandidates(
+        let englishCandidates = isEnglishCompletionEnabled
+            ? englishCompletions(for: conversionReading)
+            : []
+        let inflectionCandidates = isBasicDictionaryEnabled
+            ? mergedCandidates(
             lookup: {
                 verbInflectionGenerator.candidates(for: $0)
             },
             readings: lookupReadings
-        )
+        ) : []
         var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(
             from: conversionReading
@@ -1699,22 +1864,26 @@ final class InputController: IMKInputController {
         beside anchorFrame: NSRect,
         includeDefinitions: Bool
     ) {
-        guard let url = CosensePageURL.make(
-            project: dictionarySource.project,
-            pageTitle: candidate
-        ) else {
+        guard isCosensePreviewEnabled || isSystemDictionaryPreviewEnabled else {
             previewWindow.hide()
             return
         }
+        let url = isCosensePreviewEnabled
+            ? CosensePageURL.make(
+                project: dictionarySource.project,
+                pageTitle: candidate
+            )
+            : nil
 
         previewWindow.showIfPageExists(
             project: dictionarySource.project,
             pageTitle: candidate,
             url: url,
             credential: cosenseCredential,
-            definitions: includeDefinitions
+            definitions: includeDefinitions && isSystemDictionaryPreviewEnabled
                 ? definitionProvider.definitions(for: candidate)
                 : [],
+            showCosense: isCosensePreviewEnabled,
             beside: anchorFrame
         )
     }
@@ -1778,6 +1947,49 @@ final class InputController: IMKInputController {
         return UserDefaults.standard.bool(
             forKey: Self.nextInputEnabledDefaultsKey
         )
+    }
+
+    private var isCosensePreviewEnabled: Bool {
+        experimentalFeatureIsEnabled(
+            defaultsKey: Self.cosensePreviewEnabledDefaultsKey
+        )
+    }
+
+    private var isBasicDictionaryEnabled: Bool {
+        experimentalFeatureIsEnabled(
+            defaultsKey: Self.basicDictionaryEnabledDefaultsKey
+        )
+    }
+
+    private var isUserDictionaryEnabled: Bool {
+        experimentalFeatureIsEnabled(
+            defaultsKey: Self.userDictionaryEnabledDefaultsKey
+        )
+    }
+
+    private var isExtensionDictionaryEnabled: Bool {
+        experimentalFeatureIsEnabled(
+            defaultsKey: Self.extensionDictionaryEnabledDefaultsKey
+        )
+    }
+
+    private var isEnglishCompletionEnabled: Bool {
+        experimentalFeatureIsEnabled(
+            defaultsKey: Self.englishCompletionEnabledDefaultsKey
+        )
+    }
+
+    private var isSystemDictionaryPreviewEnabled: Bool {
+        experimentalFeatureIsEnabled(
+            defaultsKey: Self.systemDictionaryPreviewEnabledDefaultsKey
+        )
+    }
+
+    private func experimentalFeatureIsEnabled(defaultsKey: String) -> Bool {
+        if UserDefaults.standard.object(forKey: defaultsKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: defaultsKey)
     }
 
     private func candidateValueForCommit(_ candidate: String) -> String {

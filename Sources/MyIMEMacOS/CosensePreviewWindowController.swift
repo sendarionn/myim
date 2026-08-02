@@ -51,9 +51,10 @@ final class CosensePreviewWindowController {
     func showIfPageExists(
         project: String,
         pageTitle: String,
-        url: URL,
+        url: URL?,
         credential: CosenseCredential?,
         definitions: [SystemDictionaryDefinition],
+        showCosense: Bool,
         beside candidateFrame: NSRect
     ) {
         let currentRequestID = UUID()
@@ -69,6 +70,10 @@ final class CosensePreviewWindowController {
             definitionTextView.scrollToBeginningOfDocument(nil)
             positionDefinitionPanel(near: candidateFrame)
             definitionPanel.orderFrontRegardless()
+        }
+
+        guard showCosense, let url else {
+            return
         }
 
         Task { @MainActor [weak self] in
