@@ -161,6 +161,11 @@ final class InputController: IMKInputController {
             return false
         }
 
+        if let selectedValue = selectedCandidateValue {
+            recordSelectedCandidate()
+            commit(selectedValue, to: sender)
+        }
+
         let isASCIIInput = characters.unicodeScalars.allSatisfy {
             (0x21...0x7e).contains($0.value)
         }
@@ -169,11 +174,6 @@ final class InputController: IMKInputController {
                 commit(inputBuffer, to: sender)
             }
             return false
-        }
-
-        if let selectedValue = selectedCandidateValue {
-            recordSelectedCandidate()
-            commit(selectedValue, to: sender)
         }
 
         inputBuffer += characters
@@ -952,6 +952,13 @@ final class InputController: IMKInputController {
             !characters.isEmpty
         else {
             return true
+        }
+        if let selectedValue = selectedCandidateValue {
+            registration.confirmedCandidate =
+                (registration.confirmedCandidate ?? "") + selectedValue
+            inputBuffer = ""
+            currentCandidates = []
+            selectedCandidateIndex = nil
         }
         registration.pastedCandidate = nil
         tabDictionaryRegistration = registration
