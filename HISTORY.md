@@ -644,6 +644,111 @@
 - 32×32、144 dpiだけだった画像を、16×16、72 dpiと32×32、144 dpiを持つマルチ解像度TIFFへ変更
 - テンプレート方式で正常表示されるmacSKKに合わせ、キャンバスを22×16と44×32の横長サイズへ変更
 - 各解像度へ小文字`m`を直接描画し、拡大縮小による変形を防止
+- SwiftyGyaimの単一日本語モード構成とアイコン参照を調査
+- モード別TIFF、テンプレート、代替アイコン、パレットアイコン指定を廃止
+- SwiftyGyaimと同じ`tsInputMethodIconFileKey`だけを使う構成へ変更
+- 入力モードアイコンを青い背景と白い小文字`m`の22×22 PDFへ変更
+- Bundle Versionを95へ更新し、古い入力ソースアイコンのキャッシュを回避
+- 入力ソース追加画面で名前が空になる問題についてInfoPlist.stringsを比較
+- myimだけがASCII形式で、macSKKとSwiftyGyaimはUTF-16またはplist形式である差を確認
+- InfoPlist.stringsをビルド時にバイナリplistへ変換して格納
+- Bundle IDを`io.github.sendarionn.inputmethod.myim`へ変更し、旧myime IDのTISキャッシュから分離
+- 入力モードIDとInputMethodKit接続名も新しいmyim IDへ統一
+- Bundle Versionを96へ更新
+- 同じインストールパスに旧myime Bundle IDと新myim入力モードIDが混在する状態を確認
+- インストール前に旧Launch Services登録を解除し、配置後に新バンドルを再登録
+- TextInputMenuAgent、TextInputSwitcher、CursorUIViewService、imklaunchagentをインストール後に再起動
+- 新しいmyim Bundle IDではシステム設定の追加候補に表示されない回帰を確認
+- 表示実績がある`io.github.sendarionn.inputmethod.myime`へBundle IDと接続名を復元
+- バイナリ表示名、単一PDFアイコン、キャッシュ再登録処理は維持
+- Bundle Versionを97へ更新
+- メニューバーへ追加できても入力できない状態のInputMethodKitログを調査
+- `IMKLaunchAgent -getIMKXPCEndpointForBundle: NO Endpoint`を確認
+- アイコンキャッシュ対策で追加したimklaunchagentの強制終了がIM接続を破壊していたと特定
+- TextInputMenuAgent、TextInputSwitcher、CursorUIViewService、imklaunchagentの強制終了を撤去
+- 動作時に存在したTISUnifiedUIForInputMethodEnabling、DefaultState、IsVisibleを復元
+- アイコン構成はSwiftyGyaim方式の単一PDFとして分離
+- Bundle Versionを98へ更新
+- 接続再構築後、TIS選択だけでは入力先アプリが要求するまでmyimが起動しない正常な遅延起動を確認
+- インストーラーによるmyim.appの手動起動とLaunch Services登録解除を撤去
+- バンドル配置とTISRegisterInputSourceだけを行う最小構成へ復元
+- `IMKServer`の保持処理がイベントループ終了後に置かれていた問題を修正
+- イベントループ全体を`withExtendedLifetime`で囲み、InputMethodKit接続を実行中保持
+- `IMKServer`初期化の成功と失敗をシステムログへ記録
+- Bundle Versionを99へ更新
+- 入力ソース名と入力不能の回帰をアイコン対応時の入力ソース定義変更まで追跡
+- `InfoPlist.strings`の独自バイナリ変換を廃止し、動作実績のある形式へ復元
+- モード別TIFF参照を含む動作実績のある入力ソース定義へ復元
+- 入力コントローラー生成とキーイベント受信の診断ログを追加
+- Bundle Versionを100へ更新
+- 再登録後にmyimの日本語入力モードを明示的に選択
+- 全IMの切り替えチップが非表示になる状態を調査
+- 7日前から残っていた`CursorUIViewService`が`failed to decode send port`を繰り返していることを確認
+- 応答しない該当プロセスを一度だけ再生成し、XPC listener接続の復旧を確認
+- システムUIプロセスの終了処理はインストーラーへ追加しない方針を維持
+- 入力切り替えチップが全体アイコンの44×32 TIFFを処理できず非表示になる問題を修正
+- メニューバー用モードアイコンはTIFFのまま維持し、チップ用全体アイコンを16×16 PDFへ分離
+- Bundle Versionを101へ更新
+- メニューバー用TIFFと切り替えチップ用PDFを透明背景の単色テンプレートへ統一
+- `TISIconIsTemplate`によってライトモードとダークモードの着色をmacOSへ委任
+- アプリアイコンは青い背景と白い小文字`m`の配色を維持
+- テンプレート素材を新しいファイル名へ変更して過去のアイコンキャッシュと分離
+- READMEのアイコン形式と`InfoPlist.strings`の説明を現在の実装へ更新
+- Bundle Versionを102へ更新
+- テンプレート素材名をmacOSの規則に合う大文字`Template`接尾辞へ変更
+- 入力モードアイコンを角丸四角形から小文字`m`を透明に切り抜くデザインへ変更
+- Bundle Versionを103へ更新
+- RGBのテンプレートTIFFが通常画像として表示されていた問題を調査
+- macSKKと同じアルファ付きグレースケールTIFFへ変更
+- メニューバー用22×16と切り替えチップ用16×16の素材を分離
+- Apple純正IMと同じ命名の`@2x.pdf`を高解像度表示用に追加
+- Bundle Versionを104へ更新
+- `ditto`の上書きで旧アイコン素材が残り続ける問題を修正
+- インストール時にユーザー領域の既存`myim.app`だけを置換してからコピー
+- `.build/myim.app`にも過去のResourcesが蓄積していた問題を修正
+- ビルド開始時に生成対象のIMバンドルとアイコン作業ディレクトリだけを再作成
+- インストール済みTIFFを白背景へ合成し、角丸四角形と透明な`m`が画像データに存在することを確認
+- 表示が変わらない原因をText Input UIプロセスのメモリ内アイコンキャッシュと特定
+- `TextInputMenuAgent`、`TextInputSwitcher`、`CursorUIViewService`を一度だけ同時に再生成
+- 再生成後のチップ用XPC listener接続とmyim再選択の成功を確認
+- メニューバーアイコンの縦長変形と位置ずれを調査
+- メニューバー用44×32 PDFを廃止し、macSKKと同じ22×16 TIFFだけを使用
+- チップ用高解像度PDFをApple純正IMと同じ28×36キャンバスへ変更
+- チップの角丸四角形を中央配置し、上下余白を確保
+- Bundle Versionを105へ更新
+- メニューバーアイコンがRetina環境で拡大されて粗くなる問題を修正
+- 22×16と44×32を1倍、2倍の順で格納したGray TIFFへ変更
+- カーソルチップがテンプレート着色を適用せず黒画像を表示する問題へ対応
+- チップ用代替アイコンとして白い28×36 PDFを追加
+- Bundle Versionを106へ更新
+- カーソルチップが代替アイコンを参照しないことを実表示から確認
+- チップ用の通常アイコンと代替アイコンを同じ白い28×36 PDFへ変更
+- メニューバー用テンプレートTIFFは変更せず分離を維持
+- Bundle Versionを107へ更新
+- 白いチップPDFがバンドル全体の`TISIconIsTemplate`によって黒へ再着色される問題を特定
+- バンドル全体のテンプレート指定を削除
+- メニューバーだけを`Template`接尾辞で自動着色し、チップは白い通常画像として分離
+- Bundle Versionを108へ更新
+- CursorUIViewServiceが`KLInputSourceIconManager`の`indicatorImageForInputSource:`を使うことを特定
+- myim、macSKK、SwiftyGyaim、Apple日本語IMを同じ内部APIで比較
+- myimとSwiftyGyaimは`template=false`、macSKKとApple日本語IMは`template=true`である差を確認
+- チップは親の`tsInputMethodIconFileKey`ではなく子入力モードのメニュー画像を使うことを確認
+- `TISIconIsTemplate`を復元し、子入力モード画像を白へ着色させる構成へ修正
+- Bundle Versionを109へ更新
+- plist復元後も内部APIがmyimを`template=false`として返すことを確認
+- Apple予約モードキーを流用するmyimとSwiftyGyaimがともに`template=false`になる構造差を特定
+- 入力モード辞書キーと入力ソースIDを独自の`io.github.sendarionn.inputmethod.myime.RomanKanji`へ変更
+- 古い入力モードIDのTISキャッシュから分離
+- Bundle Versionを110へ更新
+- 独自入力モードIDでも内部APIが`template=false`のままであることを確認
+- `TISIconIsTemplate`と代替アイコンキーを同時指定していた競合を特定
+- モードと入力メソッドの代替アイコン指定を削除し、テンプレート方式へ一本化
+- 未参照になった白いメニュー選択画像の生成を削除
+- Bundle Versionを111へ更新
+- 独自入力モードIDが表示プロセス再生成後にTISから消える回帰を確認
+- 動作実績のある`com.apple.inputmethod.Japanese`モードキーと旧入力ソースIDへ復元
+- 代替アイコンキーの削除だけを維持
+- Bundle Versionを112へ更新
 
 ### 入力時のWebView負荷軽減
 

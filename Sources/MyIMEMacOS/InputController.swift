@@ -123,6 +123,8 @@ final class InputController: IMKInputController {
 
         super.init(server: server, delegate: delegate, client: inputClient)
 
+        NSLog("myim: input controller initialized")
+
         candidatePanel.setDismissesAutomatically(true)
         candidatePanel.setAttributes([
             IMKCandidatesSendServerKeyEventFirst: false
@@ -135,6 +137,7 @@ final class InputController: IMKInputController {
     }
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
+        NSLog("myim: handle event type=%ld keyCode=%d", event?.type.rawValue ?? -1, event?.keyCode ?? 0)
         guard let event, let sender else {
             return false
         }

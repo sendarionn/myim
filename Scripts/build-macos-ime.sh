@@ -20,6 +20,8 @@ cd "$repository_root"
 swift build -c release --product myim-macos
 swift build -c release --product myim-cosense-login
 
+rm -rf "$application_bundle" "$iconset_directory"
+
 mkdir -p \
     "$executable_directory" \
     "$resources_directory" \
@@ -83,23 +85,28 @@ cp \
 cp \
     "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
     "$resources_directory/mozc-LICENSE.txt"
-xcrun swift "Scripts/generate-ime-icon.swift" "$resources_directory/icon.pdf"
 xcrun swift "Scripts/generate-ime-icon.swift" \
-    "$iconset_directory/myim-mode-1x.pdf" 22 16 13
+    "$resources_directory/myimChip.pdf" 28 36 26 white
 xcrun swift "Scripts/generate-ime-icon.swift" \
-    "$iconset_directory/myim-mode-2x.pdf" 44 32 26
+    "$iconset_directory/myim-menu-1x.pdf" 22 16 13
+xcrun swift "Scripts/generate-ime-icon.swift" \
+    "$iconset_directory/myim-menu-2x.pdf" 44 32 26
 xcrun swift "Scripts/generate-ime-icon.swift" \
     "$resources_directory/app-icon.pdf" 1024 1024 640 app
 sips -s format tiff -s dpiWidth 72 -s dpiHeight 72 \
-    "$iconset_directory/myim-mode-1x.pdf" \
-    --out "$iconset_directory/myim-mode-1x.tiff" >/dev/null
+    "$iconset_directory/myim-menu-1x.pdf" \
+    --out "$iconset_directory/myim-menu-1x.tiff" >/dev/null
+sips -m '/System/Library/ColorSync/Profiles/Generic Gray Profile.icc' \
+    "$iconset_directory/myim-menu-1x.tiff" >/dev/null
 sips -s format tiff -s dpiWidth 144 -s dpiHeight 144 \
-    "$iconset_directory/myim-mode-2x.pdf" \
-    --out "$iconset_directory/myim-mode-2x.tiff" >/dev/null
+    "$iconset_directory/myim-menu-2x.pdf" \
+    --out "$iconset_directory/myim-menu-2x.tiff" >/dev/null
+sips -m '/System/Library/ColorSync/Profiles/Generic Gray Profile.icc' \
+    "$iconset_directory/myim-menu-2x.tiff" >/dev/null
 tiffutil -cat \
-    "$iconset_directory/myim-mode-2x.tiff" \
-    "$iconset_directory/myim-mode-1x.tiff" \
-    -out "$resources_directory/myim-mode-48.tiff"
+    "$iconset_directory/myim-menu-1x.tiff" \
+    "$iconset_directory/myim-menu-2x.tiff" \
+    -out "$resources_directory/myimMenuTemplate.tiff"
 sips -s format png -z 16 16 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_16x16.png" >/dev/null
 sips -s format png -z 32 32 "$resources_directory/app-icon.pdf" \

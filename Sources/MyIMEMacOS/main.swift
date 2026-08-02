@@ -6,11 +6,16 @@ private let connectionName = "\(bundleIdentifier)_Connection"
 
 let application = NSApplication.shared
 application.setActivationPolicy(.accessory)
-let server = IMKServer(
+guard let server = IMKServer(
     name: connectionName,
     bundleIdentifier: bundleIdentifier
-)
+) else {
+    NSLog("myim: IMKServer initialization failed bundle=%@ connection=%@", bundleIdentifier, connectionName)
+    exit(EXIT_FAILURE)
+}
 
-application.run()
+NSLog("myim: IMKServer initialized bundle=%@ connection=%@", bundleIdentifier, connectionName)
 
-withExtendedLifetime(server) {}
+withExtendedLifetime(server) {
+    application.run()
+}

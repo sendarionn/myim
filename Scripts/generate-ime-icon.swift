@@ -37,7 +37,19 @@ else {
 
 context.beginPDFPage(nil)
 
-let isApplicationIcon = CommandLine.arguments.count == 6
+let renderingMode = CommandLine.arguments.count == 6
+    ? CommandLine.arguments[5]
+    : "template"
+let isApplicationIcon = renderingMode == "app"
+let templateColor = renderingMode == "white"
+    ? CGColor(gray: 1, alpha: 1)
+    : CGColor(gray: 0, alpha: 1)
+let font = CTFontCreateWithName(
+    "HelveticaNeue-Medium" as CFString,
+    fontSize,
+    nil
+)
+
 if isApplicationIcon {
     let inset = width * 0.06
     let backgroundRect = CGRect(
@@ -55,30 +67,60 @@ if isApplicationIcon {
     context.addPath(backgroundPath)
     context.setFillColor(CGColor(red: 0.12, green: 0.45, blue: 0.86, alpha: 1))
     context.fillPath()
-}
 
-let font = CTFontCreateWithName(
-    "HelveticaNeue-Medium" as CFString,
-    fontSize,
-    nil
-)
-let text = NSAttributedString(
-    string: "m",
-    attributes: [
-        NSAttributedString.Key(kCTFontAttributeName as String): font,
-        NSAttributedString.Key(kCTForegroundColorAttributeName as String):
-            isApplicationIcon
-                ? CGColor(gray: 1, alpha: 1)
-                : CGColor(gray: 0, alpha: 1)
-    ]
-)
-let line = CTLineCreateWithAttributedString(text)
-let bounds = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
-context.textPosition = CGPoint(
-    x: (mediaBox.width - bounds.width) / 2 - bounds.minX,
-    y: (mediaBox.height - bounds.height) / 2 - bounds.minY
-)
-CTLineDraw(line, context)
+    let text = NSAttributedString(
+        string: "m",
+        attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String):
+                CGColor(gray: 1, alpha: 1)
+        ]
+    )
+    let line = CTLineCreateWithAttributedString(text)
+    let bounds = CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds])
+    context.textPosition = CGPoint(
+        x: (mediaBox.width - bounds.width) / 2 - bounds.minX,
+        y: (mediaBox.height - bounds.height) / 2 - bounds.minY
+    )
+    CTLineDraw(line, context)
+} else {
+    let side = min(width, height) - 2
+    let backgroundRect = CGRect(
+        x: (width - side) / 2,
+        y: (height - side) / 2,
+        width: side,
+        height: side
+    )
+    let iconPath = CGMutablePath()
+    iconPath.addRoundedRect(
+        in: backgroundRect,
+        cornerWidth: side * 0.22,
+        cornerHeight: side * 0.22
+    )
+
+    var character = UniChar(109)
+    var glyph = CGGlyph()
+    guard
+        CTFontGetGlyphsForCharacters(font, &character, &glyph, 1),
+        let glyphPath = CTFontCreatePathForGlyph(font, glyph, nil)
+    else {
+        FileHandle.standardError.write(
+            Data("アイコンの文字を生成できません\n".utf8)
+        )
+        exit(EXIT_FAILURE)
+    }
+
+    let glyphBounds = glyphPath.boundingBoxOfPath
+    let transform = CGAffineTransform(
+        translationX: backgroundRect.midX - glyphBounds.midX,
+        y: backgroundRect.midY - glyphBounds.midY
+    )
+    iconPath.addPath(glyphPath, transform: transform)
+
+    context.addPath(iconPath)
+    context.setFillColor(templateColor)
+    context.drawPath(using: .eoFill)
+}
 
 context.endPDFPage()
 context.closePDF()
