@@ -2,23 +2,24 @@
 @preconcurrency import WebKit
 import MyIMECore
 
-final class CosensePreviewWindowController {
+final class ExternalInformationWindowController {
     private static let spacing: CGFloat = 8
-    private static let cosensePanelSize = NSSize(width: 420, height: 420)
+    private static let informationPanelSize = NSSize(width: 420, height: 420)
 
     private let definitionPanel: NSPanel
-    private let cosensePanel: NSPanel
+    private let informationPanel: NSPanel
     private let webView: WKWebView
     private let definitionTextView: NSTextView
     private var displayedURL: URL?
     private var installedCookieSignature = ""
     private var requestID = UUID()
+    private var displayTask: Task<Void, Never>?
 
     init() {
         definitionTextView = NSTextView(frame: .zero)
         let webConfiguration = WKWebViewConfiguration()
         webConfiguration.websiteDataStore = .default()
-        webView = InteractiveCosenseWebView(
+        webView = InteractiveInformationWebView(
             frame: .zero,
             configuration: webConfiguration
         )
@@ -27,9 +28,9 @@ final class CosensePreviewWindowController {
             size: NSSize(width: 420, height: 220),
             interactive: false
         )
-        cosensePanel = Self.makePanel(
-            title: "Cosense",
-            size: Self.cosensePanelSize,
+        informationPanel = Self.makePanel(
+            title: "外部情報",
+            size: Self.informationPanelSize,
             interactive: true
         )
 
@@ -45,21 +46,21 @@ final class CosensePreviewWindowController {
         definitionScrollView.autohidesScrollers = true
         definitionScrollView.drawsBackground = false
         definitionPanel.contentView = definitionScrollView
-        cosensePanel.contentView = webView
+        informationPanel.contentView = webView
     }
 
-    func showIfPageExists(
-        project: String,
-        pageTitle: String,
+    func show(
         url: URL?,
-        credential: CosenseCredential?,
+        panelTitle: String,
         definitions: [SystemDictionaryDefinition],
-        showCosense: Bool,
+        showExternalInformation: Bool,
+        displayDelay: TimeInterval,
         beside candidateFrame: NSRect
     ) {
+        displayTask?.cancel()
         let currentRequestID = UUID()
         requestID = currentRequestID
-        cosensePanel.orderOut(nil)
+        informationPanel.orderOut(nil)
 
         if definitions.isEmpty {
             definitionPanel.orderOut(nil)
@@ -72,45 +73,54 @@ final class CosensePreviewWindowController {
             definitionPanel.orderFrontRegardless()
         }
 
-        guard showCosense, let url else {
+        guard showExternalInformation, let url else {
             return
         }
 
-        Task { @MainActor [weak self] in
-            let cookies = CosenseWebCookieStore().load()
-            let cookieSignature = cookies
-                .map { "\($0.name)=\($0.value)" }
-                .sorted()
-                .joined(separator: ";")
-            await self?.installSharedCosenseCookies(cookies)
-            let exists = await CosensePageClient().exists(
-                project: project,
-                pageTitle: pageTitle,
-                credential: credential,
-                cookies: cookies
-            )
+        let cookies = url.host == "scrapbox.io"
+            ? CosenseWebCookieStore().load()
+            : []
+        let cookieSignature = cookies
+            .map { "\($0.name)=\($0.value)" }
+            .sorted()
+            .joined(separator: ";")
+        informationPanel.title = panelTitle
+        if displayedURL != url
+            || installedCookieSignature != cookieSignature {
+            var request = URLRequest(url: url)
+            for (field, value) in HTTPCookie.requestHeaderFields(
+                with: cookies
+            ) {
+                request.setValue(value, forHTTPHeaderField: field)
+            }
+            webView.load(request)
+            displayedURL = url
+            installedCookieSignature = cookieSignature
+        }
+        if !cookies.isEmpty {
+            Task { @MainActor [weak self] in
+                await self?.installSharedCosenseCookies(cookies)
+            }
+        }
+
+        displayTask = Task { @MainActor [weak self] in
+            if displayDelay > 0 {
+                try? await Task.sleep(
+                    for: .milliseconds(Int(displayDelay * 1_000))
+                )
+            }
+            guard !Task.isCancelled else {
+                return
+            }
             guard
                 let self,
-                requestID == currentRequestID,
-                exists
+                requestID == currentRequestID
             else {
                 return
             }
 
-            if displayedURL != url
-                || installedCookieSignature != cookieSignature {
-                var request = URLRequest(url: url)
-                for (field, value) in HTTPCookie.requestHeaderFields(
-                    with: cookies
-                ) {
-                    request.setValue(value, forHTTPHeaderField: field)
-                }
-                webView.load(request)
-                displayedURL = url
-                installedCookieSignature = cookieSignature
-            }
-            positionCosensePanel(near: candidateFrame)
-            cosensePanel.orderFrontRegardless()
+            positionInformationPanel(near: candidateFrame)
+            informationPanel.orderFrontRegardless()
         }
     }
 
@@ -129,16 +139,18 @@ final class CosensePreviewWindowController {
     }
 
     func hide() {
+        displayTask?.cancel()
+        displayTask = nil
         requestID = UUID()
         definitionPanel.orderOut(nil)
-        cosensePanel.orderOut(nil)
+        informationPanel.orderOut(nil)
     }
 
-    var isCosenseInteractionActive: Bool {
-        cosensePanel.isVisible
+    var isInteractionActive: Bool {
+        informationPanel.isVisible
             && (
-                cosensePanel.isKeyWindow
-                    || cosensePanel.frame.contains(NSEvent.mouseLocation)
+                informationPanel.isKeyWindow
+                    || informationPanel.frame.contains(NSEvent.mouseLocation)
             )
     }
 
@@ -152,7 +164,7 @@ final class CosensePreviewWindowController {
             : [.titled, .nonactivatingPanel]
         let panel: NSPanel
         if interactive {
-            panel = InteractiveCosensePanel(
+            panel = InteractiveInformationPanel(
                 contentRect: NSRect(origin: .zero, size: size),
                 styleMask: styleMask,
                 backing: .buffered,
@@ -195,14 +207,14 @@ final class CosensePreviewWindowController {
         definitionPanel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
-    private func positionCosensePanel(near candidateFrame: NSRect) {
+    private func positionInformationPanel(near candidateFrame: NSRect) {
         let visibleFrame = visibleFrame(near: candidateFrame)
-        let panelHeight = min(Self.cosensePanelSize.height, visibleFrame.height)
-        let panelWidth = min(Self.cosensePanelSize.width, visibleFrame.width)
-        cosensePanel.setContentSize(
+        let panelHeight = min(Self.informationPanelSize.height, visibleFrame.height)
+        let panelWidth = min(Self.informationPanelSize.width, visibleFrame.width)
+        informationPanel.setContentSize(
             NSSize(width: panelWidth, height: panelHeight)
         )
-        let panelSize = cosensePanel.frame.size
+        let panelSize = informationPanel.frame.size
         let occupiedFrame = definitionPanel.isVisible
             ? candidateFrame.union(definitionPanel.frame)
             : candidateFrame
@@ -221,7 +233,7 @@ final class CosensePreviewWindowController {
             minimum: visibleFrame.minY,
             maximum: visibleFrame.maxY - panelSize.height
         )
-        cosensePanel.setFrameOrigin(NSPoint(x: x, y: y))
+        informationPanel.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     private func visibleFrame(near candidateFrame: NSRect) -> NSRect {
@@ -278,7 +290,7 @@ final class CosensePreviewWindowController {
     }
 }
 
-private final class InteractiveCosensePanel: NSPanel {
+private final class InteractiveInformationPanel: NSPanel {
     override var canBecomeKey: Bool {
         true
     }
@@ -288,7 +300,7 @@ private final class InteractiveCosensePanel: NSPanel {
     }
 }
 
-private final class InteractiveCosenseWebView: WKWebView {
+private final class InteractiveInformationWebView: WKWebView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }

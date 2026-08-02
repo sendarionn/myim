@@ -34,8 +34,14 @@ final class InputController: IMKInputController {
     private static let azureDictionaryRegionDefaultsKey = "AzureDictionaryRegion"
     private static let webSearchEnabledDefaultsKey = "WebSearchEnabled"
     private static let webSearchTemplateDefaultsKey = "WebSearchTemplate"
-    private static let cosensePreviewEnabledDefaultsKey =
+    private static let externalInformationPanelEnabledDefaultsKey =
+        "ExternalInformationPanelEnabled"
+    private static let legacyCosensePreviewEnabledDefaultsKey =
         "CosensePreviewEnabled"
+    private static let externalInformationURLTemplateDefaultsKey =
+        "ExternalInformationURLTemplate"
+    private static let externalInformationDisplayDelayDefaultsKey =
+        "ExternalInformationDisplayDelay"
     private static let systemDictionaryPreviewEnabledDefaultsKey =
         "SystemDictionaryPreviewEnabled"
     private static let maximumCandidateCount = 7
@@ -73,7 +79,7 @@ final class InputController: IMKInputController {
     private var basicDictionaryStatus = "未確認"
     private let candidatePanel: IMKCandidates
     private let candidateWindow = CandidateWindowController()
-    private let previewWindow = CosensePreviewWindowController()
+    private let previewWindow = ExternalInformationWindowController()
     private let cosenseLoginWindow = CosenseLoginWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private let romajiConverter = RomajiConverter()
@@ -364,14 +370,24 @@ final class InputController: IMKInputController {
         nextInputItem.state = isNextInputPredictionEnabled ? .on : .off
         menu.addItem(nextInputItem)
 
-        let cosensePreviewItem = NSMenuItem(
-            title: "Cosenseパネルを使用",
-            action: #selector(toggleCosensePreview(_:)),
+        let externalInformationItem = NSMenuItem(
+            title: "外部情報パネルを使用",
+            action: #selector(toggleExternalInformationPanel(_:)),
             keyEquivalent: ""
         )
-        cosensePreviewItem.target = self
-        cosensePreviewItem.state = isCosensePreviewEnabled ? .on : .off
-        menu.addItem(cosensePreviewItem)
+        externalInformationItem.target = self
+        externalInformationItem.state = isExternalInformationPanelEnabled
+            ? .on
+            : .off
+        menu.addItem(externalInformationItem)
+
+        let configureExternalInformationItem = NSMenuItem(
+            title: "外部情報パネルの検索先を設定…",
+            action: #selector(configureExternalInformationPanel(_:)),
+            keyEquivalent: ""
+        )
+        configureExternalInformationItem.target = self
+        menu.addItem(configureExternalInformationItem)
 
         let systemDictionaryPreviewItem = NSMenuItem(
             title: "macOS辞書パネルを使用",
@@ -499,7 +515,7 @@ final class InputController: IMKInputController {
     }
 
     override func deactivateServer(_ sender: Any!) {
-        if previewWindow.isCosenseInteractionActive {
+        if previewWindow.isInteractionActive {
             return
         }
         if !inputBuffer.isEmpty {
@@ -905,10 +921,76 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func toggleCosensePreview(_ sender: Any?) {
+    private func toggleExternalInformationPanel(_ sender: Any?) {
         UserDefaults.standard.set(
-            !isCosensePreviewEnabled,
-            forKey: Self.cosensePreviewEnabledDefaultsKey
+            !isExternalInformationPanelEnabled,
+            forKey: Self.externalInformationPanelEnabledDefaultsKey
+        )
+        refreshExperimentalPreview()
+    }
+
+    @objc
+    private func configureExternalInformationPanel(_ sender: Any?) {
+        let templateField = NSTextField(
+            string: externalInformationURLTemplate
+        )
+        templateField.placeholderString =
+            "https://ja.wikipedia.org/w/index.php?search=%s"
+        templateField.frame.size.width = 520
+
+        let delayPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        let delayOptions: [(String, TimeInterval)] = [
+            ("すぐ表示", 0),
+            ("0.5秒後", 0.5),
+            ("1秒後", 1),
+            ("2秒後", 2),
+            ("3秒後", 3),
+            ("5秒後", 5)
+        ]
+        delayPopup.addItems(withTitles: delayOptions.map(\.0))
+        let selectedDelayIndex = delayOptions.firstIndex {
+            $0.1 == externalInformationDisplayDelay
+        } ?? 2
+        delayPopup.selectItem(at: selectedDelayIndex)
+
+        let stack = NSStackView(views: [
+            NSTextField(labelWithString: "検索語を挿入する位置を%sで指定"),
+            templateField,
+            NSTextField(labelWithString: "表示タイミング"),
+            delayPopup
+        ])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 96)
+
+        let alert = NSAlert()
+        alert.messageText = "外部情報パネルの検索先"
+        alert.accessoryView = stack
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "キャンセル")
+        alert.window.level = .floating
+
+        guard runModalAlert(
+            alert,
+            firstResponder: templateField
+        ) == .alertFirstButtonReturn else {
+            return
+        }
+        guard
+            let template = try? SearchURLTemplate(templateField.stringValue),
+            (try? template.url(for: "test")) != nil
+        else {
+            NSSound.beep()
+            return
+        }
+        UserDefaults.standard.set(
+            templateField.stringValue,
+            forKey: Self.externalInformationURLTemplateDefaultsKey
+        )
+        UserDefaults.standard.set(
+            delayOptions[delayPopup.indexOfSelectedItem].1,
+            forKey: Self.externalInformationDisplayDelayDefaultsKey
         )
         refreshExperimentalPreview()
     }
@@ -2183,26 +2265,25 @@ final class InputController: IMKInputController {
         beside anchorFrame: NSRect,
         includeDefinitions: Bool
     ) {
-        guard isCosensePreviewEnabled || isSystemDictionaryPreviewEnabled else {
+        guard isExternalInformationPanelEnabled
+            || isSystemDictionaryPreviewEnabled
+        else {
             previewWindow.hide()
             return
         }
-        let url = isCosensePreviewEnabled
-            ? CosensePageURL.make(
-                project: dictionarySource.project,
-                pageTitle: candidate
-            )
+        let url = isExternalInformationPanelEnabled
+            ? try? SearchURLTemplate(externalInformationURLTemplate)
+                .url(for: candidate)
             : nil
 
-        previewWindow.showIfPageExists(
-            project: dictionarySource.project,
-            pageTitle: candidate,
+        previewWindow.show(
             url: url,
-            credential: cosenseCredential,
+            panelTitle: url?.host ?? "外部情報",
             definitions: includeDefinitions && isSystemDictionaryPreviewEnabled
                 ? definitionProvider.definitions(for: candidate)
                 : [],
-            showCosense: isCosensePreviewEnabled,
+            showExternalInformation: isExternalInformationPanelEnabled,
+            displayDelay: externalInformationDisplayDelay,
             beside: anchorFrame
         )
     }
@@ -2268,10 +2349,53 @@ final class InputController: IMKInputController {
         )
     }
 
-    private var isCosensePreviewEnabled: Bool {
-        experimentalFeatureIsEnabled(
-            defaultsKey: Self.cosensePreviewEnabledDefaultsKey
+    private var isExternalInformationPanelEnabled: Bool {
+        let defaults = UserDefaults.standard
+        if defaults.object(
+            forKey: Self.externalInformationPanelEnabledDefaultsKey
+        ) != nil {
+            return defaults.bool(
+                forKey: Self.externalInformationPanelEnabledDefaultsKey
+            )
+        }
+        if defaults.object(
+            forKey: Self.legacyCosensePreviewEnabledDefaultsKey
+        ) != nil {
+            return defaults.bool(
+                forKey: Self.legacyCosensePreviewEnabledDefaultsKey
+            )
+        }
+        return true
+    }
+
+    private var externalInformationURLTemplate: String {
+        UserDefaults.standard.string(
+            forKey: Self.externalInformationURLTemplateDefaultsKey
+        ) ?? defaultExternalInformationURLTemplate
+    }
+
+    private var externalInformationDisplayDelay: TimeInterval {
+        let defaults = UserDefaults.standard
+        guard defaults.object(
+            forKey: Self.externalInformationDisplayDelayDefaultsKey
+        ) != nil else {
+            return 1
+        }
+        return max(
+            0,
+            defaults.double(
+                forKey: Self.externalInformationDisplayDelayDefaultsKey
+            )
         )
+    }
+
+    private var defaultExternalInformationURLTemplate: String {
+        var allowed = CharacterSet.urlPathAllowed
+        allowed.remove(charactersIn: "/")
+        let project = dictionarySource.project.addingPercentEncoding(
+            withAllowedCharacters: allowed
+        ) ?? dictionarySource.project
+        return "https://scrapbox.io/\(project)/%s"
     }
 
     private var isBasicDictionaryEnabled: Bool {

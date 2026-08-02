@@ -23,7 +23,7 @@ public struct SearchURLTemplate: Sendable {
             throw SearchURLTemplateError.invalidQuery
         }
         let allowed = CharacterSet.urlQueryAllowed
-            .subtracting(CharacterSet(charactersIn: "+&=#?"))
+            .subtracting(CharacterSet(charactersIn: "+&=#?/"))
         guard let encoded = query.addingPercentEncoding(withAllowedCharacters: allowed),
               let url = URL(string: value.replacingOccurrences(of: "%s", with: encoded)),
               let scheme = url.scheme?.lowercased(),
