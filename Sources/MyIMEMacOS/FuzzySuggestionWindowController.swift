@@ -1,5 +1,10 @@
 @preconcurrency import AppKit
-import MyIMECore
+
+struct FuzzySuggestion: Equatable {
+    let candidate: String
+    let reading: String
+    let distance: Int
+}
 
 final class FuzzySuggestionWindowController {
     private static let spacing: CGFloat = 6
@@ -16,12 +21,12 @@ final class FuzzySuggestionWindowController {
         stackView = NSStackView()
         stackView.orientation = .vertical
         stackView.alignment = .leading
-        stackView.spacing = 4
+        stackView.spacing = 3
         stackView.edgeInsets = NSEdgeInsets(
             top: 8,
-            left: 10,
+            left: 8,
             bottom: 8,
-            right: 10
+            right: 8
         )
         panel.contentView = stackView
         panel.backgroundColor = .windowBackgroundColor
@@ -32,34 +37,59 @@ final class FuzzySuggestionWindowController {
         panel.isReleasedWhenClosed = false
     }
 
-    func show(matches: [FuzzyConversionMatch], near anchorFrame: NSRect) {
+    func show(
+        suggestions: [FuzzySuggestion],
+        selectedIndex: Int?,
+        near anchorFrame: NSRect
+    ) {
         stackView.arrangedSubviews.forEach {
             stackView.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
 
-        let title = NSTextField(labelWithString: "もしかして？")
+        let title = NSTextField(
+            labelWithString: selectedIndex == nil
+                ? "もしかして？  Shift＋Tabで選択"
+                : "もしかして？"
+        )
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         title.textColor = .secondaryLabelColor
         stackView.addArrangedSubview(title)
 
-        for match in matches.prefix(3) {
-            let values = match.candidates.prefix(2).joined(separator: "・")
+        for (index, suggestion) in suggestions.enumerated() {
+            let row = NSView()
+            row.wantsLayer = true
+            row.layer?.cornerRadius = 5
+            row.layer?.backgroundColor = index == selectedIndex
+                ? NSColor.controlAccentColor.cgColor
+                : NSColor.clear.cgColor
             let label = NSTextField(
-                labelWithString: "\(values)  [\(match.reading)]"
+                labelWithString: "\(suggestion.candidate)  [\(suggestion.reading)]"
             )
             label.font = .systemFont(ofSize: 13)
-            label.lineBreakMode = .byTruncatingTail
-            stackView.addArrangedSubview(label)
+            label.textColor = index == selectedIndex
+                ? .alternateSelectedControlTextColor
+                : .labelColor
+            label.translatesAutoresizingMaskIntoConstraints = false
+            row.addSubview(label)
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 6),
+                label.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -6),
+                label.topAnchor.constraint(equalTo: row.topAnchor, constant: 4),
+                label.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -4)
+            ])
+            stackView.addArrangedSubview(row)
+            row.widthAnchor.constraint(
+                greaterThanOrEqualToConstant: 164
+            ).isActive = true
         }
 
         stackView.layoutSubtreeIfNeeded()
         let fittingSize = stackView.fittingSize
-        let size = NSSize(
+        panel.setContentSize(NSSize(
             width: min(max(fittingSize.width, 180), 420),
             height: fittingSize.height
-        )
-        panel.setContentSize(size)
+        ))
 
         let screen = NSScreen.screens.first {
             $0.frame.intersects(anchorFrame)
