@@ -4,6 +4,12 @@ import MyIMECore
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
+    private struct ExternalPanelCompositionSnapshot {
+        let inputBuffer: String
+        let candidates: [String]
+        let selectedIndex: Int?
+    }
+
     private struct TabDictionaryRegistration {
         let originalInput: String
         let reading: String
@@ -84,6 +90,7 @@ final class InputController: IMKInputController {
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private let romajiConverter = RomajiConverter()
     private weak var authenticationTokenInput: NSSecureTextField?
+    private var externalPanelCompositionSnapshot: ExternalPanelCompositionSnapshot?
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let source = Self.loadDictionarySource()
@@ -129,6 +136,13 @@ final class InputController: IMKInputController {
         candidatePanel.setAttributes([
             IMKCandidatesSendServerKeyEventFirst: false
         ])
+
+        previewWindow.onInteractionBegan = { [weak self] in
+            self?.preserveCompositionForExternalPanel()
+        }
+        previewWindow.onInteractionEnded = { [weak self] in
+            self?.restoreCompositionAfterExternalPanel()
+        }
 
         basicDictionaryStatus = bundledEntries.isEmpty
             ? "読込失敗"
@@ -519,6 +533,7 @@ final class InputController: IMKInputController {
 
     override func deactivateServer(_ sender: Any!) {
         if previewWindow.isInteractionActive {
+            preserveCompositionForExternalPanel()
             return
         }
         if !inputBuffer.isEmpty {
@@ -535,6 +550,45 @@ final class InputController: IMKInputController {
         selectedNextInputIndex = nil
         nextInputPredictionModel.breakSequence()
         super.deactivateServer(sender)
+    }
+
+    private func preserveCompositionForExternalPanel() {
+        guard externalPanelCompositionSnapshot == nil,
+              !inputBuffer.isEmpty || !currentCandidates.isEmpty else {
+            return
+        }
+        externalPanelCompositionSnapshot = ExternalPanelCompositionSnapshot(
+            inputBuffer: inputBuffer,
+            candidates: currentCandidates,
+            selectedIndex: selectedCandidateIndex
+        )
+    }
+
+    private func restoreCompositionAfterExternalPanel() {
+        guard let snapshot = externalPanelCompositionSnapshot else {
+            return
+        }
+        externalPanelCompositionSnapshot = nil
+        inputBuffer = snapshot.inputBuffer
+        currentCandidates = snapshot.candidates
+        selectedCandidateIndex = snapshot.selectedIndex
+
+        guard let inputClient = client() else {
+            return
+        }
+        let markedValue: String
+        if let index = selectedCandidateIndex,
+           currentCandidates.indices.contains(index) {
+            markedValue = currentCandidates[index] + conversionSuffix
+        } else {
+            markedValue = inputBuffer
+        }
+        setMarkedText(markedValue, in: inputClient)
+        if currentCandidates.isEmpty {
+            candidateWindow.hide()
+        } else {
+            showCandidateWindow(client: inputClient)
+        }
     }
 
     override func inputControllerWillClose() {

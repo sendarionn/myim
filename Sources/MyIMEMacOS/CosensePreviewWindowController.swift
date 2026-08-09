@@ -2,7 +2,16 @@
 @preconcurrency import WebKit
 import MyIMECore
 
-final class ExternalInformationWindowController {
+final class ExternalInformationWindowController: NSObject {
+    private struct PendingPresentation {
+        let url: URL?
+        let panelTitle: String
+        let definitions: [SystemDictionaryDefinition]
+        let showExternalInformation: Bool
+        let displayDelay: TimeInterval
+        let candidateFrame: NSRect
+    }
+
     private static let spacing: CGFloat = 8
     private static let informationPanelSize = NSSize(width: 420, height: 420)
 
@@ -17,10 +26,14 @@ final class ExternalInformationWindowController {
     private var navigationTask: Task<Void, Never>?
     private var cachedCosenseCookies: [HTTPCookie] = []
     private var cookiesLoadedAt = Date.distantPast
+    private var pendingPresentation: PendingPresentation?
+    private(set) var isInteractionActive = false
+    var onInteractionBegan: (() -> Void)?
+    var onInteractionEnded: (() -> Void)?
     private static let navigationDebounce: TimeInterval = 0.2
     private static let cookieCacheLifetime: TimeInterval = 5
 
-    init() {
+    override init() {
         definitionTextView = NSTextView(frame: .zero)
         let webConfiguration = WKWebViewConfiguration()
         webConfiguration.websiteDataStore = .default()
@@ -39,6 +52,25 @@ final class ExternalInformationWindowController {
             interactive: true
         )
 
+        super.init()
+
+        if let panel = informationPanel as? InteractiveInformationPanel {
+            panel.onInteractionBegan = { [weak self] in
+                self?.beginInteraction()
+            }
+            panel.onInteractionEnded = { [weak self] in
+                self?.endInteraction()
+            }
+        }
+        if let interactiveWebView = webView as? InteractiveInformationWebView {
+            interactiveWebView.onInteractionBegan = { [weak self] in
+                self?.beginInteraction()
+            }
+            interactiveWebView.onEscape = { [weak self] in
+                self?.endInteraction(resignPanel: true)
+            }
+        }
+
         definitionTextView.isEditable = false
         definitionTextView.isSelectable = true
         definitionTextView.drawsBackground = false
@@ -55,6 +87,36 @@ final class ExternalInformationWindowController {
     }
 
     func show(
+        url: URL?,
+        panelTitle: String,
+        definitions: [SystemDictionaryDefinition],
+        showExternalInformation: Bool,
+        displayDelay: TimeInterval,
+        beside candidateFrame: NSRect
+    ) {
+        if isInteractionActive {
+            pendingPresentation = PendingPresentation(
+                url: url,
+                panelTitle: panelTitle,
+                definitions: definitions,
+                showExternalInformation: showExternalInformation,
+                displayDelay: displayDelay,
+                candidateFrame: candidateFrame
+            )
+            return
+        }
+
+        present(
+            url: url,
+            panelTitle: panelTitle,
+            definitions: definitions,
+            showExternalInformation: showExternalInformation,
+            displayDelay: displayDelay,
+            beside: candidateFrame
+        )
+    }
+
+    private func present(
         url: URL?,
         panelTitle: String,
         definitions: [SystemDictionaryDefinition],
@@ -178,16 +240,44 @@ final class ExternalInformationWindowController {
         navigationTask = nil
         webView.stopLoading()
         requestID = UUID()
+        pendingPresentation = nil
+        isInteractionActive = false
         definitionPanel.orderOut(nil)
         informationPanel.orderOut(nil)
     }
 
-    var isInteractionActive: Bool {
-        informationPanel.isVisible
-            && (
-                informationPanel.isKeyWindow
-                    || informationPanel.frame.contains(NSEvent.mouseLocation)
-            )
+    private func beginInteraction() {
+        guard !isInteractionActive else {
+            return
+        }
+        isInteractionActive = true
+        displayTask?.cancel()
+        navigationTask?.cancel()
+        onInteractionBegan?()
+    }
+
+    private func endInteraction(resignPanel: Bool = false) {
+        guard isInteractionActive else {
+            return
+        }
+        isInteractionActive = false
+        if resignPanel {
+            informationPanel.resignKey()
+        }
+        onInteractionEnded?()
+
+        guard let pendingPresentation else {
+            return
+        }
+        self.pendingPresentation = nil
+        present(
+            url: pendingPresentation.url,
+            panelTitle: pendingPresentation.panelTitle,
+            definitions: pendingPresentation.definitions,
+            showExternalInformation: pendingPresentation.showExternalInformation,
+            displayDelay: pendingPresentation.displayDelay,
+            beside: pendingPresentation.candidateFrame
+        )
     }
 
     private static func makePanel(
@@ -196,7 +286,7 @@ final class ExternalInformationWindowController {
         interactive: Bool
     ) -> NSPanel {
         let styleMask: NSWindow.StyleMask = interactive
-            ? [.titled, .closable, .resizable]
+            ? [.titled, .closable, .resizable, .nonactivatingPanel]
             : [.titled, .nonactivatingPanel]
         let panel: NSPanel
         if interactive {
@@ -206,7 +296,7 @@ final class ExternalInformationWindowController {
                 backing: .buffered,
                 defer: true
             )
-            panel.becomesKeyOnlyIfNeeded = false
+            panel.becomesKeyOnlyIfNeeded = true
         } else {
             panel = NSPanel(
                 contentRect: NSRect(origin: .zero, size: size),
@@ -327,6 +417,9 @@ final class ExternalInformationWindowController {
 }
 
 private final class InteractiveInformationPanel: NSPanel {
+    var onInteractionBegan: (() -> Void)?
+    var onInteractionEnded: (() -> Void)?
+
     override var canBecomeKey: Bool {
         true
     }
@@ -334,10 +427,59 @@ private final class InteractiveInformationPanel: NSPanel {
     override var canBecomeMain: Bool {
         false
     }
+
+    override func becomeKey() {
+        onInteractionBegan?()
+        super.becomeKey()
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown
+            || event.type == .rightMouseDown
+            || event.type == .otherMouseDown
+            || event.type == .scrollWheel {
+            onInteractionBegan?()
+        }
+        super.sendEvent(event)
+    }
+
+    override func resignKey() {
+        let wasKey = isKeyWindow
+        super.resignKey()
+        if wasKey {
+            onInteractionEnded?()
+        }
+    }
+
+    override func close() {
+        onInteractionEnded?()
+        super.close()
+    }
 }
 
 private final class InteractiveInformationWebView: WKWebView {
+    var onInteractionBegan: (() -> Void)?
+    var onEscape: (() -> Void)?
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onInteractionBegan?()
+        super.mouseDown(with: event)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        onInteractionBegan?()
+        super.scrollWheel(with: event)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 {
+            onEscape?()
+            return
+        }
+        super.keyDown(with: event)
     }
 }
