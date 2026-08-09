@@ -1775,6 +1775,23 @@ final class InputController: IMKInputController {
                         + imePrefixCandidates
                         + basicPrefixCandidates
                 )
+        } else if conversionReading.contains("-") {
+            let directLongVowelCandidates = [kanaCandidates.last]
+                .compactMap { $0 }
+                + basicExactCandidates
+                + [kanaCandidates.first].compactMap { $0 }
+            orderedCandidates = rankedUserCandidates
+                + candidatesOrderedByRecency(
+                    extensionCandidates
+                        + directLongVowelCandidates
+                        + imeExactCandidates
+                        + inflectionCandidates
+                        + supplementalCandidates
+                        + englishCandidates
+                        + remoteCandidates
+                        + imePrefixCandidates
+                        + basicPrefixCandidates
+                )
         } else {
             orderedCandidates = rankedUserCandidates
                 + candidatesOrderedByRecency(
