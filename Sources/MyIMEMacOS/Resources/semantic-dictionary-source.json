@@ -1,0 +1,27 @@
+{
+  "source": "TKG Japanese-English Learner's Dictionary",
+  "repository": "https://github.com/tkgally/je-dict-1",
+  "revision": "2345ac680fba576a76d526641f48c2cc289e292e",
+  "license": "CC0-1.0",
+  "generated": "2026-08-09",
+  "entryCount": 30296,
+  "sha256": "f0dac7a9cfac4fe028d157a5ab7d62042d22eb04111bb0b10e345b3388926413",
+  "vectorIndex": {
+    "format": "myim-semantic-vectors-v2",
+    "entryCount": 30295,
+    "dimension": 300,
+    "component": "float16",
+    "sha256": "96d389edf8708a677e752c72cc07b42819da7c24c828a360d5a064795a2298b9"
+  },
+  "format": "myim-semantic-jsonl-v1",
+  "fields": [
+    "id",
+    "headword",
+    "reading",
+    "partOfSpeech",
+    "vocabularyTier",
+    "glosses",
+    "explanations",
+    "source"
+  ]
+}

@@ -36,6 +36,7 @@ let package = Package(
             linkerSettings: [
                 .linkedFramework("CoreServices"),
                 .linkedFramework("InputMethodKit"),
+                .linkedFramework("NaturalLanguage"),
                 .linkedFramework("WebKit")
             ]
         ),

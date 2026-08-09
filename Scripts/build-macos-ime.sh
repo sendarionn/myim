@@ -74,6 +74,18 @@ cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary-source.json" \
     "$resources_directory/basic-dictionary-source.json"
 cp \
+    "Sources/MyIMEMacOS/Resources/semantic-dictionary.jsonl" \
+    "$resources_directory/semantic-dictionary.jsonl"
+cp \
+    "Sources/MyIMEMacOS/Resources/semantic-dictionary-source.json" \
+    "$resources_directory/semantic-dictionary-source.json"
+cp \
+    "Sources/MyIMEMacOS/Resources/semantic-vectors.bin" \
+    "$resources_directory/semantic-vectors.bin"
+cp \
+    "Sources/MyIMEMacOS/Resources/basic-dictionary-LICENSE.txt" \
+    "$resources_directory/semantic-dictionary-LICENSE.txt"
+cp \
     "Sources/MyIMEMacOS/Resources/ime-dictionary.txt" \
     "$resources_directory/ime-dictionary.txt"
 cp \

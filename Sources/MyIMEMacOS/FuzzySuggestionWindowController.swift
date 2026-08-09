@@ -1,9 +1,27 @@
 @preconcurrency import AppKit
 
+enum FuzzySuggestionKind: Equatable {
+    case spelling
+    case semantic
+}
+
 struct FuzzySuggestion: Equatable {
     let candidate: String
     let reading: String
     let distance: Int
+    let kind: FuzzySuggestionKind
+
+    init(
+        candidate: String,
+        reading: String,
+        distance: Int,
+        kind: FuzzySuggestionKind = .spelling
+    ) {
+        self.candidate = candidate
+        self.reading = reading
+        self.distance = distance
+        self.kind = kind
+    }
 }
 
 final class FuzzySuggestionWindowController {
@@ -47,11 +65,10 @@ final class FuzzySuggestionWindowController {
             $0.removeFromSuperview()
         }
 
-        let title = NSTextField(
-            labelWithString: selectedIndex == nil
-                ? "もしかして？  Shift＋Tabで選択"
-                : "もしかして？"
-        )
+        let prefix = "もしかして？"
+        let title = NSTextField(labelWithString: selectedIndex == nil
+            ? "\(prefix)  Shift＋Tabで選択"
+            : prefix)
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         title.textColor = .secondaryLabelColor
         stackView.addArrangedSubview(title)

@@ -9,6 +9,7 @@ import Translation
 final class AppleTranslationCandidateProvider {
     private let panel: NSPanel
     private let host: NSHostingController<AnyView>
+    private var pendingCompletion: ((String?) -> Void)?
 
     init() {
         host = NSHostingController(rootView: AnyView(EmptyView()))
@@ -25,13 +26,29 @@ final class AppleTranslationCandidateProvider {
     }
 
     func translateJapaneseToEnglish(_ text: String) async -> String? {
-        await withCheckedContinuation { continuation in
-            host.rootView = AnyView(
-                AppleTranslationRequestView(text: text) { result in
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                finishPendingTranslation(with: nil)
+                pendingCompletion = { result in
                     continuation.resume(returning: result)
                 }
-            )
+                host.rootView = AnyView(
+                    AppleTranslationRequestView(text: text) { [weak self] result in
+                        self?.finishPendingTranslation(with: result)
+                    }
+                )
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.finishPendingTranslation(with: nil)
+            }
         }
+    }
+
+    private func finishPendingTranslation(with result: String?) {
+        let completion = pendingCompletion
+        pendingCompletion = nil
+        completion?(result)
     }
 }
 

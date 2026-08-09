@@ -46,6 +46,8 @@ final class InputController: IMKInputController {
         "SystemDictionaryPreviewEnabled"
     private static let fuzzySuggestionsEnabledDefaultsKey =
         "FuzzySuggestionsEnabled"
+    private static let semanticSuggestionsEnabledDefaultsKey =
+        "SemanticSuggestionsEnabled"
     private static let maximumCandidateCount = 7
     private static let maximumIMEDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
@@ -77,6 +79,8 @@ final class InputController: IMKInputController {
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
     private var officialCandidateTask: Task<Void, Never>?
+    private var semanticSuggestionTask: Task<Void, Never>?
+    private var semanticSuggestionQuery = ""
     private var officialCandidateQuery = ""
     private var officialCandidates: [String] = []
     private var tabDictionaryRegistration: TabDictionaryRegistration?
@@ -89,6 +93,10 @@ final class InputController: IMKInputController {
     private let cosenseLoginWindow = CosenseLoginWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private let romajiConverter = RomajiConverter()
+    private let semanticVectorSearchEngine: SemanticVectorSearchEngine
+#if canImport(Translation)
+    private var semanticTranslationProvider: AnyObject?
+#endif
     private weak var authenticationTokenInput: NSSecureTextField?
     private var settingsWindow: NSWindow?
 
@@ -101,6 +109,14 @@ final class InputController: IMKInputController {
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
         let selectionRanks = Self.loadCandidateSelectionRanks()
         let nextInputModel = Self.loadNextInputPredictionModel()
+        let semanticDictionaryURL = Self.inputMethodResourceURL(
+            forResource: "semantic-dictionary",
+            withExtension: "jsonl"
+        )
+        let semanticVectorIndexURL = Self.inputMethodResourceURL(
+            forResource: "semantic-vectors",
+            withExtension: "bin"
+        )
 
         dictionarySource = source
         self.credentialStore = credentialStore
@@ -111,6 +127,10 @@ final class InputController: IMKInputController {
         candidateSelectionRanks = selectionRanks
         nextCandidateSelectionRank = (selectionRanks.values.max() ?? 0) + 1
         nextInputPredictionModel = nextInputModel
+        semanticVectorSearchEngine = SemanticVectorSearchEngine(
+            dictionaryURL: semanticDictionaryURL,
+            vectorIndexURL: semanticVectorIndexURL
+        )
         userConversionEngine = ConversionEngine(entries: cachedUserEntries)
         extensionConversionEngine = ConversionEngine(
             entries: cachedExtensionEntries
@@ -147,6 +167,9 @@ final class InputController: IMKInputController {
             ? "読込失敗"
             : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(indexedIMEEngine.readingCount)読み）"
         updateBasicDictionaryIfNeeded(nil)
+        Task { [semanticVectorSearchEngine] in
+            await semanticVectorSearchEngine.prepare()
+        }
     }
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
@@ -441,6 +464,11 @@ final class InputController: IMKInputController {
             action: #selector(toggleFuzzySuggestions(_:)),
             enabled: isFuzzySuggestionsEnabled
         ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "意味検索の「もしかして？」候補を表示",
+            action: #selector(toggleSemanticSuggestions(_:)),
+            enabled: isSemanticSuggestionsEnabled
+        ))
         stack.addArrangedSubview(settingsButton(
             "外部候補とWeb検索を設定…",
             action: #selector(configureExternalCandidates(_:))
@@ -591,6 +619,9 @@ final class InputController: IMKInputController {
         nextInputDismissTimer = nil
         officialCandidateTask?.cancel()
         officialCandidateTask = nil
+        semanticSuggestionTask?.cancel()
+        semanticSuggestionTask = nil
+        semanticSuggestionQuery = ""
         nextInputCandidates = []
         selectedNextInputIndex = nil
         nextInputPredictionModel.breakSequence()
@@ -608,6 +639,9 @@ final class InputController: IMKInputController {
         nextInputDismissTimer = nil
         officialCandidateTask?.cancel()
         officialCandidateTask = nil
+        semanticSuggestionTask?.cancel()
+        semanticSuggestionTask = nil
+        semanticSuggestionQuery = ""
         nextInputCandidates = []
         selectedNextInputIndex = nil
         super.inputControllerWillClose()
@@ -848,6 +882,20 @@ final class InputController: IMKInputController {
         )
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             fuzzySuggestionWindow.hide()
+            return
+        }
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func toggleSemanticSuggestions(_ sender: Any?) {
+        UserDefaults.standard.set(
+            !isSemanticSuggestionsEnabled,
+            forKey: Self.semanticSuggestionsEnabledDefaultsKey
+        )
+        semanticSuggestionTask?.cancel()
+        semanticSuggestionQuery = ""
+        guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
         }
         refreshCandidates(client: inputClient)
@@ -1631,6 +1679,11 @@ final class InputController: IMKInputController {
     }
 
     private func refreshCandidates(client sender: Any) {
+        if semanticSuggestionQuery != conversionReading {
+            semanticSuggestionTask?.cancel()
+            semanticSuggestionTask = nil
+            semanticSuggestionQuery = ""
+        }
         fuzzySuggestionWindow.hide()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
@@ -1821,11 +1874,15 @@ final class InputController: IMKInputController {
         }
 
         showCandidateWindow(client: sender)
-        showFuzzySuggestionsIfNeeded(
-            hasDirectExactCandidates: !userExactCandidates.isEmpty
+        let hasDirectExactCandidates = !userExactCandidates.isEmpty
                 || !extensionExactCandidates.isEmpty
                 || !imeExactCandidates.isEmpty
                 || !basicExactCandidates.isEmpty
+        showFuzzySuggestionsIfNeeded(
+            hasDirectExactCandidates: hasDirectExactCandidates
+        )
+        updateSemanticSuggestionsIfNeeded(
+            hasDirectExactCandidates: hasDirectExactCandidates
         )
         showInputPreview(client: sender)
     }
@@ -1879,6 +1936,89 @@ final class InputController: IMKInputController {
             selectedIndex: nil,
             near: candidateWindow.frame
         )
+    }
+
+    private func updateSemanticSuggestionsIfNeeded(
+        hasDirectExactCandidates: Bool
+    ) {
+        guard isSemanticSuggestionsEnabled,
+              !hasDirectExactCandidates,
+              conversionReading.count >= 2,
+              semanticSuggestionQuery != conversionReading else {
+            return
+        }
+        semanticSuggestionTask?.cancel()
+        let query = conversionReading
+        let japaneseQuery = romajiConverter.hiragana(from: query) ?? query
+        let excludedCandidates = Set(currentCandidates)
+        semanticSuggestionQuery = query
+        semanticSuggestionTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+                guard let self else { return }
+                guard let semanticQuery = await semanticSearchQuery(
+                    japaneseInput: japaneseQuery
+                ) else {
+                    return
+                }
+                let matches = await semanticVectorSearchEngine.matches(
+                    for: semanticQuery,
+                    sourceReading: query,
+                    excluding: excludedCandidates,
+                    limit: 3
+                )
+                try Task.checkCancellation()
+                guard conversionReading == query,
+                      isSemanticSuggestionsEnabled,
+                      !matches.isEmpty else {
+                    return
+                }
+                let semanticSuggestions = matches.map {
+                    FuzzySuggestion(
+                        candidate: $0.candidate,
+                        reading: $0.reading,
+                        distance: 0,
+                        kind: .semantic
+                    )
+                }
+                let semanticCandidates = Set(
+                    semanticSuggestions.map(\.candidate)
+                )
+                let spellingSuggestions = fuzzySuggestions.filter {
+                    $0.kind == .spelling
+                        && !semanticCandidates.contains($0.candidate)
+                }
+                fuzzySuggestions = spellingSuggestions + semanticSuggestions
+                selectedFuzzySuggestionIndex = nil
+                fuzzySuggestionWindow.show(
+                    suggestions: fuzzySuggestions,
+                    selectedIndex: nil,
+                    near: candidateWindow.frame
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                NSLog("意味検索に失敗: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    @MainActor
+    private func semanticSearchQuery(japaneseInput: String) async -> String? {
+#if canImport(Translation)
+        if #available(macOS 15.0, *) {
+            let provider: AppleTranslationCandidateProvider
+            if let existing = semanticTranslationProvider
+                as? AppleTranslationCandidateProvider {
+                provider = existing
+            } else {
+                provider = AppleTranslationCandidateProvider()
+                semanticTranslationProvider = provider
+            }
+            return await provider.translateJapaneseToEnglish(japaneseInput)
+        }
+#endif
+        return nil
     }
 
     private func handleFuzzySuggestionSelection(
@@ -2387,6 +2527,9 @@ final class InputController: IMKInputController {
             value,
             replacementRange: replacementRange
         )
+        semanticSuggestionTask?.cancel()
+        semanticSuggestionTask = nil
+        semanticSuggestionQuery = ""
         inputBuffer = ""
         tabDictionaryRegistration = nil
         currentCandidates = []
@@ -2800,6 +2943,12 @@ final class InputController: IMKInputController {
     private var isFuzzySuggestionsEnabled: Bool {
         UserDefaults.standard.bool(
             forKey: Self.fuzzySuggestionsEnabledDefaultsKey
+        )
+    }
+
+    private var isSemanticSuggestionsEnabled: Bool {
+        UserDefaults.standard.bool(
+            forKey: Self.semanticSuggestionsEnabledDefaultsKey
         )
     }
 
