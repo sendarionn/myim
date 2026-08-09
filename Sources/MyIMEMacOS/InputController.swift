@@ -269,7 +269,10 @@ final class InputController: IMKInputController {
         case 36, 76:
             return commitFirstCandidateOrInput(to: sender)
         case 51:
-            return deleteBackward(from: sender)
+            return deleteBackward(
+                from: sender,
+                unit: deletionUnit(for: event)
+            )
         case 53:
             return cancelInput(in: sender)
         default:
@@ -1491,7 +1494,10 @@ final class InputController: IMKInputController {
                registration.pastedCandidate == nil,
                var confirmedCandidate = registration.confirmedCandidate,
                !confirmedCandidate.isEmpty {
-                confirmedCandidate.removeLast()
+                confirmedCandidate = InputBufferDeletion.deletingBackward(
+                    from: confirmedCandidate,
+                    unit: deletionUnit(for: event)
+                )
                 registration.confirmedCandidate = confirmedCandidate.nilIfEmpty
                 tabDictionaryRegistration = registration
                 setMarkedText(confirmedCandidate, in: sender)
@@ -1503,7 +1509,10 @@ final class InputController: IMKInputController {
             if inputBuffer.isEmpty {
                 return true
             }
-            return deleteBackward(from: sender)
+            return deleteBackward(
+                from: sender,
+                unit: deletionUnit(for: event)
+            )
         case 53:
             tabDictionaryRegistration = nil
             inputBuffer = registration.originalInput
@@ -1811,60 +1820,30 @@ final class InputController: IMKInputController {
             kanaCandidates = [hiragana, katakana]
                 .compactMap { $0 }
         }
-        var seen = Set<String>()
-        let orderedCandidates: [String]
-        let rankedUserCandidates = candidatesOrderedByRecency(userCandidates)
-        if kanaCandidates.first?.count == 1 {
-            orderedCandidates = kanaCandidates
-                + rankedUserCandidates
-                + candidatesOrderedByRecency(
-                    extensionCandidates
-                        + imeExactCandidates
-                        + basicExactCandidates
-                        + inflectionCandidates
-                        + supplementalCandidates
-                        + englishCandidates
-                        + remoteCandidates
-                        + imePrefixCandidates
-                        + basicPrefixCandidates
-                )
-        } else if conversionReading.contains("-") {
-            let directLongVowelCandidates = [kanaCandidates.last]
-                .compactMap { $0 }
-                + basicExactCandidates
-                + [kanaCandidates.first].compactMap { $0 }
-            orderedCandidates = rankedUserCandidates
-                + candidatesOrderedByRecency(
-                    extensionCandidates
-                        + directLongVowelCandidates
-                        + imeExactCandidates
-                        + inflectionCandidates
-                        + supplementalCandidates
-                        + englishCandidates
-                        + remoteCandidates
-                        + imePrefixCandidates
-                        + basicPrefixCandidates
-                )
-        } else {
-            orderedCandidates = rankedUserCandidates
-                + candidatesOrderedByRecency(
-                    extensionCandidates
-                        + imeExactCandidates
-                        + basicExactCandidates
-                        + inflectionCandidates
-                        + supplementalCandidates
-                        + kanaCandidates
-                        + englishCandidates
-                        + remoteCandidates
-                        + imePrefixCandidates
-                        + basicPrefixCandidates
-                )
-        }
-        currentCandidates = []
-        currentCandidates.reserveCapacity(orderedCandidates.count)
-        for candidate in orderedCandidates where seen.insert(candidate).inserted {
-            currentCandidates.append(candidate)
-        }
+        let supplementalExactCandidates = isBasicDictionaryEnabled
+            ? mergedCandidates(
+                lookup: { supplementalConversionEngine.candidates(for: $0) },
+                readings: lookupReadings
+            ) : []
+        let directCandidates = userExactCandidates
+            + extensionExactCandidates
+            + imeExactCandidates
+            + basicExactCandidates
+            + inflectionCandidates
+            + supplementalExactCandidates
+        let otherCandidates = userCandidates
+            + extensionCandidates
+            + supplementalCandidates
+            + englishCandidates
+            + remoteCandidates
+            + imePrefixCandidates
+            + basicPrefixCandidates
+        currentCandidates = CandidatePriorityOrderer.ordered(
+            kana: kanaCandidates,
+            direct: directCandidates,
+            others: otherCandidates,
+            recencyRanks: candidateSelectionRanks
+        )
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
@@ -2474,12 +2453,28 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func deleteBackward(from sender: Any) -> Bool {
+    private func deletionUnit(for event: NSEvent) -> InputBufferDeletionUnit {
+        if event.modifierFlags.contains(.command) {
+            return .all
+        }
+        if event.modifierFlags.contains(.option) {
+            return .word
+        }
+        return .character
+    }
+
+    private func deleteBackward(
+        from sender: Any,
+        unit: InputBufferDeletionUnit = .character
+    ) -> Bool {
         guard !inputBuffer.isEmpty else {
             return false
         }
 
-        inputBuffer.removeLast()
+        inputBuffer = InputBufferDeletion.deletingBackward(
+            from: inputBuffer,
+            unit: unit
+        )
         selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
