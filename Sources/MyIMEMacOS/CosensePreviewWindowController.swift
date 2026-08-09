@@ -280,6 +280,10 @@ final class ExternalInformationWindowController: NSObject {
         )
     }
 
+    func finishInteraction() {
+        endInteraction()
+    }
+
     private static func makePanel(
         title: String,
         size: NSSize,
@@ -296,7 +300,7 @@ final class ExternalInformationWindowController: NSObject {
                 backing: .buffered,
                 defer: true
             )
-            panel.becomesKeyOnlyIfNeeded = true
+            panel.becomesKeyOnlyIfNeeded = false
         } else {
             panel = NSPanel(
                 contentRect: NSRect(origin: .zero, size: size),
@@ -421,16 +425,11 @@ private final class InteractiveInformationPanel: NSPanel {
     var onInteractionEnded: (() -> Void)?
 
     override var canBecomeKey: Bool {
-        true
+        false
     }
 
     override var canBecomeMain: Bool {
         false
-    }
-
-    override func becomeKey() {
-        onInteractionBegan?()
-        super.becomeKey()
     }
 
     override func sendEvent(_ event: NSEvent) {
@@ -441,14 +440,6 @@ private final class InteractiveInformationPanel: NSPanel {
             onInteractionBegan?()
         }
         super.sendEvent(event)
-    }
-
-    override func resignKey() {
-        let wasKey = isKeyWindow
-        super.resignKey()
-        if wasKey {
-            onInteractionEnded?()
-        }
     }
 
     override func close() {
