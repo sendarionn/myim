@@ -44,15 +44,17 @@ public struct FuzzyConversionEngine: Sendable {
 
         var buckets: [Int: [IndexedEntry]] = [:]
         for (order, reading) in readingOrder.enumerated() {
-            let characters = Array(reading)
-            buckets[characters.count, default: []].append(
-                IndexedEntry(
-                    reading: reading,
-                    characters: characters,
-                    candidates: merged[reading] ?? [],
-                    order: order
+            for searchReading in Self.fuzzyReadingVariants(from: reading) {
+                let characters = Array(searchReading)
+                buckets[characters.count, default: []].append(
+                    IndexedEntry(
+                        reading: reading,
+                        characters: characters,
+                        candidates: merged[reading] ?? [],
+                        order: order
+                    )
                 )
-            )
+            }
         }
         entriesByLength = buckets
     }
@@ -63,6 +65,7 @@ public struct FuzzyConversionEngine: Sendable {
         limit: Int = 3
     ) -> [FuzzyConversionMatch] {
         let reading = RomanizedReadingNormalizer.dictionaryReading(from: input)
+        let sourceReadings = Self.fuzzyReadingVariants(from: reading)
         let source = Array(reading)
         let allowedDistance = maximumDistance
             ?? Self.defaultMaximumDistance(forLength: source.count)
@@ -70,26 +73,40 @@ public struct FuzzyConversionEngine: Sendable {
             return []
         }
 
-        var matches: [(IndexedEntry, Int, Int)] = []
-        let minimumLength = max(1, source.count - allowedDistance)
-        let maximumLength = source.count + allowedDistance
-        for length in minimumLength...maximumLength {
-            for entry in entriesByLength[length] ?? [] where entry.reading != reading {
-                guard let distance = Self.damerauLevenshteinDistance(
-                    source,
-                    entry.characters,
-                    maximumDistance: allowedDistance
-                ) else {
-                    continue
+        var bestMatches: [String: (IndexedEntry, Int, Int)] = [:]
+        for sourceReading in sourceReadings {
+            let sourceCharacters = Array(sourceReading)
+            let minimumLength = max(1, sourceCharacters.count - allowedDistance)
+            let maximumLength = sourceCharacters.count + allowedDistance
+            for length in minimumLength...maximumLength {
+                for entry in entriesByLength[length] ?? []
+                where entry.reading != reading {
+                    guard let distance = Self.damerauLevenshteinDistance(
+                        sourceCharacters,
+                        entry.characters,
+                        maximumDistance: allowedDistance
+                    ) else {
+                        continue
+                    }
+                    let prefixLength = Self.commonPrefixLength(
+                        sourceCharacters,
+                        entry.characters
+                    )
+                    if let current = bestMatches[entry.reading],
+                       current.1 < distance
+                        || current.1 == distance && current.2 >= prefixLength {
+                        continue
+                    }
+                    bestMatches[entry.reading] = (
+                        entry,
+                        distance,
+                        prefixLength
+                    )
                 }
-                matches.append((
-                    entry,
-                    distance,
-                    Self.commonPrefixLength(source, entry.characters)
-                ))
             }
         }
 
+        var matches = Array(bestMatches.values)
         matches.sort {
             if $0.1 != $1.1 {
                 return $0.1 < $1.1
@@ -117,6 +134,91 @@ public struct FuzzyConversionEngine: Sendable {
         default:
             2
         }
+    }
+
+    private static func fuzzyReadingVariants(from reading: String) -> [String] {
+        var variants: [String] = []
+        var seen = Set<String>()
+        func append(_ value: String) {
+            guard !value.isEmpty, seen.insert(value).inserted else {
+                return
+            }
+            variants.append(value)
+        }
+
+        let moraicN = collapsedMoraicN(in: reading)
+        let apostrophe = reading.replacingOccurrences(of: "n'", with: "n")
+        let nasal = normalizedLabialNasal(in: reading)
+        let longVowels = normalizedLongVowels(in: reading)
+        append(reading)
+        append(moraicN)
+        append(apostrophe)
+        append(nasal)
+        append(longVowels)
+        append(normalizedLongVowels(in: moraicN))
+        append(normalizedLongVowels(in: apostrophe))
+        append(normalizedLongVowels(in: nasal))
+        append(normalizedLabialNasal(in: moraicN))
+        return variants
+    }
+
+    private static func collapsedMoraicN(in reading: String) -> String {
+        let characters = Array(reading)
+        guard characters.count >= 2 else {
+            return reading
+        }
+        var collapsed = ""
+        var index = 0
+        while index < characters.count {
+            if characters[index] == "n",
+               index + 1 < characters.count,
+               characters[index + 1] == "n",
+               index + 2 == characters.count
+                || "aeiou".contains(characters[index + 2]) {
+                collapsed.append("n")
+                index += 2
+                continue
+            }
+            collapsed.append(characters[index])
+            index += 1
+        }
+        return collapsed
+    }
+
+    private static func normalizedLabialNasal(in reading: String) -> String {
+        let characters = Array(reading)
+        guard characters.count >= 2 else {
+            return reading
+        }
+        var normalized = characters
+        for index in 0..<(characters.count - 1)
+        where characters[index] == "m"
+            && "bmp".contains(characters[index + 1]) {
+            normalized[index] = "n"
+        }
+        return String(normalized)
+    }
+
+    private static func normalizedLongVowels(in reading: String) -> String {
+        let characters = Array(reading)
+        guard characters.count >= 2 else {
+            return reading
+        }
+        var normalized = ""
+        var index = 0
+        while index < characters.count {
+            let current = characters[index]
+            normalized.append(current)
+            guard index + 1 < characters.count else {
+                break
+            }
+            let next = characters[index + 1]
+            let isLongVowel = current == next && "aeiou".contains(current)
+                || current == "o" && next == "u"
+                || current == "e" && next == "i"
+            index += isLongVowel ? 2 : 1
+        }
+        return normalized
     }
 
     private static func commonPrefixLength(
