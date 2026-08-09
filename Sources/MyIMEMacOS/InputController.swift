@@ -91,6 +91,7 @@ final class InputController: IMKInputController {
     private let romajiConverter = RomajiConverter()
     private weak var authenticationTokenInput: NSSecureTextField?
     private var externalPanelCompositionSnapshot: ExternalPanelCompositionSnapshot?
+    private var settingsWindow: NSWindow?
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let source = Self.loadDictionarySource()
@@ -268,226 +269,243 @@ final class InputController: IMKInputController {
         currentCandidates
     }
 
+    override func doCommand(
+        by aSelector: Selector!,
+        command infoDictionary: [AnyHashable: Any]!
+    ) {
+        guard let aSelector, responds(to: aSelector) else {
+            super.doCommand(by: aSelector, command: infoDictionary)
+            return
+        }
+        perform(aSelector, with: infoDictionary)
+    }
+
     override func menu() -> NSMenu! {
         let menu = NSMenu()
-        let syncItem = NSMenuItem(
-            title: "Cosense辞書を更新",
-            action: #selector(syncCosenseDictionary(_:)),
-            keyEquivalent: "r"
+        menu.autoenablesItems = false
+        addActionItem(
+            title: "myim設定…",
+            action: #selector(openSettingsWindow(_:)),
+            to: menu
         )
-        syncItem.keyEquivalentModifierMask = [.command, .option, .control]
-        syncItem.target = self
-        menu.addItem(syncItem)
-
-        let configureItem = NSMenuItem(
-            title: "Cosenseプロジェクトを設定…",
-            action: #selector(configureCosenseProject(_:)),
-            keyEquivalent: ""
-        )
-        configureItem.target = self
-        menu.addItem(configureItem)
-
-        let loginItem = NSMenuItem(
-            title: "Cosenseへログイン…",
-            action: #selector(openCosenseLogin(_:)),
-            keyEquivalent: ""
-        )
-        loginItem.target = self
-        menu.addItem(loginItem)
-
-        let authenticationItem = NSMenuItem(
-            title: "Cosense認証を設定…",
-            action: #selector(configureCosenseAuthentication(_:)),
-            keyEquivalent: ""
-        )
-        authenticationItem.target = self
-        menu.addItem(authenticationItem)
-
-        let updateBasicItem = NSMenuItem(
-            title: "TKGJE基本辞書を更新",
-            action: #selector(updateBasicDictionaryIfNeeded(_:)),
-            keyEquivalent: ""
-        )
-        updateBasicItem.target = self
-        menu.addItem(updateBasicItem)
-
         menu.addItem(.separator())
-
-        let experimentalItem = NSMenuItem(
-            title: "実験機能",
-            action: nil,
-            keyEquivalent: ""
-        )
-        experimentalItem.isEnabled = false
-        menu.addItem(experimentalItem)
-
-        addExperimentalToggle(
-            title: "ローカル基本辞書で変換候補を取得",
-            action: #selector(toggleBasicDictionary(_:)),
-            enabled: isBasicDictionaryEnabled,
-            to: menu
-        )
-        addExperimentalToggle(
-            title: "ローカルユーザー辞書を使用",
-            action: #selector(toggleUserDictionary(_:)),
-            enabled: isUserDictionaryEnabled,
-            to: menu
-        )
-        addExperimentalToggle(
-            title: "Cosense拡張辞書を使用",
-            action: #selector(toggleExtensionDictionary(_:)),
-            enabled: isExtensionDictionaryEnabled,
-            to: menu
-        )
-        addExperimentalToggle(
-            title: "英語補完を使用",
-            action: #selector(toggleEnglishCompletion(_:)),
-            enabled: isEnglishCompletionEnabled,
-            to: menu
-        )
-        addExperimentalToggle(
-            title: "Wikipedia候補を取得",
-            action: #selector(toggleWikipediaSuggestions(_:)),
-            enabled: isWikipediaSuggestionsEnabled,
-            to: menu
-        )
-        addExperimentalToggle(
-            title: "日本語入力から英語の変換候補を取得",
-            action: #selector(toggleAppleTranslation(_:)),
-            enabled: isAppleTranslationEnabled,
-            to: menu
-        )
-        addExperimentalToggle(
-            title: "Azure英訳候補を取得",
-            action: #selector(toggleAzureDictionary(_:)),
-            enabled: isAzureDictionaryEnabled,
-            to: menu
-        )
-        addExperimentalToggle(
-            title: "Command＋ReturnでWeb検索",
-            action: #selector(toggleWebSearch(_:)),
-            enabled: isWebSearchEnabled,
-            to: menu
-        )
-        let externalSettingsItem = NSMenuItem(
-            title: "外部候補とWeb検索を設定…",
-            action: #selector(configureExternalCandidates(_:)),
-            keyEquivalent: ""
-        )
-        externalSettingsItem.target = self
-        menu.addItem(externalSettingsItem)
-        menu.addItem(.separator())
-
-        let nextInputItem = NSMenuItem(
-            title: "次入力候補を使用",
-            action: #selector(toggleNextInputPrediction(_:)),
-            keyEquivalent: ""
-        )
-        nextInputItem.target = self
-        nextInputItem.state = isNextInputPredictionEnabled ? .on : .off
-        menu.addItem(nextInputItem)
-
-        let externalInformationItem = NSMenuItem(
-            title: "外部情報パネルを使用",
-            action: #selector(toggleExternalInformationPanel(_:)),
-            keyEquivalent: ""
-        )
-        externalInformationItem.target = self
-        externalInformationItem.state = isExternalInformationPanelEnabled
-            ? .on
-            : .off
-        menu.addItem(externalInformationItem)
-
-        let configureExternalInformationItem = NSMenuItem(
-            title: "外部情報パネルの検索先を設定…",
-            action: #selector(configureExternalInformationPanel(_:)),
-            keyEquivalent: ""
-        )
-        configureExternalInformationItem.target = self
-        menu.addItem(configureExternalInformationItem)
-
-        let systemDictionaryPreviewItem = NSMenuItem(
-            title: "macOS辞書パネルを使用",
-            action: #selector(toggleSystemDictionaryPreview(_:)),
-            keyEquivalent: ""
-        )
-        systemDictionaryPreviewItem.target = self
-        systemDictionaryPreviewItem.state = isSystemDictionaryPreviewEnabled
-            ? .on : .off
-        menu.addItem(systemDictionaryPreviewItem)
-
-        let clearNextInputItem = NSMenuItem(
-            title: "次入力履歴を削除",
-            action: #selector(clearNextInputPredictionHistory(_:)),
-            keyEquivalent: ""
-        )
-        clearNextInputItem.target = self
-        menu.addItem(clearNextInputItem)
-
-        let registerSelectionItem = NSMenuItem(
+        addActionItem(
             title: "選択文字列を辞書登録…",
             action: #selector(registerSelectedTextInUserDictionary(_:)),
-            keyEquivalent: ""
+            to: menu
         )
-        registerSelectionItem.target = self
-        menu.addItem(registerSelectionItem)
-
-        let userDictionaryItem = NSMenuItem(
-            title: "ユーザー辞書: \(userEntries.count)読み",
-            action: nil,
-            keyEquivalent: ""
+        addActionItem(
+            title: "Cosense辞書を更新",
+            action: #selector(syncCosenseDictionary(_:)),
+            keyEquivalent: "r",
+            modifierMask: [.command, .option, .control],
+            to: menu
         )
-        userDictionaryItem.isEnabled = false
-        menu.addItem(userDictionaryItem)
-
-        let projectItem = NSMenuItem(
-            title: "拡張辞書: \(dictionarySource.projectURLDescription)",
-            action: nil,
-            keyEquivalent: ""
+        addActionItem(
+            title: "状態を確認…",
+            action: #selector(showStatus(_:)),
+            to: menu
         )
-        projectItem.isEnabled = false
-        menu.addItem(projectItem)
-
-        let authenticationStatusItem = NSMenuItem(
-            title: "Cosense認証: \(cosenseAuthenticationStatus)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        authenticationStatusItem.isEnabled = false
-        menu.addItem(authenticationStatusItem)
-
-        let statusItem = NSMenuItem(
-            title: "Cosense更新: \(cosenseSyncStatus)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        statusItem.isEnabled = false
-        menu.addItem(statusItem)
-
-        let basicStatusItem = NSMenuItem(
-            title: "TKGJE更新: \(basicDictionaryStatus)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        basicStatusItem.isEnabled = false
-        menu.addItem(basicStatusItem)
         return menu
     }
 
-    private func addExperimentalToggle(
+    private func addActionItem(
         title: String,
         action: Selector,
-        enabled: Bool,
+        keyEquivalent: String = "",
+        modifierMask: NSEvent.ModifierFlags = [],
         to menu: NSMenu
     ) {
         let item = NSMenuItem(
             title: title,
             action: action,
-            keyEquivalent: ""
+            keyEquivalent: keyEquivalent
         )
-        item.target = self
-        item.state = enabled ? .on : .off
+        item.target = nil
+        item.isEnabled = true
+        item.keyEquivalentModifierMask = modifierMask
         menu.addItem(item)
+    }
+
+    private func settingsCheckbox(
+        title: String,
+        action: Selector,
+        enabled: Bool
+    ) -> NSButton {
+        let button = NSButton(
+            checkboxWithTitle: title,
+            target: self,
+            action: action
+        )
+        button.state = enabled ? .on : .off
+        return button
+    }
+
+    @objc
+    private func openSettingsWindow(_ sender: Any?) {
+        if let settingsWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            settingsWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 620),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "myim設定"
+        panel.isReleasedWhenClosed = false
+        panel.hidesOnDeactivate = false
+        panel.level = .floating
+        panel.minSize = NSSize(width: 480, height: 420)
+
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(
+            top: 18,
+            left: 20,
+            bottom: 18,
+            right: 20
+        )
+
+        addSettingsSection("変換候補", to: stack)
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "ローカル基本辞書で変換候補を取得",
+            action: #selector(toggleBasicDictionary(_:)),
+            enabled: isBasicDictionaryEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "ローカルユーザー辞書を使用",
+            action: #selector(toggleUserDictionary(_:)),
+            enabled: isUserDictionaryEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "Cosense拡張辞書を使用",
+            action: #selector(toggleExtensionDictionary(_:)),
+            enabled: isExtensionDictionaryEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "英語補完を使用",
+            action: #selector(toggleEnglishCompletion(_:)),
+            enabled: isEnglishCompletionEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "Wikipedia候補を取得",
+            action: #selector(toggleWikipediaSuggestions(_:)),
+            enabled: isWikipediaSuggestionsEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "日本語入力から英語の変換候補を取得",
+            action: #selector(toggleAppleTranslation(_:)),
+            enabled: isAppleTranslationEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "Azure英訳候補を取得",
+            action: #selector(toggleAzureDictionary(_:)),
+            enabled: isAzureDictionaryEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "次入力候補を使用",
+            action: #selector(toggleNextInputPrediction(_:)),
+            enabled: isNextInputPredictionEnabled
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "外部候補とWeb検索を設定…",
+            action: #selector(configureExternalCandidates(_:))
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "次入力履歴を削除",
+            action: #selector(clearNextInputPredictionHistory(_:))
+        ))
+
+        addSettingsSection("外部表示", to: stack)
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "外部情報パネルを使用",
+            action: #selector(toggleExternalInformationPanel(_:)),
+            enabled: isExternalInformationPanelEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "macOS辞書パネルを使用",
+            action: #selector(toggleSystemDictionaryPreview(_:)),
+            enabled: isSystemDictionaryPreviewEnabled
+        ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "Command＋ReturnでWeb検索",
+            action: #selector(toggleWebSearch(_:)),
+            enabled: isWebSearchEnabled
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "外部情報パネルの検索先を設定…",
+            action: #selector(configureExternalInformationPanel(_:))
+        ))
+
+        addSettingsSection("辞書管理", to: stack)
+        stack.addArrangedSubview(settingsButton(
+            "選択文字列を辞書登録…",
+            action: #selector(registerSelectedTextInUserDictionary(_:))
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "TKGJE基本辞書を更新",
+            action: #selector(updateBasicDictionaryIfNeeded(_:))
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "Cosenseプロジェクトを設定…",
+            action: #selector(configureCosenseProject(_:))
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "Cosenseへログイン…",
+            action: #selector(openCosenseLogin(_:))
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "Cosense認証を設定…",
+            action: #selector(configureCosenseAuthentication(_:))
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "Cosense辞書を更新",
+            action: #selector(syncCosenseDictionary(_:))
+        ))
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = stack
+        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 790)
+        panel.contentView = scrollView
+        settingsWindow = panel
+        NSApp.activate(ignoringOtherApps: true)
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func addSettingsSection(_ title: String, to stack: NSStackView) {
+        let label = NSTextField(labelWithString: title)
+        label.font = .systemFont(ofSize: 15, weight: .semibold)
+        stack.addArrangedSubview(label)
+    }
+
+    private func settingsButton(_ title: String, action: Selector) -> NSButton {
+        NSButton(title: title, target: self, action: action)
+    }
+
+    @objc
+    private func showStatus(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "myimの状態"
+        alert.informativeText = [
+            "ユーザー辞書: \(userEntries.count)読み",
+            "拡張辞書: \(dictionarySource.projectURLDescription)",
+            "Cosense認証: \(cosenseAuthenticationStatus)",
+            "Cosense更新: \(cosenseSyncStatus)",
+            "TKGJE更新: \(basicDictionaryStatus)"
+        ].joined(separator: "\n")
+        alert.addButton(withTitle: "閉じる")
+        alert.window.level = .floating
+        NSApp.activate(ignoringOtherApps: true)
+        _ = alert.runModal()
     }
 
     override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
