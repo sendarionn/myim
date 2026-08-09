@@ -12,7 +12,9 @@ struct VerbInflectionCandidateGeneratorTests {
         DictionaryEntry(reading: "taberu", candidates: ["食べる"]),
         DictionaryEntry(reading: "hanasu", candidates: ["話す"]),
         DictionaryEntry(reading: "benkyousuru", candidates: ["勉強する"]),
-        DictionaryEntry(reading: "kuru", candidates: ["来る"])
+        DictionaryEntry(reading: "kuru", candidates: ["来る"]),
+        DictionaryEntry(reading: "miru", candidates: ["見る"]),
+        DictionaryEntry(reading: "kau", candidates: ["買う"])
     ])
 
     @Test
@@ -51,5 +53,15 @@ struct VerbInflectionCandidateGeneratorTests {
         #expect(generator.candidates(for: "benkyoushinai") == ["勉強しない"])
         #expect(generator.candidates(for: "kite").contains("来て"))
         #expect(generator.candidates(for: "konai") == ["来ない"])
+    }
+
+    @Test
+    func createsPotentialPassiveAndCausativeCandidates() {
+        #expect(generator.candidates(for: "mirareru").contains("見られる"))
+        #expect(generator.candidates(for: "kakeru").contains("書ける"))
+        #expect(generator.candidates(for: "yomeru").contains("読める"))
+        #expect(generator.candidates(for: "hanaseru").contains("話せる"))
+        #expect(generator.candidates(for: "kawareru").contains("買われる"))
+        #expect(generator.candidates(for: "kakaseru").contains("書かせる"))
     }
 }

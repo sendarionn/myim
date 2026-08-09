@@ -3,7 +3,8 @@ public enum CandidatePriorityOrderer {
         kana: [String],
         direct: [String],
         others: [String],
-        recencyRanks: [String: Int]
+        recencyRanks: [String: Int],
+        prioritizeKana: Bool
     ) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
@@ -15,10 +16,14 @@ public enum CandidatePriorityOrderer {
             }
         }
 
-        appendUnique(kana)
+        if prioritizeKana {
+            appendUnique(kana)
+        }
         appendUnique(direct)
         appendUnique(CandidateRecencyOrderer.ordered(
-            others.filter { !seen.contains($0) },
+            ((prioritizeKana ? [] : kana) + others).filter {
+                !seen.contains($0)
+            },
             ranks: recencyRanks
         ))
         return result

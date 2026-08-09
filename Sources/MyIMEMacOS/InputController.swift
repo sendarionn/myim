@@ -237,6 +237,10 @@ final class InputController: IMKInputController {
             return beginTabDictionaryRegistration(client: sender)
         }
 
+        if handleInputFormFunctionKey(event, client: sender) {
+            return true
+        }
+
         if let handled = handleFuzzySuggestionSelection(
             event,
             client: sender
@@ -1334,6 +1338,61 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func handleInputFormFunctionKey(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        guard !inputBuffer.isEmpty else { return false }
+        let form: InputForm
+        let source: String
+        let suffix: String
+        switch event.keyCode {
+        case 97:
+            form = .hiragana
+            source = conversionReading
+            suffix = conversionSuffix
+        case 98:
+            form = .fullWidthKatakana
+            source = conversionReading
+            suffix = conversionSuffix
+        case 100:
+            form = .halfWidthKatakana
+            source = conversionReading
+            suffix = conversionSuffix
+        case 101:
+            form = .fullWidthAlphanumeric
+            source = inputBuffer
+            suffix = ""
+        case 109:
+            form = .halfWidthAlphanumeric
+            source = inputBuffer
+            suffix = ""
+        default:
+            return false
+        }
+        guard let converted = InputFormConverter.convert(source, to: form) else {
+            return true
+        }
+        let candidate = converted + suffix
+        let index: Int
+        if let existingIndex = currentCandidates.firstIndex(of: candidate) {
+            index = existingIndex
+        } else {
+            currentCandidates.insert(candidate, at: 0)
+            index = 0
+        }
+        selectedCandidateIndex = index
+        candidatePanel.hide()
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        setMarkedText(
+            (tabDictionaryRegistration?.confirmedCandidate ?? "") + candidate,
+            in: sender
+        )
+        return true
+    }
+
     private func shouldDismissNextInputSuggestions(
         for event: NSEvent
     ) -> Bool {
@@ -1412,6 +1471,10 @@ final class InputController: IMKInputController {
     ) -> Bool {
         guard var registration = tabDictionaryRegistration else {
             return false
+        }
+
+        if handleInputFormFunctionKey(event, client: sender) {
+            return true
         }
 
         switch event.keyCode {
@@ -1842,7 +1905,8 @@ final class InputController: IMKInputController {
             kana: kanaCandidates,
             direct: directCandidates,
             others: otherCandidates,
-            recencyRanks: candidateSelectionRanks
+            recencyRanks: candidateSelectionRanks,
+            prioritizeKana: kanaCandidates.first?.count == 1
         )
 
         guard !currentCandidates.isEmpty else {
