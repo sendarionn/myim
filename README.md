@@ -2,6 +2,8 @@
 
 複数のローカル辞書と拡張辞書を使うmacOS向けInput Method
 
+GyaimとSKKにインスピレーションを受けて制作しました
+
 ## 必要環境
 
 - macOS 13以降
@@ -250,8 +252,3 @@ python3 -m unittest discover -s Tests/ScriptTests -p 'test_*.py'
 - `docs/DICTIONARY_DATASETS.md` 辞書の生成方法と実行時構成
 - `docs/DICTIONARY_LICENSES.md` 辞書の出典とライセンス
 - `docs/MACOS_DICTIONARY.md` macOS標準辞書の利用方針
-
-## インスピレーション
-
-- Gyaim
-- SKK
