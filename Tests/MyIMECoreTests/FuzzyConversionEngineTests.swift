@@ -65,6 +65,14 @@ struct FuzzyConversionEngineTests {
     }
 
     @Test
+    func acceptsSingleTrailingMoraicNInput() {
+        let match = engine.matches(for: "gennin").first
+        #expect(match?.reading == "genin")
+        #expect(match?.candidates == ["原因"])
+        #expect(match?.distance == 0)
+    }
+
+    @Test
     func preservesCanonicalDoubleNReading() {
         #expect(engine.matches(for: "konnichiha").allSatisfy {
             $0.reading != "konnichiha"

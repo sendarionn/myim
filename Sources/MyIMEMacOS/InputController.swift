@@ -2023,7 +2023,6 @@ final class InputController: IMKInputController {
         hasDirectExactCandidates: Bool
     ) {
         guard isFuzzySuggestionsEnabled,
-              !hasDirectExactCandidates,
               conversionReading.count >= 4 else {
             fuzzySuggestionWindow.hide()
             fuzzySuggestions = []
@@ -2034,7 +2033,9 @@ final class InputController: IMKInputController {
         let matches = fuzzyConversionEngine.matches(
             for: conversionReading,
             limit: 3
-        ).compactMap { match -> FuzzyConversionMatch? in
+        ).filter {
+            !hasDirectExactCandidates || $0.distance == 0
+        }.compactMap { match -> FuzzyConversionMatch? in
             let candidates = match.candidates.filter {
                 !visibleCandidates.contains($0)
             }
