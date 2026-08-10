@@ -229,6 +229,14 @@ final class InputController: IMKInputController {
             return true
         }
 
+        if isOpenExternalInformationShortcut(event),
+           !inputBuffer.isEmpty {
+            if !previewWindow.openDisplayedPageInDefaultBrowser() {
+                NSSound.beep()
+            }
+            return true
+        }
+
         if isWebSearchShortcut(event),
            openSelectedWebSearch(client: sender) {
             return true
@@ -2332,6 +2340,17 @@ final class InputController: IMKInputController {
             && (event.keyCode == 36 || event.keyCode == 76)
     }
 
+    private func isOpenExternalInformationShortcut(
+        _ event: NSEvent
+    ) -> Bool {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        return flags == [.command]
+            && (event.keyCode == 31
+                || event.charactersIgnoringModifiers?.lowercased() == "o")
+    }
+
     private func openSelectedWebSearch(client sender: Any) -> Bool {
         guard isWebSearchEnabled,
               let selectedCandidateIndex,
@@ -2532,8 +2551,8 @@ final class InputController: IMKInputController {
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
             guide: selectedCandidateIndex == nil
-                ? "Tab 選択　⇧Tab もしかして？　⌥↩ 辞書登録\nF6–F10 文字種変換"
-                : "Tab / ⇧Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索"
+                ? "Tab 選択　⇧Tab もしかして？　⌥↩ 辞書登録\nF6–F10 文字種変換　⌘O 外部ページ"
+                : "Tab / ⇧Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
         )
     }
 

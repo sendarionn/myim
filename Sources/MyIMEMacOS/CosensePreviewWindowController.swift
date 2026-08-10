@@ -54,6 +54,18 @@ final class ExternalInformationWindowController: NSObject {
 
         super.init()
 
+        let openInBrowserButton = NSButton(
+            title: "ブラウザで開く  ⌘O",
+            target: self,
+            action: #selector(openDisplayedPageInDefaultBrowser(_:))
+        )
+        openInBrowserButton.bezelStyle = .inline
+        openInBrowserButton.toolTip = "現在のページを既定ブラウザで開く（Command＋O）"
+        let browserAccessory = NSTitlebarAccessoryViewController()
+        browserAccessory.layoutAttribute = .right
+        browserAccessory.view = openInBrowserButton
+        informationPanel.addTitlebarAccessoryViewController(browserAccessory)
+
         if let panel = informationPanel as? InteractiveInformationPanel {
             panel.onInteractionBegan = { [weak self] in
                 self?.beginInteraction()
@@ -282,6 +294,23 @@ final class ExternalInformationWindowController: NSObject {
 
     func finishInteraction() {
         endInteraction()
+    }
+
+    @discardableResult
+    func openDisplayedPageInDefaultBrowser() -> Bool {
+        guard let url = webView.url ?? displayedURL,
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            return false
+        }
+        return NSWorkspace.shared.open(url)
+    }
+
+    @objc
+    private func openDisplayedPageInDefaultBrowser(_ sender: Any?) {
+        if !openDisplayedPageInDefaultBrowser() {
+            NSSound.beep()
+        }
     }
 
     private static func makePanel(
