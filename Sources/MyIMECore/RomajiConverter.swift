@@ -132,7 +132,7 @@ public struct RomajiConverter: Sendable {
 
 public enum JapaneseSymbolConverter {
     public static func candidates(for input: String) -> [String] {
-        mapping[input] ?? []
+        (mapping[input] ?? []).filter { $0 != input }
     }
 
     private static let mapping: [String: [String]] = [

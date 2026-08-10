@@ -1848,7 +1848,7 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !symbolCandidates.isEmpty {
-            currentCandidates = candidatesOrderedByRecency(symbolCandidates)
+            currentCandidates = symbolCandidates
             showCandidateWindow(client: sender)
             return
         }
