@@ -211,24 +211,6 @@ ikiru
 
 ログアウトや再起動は不要です
 
-## コマンドライン版
-
-```shell
-swift run myim
-```
-
-Cosense辞書を同期する場合
-
-```shell
-swift run myim sync
-```
-
-任意の辞書を確認する場合
-
-```shell
-swift run myim /path/to/dictionary.txt
-```
-
 ## テスト
 
 ```shell

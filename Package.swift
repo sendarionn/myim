@@ -8,7 +8,6 @@ let package = Package(
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "myim", targets: ["MyIME"]),
         .executable(name: "myim-macos", targets: ["MyIMEMacOS"]),
         .executable(
             name: "myim-cosense-login",
@@ -17,13 +16,6 @@ let package = Package(
     ],
     targets: [
         .target(name: "MyIMECore"),
-        .executableTarget(
-            name: "MyIME",
-            dependencies: ["MyIMECore"],
-            resources: [
-                .copy("Resources/dictionary.txt")
-            ]
-        ),
         .executableTarget(
             name: "MyIMEMacOS",
             dependencies: ["MyIMECore"],
