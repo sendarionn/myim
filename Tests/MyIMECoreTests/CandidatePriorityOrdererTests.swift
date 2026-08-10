@@ -40,4 +40,16 @@ struct CandidatePriorityOrdererTests {
             "機械", "機会", "機械的", "きかい", "キカイ", "期間"
         ])
     }
+
+    @Test
+    func ordersDirectCandidatesByRecentSelection() {
+        let result = CandidatePriorityOrderer.ordered(
+            kana: ["こうしょう", "コウショウ"],
+            direct: ["交渉", "高尚", "校章"],
+            others: ["工廠"],
+            recencyRanks: ["高尚": 12, "交渉": 8],
+            prioritizeKana: false
+        )
+        #expect(result == ["高尚", "交渉", "校章", "こうしょう", "コウショウ", "工廠"])
+    }
 }

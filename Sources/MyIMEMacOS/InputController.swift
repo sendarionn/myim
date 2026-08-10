@@ -48,6 +48,14 @@ final class InputController: IMKInputController {
         "FuzzySuggestionsEnabled"
     private static let semanticSuggestionsEnabledDefaultsKey =
         "SemanticSuggestionsEnabled"
+    private static let dateTimeCandidatesEnabledDefaultsKey =
+        "DateTimeCandidatesEnabled"
+    private static let dateCandidateFormatsDefaultsKey =
+        "DateCandidateFormats"
+    private static let timeCandidateFormatsDefaultsKey =
+        "TimeCandidateFormats"
+    private static let dateTimeCandidateFormatsDefaultsKey =
+        "DateTimeCandidateFormats"
     private static let maximumCandidateCount = 7
     private static let maximumIMEDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
@@ -476,6 +484,15 @@ final class InputController: IMKInputController {
             action: #selector(toggleSemanticSuggestions(_:)),
             enabled: isSemanticSuggestionsEnabled
         ))
+        stack.addArrangedSubview(settingsCheckbox(
+            title: "日時の動的候補を表示",
+            action: #selector(toggleDateTimeCandidates(_:)),
+            enabled: isDateTimeCandidatesEnabled
+        ))
+        stack.addArrangedSubview(settingsButton(
+            "日時候補の書式を設定…",
+            action: #selector(configureDateTimeCandidateFormats(_:))
+        ))
         stack.addArrangedSubview(settingsButton(
             "外部候補とWeb検索を設定…",
             action: #selector(configureExternalCandidates(_:))
@@ -536,7 +553,7 @@ final class InputController: IMKInputController {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.documentView = stack
-        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 790)
+        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 850)
         panel.contentView = scrollView
         settingsWindow = panel
         NSApp.activate(ignoringOtherApps: true)
@@ -902,6 +919,69 @@ final class InputController: IMKInputController {
         )
         semanticSuggestionTask?.cancel()
         semanticSuggestionQuery = ""
+        guard !inputBuffer.isEmpty, let inputClient = client() else {
+            return
+        }
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func toggleDateTimeCandidates(_ sender: Any?) {
+        UserDefaults.standard.set(
+            !isDateTimeCandidatesEnabled,
+            forKey: Self.dateTimeCandidatesEnabledDefaultsKey
+        )
+        guard !inputBuffer.isEmpty, let inputClient = client() else {
+            return
+        }
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func configureDateTimeCandidateFormats(_ sender: Any?) {
+        let dateField = NSTextField(string: dateCandidateFormats.joined(separator: ", "))
+        let timeField = NSTextField(string: timeCandidateFormats.joined(separator: ", "))
+        let dateTimeField = NSTextField(string: dateTimeCandidateFormats.joined(separator: ", "))
+        for field in [dateField, timeField, dateTimeField] {
+            field.frame.size.width = 480
+        }
+        let stack = NSStackView(views: [
+            NSTextField(labelWithString: "日付書式  カンマ区切り"),
+            dateField,
+            NSTextField(labelWithString: "時刻書式  カンマ区切り"),
+            timeField,
+            NSTextField(labelWithString: "日時書式  カンマ区切り"),
+            dateTimeField,
+            NSTextField(labelWithString: "使用可能: YYYY YY MM M DD D HH H mm m ss s")
+        ])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.frame = NSRect(x: 0, y: 0, width: 480, height: 178)
+
+        let alert = NSAlert()
+        alert.messageText = "日時候補の書式"
+        alert.accessoryView = stack
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "キャンセル")
+        alert.window.level = .floating
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
+        UserDefaults.standard.set(
+            Self.parseCandidateFormats(dateField.stringValue),
+            forKey: Self.dateCandidateFormatsDefaultsKey
+        )
+        UserDefaults.standard.set(
+            Self.parseCandidateFormats(timeField.stringValue),
+            forKey: Self.timeCandidateFormatsDefaultsKey
+        )
+        UserDefaults.standard.set(
+            Self.parseCandidateFormats(dateTimeField.stringValue),
+            forKey: Self.dateTimeCandidateFormatsDefaultsKey
+        )
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
         }
@@ -1780,6 +1860,16 @@ final class InputController: IMKInputController {
             RomanizedReadingNormalizer.dictionaryLookupReadings(
                 from: normalizedReading
             )
+        let dateTimeCandidates = isDateTimeCandidatesEnabled
+            ? DateTimeCandidateGenerator().candidates(
+                for: normalizedReading,
+                formats: DateTimeCandidateGenerator.Formats(
+                    date: dateCandidateFormats,
+                    time: timeCandidateFormats,
+                    dateTime: dateTimeCandidateFormats
+                )
+            )
+            : []
         let userCandidates = isUserDictionaryEnabled ? mergedCandidates(
             lookup: {
                 userConversionEngine.candidates(
@@ -1890,6 +1980,7 @@ final class InputController: IMKInputController {
             ) : []
         let directCandidates = userExactCandidates
             + extensionExactCandidates
+            + dateTimeCandidates
             + imeExactCandidates
             + basicExactCandidates
             + inflectionCandidates
@@ -1919,6 +2010,7 @@ final class InputController: IMKInputController {
         showCandidateWindow(client: sender)
         let hasDirectExactCandidates = !userExactCandidates.isEmpty
                 || !extensionExactCandidates.isEmpty
+                || !dateTimeCandidates.isEmpty
                 || !imeExactCandidates.isEmpty
                 || !basicExactCandidates.isEmpty
         showFuzzySuggestionsIfNeeded(
@@ -3009,6 +3101,50 @@ final class InputController: IMKInputController {
         UserDefaults.standard.bool(
             forKey: Self.semanticSuggestionsEnabledDefaultsKey
         )
+    }
+
+    private var isDateTimeCandidatesEnabled: Bool {
+        UserDefaults.standard.bool(
+            forKey: Self.dateTimeCandidatesEnabledDefaultsKey
+        )
+    }
+
+    private var dateCandidateFormats: [String] {
+        candidateFormats(
+            defaultsKey: Self.dateCandidateFormatsDefaultsKey,
+            fallback: DateTimeCandidateGenerator.Formats.default.date
+        )
+    }
+
+    private var timeCandidateFormats: [String] {
+        candidateFormats(
+            defaultsKey: Self.timeCandidateFormatsDefaultsKey,
+            fallback: DateTimeCandidateGenerator.Formats.default.time
+        )
+    }
+
+    private var dateTimeCandidateFormats: [String] {
+        candidateFormats(
+            defaultsKey: Self.dateTimeCandidateFormatsDefaultsKey,
+            fallback: DateTimeCandidateGenerator.Formats.default.dateTime
+        )
+    }
+
+    private func candidateFormats(
+        defaultsKey: String,
+        fallback: [String]
+    ) -> [String] {
+        guard UserDefaults.standard.object(forKey: defaultsKey) != nil else {
+            return fallback
+        }
+        return UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
+    }
+
+    private static func parseCandidateFormats(_ value: String) -> [String] {
+        var seen = Set<String>()
+        return value.split(separator: ",", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     private func experimentalFeatureIsEnabled(defaultsKey: String) -> Bool {

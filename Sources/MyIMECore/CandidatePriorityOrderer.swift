@@ -19,7 +19,10 @@ public enum CandidatePriorityOrderer {
         if prioritizeKana {
             appendUnique(kana)
         }
-        appendUnique(direct)
+        appendUnique(CandidateRecencyOrderer.ordered(
+            direct,
+            ranks: recencyRanks
+        ))
         appendUnique(CandidateRecencyOrderer.ordered(
             ((prioritizeKana ? [] : kana) + others).filter {
                 !seen.contains($0)
