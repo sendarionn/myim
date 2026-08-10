@@ -1844,6 +1844,14 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.hide()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
+        let numberCandidates = JapaneseNumberConverter.candidates(
+            for: inputBuffer
+        )
+        if !numberCandidates.isEmpty {
+            currentCandidates = numberCandidates
+            showCandidateWindow(client: sender)
+            return
+        }
         let symbolCandidates = JapaneseSymbolConverter.candidates(
             for: inputBuffer
         )
@@ -2948,7 +2956,8 @@ final class InputController: IMKInputController {
     }
 
     private var conversionSuffix: String {
-        if !JapaneseSymbolConverter.candidates(for: inputBuffer).isEmpty {
+        if !JapaneseNumberConverter.candidates(for: inputBuffer).isEmpty
+            || !JapaneseSymbolConverter.candidates(for: inputBuffer).isEmpty {
             return ""
         }
         return String(inputBuffer.dropFirst(conversionReading.count))
