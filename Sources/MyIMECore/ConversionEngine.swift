@@ -2,7 +2,7 @@ import Foundation
 
 public struct ConversionEngine: Sendable {
     private let candidatesByReading: [String: [String]]
-    private let entries: [DictionaryEntry]
+    private let sortedReadings: [String]
 
     public init(entries: [DictionaryEntry]) {
         self.init(layers: [entries])
@@ -30,13 +30,8 @@ public struct ConversionEngine: Sendable {
             }
         }
 
-        self.entries = readingOrder.map {
-            DictionaryEntry(
-                reading: $0,
-                candidates: mergedCandidates[$0] ?? []
-            )
-        }
         self.candidatesByReading = mergedCandidates
+        self.sortedReadings = readingOrder.sorted()
     }
 
     public func candidates(for reading: String) -> [String] {
@@ -67,17 +62,36 @@ public struct ConversionEngine: Sendable {
             }
         }
 
-        for entry in entries
-        where entry.reading != normalizedPrefix
-            && entry.reading.hasPrefix(normalizedPrefix) {
-            for candidate in entry.candidates where seen.insert(candidate).inserted {
-                result.append(candidate)
-                if result.count == limit {
-                    return result
+        var index = lowerBound(of: normalizedPrefix)
+        while index < sortedReadings.count,
+              sortedReadings[index].hasPrefix(normalizedPrefix) {
+            let reading = sortedReadings[index]
+            if reading != normalizedPrefix {
+                for candidate in candidatesByReading[reading] ?? []
+                where seen.insert(candidate).inserted {
+                    result.append(candidate)
+                    if result.count == limit {
+                        return result
+                    }
                 }
             }
+            index += 1
         }
 
         return result
+    }
+
+    private func lowerBound(of value: String) -> Int {
+        var lower = 0
+        var upper = sortedReadings.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if sortedReadings[middle] < value {
+                lower = middle + 1
+            } else {
+                upper = middle
+            }
+        }
+        return lower
     }
 }

@@ -194,13 +194,12 @@ ikiru
 ## ビルドとインストール
 
 ```shell
-./Scripts/build-macos-ime.sh
 ./Scripts/install-macos-im.sh
 ```
 
 初回だけ「システム設定」→「キーボード」→「テキスト入力」→「編集」から`myim`を追加します
 
-更新時は同じ2つのコマンドを実行します
+更新時も同じコマンドで最新コードをビルドして置き換えます
 
 インストール先
 
@@ -232,6 +231,7 @@ swift run myim /path/to/dictionary.txt
 
 ```shell
 swift test
+python3 -m unittest discover -s Tests/ScriptTests -p 'test_*.py'
 ```
 
 ## 実装予定

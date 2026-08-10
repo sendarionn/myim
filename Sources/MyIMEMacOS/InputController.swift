@@ -80,8 +80,7 @@ final class InputController: IMKInputController {
     private let credentialStore: CosenseCredentialStore
     private let externalCredentialStore = ExternalServiceCredentialStore()
     private var cosenseCredential: CosenseCredential?
-    private var candidateSelectionRanks: [String: Int]
-    private var nextCandidateSelectionRank: Int
+    private var candidateSelectionHistory: CandidateSelectionHistory
     private var nextInputPredictionModel: NextInputPredictionModel
     private var nextInputCandidates: [String] = []
     private var selectedNextInputIndex: Int?
@@ -115,7 +114,7 @@ final class InputController: IMKInputController {
         let bundledEntries = Self.loadBasicEntries()
         let indexedIMEEngine = Self.loadIMEDictionaryEngine()
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
-        let selectionRanks = Self.loadCandidateSelectionRanks()
+        let selectionHistory = Self.loadCandidateSelectionHistory()
         let nextInputModel = Self.loadNextInputPredictionModel()
         let semanticDictionaryURL = Self.inputMethodResourceURL(
             forResource: "semantic-dictionary",
@@ -132,8 +131,7 @@ final class InputController: IMKInputController {
         userEntries = cachedUserEntries
         basicEntries = bundledEntries
         extensionEntries = cachedExtensionEntries
-        candidateSelectionRanks = selectionRanks
-        nextCandidateSelectionRank = (selectionRanks.values.max() ?? 0) + 1
+        candidateSelectionHistory = selectionHistory
         nextInputPredictionModel = nextInputModel
         semanticVectorSearchEngine = SemanticVectorSearchEngine(
             dictionaryURL: semanticDictionaryURL,
@@ -164,8 +162,6 @@ final class InputController: IMKInputController {
 
         super.init(server: server, delegate: delegate, client: inputClient)
 
-        NSLog("myim: input controller initialized")
-
         candidatePanel.setDismissesAutomatically(true)
         candidatePanel.setAttributes([
             IMKCandidatesSendServerKeyEventFirst: false
@@ -181,7 +177,6 @@ final class InputController: IMKInputController {
     }
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
-        NSLog("myim: handle event type=%ld keyCode=%d", event?.type.rawValue ?? -1, event?.keyCode ?? 0)
         guard let event, let sender else {
             return false
         }
@@ -1996,7 +1991,7 @@ final class InputController: IMKInputController {
             kana: kanaCandidates,
             direct: directCandidates,
             others: otherCandidates,
-            recencyRanks: candidateSelectionRanks,
+            recencyRanks: candidateSelectionHistory.ranks,
             prioritizeKana: kanaCandidates.first?.count == 1
         )
 
@@ -2578,10 +2573,11 @@ final class InputController: IMKInputController {
     }
 
     private func recordCandidateSelection(_ candidate: String) {
-        candidateSelectionRanks[candidate] = nextCandidateSelectionRank
-        nextCandidateSelectionRank += 1
+        candidateSelectionHistory.record(candidate)
         do {
-            try Self.saveCandidateSelectionRanks(candidateSelectionRanks)
+            try Self.saveCandidateSelectionRanks(
+                candidateSelectionHistory.ranks
+            )
         } catch {
             NSLog(
                 "候補選択履歴の保存に失敗: %@",
@@ -2595,7 +2591,7 @@ final class InputController: IMKInputController {
     ) -> [String] {
         CandidateRecencyOrderer.ordered(
             candidates,
-            ranks: candidateSelectionRanks
+            ranks: candidateSelectionHistory.ranks
         )
     }
 
@@ -3414,7 +3410,8 @@ final class InputController: IMKInputController {
         )
     }
 
-    private static func loadCandidateSelectionRanks() -> [String: Int] {
+    private static func loadCandidateSelectionHistory()
+        -> CandidateSelectionHistory {
         guard
             let data = try? Data(contentsOf: candidateSelectionHistoryURL()),
             let ranks = try? JSONDecoder().decode(
@@ -3422,35 +3419,19 @@ final class InputController: IMKInputController {
                 from: data
             )
         else {
-            return [:]
+            return CandidateSelectionHistory()
         }
-        return ranks
+        return CandidateSelectionHistory(ranks: ranks)
     }
 
     private static func saveCandidateSelectionRanks(
         _ ranks: [String: Int]
     ) throws {
-        let fileManager = FileManager.default
-        let fileURL = candidateSelectionHistoryURL()
-        try fileManager.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        try JSONEncoder().encode(ranks).write(to: fileURL, options: .atomic)
-        try fileManager.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: fileURL.path
-        )
+        try saveUserData(ranks, to: candidateSelectionHistoryURL())
     }
 
     private static func candidateSelectionHistoryURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(
-                "Library/Application Support/myim/user",
-                isDirectory: true
-            )
-            .appendingPathComponent("candidate-selection-history.json")
+        userDataURL(fileName: "candidate-selection-history.json")
     }
 
     private static func loadNextInputPredictionModel()
@@ -3471,27 +3452,37 @@ final class InputController: IMKInputController {
     private static func saveNextInputPredictionModel(
         _ model: NextInputPredictionModel
     ) throws {
+        try saveUserData(model, to: nextInputPredictionModelURL())
+    }
+
+    private static func nextInputPredictionModelURL() -> URL {
+        userDataURL(fileName: "next-input-model.json")
+    }
+
+    private static func saveUserData<Value: Encodable>(
+        _ value: Value,
+        to fileURL: URL
+    ) throws {
         let fileManager = FileManager.default
-        let fileURL = nextInputPredictionModelURL()
         try fileManager.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        try JSONEncoder().encode(model).write(to: fileURL, options: .atomic)
+        try JSONEncoder().encode(value).write(to: fileURL, options: .atomic)
         try fileManager.setAttributes(
             [.posixPermissions: 0o600],
             ofItemAtPath: fileURL.path
         )
     }
 
-    private static func nextInputPredictionModelURL() -> URL {
+    private static func userDataURL(fileName: String) -> URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(
                 "Library/Application Support/myim/user",
                 isDirectory: true
             )
-            .appendingPathComponent("next-input-model.json")
+            .appendingPathComponent(fileName)
     }
 
     private static func legacyExtensionCache(

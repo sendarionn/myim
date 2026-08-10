@@ -83,6 +83,20 @@ struct ConversionEngineTests {
     }
 
     @Test
+    func searchesUnsortedEntriesInReadingOrder() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "miru", candidates: ["見る"]),
+            DictionaryEntry(reading: "mikan", candidates: ["蜜柑"]),
+            DictionaryEntry(reading: "mijikai", candidates: ["短い"])
+        ])
+
+        #expect(
+            engine.candidates(matching: "mi")
+                == ["短い", "蜜柑", "見る"]
+        )
+    }
+
+    @Test
     func normalizesInputAndDictionaryReadings() {
         let engine = ConversionEngine(entries: [
             DictionaryEntry(reading: "hizuke", candidates: ["日付"])

@@ -2,14 +2,12 @@
 
 set -euo pipefail
 
-app_source=".build/myim.app"
+repository_root=${0:A:h:h}
+app_source="$repository_root/.build/myim.app"
 app_destination="$HOME/Library/Input Methods/myim.app"
 legacy_destination="$HOME/Library/Input Methods/my-ime.app"
 
-if [[ ! -d "$app_source" ]]; then
-    echo "先に ./Scripts/build-macos-ime.sh を実行してください" >&2
-    exit 1
-fi
+"$repository_root/Scripts/build-macos-ime.sh"
 
 mkdir -p "$HOME/Library/Input Methods"
 
