@@ -1724,7 +1724,8 @@ final class InputController: IMKInputController {
                     "候補を続けて入力 / Returnで辞書登録を確定"
                 ],
                 selectedIndex: nil,
-                near: inputLocation(for: sender)
+                near: inputLocation(for: sender),
+                guide: "↩ 登録を確定　Esc 中止"
             )
             return
         }
@@ -1740,7 +1741,8 @@ final class InputController: IMKInputController {
                 "Returnで現在の入力を追加 / Escで中止"
             ],
             selectedIndex: nil,
-            near: inputLocation(for: sender)
+            near: inputLocation(for: sender),
+            guide: "↩ 入力を追加　⌘V 貼付　Esc 中止"
         )
     }
 
@@ -2527,7 +2529,10 @@ final class InputController: IMKInputController {
                 candidateValueForCommit($0)
             },
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
-            near: inputLocation(for: sender)
+            near: inputLocation(for: sender),
+            guide: selectedCandidateIndex == nil
+                ? "Tab 選択　⇧Tab もしかして？　⌥↩ 辞書登録\nF6–F10 文字種変換"
+                : "Tab / ⇧Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索"
         )
     }
 
@@ -2776,7 +2781,8 @@ final class InputController: IMKInputController {
         candidateWindow.show(
             candidates: nextInputCandidates,
             selectedIndex: nil,
-            near: inputLocation(for: sender)
+            near: inputLocation(for: sender),
+            guide: "Tab / ⇧Tab / 矢印 選択　↩ 確定\nSpace 維持　文字入力で確定"
         )
         scheduleNextInputDismissal()
     }

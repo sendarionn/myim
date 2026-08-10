@@ -60,16 +60,26 @@ final class CandidateWindowController: NSObject {
     private static let maximumRows = 6
     private static let itemSpacing: CGFloat = 2
     private static let anchorSpacing: CGFloat = 8
+    private static let guideHorizontalPadding: CGFloat = 10
+    private static let guideVerticalPadding: CGFloat = 4
+    private static let minimumGuideWidth: CGFloat = 180
+    private static let maximumGuideWidth: CGFloat = 320
 
     private let panel: NSPanel
     private let collectionView: NSCollectionView
     private let layout: NSCollectionViewFlowLayout
+    private let scrollView: NSScrollView
+    private let guideLabel: NSTextField
+    private let separator: NSBox
     private var candidates: [String] = []
     private var itemSizes: [NSSize] = []
 
     override init() {
         collectionView = NSCollectionView()
         layout = NSCollectionViewFlowLayout()
+        scrollView = NSScrollView()
+        guideLabel = NSTextField(wrappingLabelWithString: "")
+        separator = NSBox()
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 280, height: 40),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -93,13 +103,25 @@ final class CandidateWindowController: NSObject {
             forItemWithIdentifier: Self.itemIdentifier
         )
 
-        let scrollView = NSScrollView()
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
 
-        panel.contentView = scrollView
+        guideLabel.font = .systemFont(ofSize: 10.5)
+        guideLabel.textColor = .secondaryLabelColor
+        guideLabel.maximumNumberOfLines = 3
+        guideLabel.lineBreakMode = .byWordWrapping
+        guideLabel.isHidden = true
+
+        separator.boxType = .separator
+        separator.isHidden = true
+
+        let contentView = NSView()
+        contentView.addSubview(scrollView)
+        contentView.addSubview(separator)
+        contentView.addSubview(guideLabel)
+        panel.contentView = contentView
         panel.backgroundColor = .windowBackgroundColor
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
@@ -112,7 +134,12 @@ final class CandidateWindowController: NSObject {
         panel.frame
     }
 
-    func show(candidates: [String], selectedIndex: Int?, near anchorFrame: NSRect) {
+    func show(
+        candidates: [String],
+        selectedIndex: Int?,
+        near anchorFrame: NSRect,
+        guide: String? = nil
+    ) {
         self.candidates = candidates
         itemSizes = candidates.map { itemSize(for: $0) }
 
@@ -129,13 +156,75 @@ final class CandidateWindowController: NSObject {
                 visibleFrame.width
             )
         )
-        let panelWidth = contentSize.width
+        let guideText = guide?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasGuide = !guideText.isEmpty
+        guideLabel.stringValue = guideText
+        guideLabel.isHidden = !hasGuide
+        separator.isHidden = !hasGuide
+        let guideWidth = hasGuide
+            ? min(
+                max(
+                    ceil(guideLabel.attributedStringValue.size().width)
+                        + Self.guideHorizontalPadding * 2,
+                    Self.minimumGuideWidth
+                ),
+                Self.maximumGuideWidth
+            )
+            : 0
+        let panelWidth = min(
+            max(contentSize.width, guideWidth),
+            min(Self.maximumPanelWidth, visibleFrame.width)
+        )
+        let packedHeight = packedContentHeight(
+            itemSizes: itemSizes,
+            width: panelWidth
+        )
         let panelHeight = min(
-            contentSize.height,
+            packedHeight,
             CGFloat(Self.maximumRows) * (Self.itemHeight + Self.itemSpacing)
         )
+        let guideContentWidth = max(
+            panelWidth - Self.guideHorizontalPadding * 2,
+            1
+        )
+        let guideTextHeight = hasGuide
+            ? ceil(
+                (guideText as NSString).boundingRect(
+                    with: NSSize(
+                        width: guideContentWidth,
+                        height: .greatestFiniteMagnitude
+                    ),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: [.font: guideLabel.font!]
+                ).height
+            )
+            : 0
+        let guideHeight = hasGuide
+            ? guideTextHeight + Self.guideVerticalPadding * 2
+            : 0
 
-        panel.setContentSize(NSSize(width: panelWidth, height: panelHeight))
+        panel.setContentSize(NSSize(
+            width: panelWidth,
+            height: panelHeight + guideHeight
+        ))
+        scrollView.frame = NSRect(
+            x: 0,
+            y: guideHeight,
+            width: panelWidth,
+            height: panelHeight
+        )
+        separator.frame = NSRect(
+            x: 0,
+            y: max(guideHeight - 1, 0),
+            width: panelWidth,
+            height: 1
+        )
+        guideLabel.frame = NSRect(
+            x: Self.guideHorizontalPadding,
+            y: Self.guideVerticalPadding,
+            width: max(panelWidth - Self.guideHorizontalPadding * 2, 0),
+            height: max(guideHeight - Self.guideVerticalPadding * 2, 0)
+        )
         panel.setFrameOrigin(
             panelOrigin(
                 panelSize: panel.frame.size,
@@ -296,6 +385,31 @@ final class CandidateWindowController: NSObject {
             height: CGFloat(rowCount) * Self.itemHeight
                 + CGFloat(max(rowCount - 1, 0)) * Self.itemSpacing
         )
+    }
+
+    private func packedContentHeight(
+        itemSizes: [NSSize],
+        width: CGFloat
+    ) -> CGFloat {
+        guard !itemSizes.isEmpty else {
+            return Self.itemHeight
+        }
+
+        var rowWidth: CGFloat = 0
+        var rowCount = 1
+        for itemSize in itemSizes {
+            let nextWidth = rowWidth == 0
+                ? itemSize.width
+                : rowWidth + Self.itemSpacing + itemSize.width
+            if rowWidth > 0, nextWidth > width {
+                rowCount += 1
+                rowWidth = itemSize.width
+            } else {
+                rowWidth = nextWidth
+            }
+        }
+        return CGFloat(rowCount) * Self.itemHeight
+            + CGFloat(max(rowCount - 1, 0)) * Self.itemSpacing
     }
 
     private func panelOrigin(

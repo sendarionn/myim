@@ -68,7 +68,7 @@ final class FuzzySuggestionWindowController {
         let prefix = "もしかして？"
         let title = NSTextField(labelWithString: selectedIndex == nil
             ? "\(prefix)  Shift＋Tabで選択"
-            : prefix)
+            : "\(prefix)  矢印で移動 / Returnで確定 / Escで戻る")
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         title.textColor = .secondaryLabelColor
         stackView.addArrangedSubview(title)
