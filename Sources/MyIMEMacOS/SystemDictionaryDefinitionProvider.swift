@@ -6,14 +6,20 @@ struct SystemDictionaryDefinition {
     let text: String
 }
 
-struct SystemDictionaryDefinitionProvider {
+final class SystemDictionaryDefinitionProvider {
     private static let targetDictionaryNames = [
         "スーパー大辞林",
         "ウィズダム英和辞典 / ウィズダム和英辞典",
         "New Oxford American Dictionary"
     ]
+    private static let maximumCacheCount = 128
+    private var cachedDefinitions: [String: [SystemDictionaryDefinition]] = [:]
+    private var cacheOrder: [String] = []
 
     func definitions(for term: String) -> [SystemDictionaryDefinition] {
+        if let cached = cachedDefinitions[term] {
+            return cached
+        }
         guard !term.isEmpty,
               let dictionaries = DCSCopyAvailableDictionaries()?
                 .takeRetainedValue() as NSArray? else {
@@ -45,7 +51,8 @@ struct SystemDictionaryDefinitionProvider {
             definitionsByName[dictionaryName] = definition
         }
 
-        return Self.targetDictionaryNames.compactMap { dictionaryName in
+        let definitions: [SystemDictionaryDefinition] =
+            Self.targetDictionaryNames.compactMap { dictionaryName in
             guard let definition = definitionsByName[dictionaryName] else {
                 return nil
             }
@@ -53,6 +60,20 @@ struct SystemDictionaryDefinitionProvider {
                 dictionaryName: displayName(for: dictionaryName),
                 text: definition
             )
+        }
+        cache(definitions, for: term)
+        return definitions
+    }
+
+    private func cache(
+        _ definitions: [SystemDictionaryDefinition],
+        for term: String
+    ) {
+        cachedDefinitions[term] = definitions
+        cacheOrder.removeAll { $0 == term }
+        cacheOrder.append(term)
+        while cacheOrder.count > Self.maximumCacheCount {
+            cachedDefinitions.removeValue(forKey: cacheOrder.removeFirst())
         }
     }
 

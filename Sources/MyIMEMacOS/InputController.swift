@@ -2838,20 +2838,27 @@ final class InputController: IMKInputController {
             previewWindow.hide()
             return
         }
+        let inputFrame = inputLocation(for: sender)
         let anchorFrame = currentCandidates.isEmpty
-            ? inputLocation(for: sender)
-            : candidateWindow.frame
+            ? inputFrame
+            : inputFrame.union(candidateWindow.frame)
         showPreview(
             for: pageTitle,
             beside: anchorFrame,
-            includeDefinitions: false
+            includeDefinitions: true
         )
     }
 
     private func showPreview(for candidate: String) {
+        var anchorFrame = candidateWindow.frame
+        if let inputClient = client() {
+            anchorFrame = anchorFrame.union(
+                inputLocation(for: inputClient)
+            )
+        }
         showPreview(
             for: candidate,
-            beside: candidateWindow.frame,
+            beside: anchorFrame,
             includeDefinitions: true
         )
     }

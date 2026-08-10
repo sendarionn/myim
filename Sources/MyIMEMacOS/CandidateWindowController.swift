@@ -59,6 +59,7 @@ final class CandidateWindowController: NSObject {
     private static let maximumPanelWidth: CGFloat = 560
     private static let maximumRows = 6
     private static let itemSpacing: CGFloat = 2
+    private static let anchorSpacing: CGFloat = 8
 
     private let panel: NSPanel
     private let collectionView: NSCollectionView
@@ -307,8 +308,10 @@ final class CandidateWindowController: NSObject {
             visibleFrame.maxX - panelSize.width
         )
 
-        let belowY = anchorFrame.minY - panelSize.height
-        let aboveY = anchorFrame.maxY
+        let belowY = anchorFrame.minY
+            - Self.anchorSpacing
+            - panelSize.height
+        let aboveY = anchorFrame.maxY + Self.anchorSpacing
         let preferredY = belowY >= visibleFrame.minY ? belowY : aboveY
         let y = min(
             max(preferredY, visibleFrame.minY),
