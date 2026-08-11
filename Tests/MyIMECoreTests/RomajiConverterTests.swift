@@ -21,7 +21,11 @@ struct RomajiConverterTests {
         )
         #expect(
             JapaneseSymbolConverter.candidates(for: "[")
-                == ["［", "「", "『", "【"]
+                == ["「", "［", "『", "【"]
+        )
+        #expect(
+            JapaneseSymbolConverter.candidates(for: "]")
+                == ["」", "］", "』", "】"]
         )
         #expect(
             JapaneseSymbolConverter.candidates(for: "(")
