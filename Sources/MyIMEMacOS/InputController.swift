@@ -353,11 +353,6 @@ final class InputController: IMKInputController {
         )
         menu.addItem(.separator())
         addActionItem(
-            title: "選択文字列を辞書登録…",
-            action: #selector(registerSelectedTextInUserDictionary(_:)),
-            to: menu
-        )
-        addActionItem(
             title: "Cosense辞書を更新",
             action: #selector(syncCosenseDictionary(_:)),
             keyEquivalent: "r",
@@ -526,10 +521,6 @@ final class InputController: IMKInputController {
         ))
 
         addSettingsSection("辞書管理", to: stack)
-        stack.addArrangedSubview(settingsButton(
-            "選択文字列を辞書登録…",
-            action: #selector(registerSelectedTextInUserDictionary(_:))
-        ))
         stack.addArrangedSubview(settingsButton(
             "TKGJE基本辞書を更新",
             action: #selector(updateBasicDictionaryIfNeeded(_:))
@@ -1245,109 +1236,6 @@ final class InputController: IMKInputController {
             )
             NSSound.beep()
         }
-    }
-
-    @objc
-    private func registerSelectedTextInUserDictionary(_ sender: Any?) {
-        let selectedText = selectedTextFromClient()
-        let clipboardText = NSPasteboard.general.string(forType: .string)
-            .flatMap(normalizedRegistrationCandidate)
-        guard let candidate = selectedText ?? clipboardText,
-              !candidate.isEmpty else {
-            showMissingRegistrationCandidateAlert()
-            return
-        }
-
-        let readingInput = NSTextField(frame: .zero)
-        readingInput.placeholderString = "ローマ字の読み"
-        readingInput.frame = NSRect(x: 0, y: 0, width: 420, height: 24)
-
-        let alert = NSAlert()
-        alert.messageText = "ユーザー辞書へ登録"
-        alert.informativeText = selectedText == nil
-            ? "選択文字列を取得できないためクリップボードを使用\n候補: \(candidate)"
-            : "候補: \(candidate)"
-        alert.accessoryView = readingInput
-        alert.addButton(withTitle: "登録")
-        alert.addButton(withTitle: "キャンセル")
-        alert.window.level = .floating
-
-        guard runModalAlert(
-            alert,
-            firstResponder: readingInput
-        ) == .alertFirstButtonReturn else {
-            return
-        }
-
-        let reading = readingInput.stringValue.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
-        guard isValidUserDictionaryReading(reading) else {
-            NSSound.beep()
-            return
-        }
-
-        do {
-            try saveUserDictionaryEntry(
-                reading: reading,
-                candidate: candidate
-            )
-            if !inputBuffer.isEmpty, let inputClient = client() {
-                selectedCandidateIndex = nil
-                refreshCandidates(client: inputClient)
-            }
-        } catch {
-            NSLog(
-                "選択文字列の辞書登録に失敗: %@",
-                error.localizedDescription
-            )
-            NSSound.beep()
-        }
-    }
-
-    private func selectedTextFromClient() -> String? {
-        guard let textClient = client() else {
-            return nil
-        }
-        let range = textClient.selectedRange()
-        guard range.location != NSNotFound, range.length > 0 else {
-            return nil
-        }
-        guard let value = textClient.attributedSubstring(from: range)?.string
-        else {
-            return nil
-        }
-        return normalizedRegistrationCandidate(value)
-    }
-
-    private func normalizedRegistrationCandidate(
-        _ value: String
-    ) -> String? {
-        let normalized = value.components(
-            separatedBy: .whitespacesAndNewlines
-        )
-        .filter { !$0.isEmpty }
-        .joined(separator: " ")
-        return normalized.nilIfEmpty
-    }
-
-    private func isValidUserDictionaryReading(_ reading: String) -> Bool {
-        !reading.isEmpty && reading.unicodeScalars.allSatisfy {
-            $0.isASCII
-                && (CharacterSet.letters.contains($0)
-                    || $0 == "-"
-                    || $0 == "'")
-        }
-    }
-
-    private func showMissingRegistrationCandidateAlert() {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "登録する文字列がありません"
-        alert.informativeText = "文字列を選択するかクリップボードへコピー"
-        alert.addButton(withTitle: "OK")
-        alert.window.level = .floating
-        alert.runModal()
     }
 
     @objc

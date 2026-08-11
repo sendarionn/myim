@@ -22,7 +22,9 @@ for process_name in myim my-ime myim-external-browser; do
         sleep 0.1
     done
 done
+launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 if [[ -d "$app_destination" ]]; then
+    "$launch_services_register" -u "$app_destination" 2>/dev/null || true
     rm -rf "$app_destination"
 fi
 if [[ -d "$legacy_destination" ]]; then
