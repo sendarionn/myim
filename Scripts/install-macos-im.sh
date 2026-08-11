@@ -13,6 +13,15 @@ mkdir -p "$HOME/Library/Input Methods"
 
 pkill -x myim 2>/dev/null || true
 pkill -x my-ime 2>/dev/null || true
+pkill -x myim-external-browser 2>/dev/null || true
+for process_name in myim my-ime myim-external-browser; do
+    for attempt in {1..20}; do
+        if ! pgrep -x "$process_name" >/dev/null 2>&1; then
+            break
+        fi
+        sleep 0.1
+    done
+done
 if [[ -d "$app_destination" ]]; then
     rm -rf "$app_destination"
 fi

@@ -2,7 +2,8 @@
 @preconcurrency import WebKit
 import MyIMECore
 
-final class ExternalInformationWindowController: NSObject {
+final class ExternalInformationWindowController: NSObject,
+    WKNavigationDelegate, WKUIDelegate {
     private struct PendingPresentation {
         let url: URL?
         let panelTitle: String
@@ -19,19 +20,16 @@ final class ExternalInformationWindowController: NSObject {
     private let informationPanel: NSPanel
     private let webView: WKWebView
     private let definitionTextView: NSTextView
+    private let externalBrowser = ExternalBrowserBridge()
     private var displayedURL: URL?
-    private var installedCookieSignature = ""
     private var requestID = UUID()
     private var displayTask: Task<Void, Never>?
     private var navigationTask: Task<Void, Never>?
-    private var cachedCosenseCookies: [HTTPCookie] = []
-    private var cookiesLoadedAt = Date.distantPast
     private var pendingPresentation: PendingPresentation?
     private(set) var isInteractionActive = false
     var onInteractionBegan: (() -> Void)?
     var onInteractionEnded: (() -> Void)?
     private static let navigationDebounce: TimeInterval = 0.2
-    private static let cookieCacheLifetime: TimeInterval = 5
 
     override init() {
         definitionTextView = NSTextView(frame: .zero)
@@ -53,6 +51,13 @@ final class ExternalInformationWindowController: NSObject {
         )
 
         super.init()
+
+        Self.removeLegacyCookieFile()
+        externalBrowser.onInteractionBegan = { [weak self] in
+            self?.beginInteraction()
+        }
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
 
         let openInBrowserButton = NSButton(
             title: "ブラウザで開く  ⌘O",
@@ -143,6 +148,7 @@ final class ExternalInformationWindowController: NSObject {
         let currentRequestID = UUID()
         requestID = currentRequestID
         informationPanel.orderOut(nil)
+        externalBrowser.hide()
 
         if definitions.isEmpty {
             definitionPanel.orderOut(nil)
@@ -159,14 +165,8 @@ final class ExternalInformationWindowController: NSObject {
             return
         }
 
-        let cookies = cookies(for: url)
-        let cookieSignature = cookies
-            .map { "\($0.name)=\($0.value)" }
-            .sorted()
-            .joined(separator: ";")
         informationPanel.title = panelTitle
-        if displayedURL != url
-            || installedCookieSignature != cookieSignature {
+        if displayedURL != url {
             webView.stopLoading()
             let navigationDelay = min(
                 Self.navigationDebounce,
@@ -185,18 +185,13 @@ final class ExternalInformationWindowController: NSObject {
                 else {
                     return
                 }
-                var request = URLRequest(url: url)
-                for (field, value) in HTTPCookie.requestHeaderFields(
-                    with: cookies
-                ) {
-                    request.setValue(value, forHTTPHeaderField: field)
-                }
-                webView.load(request)
+                positionInformationPanel(near: candidateFrame)
+                externalBrowser.send(browserCommand(
+                    url: url,
+                    title: panelTitle,
+                    isVisible: false
+                ))
                 displayedURL = url
-                if installedCookieSignature != cookieSignature {
-                    installedCookieSignature = cookieSignature
-                    await installSharedCosenseCookies(cookies)
-                }
             }
         }
 
@@ -217,34 +212,69 @@ final class ExternalInformationWindowController: NSObject {
             }
 
             positionInformationPanel(near: candidateFrame)
-            informationPanel.orderFrontRegardless()
+            externalBrowser.send(browserCommand(
+                url: url,
+                title: panelTitle,
+                isVisible: true
+            ))
         }
     }
 
-    private func cookies(for url: URL) -> [HTTPCookie] {
-        guard url.host == "scrapbox.io" else {
-            return []
-        }
-        if Date().timeIntervalSince(cookiesLoadedAt)
-            >= Self.cookieCacheLifetime {
-            cachedCosenseCookies = CosenseWebCookieStore().load()
-            cookiesLoadedAt = Date()
-        }
-        return cachedCosenseCookies
+    private func browserCommand(
+        url: URL,
+        title: String,
+        isVisible: Bool
+    ) -> ExternalBrowserCommand {
+        let frame = informationPanel.frame
+        return ExternalBrowserCommand(
+            url: url,
+            title: title,
+            frameX: frame.origin.x,
+            frameY: frame.origin.y,
+            frameWidth: frame.width,
+            frameHeight: frame.height,
+            isVisible: isVisible
+        )
     }
 
-    @MainActor
-    private func installSharedCosenseCookies(
-        _ cookies: [HTTPCookie]
-    ) async {
-        let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
-        for cookie in cookies {
-            await withCheckedContinuation { continuation in
-                cookieStore.setCookie(cookie) {
-                    continuation.resume()
-                }
-            }
+    private static func removeLegacyCookieFile() {
+        guard let applicationSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            return
         }
+        let file = applicationSupport
+            .appendingPathComponent("myim/web-session", isDirectory: true)
+            .appendingPathComponent("cosense-web-cookies.json")
+        try? FileManager.default.removeItem(at: file)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        guard let url = navigationAction.request.url else {
+            decisionHandler(.cancel)
+            return
+        }
+        let allowed = url.scheme == "https" || url.scheme == "about"
+        decisionHandler(allowed ? .allow : .cancel)
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        guard let url = navigationAction.request.url,
+              url.scheme == "https" else {
+            return nil
+        }
+        webView.load(URLRequest(url: url))
+        return nil
     }
 
     func hide() {
@@ -258,6 +288,7 @@ final class ExternalInformationWindowController: NSObject {
         isInteractionActive = false
         definitionPanel.orderOut(nil)
         informationPanel.orderOut(nil)
+        externalBrowser.hide()
     }
 
     private func beginInteraction() {
@@ -295,7 +326,15 @@ final class ExternalInformationWindowController: NSObject {
     }
 
     func finishInteraction() {
+        externalBrowser.clearInteractionMarker()
         endInteraction()
+    }
+
+    func shouldPreserveForExternalInteraction() -> Bool {
+        if externalBrowser.hasRecentInteraction() {
+            beginInteraction()
+        }
+        return isInteractionActive
     }
 
     @discardableResult

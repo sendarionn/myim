@@ -10,8 +10,8 @@ let package = Package(
     products: [
         .executable(name: "myim-macos", targets: ["MyIMEMacOS"]),
         .executable(
-            name: "myim-cosense-login",
-            targets: ["MyIMCosenseLogin"]
+            name: "myim-external-browser",
+            targets: ["MyIMExternalBrowser"]
         )
     ],
     targets: [
@@ -33,7 +33,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "MyIMCosenseLogin",
+            name: "MyIMExternalBrowser",
             dependencies: ["MyIMECore"],
             swiftSettings: [
                 .swiftLanguageMode(.v5)

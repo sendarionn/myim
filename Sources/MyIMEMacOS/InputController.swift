@@ -97,7 +97,6 @@ final class InputController: IMKInputController {
     private let candidateWindow = CandidateWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
-    private let cosenseLoginWindow = CosenseLoginWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private let romajiConverter = RomajiConverter()
     private let semanticVectorSearchEngine: SemanticVectorSearchEngine
@@ -540,10 +539,6 @@ final class InputController: IMKInputController {
             action: #selector(configureCosenseProject(_:))
         ))
         stack.addArrangedSubview(settingsButton(
-            "Cosenseへログイン…",
-            action: #selector(openCosenseLogin(_:))
-        ))
-        stack.addArrangedSubview(settingsButton(
             "Cosense認証を設定…",
             action: #selector(configureCosenseAuthentication(_:))
         ))
@@ -633,6 +628,10 @@ final class InputController: IMKInputController {
     }
 
     override func deactivateServer(_ sender: Any!) {
+        if previewWindow.shouldPreserveForExternalInteraction() {
+            super.deactivateServer(sender)
+            return
+        }
         if !inputBuffer.isEmpty {
             commit(inputBuffer, to: sender as Any)
         }
@@ -656,6 +655,10 @@ final class InputController: IMKInputController {
     }
 
     override func inputControllerWillClose() {
+        if previewWindow.shouldPreserveForExternalInteraction() {
+            super.inputControllerWillClose()
+            return
+        }
         candidatePanel.hide()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
@@ -724,12 +727,6 @@ final class InputController: IMKInputController {
         }
 
         syncCosenseDictionary(nil)
-        cosenseLoginWindow.show(project: dictionarySource.project)
-    }
-
-    @objc
-    private func openCosenseLogin(_ sender: Any?) {
-        cosenseLoginWindow.show(project: dictionarySource.project)
     }
 
     @objc

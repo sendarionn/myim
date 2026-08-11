@@ -8,28 +8,28 @@ contents_directory="$application_bundle/Contents"
 executable_directory="$contents_directory/MacOS"
 resources_directory="$contents_directory/Resources"
 helpers_directory="$contents_directory/Helpers"
-login_bundle="$helpers_directory/myim-cosense-login.app"
-login_contents="$login_bundle/Contents"
-login_executable_directory="$login_contents/MacOS"
+browser_bundle="$helpers_directory/myim-external-browser.app"
+browser_contents="$browser_bundle/Contents"
+browser_executable_directory="$browser_contents/MacOS"
 iconset_directory="$repository_root/.build/myim.iconset"
 ime_executable="$executable_directory/myim"
-login_executable="$login_executable_directory/myim-cosense-login"
+browser_executable="$browser_executable_directory/myim-external-browser"
 
 cd "$repository_root"
 "$repository_root/Scripts/verify-history-date.sh"
 swift build -c release --product myim-macos
-swift build -c release --product myim-cosense-login
+swift build -c release --product myim-external-browser
 
 rm -rf "$application_bundle" "$iconset_directory"
 
 mkdir -p \
     "$executable_directory" \
     "$resources_directory" \
-    "$login_executable_directory"
+    "$browser_executable_directory"
 mkdir -p "$iconset_directory"
 cp ".build/release/myim-macos" "$ime_executable"
-cp ".build/release/myim-cosense-login" "$login_executable"
-cp "macOS/CosenseLogin-Info.plist" "$login_contents/Info.plist"
+cp ".build/release/myim-external-browser" "$browser_executable"
+cp "macOS/ExternalBrowser-Info.plist" "$browser_contents/Info.plist"
 
 developer_rpaths=("${(@f)$(otool -l "$ime_executable" | awk '
     /cmd LC_RPATH/ {
@@ -47,7 +47,7 @@ for developer_rpath in "${developer_rpaths[@]}"; do
     install_name_tool -delete_rpath "$developer_rpath" "$ime_executable"
 done
 
-login_developer_rpaths=("${(@f)$(otool -l "$login_executable" | awk '
+browser_developer_rpaths=("${(@f)$(otool -l "$browser_executable" | awk '
     /cmd LC_RPATH/ {
         getline
         getline
@@ -59,9 +59,10 @@ login_developer_rpaths=("${(@f)$(otool -l "$login_executable" | awk '
     }
 ')}")
 
-for developer_rpath in "${login_developer_rpaths[@]}"; do
-    install_name_tool -delete_rpath "$developer_rpath" "$login_executable"
+for developer_rpath in "${browser_developer_rpaths[@]}"; do
+    install_name_tool -delete_rpath "$developer_rpath" "$browser_executable"
 done
+
 cp "macOS/Info.plist" "$contents_directory/Info.plist"
 cp "macOS/InfoPlist.strings" "$resources_directory/InfoPlist.strings"
 cp \
@@ -141,11 +142,11 @@ sips -s format png -z 1024 1024 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_512x512@2x.png" >/dev/null
 iconutil -c icns "$iconset_directory" -o "$resources_directory/AppIcon.icns"
 chmod +x "$ime_executable"
-chmod +x "$login_executable"
+chmod +x "$browser_executable"
 
 plutil -lint "$contents_directory/Info.plist"
-plutil -lint "$login_contents/Info.plist"
-codesign --force --sign - "$login_bundle"
+plutil -lint "$browser_contents/Info.plist"
+codesign --force --sign - "$browser_bundle"
 codesign \
     --force \
     --deep \
