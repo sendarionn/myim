@@ -1768,83 +1768,48 @@ final class InputController: IMKInputController {
                 )
             )
             : []
-        let userCandidates = isUserDictionaryEnabled ? mergedCandidates(
-            lookup: {
-                userConversionEngine.candidates(
-                    matching: $0,
-                    limit: .max
-                )
-            },
-            readings: lookupReadings
-        ) : []
-        let userExactCandidates = isUserDictionaryEnabled ? mergedCandidates(
-            lookup: { userConversionEngine.candidates(for: $0) },
-            readings: lookupReadings
-        ) : []
-        let extensionCandidates = isExtensionDictionaryEnabled
-            ? mergedCandidates(
-            lookup: {
-                extensionConversionEngine.candidates(
-                    matching: $0,
-                    limit: .max
-                )
-            },
-            readings: lookupReadings
-            ) : []
-        let extensionExactCandidates = isExtensionDictionaryEnabled
-            ? mergedCandidates(
-                lookup: { extensionConversionEngine.candidates(for: $0) },
+        let userCandidates = isUserDictionaryEnabled
+            ? mergedCandidateGroups(
+                lookup: { userConversionEngine.candidateGroups(matching: $0) },
                 readings: lookupReadings
-            ) : []
-        let basicCandidates = isBasicDictionaryEnabled ? mergedCandidates(
-            lookup: {
-                basicConversionEngine.candidates(
-                    matching: $0,
-                    limit: .max
-                )
-            },
-            readings: lookupReadings
-        ) : []
-        let basicExactCandidates = isBasicDictionaryEnabled
-            ? mergedCandidates(
-            lookup: {
-                basicConversionEngine.candidates(for: $0)
-            },
-            readings: lookupReadings
-        ) : []
-        let basicExactCandidateSet = Set(basicExactCandidates)
-        let basicPrefixCandidates = basicCandidates.filter {
-            !basicExactCandidateSet.contains($0)
-        }
+            )
+            : DictionaryCandidateGroups()
+        let extensionCandidates = isExtensionDictionaryEnabled
+            ? mergedCandidateGroups(
+                lookup: {
+                    extensionConversionEngine.candidateGroups(matching: $0)
+                },
+                readings: lookupReadings
+            )
+            : DictionaryCandidateGroups()
+        let basicCandidates = isBasicDictionaryEnabled
+            ? mergedCandidateGroups(
+                lookup: { basicConversionEngine.candidateGroups(matching: $0) },
+                readings: lookupReadings
+            )
+            : DictionaryCandidateGroups()
         let kanaLookupReadings = lookupReadings.compactMap {
             romajiConverter.hiragana(from: $0)
         }
-        let imeCandidates = isBasicDictionaryEnabled ? mergedCandidates(
-            lookup: {
-                imeConversionEngine.candidates(
+        let imeCandidates = isBasicDictionaryEnabled
+            ? mergedCandidateGroups(
+                lookup: {
+                    imeConversionEngine.candidateGroups(
                     matching: $0,
                     limit: Self.maximumIMEDictionaryPrefixCandidates
-                )
-            },
-            readings: kanaLookupReadings
-        ) : []
-        let imeExactCandidates = isBasicDictionaryEnabled ? mergedCandidates(
-            lookup: { imeConversionEngine.candidates(for: $0) },
-            readings: kanaLookupReadings
-        ) : []
-        let imeExactCandidateSet = Set(imeExactCandidates)
-        let imePrefixCandidates = imeCandidates.filter {
-            !imeExactCandidateSet.contains($0)
-        }
-        let supplementalCandidates = isBasicDictionaryEnabled ? mergedCandidates(
-            lookup: {
-                supplementalConversionEngine.candidates(
-                    matching: $0,
-                    limit: .max
-                )
-            },
-            readings: lookupReadings
-        ) : []
+                    )
+                },
+                readings: kanaLookupReadings
+            )
+            : DictionaryCandidateGroups()
+        let supplementalCandidates = isBasicDictionaryEnabled
+            ? mergedCandidateGroups(
+                lookup: {
+                    supplementalConversionEngine.candidateGroups(matching: $0)
+                },
+                readings: lookupReadings
+            )
+            : DictionaryCandidateGroups()
         let englishCandidates = isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
@@ -1871,31 +1836,28 @@ final class InputController: IMKInputController {
             kanaCandidates = [hiragana, katakana]
                 .compactMap { $0 }
         }
-        let supplementalExactCandidates = isBasicDictionaryEnabled
-            ? mergedCandidates(
-                lookup: { supplementalConversionEngine.candidates(for: $0) },
-                readings: lookupReadings
-            ) : []
-        let directCandidates = userExactCandidates
-            + extensionExactCandidates
+        let directCandidates = userCandidates.exact
+            + extensionCandidates.exact
             + dateTimeCandidates
-            + imeExactCandidates
-            + basicExactCandidates
+            + imeCandidates.exact
+            + basicCandidates.exact
             + inflectionCandidates
-            + supplementalExactCandidates
-        let otherCandidates = userCandidates
-            + extensionCandidates
-            + supplementalCandidates
+            + supplementalCandidates.exact
+        let otherCandidates = userCandidates.prefix
+            + extensionCandidates.prefix
+            + supplementalCandidates.prefix
             + englishCandidates
             + remoteCandidates
-            + imePrefixCandidates
-            + basicPrefixCandidates
-        currentCandidates = CandidatePriorityOrderer.ordered(
-            kana: kanaCandidates,
-            direct: directCandidates,
-            others: otherCandidates,
-            recencyRanks: candidateSelectionHistory.ranks,
-            prioritizeKana: kanaCandidates.first?.count == 1
+            + imeCandidates.prefix
+            + basicCandidates.prefix
+        currentCandidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: kanaCandidates,
+                direct: directCandidates,
+                other: otherCandidates,
+                recencyRanks: candidateSelectionHistory.ranks,
+                prioritizeKana: kanaCandidates.first?.count == 1
+            )
         )
 
         guard !currentCandidates.isEmpty else {
@@ -1906,11 +1868,11 @@ final class InputController: IMKInputController {
         }
 
         showCandidateWindow(client: sender)
-        let hasDirectExactCandidates = !userExactCandidates.isEmpty
-                || !extensionExactCandidates.isEmpty
+        let hasDirectExactCandidates = !userCandidates.exact.isEmpty
+                || !extensionCandidates.exact.isEmpty
                 || !dateTimeCandidates.isEmpty
-                || !imeExactCandidates.isEmpty
-                || !basicExactCandidates.isEmpty
+                || !imeCandidates.exact.isEmpty
+                || !basicCandidates.exact.isEmpty
         let auxiliaryAnchorFrame = candidateAndInputFrame(for: sender)
         showFuzzySuggestionsIfNeeded(
             hasDirectExactCandidates: hasDirectExactCandidates,
@@ -2540,6 +2502,31 @@ final class InputController: IMKInputController {
         return readings.flatMap(lookup).filter {
             seen.insert($0).inserted
         }
+    }
+
+    private func mergedCandidateGroups(
+        lookup: (String) -> DictionaryCandidateGroups,
+        readings: [String]
+    ) -> DictionaryCandidateGroups {
+        var exact: [String] = []
+        var prefix: [String] = []
+        var exactSet = Set<String>()
+        var prefixSet = Set<String>()
+
+        for reading in readings {
+            let groups = lookup(reading)
+            for candidate in groups.exact
+            where exactSet.insert(candidate).inserted {
+                exact.append(candidate)
+            }
+            for candidate in groups.prefix
+            where prefixSet.insert(candidate).inserted {
+                prefix.append(candidate)
+            }
+        }
+
+        prefix.removeAll { exactSet.contains($0) }
+        return DictionaryCandidateGroups(exact: exact, prefix: prefix)
     }
 
     private func deletionUnit(for event: NSEvent) -> InputBufferDeletionUnit {

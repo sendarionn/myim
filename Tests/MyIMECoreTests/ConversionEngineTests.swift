@@ -30,6 +30,22 @@ struct ConversionEngineTests {
     }
 
     @Test
+    func separatesExactAndPrefixCandidatesInOneLookup() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "mi", candidates: ["実", "見る"]),
+            DictionaryEntry(reading: "miru", candidates: ["見る", "診る"])
+        ])
+
+        #expect(
+            engine.candidateGroups(matching: "mi")
+                == DictionaryCandidateGroups(
+                    exact: ["実", "見る"],
+                    prefix: ["診る"]
+                )
+        )
+    }
+
+    @Test
     func prioritizesExactReadingAndRemovesDuplicates() {
         let engine = ConversionEngine(entries: [
             DictionaryEntry(reading: "mi", candidates: ["実", "見る"]),

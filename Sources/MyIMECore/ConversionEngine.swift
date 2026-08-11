@@ -44,20 +44,28 @@ public struct ConversionEngine: Sendable {
         matching readingPrefix: String,
         limit: Int = .max
     ) -> [String] {
+        candidateGroups(matching: readingPrefix, limit: limit).all
+    }
+
+    public func candidateGroups(
+        matching readingPrefix: String,
+        limit: Int = .max
+    ) -> DictionaryCandidateGroups {
         let normalizedPrefix =
             RomanizedReadingNormalizer.dictionaryReading(from: readingPrefix)
         guard !normalizedPrefix.isEmpty, limit > 0 else {
-            return []
+            return DictionaryCandidateGroups()
         }
 
         var seen = Set<String>()
-        var result: [String] = []
+        var exact: [String] = []
+        var prefix: [String] = []
 
         if let exactCandidates = candidatesByReading[normalizedPrefix] {
             for candidate in exactCandidates where seen.insert(candidate).inserted {
-                result.append(candidate)
-                if result.count == limit {
-                    return result
+                exact.append(candidate)
+                if exact.count == limit {
+                    return DictionaryCandidateGroups(exact: exact)
                 }
             }
         }
@@ -69,16 +77,19 @@ public struct ConversionEngine: Sendable {
             if reading != normalizedPrefix {
                 for candidate in candidatesByReading[reading] ?? []
                 where seen.insert(candidate).inserted {
-                    result.append(candidate)
-                    if result.count == limit {
-                        return result
+                    prefix.append(candidate)
+                    if exact.count + prefix.count == limit {
+                        return DictionaryCandidateGroups(
+                            exact: exact,
+                            prefix: prefix
+                        )
                     }
                 }
             }
             index += 1
         }
 
-        return result
+        return DictionaryCandidateGroups(exact: exact, prefix: prefix)
     }
 
     private func lowerBound(of value: String) -> Int {

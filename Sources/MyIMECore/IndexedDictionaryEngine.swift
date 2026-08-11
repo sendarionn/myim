@@ -36,26 +36,45 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
         matching prefix: String,
         limit: Int = .max
     ) -> [String] {
+        candidateGroups(matching: prefix, limit: limit).all
+    }
+
+    public func candidateGroups(
+        matching prefix: String,
+        limit: Int = .max
+    ) -> DictionaryCandidateGroups {
         guard !prefix.isEmpty, limit > 0 else {
-            return []
+            return DictionaryCandidateGroups()
         }
         let target = Array(prefix.utf8)
         var index = lowerBound(of: target)
         var seen = Set<String>()
-        var result: [String] = []
+        var exact: [String] = []
+        var prefixMatches: [String] = []
 
         while readingOffsets.indices.contains(index),
               reading(at: index).starts(with: target) {
-            for candidate in candidates(at: index, limit: limit - result.count)
+            let isExactReading = compareReading(at: index, with: target) == 0
+            for candidate in candidates(
+                at: index,
+                limit: limit - exact.count - prefixMatches.count
+            )
             where seen.insert(candidate).inserted {
-                result.append(candidate)
-                if result.count == limit {
-                    return result
+                if isExactReading {
+                    exact.append(candidate)
+                } else {
+                    prefixMatches.append(candidate)
+                }
+                if exact.count + prefixMatches.count == limit {
+                    return DictionaryCandidateGroups(
+                        exact: exact,
+                        prefix: prefixMatches
+                    )
                 }
             }
             index += 1
         }
-        return result
+        return DictionaryCandidateGroups(exact: exact, prefix: prefixMatches)
     }
 
     private static func makeReadingOffsets(in data: Data) -> [Int] {

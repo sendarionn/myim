@@ -35,6 +35,17 @@ struct IndexedDictionaryEngineTests {
     }
 
     @Test
+    func separatesExactAndPrefixCandidatesInOneLookup() {
+        #expect(
+            engine.candidateGroups(matching: "あ")
+                == DictionaryCandidateGroups(
+                    exact: ["亜", "あ"],
+                    prefix: ["愛", "藍"]
+                )
+        )
+    }
+
+    @Test
     func limitsPrefixCandidates() {
         #expect(engine.candidates(matching: "あ", limit: 3) == ["亜", "あ", "愛"])
     }
