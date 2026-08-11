@@ -77,7 +77,7 @@ final class InputController: IMKInputController {
     private let supplementalConversionEngine: ConversionEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var fuzzyConversionEngine: FuzzyConversionEngine
-    private let credentialStore: CosenseCredentialStore
+    private let cosenseSettingsController: CosenseSettingsController
     private let externalCredentialStore = ExternalServiceCredentialStore()
     private let settingsDialogController = SettingsDialogController()
     private var cosenseCredential: CosenseCredential?
@@ -105,12 +105,11 @@ final class InputController: IMKInputController {
 #if canImport(Translation)
     private var semanticTranslationProvider: AnyObject?
 #endif
-    private weak var authenticationTokenInput: NSSecureTextField?
     private var settingsWindow: NSWindow?
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let source = Self.loadDictionarySource()
-        let credentialStore = CosenseCredentialStore()
+        let cosenseSettingsController = CosenseSettingsController()
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.loadBasicEntries()
         let indexedIMEEngine = Self.loadIMEDictionaryEngine()
@@ -127,8 +126,10 @@ final class InputController: IMKInputController {
         )
 
         dictionarySource = source
-        self.credentialStore = credentialStore
-        cosenseCredential = credentialStore.load(for: source.project)
+        self.cosenseSettingsController = cosenseSettingsController
+        cosenseCredential = cosenseSettingsController.credential(
+            for: source.project
+        )
         userEntries = cachedUserEntries
         basicEntries = bundledEntries
         extensionEntries = cachedExtensionEntries
@@ -524,37 +525,14 @@ final class InputController: IMKInputController {
 
     @objc
     private func configureCosenseProject(_ sender: Any?) {
-        let input = NSTextField(
-            string: dictionarySource.projectURLDescription
-        )
-        input.placeholderString = "https://scrapbox.io/project-name"
-        input.frame = NSRect(x: 0, y: 0, width: 420, height: 24)
-
-        let alert = NSAlert()
-        alert.messageText = "Cosense拡張辞書"
-        alert.informativeText = "dictionaryページを持つプロジェクトURLを入力"
-        alert.accessoryView = input
-        alert.addButton(withTitle: "設定")
-        alert.addButton(withTitle: "キャンセル")
-        alert.window.level = .floating
-
-        guard settingsDialogController.runModal(
-            alert,
-            firstResponder: input
-        ) == .alertFirstButtonReturn else {
-            return
-        }
-
-        guard
-            let url = URL(string: input.stringValue),
-            let configuration = CosenseProjectConfiguration(projectURL: url)
-        else {
-            showInvalidProjectURLAlert()
+        guard let configuration = cosenseSettingsController.chooseProject(
+            currentURLDescription: dictionarySource.projectURLDescription
+        ) else {
             return
         }
 
         dictionarySource = configuration.dictionarySource
-        cosenseCredential = credentialStore.load(
+        cosenseCredential = cosenseSettingsController.credential(
             for: configuration.project
         )
         UserDefaults.standard.set(
@@ -576,101 +554,17 @@ final class InputController: IMKInputController {
 
     @objc
     private func configureCosenseAuthentication(_ sender: Any?) {
-        let kindPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        kindPopup.addItems(
-            withTitles: [
-                "Personal Access Token",
-                "Service Account"
-            ]
-        )
-        if cosenseCredential?.kind == .serviceAccount {
-            kindPopup.selectItem(at: 1)
-        }
-
-        let tokenInput = NSSecureTextField(frame: .zero)
-        tokenInput.placeholderString = "トークンまたはアクセスキー"
-        tokenInput.frame.size.width = 420
-        authenticationTokenInput = tokenInput
-
-        let pasteButton = NSButton(
-            title: "クリップボードから貼り付け",
-            target: self,
-            action: #selector(pasteCosenseCredential(_:))
-        )
-        let stack = NSStackView(views: [kindPopup, tokenInput, pasteButton])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.frame = NSRect(x: 0, y: 0, width: 420, height: 92)
-
-        let alert = NSAlert()
-        alert.messageText = "Cosense認証"
-        alert.informativeText =
-            "Service Accountは現在のプロジェクトだけに使用"
-        alert.accessoryView = stack
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "削除")
-        alert.addButton(withTitle: "キャンセル")
-        alert.window.level = .floating
-
-        let response = settingsDialogController.runModal(
-            alert,
-            firstResponder: tokenInput
-        )
-        let kind: CosenseCredential.Kind =
-            kindPopup.indexOfSelectedItem == 1
-                ? .serviceAccount
-                : .personalAccessToken
-
-        do {
-            if response == .alertFirstButtonReturn {
-                guard let credential = CosenseCredential(
-                    kind: kind,
-                    value: tokenInput.stringValue
-                ) else {
-                    NSSound.beep()
-                    return
-                }
-                try credentialStore.save(
-                    credential,
-                    project: dictionarySource.project
-                )
-            } else if response == .alertSecondButtonReturn {
-                try credentialStore.delete(
-                    kind: kind,
-                    project: dictionarySource.project
-                )
-            } else {
-                return
-            }
-
-            cosenseCredential = credentialStore.load(
-                for: dictionarySource.project
-            )
+        switch cosenseSettingsController.updateCredential(
+            current: cosenseCredential,
+            project: dictionarySource.project
+        ) {
+        case .cancelled:
+            return
+        case .updated(let credential):
+            cosenseCredential = credential
             cosenseSyncStatus = "未実行"
             syncCosenseDictionary(nil)
-        } catch {
-            NSLog(
-                "Cosense認証情報の保存に失敗: %@",
-                error.localizedDescription
-            )
-            NSSound.beep()
         }
-    }
-
-    @objc
-    private func pasteCosenseCredential(_ sender: Any?) {
-        guard
-            let value = NSPasteboard.general.string(forType: .string),
-            !value.isEmpty
-        else {
-            NSSound.beep()
-            return
-        }
-        authenticationTokenInput?.stringValue = value
-        authenticationTokenInput?.window?.makeFirstResponder(
-            authenticationTokenInput
-        )
     }
 
     @objc
@@ -2893,16 +2787,6 @@ final class InputController: IMKInputController {
 
     private func candidateValueForCommit(_ candidate: String) -> String {
         CandidateCommitNormalizer.value(from: candidate)
-    }
-
-    private func showInvalidProjectURLAlert() {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "URLを設定できません"
-        alert.informativeText = "https://scrapbox.io/project-name の形式で入力"
-        alert.addButton(withTitle: "OK")
-        alert.window.level = .floating
-        alert.runModal()
     }
 
     private static func loadDictionarySource() -> CosenseDictionarySource {

@@ -1155,6 +1155,14 @@
 - URLテンプレート検証、日時書式の重複除外、表示遅延の選択肢を維持
 - `InputController`から約150行のダイアログ構築処理を削減
 
+### Cosense設定の分離
+
+- CosenseプロジェクトURLの入力と検証を`CosenseSettingsController`へ分離
+- Personal Access TokenとService Accountの入力、貼り付け、保存、削除を分離
+- 認証情報ストアへの読み書きを設定コントローラへ集約
+- `InputController`は選択された設定の反映と辞書更新開始だけを担当
+- プロジェクト単位のService Accountと共通Personal Access Tokenの動作を維持
+
 ## 更新方針
 
 - 実装または仕様が変更された時点でこのファイルを更新
