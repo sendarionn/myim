@@ -52,8 +52,6 @@ enum InputSourceMenuBuilder {
 
 enum SettingsWindowBuilder {
     struct FeatureStates {
-        let basicDictionary: Bool
-        let userDictionary: Bool
         let extensionDictionary: Bool
         let englishCompletion: Bool
         let wikipediaSuggestions: Bool
@@ -69,8 +67,6 @@ enum SettingsWindowBuilder {
     }
 
     struct Actions {
-        let toggleBasicDictionary: Selector
-        let toggleUserDictionary: Selector
         let toggleExtensionDictionary: Selector
         let toggleEnglishCompletion: Selector
         let toggleWikipediaSuggestions: Selector
@@ -123,8 +119,6 @@ enum SettingsWindowBuilder {
 
         addSection("変換候補", to: stack)
         addCheckboxes([
-            ("ローカル基本辞書で変換候補を取得", actions.toggleBasicDictionary, states.basicDictionary),
-            ("ローカルユーザー辞書を使用", actions.toggleUserDictionary, states.userDictionary),
             ("Cosense拡張辞書を使用", actions.toggleExtensionDictionary, states.extensionDictionary),
             ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
             ("Wikipedia候補を取得", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),

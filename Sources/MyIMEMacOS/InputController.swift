@@ -17,10 +17,6 @@ final class InputController: IMKInputController {
     )
     private static let projectDefaultsKey = "CosenseExtensionProject"
     private static let nextInputEnabledDefaultsKey = "NextInputPredictionEnabled"
-    private static let basicDictionaryEnabledDefaultsKey =
-        "BasicDictionaryEnabled"
-    private static let userDictionaryEnabledDefaultsKey =
-        "UserDictionaryEnabled"
     private static let extensionDictionaryEnabledDefaultsKey =
         "ExtensionDictionaryEnabled"
     private static let englishCompletionEnabledDefaultsKey =
@@ -397,8 +393,6 @@ final class InputController: IMKInputController {
 
     private var settingsFeatureStates: SettingsWindowBuilder.FeatureStates {
         SettingsWindowBuilder.FeatureStates(
-            basicDictionary: isBasicDictionaryEnabled,
-            userDictionary: isUserDictionaryEnabled,
             extensionDictionary: isExtensionDictionaryEnabled,
             englishCompletion: isEnglishCompletionEnabled,
             wikipediaSuggestions: isWikipediaSuggestionsEnabled,
@@ -416,8 +410,6 @@ final class InputController: IMKInputController {
 
     private var settingsActions: SettingsWindowBuilder.Actions {
         SettingsWindowBuilder.Actions(
-            toggleBasicDictionary: #selector(toggleBasicDictionary(_:)),
-            toggleUserDictionary: #selector(toggleUserDictionary(_:)),
             toggleExtensionDictionary: #selector(toggleExtensionDictionary(_:)),
             toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
             toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
@@ -703,22 +695,6 @@ final class InputController: IMKInputController {
             return
         }
         refreshCandidates(client: inputClient)
-    }
-
-    @objc
-    private func toggleBasicDictionary(_ sender: Any?) {
-        toggleCandidateSource(
-            defaultsKey: Self.basicDictionaryEnabledDefaultsKey,
-            currentlyEnabled: isBasicDictionaryEnabled
-        )
-    }
-
-    @objc
-    private func toggleUserDictionary(_ sender: Any?) {
-        toggleCandidateSource(
-            defaultsKey: Self.userDictionaryEnabledDefaultsKey,
-            currentlyEnabled: isUserDictionaryEnabled
-        )
     }
 
     @objc
@@ -1430,12 +1406,10 @@ final class InputController: IMKInputController {
                 )
             )
             : []
-        let userCandidates = isUserDictionaryEnabled
-            ? mergedCandidateGroups(
-                lookup: { userConversionEngine.candidateGroups(matching: $0) },
-                readings: lookupReadings
-            )
-            : DictionaryCandidateGroups()
+        let userCandidates = mergedCandidateGroups(
+            lookup: { userConversionEngine.candidateGroups(matching: $0) },
+            readings: lookupReadings
+        )
         let extensionCandidates = isExtensionDictionaryEnabled
             ? mergedCandidateGroups(
                 lookup: {
@@ -1444,34 +1418,28 @@ final class InputController: IMKInputController {
                 readings: lookupReadings
             )
             : DictionaryCandidateGroups()
-        let basicCandidates = isBasicDictionaryEnabled
-            ? mergedCandidateGroups(
-                lookup: { basicConversionEngine.candidateGroups(matching: $0) },
-                readings: lookupReadings
-            )
-            : DictionaryCandidateGroups()
+        let basicCandidates = mergedCandidateGroups(
+            lookup: { basicConversionEngine.candidateGroups(matching: $0) },
+            readings: lookupReadings
+        )
         let kanaLookupReadings = lookupReadings.compactMap {
             romajiConverter.hiragana(from: $0)
         }
-        let imeCandidates = isBasicDictionaryEnabled
-            ? mergedCandidateGroups(
-                lookup: {
-                    imeConversionEngine.candidateGroups(
+        let imeCandidates = mergedCandidateGroups(
+            lookup: {
+                imeConversionEngine.candidateGroups(
                     matching: $0,
                     limit: Self.maximumIMEDictionaryPrefixCandidates
-                    )
-                },
-                readings: kanaLookupReadings
-            )
-            : DictionaryCandidateGroups()
-        let supplementalCandidates = isBasicDictionaryEnabled
-            ? mergedCandidateGroups(
-                lookup: {
-                    supplementalConversionEngine.candidateGroups(matching: $0)
-                },
-                readings: lookupReadings
-            )
-            : DictionaryCandidateGroups()
+                )
+            },
+            readings: kanaLookupReadings
+        )
+        let supplementalCandidates = mergedCandidateGroups(
+            lookup: {
+                supplementalConversionEngine.candidateGroups(matching: $0)
+            },
+            readings: lookupReadings
+        )
         let englishCandidates = isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
@@ -1479,8 +1447,7 @@ final class InputController: IMKInputController {
             == conversionReading
             ? officialCandidates
             : []
-        let inflectionCandidates = isBasicDictionaryEnabled
-            ? mergedCandidates(
+        let inflectionCandidates = mergedCandidates(
             lookup: {
                 verbInflectionGenerator.candidates(for: $0)
                     + VerbInflectionCandidateGenerator.candidates(for: $0) {
@@ -1488,7 +1455,7 @@ final class InputController: IMKInputController {
                     }
             },
             readings: lookupReadings
-        ) : []
+        )
         var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(
             from: conversionReading
@@ -2529,9 +2496,9 @@ final class InputController: IMKInputController {
     private func rebuildFuzzyConversionEngine() {
         cancelFuzzySuggestionSearch()
         fuzzyConversionEngine = FuzzyConversionEngine(
-            entries: (isUserDictionaryEnabled ? userEntries : [])
+            entries: userEntries
                 + (isExtensionDictionaryEnabled ? extensionEntries : [])
-                + (isBasicDictionaryEnabled ? basicEntries : [])
+                + basicEntries
                 + SupplementalDictionary.entries
         )
     }
@@ -2644,18 +2611,6 @@ final class InputController: IMKInputController {
             withAllowedCharacters: allowed
         ) ?? dictionarySource.project
         return "https://scrapbox.io/\(project)/%s"
-    }
-
-    private var isBasicDictionaryEnabled: Bool {
-        experimentalFeatureIsEnabled(
-            defaultsKey: Self.basicDictionaryEnabledDefaultsKey
-        )
-    }
-
-    private var isUserDictionaryEnabled: Bool {
-        experimentalFeatureIsEnabled(
-            defaultsKey: Self.userDictionaryEnabledDefaultsKey
-        )
     }
 
     private var isExtensionDictionaryEnabled: Bool {
