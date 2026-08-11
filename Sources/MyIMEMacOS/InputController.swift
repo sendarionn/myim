@@ -1462,7 +1462,7 @@ final class InputController: IMKInputController {
                     return Array(FuzzyConversionMatchFilter.filtered(
                         combined,
                         excluding: visibleCandidates
-                    ).prefix(3))
+                    ))
                 }.value
                 try Task.checkCancellation()
                 guard let self,
@@ -1494,7 +1494,13 @@ final class InputController: IMKInputController {
                 )
             }
         }
-        fuzzySuggestions = spellingSuggestions
+        let orderedIndices = CandidateRecencyOrderer.orderedIndices(
+            spellingSuggestions.map(\.candidate),
+            ranks: candidateSelectionHistory.ranks
+        )
+        fuzzySuggestions = Array(orderedIndices
+            .prefix(3)
+            .map { spellingSuggestions[$0] })
         selectedFuzzySuggestionIndex = nil
         guard !fuzzySuggestions.isEmpty else {
             fuzzySuggestionWindow.hide()

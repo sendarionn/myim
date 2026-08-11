@@ -48,4 +48,16 @@ struct CandidateRecencyOrdererTests {
                 == candidates
         )
     }
+
+    @Test
+    func returnsIndicesForAssociatedCandidateData() {
+        let candidates = ["候補A", "候補B", "候補C"]
+
+        let indices = CandidateRecencyOrderer.orderedIndices(
+            candidates,
+            ranks: ["候補C": 2, "候補A": 1]
+        )
+
+        #expect(indices == [2, 0, 1])
+    }
 }
