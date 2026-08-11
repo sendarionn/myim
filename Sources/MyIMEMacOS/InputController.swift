@@ -79,6 +79,7 @@ final class InputController: IMKInputController {
     private var fuzzyConversionEngine: FuzzyConversionEngine
     private let credentialStore: CosenseCredentialStore
     private let externalCredentialStore = ExternalServiceCredentialStore()
+    private let settingsDialogController = SettingsDialogController()
     private var cosenseCredential: CosenseCredential?
     private var candidateSelectionHistory: CandidateSelectionHistory
     private let candidateSelectionHistoryWriter:
@@ -537,7 +538,7 @@ final class InputController: IMKInputController {
         alert.addButton(withTitle: "キャンセル")
         alert.window.level = .floating
 
-        guard runModalAlert(
+        guard settingsDialogController.runModal(
             alert,
             firstResponder: input
         ) == .alertFirstButtonReturn else {
@@ -612,7 +613,7 @@ final class InputController: IMKInputController {
         alert.addButton(withTitle: "キャンセル")
         alert.window.level = .floating
 
-        let response = runModalAlert(
+        let response = settingsDialogController.runModal(
             alert,
             firstResponder: tokenInput
         )
@@ -783,47 +784,25 @@ final class InputController: IMKInputController {
 
     @objc
     private func configureDateTimeCandidateFormats(_ sender: Any?) {
-        let dateField = NSTextField(string: dateCandidateFormats.joined(separator: ", "))
-        let timeField = NSTextField(string: timeCandidateFormats.joined(separator: ", "))
-        let dateTimeField = NSTextField(string: dateTimeCandidateFormats.joined(separator: ", "))
-        for field in [dateField, timeField, dateTimeField] {
-            field.frame.size.width = 480
-        }
-        let stack = NSStackView(views: [
-            NSTextField(labelWithString: "日付書式  カンマ区切り"),
-            dateField,
-            NSTextField(labelWithString: "時刻書式  カンマ区切り"),
-            timeField,
-            NSTextField(labelWithString: "日時書式  カンマ区切り"),
-            dateTimeField,
-            NSTextField(labelWithString: "使用可能: YYYY YY MM M DD D HH H mm m ss s")
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        stack.frame = NSRect(x: 0, y: 0, width: 480, height: 178)
-
-        let alert = NSAlert()
-        alert.messageText = "日時候補の書式"
-        alert.accessoryView = stack
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "キャンセル")
-        alert.window.level = .floating
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else {
+        guard let formats = settingsDialogController.dateTimeFormats(
+            current: DateTimeCandidateGenerator.Formats(
+                date: dateCandidateFormats,
+                time: timeCandidateFormats,
+                dateTime: dateTimeCandidateFormats
+            )
+        ) else {
             return
         }
-
         UserDefaults.standard.set(
-            Self.parseCandidateFormats(dateField.stringValue),
+            formats.date,
             forKey: Self.dateCandidateFormatsDefaultsKey
         )
         UserDefaults.standard.set(
-            Self.parseCandidateFormats(timeField.stringValue),
+            formats.time,
             forKey: Self.timeCandidateFormatsDefaultsKey
         )
         UserDefaults.standard.set(
-            Self.parseCandidateFormats(dateTimeField.stringValue),
+            formats.dateTime,
             forKey: Self.dateTimeCandidateFormatsDefaultsKey
         )
         guard !inputBuffer.isEmpty, let inputClient = client() else {
@@ -909,48 +888,29 @@ final class InputController: IMKInputController {
 
     @objc
     private func configureExternalCandidates(_ sender: Any?) {
-        let searchTemplate = NSTextField(string: webSearchTemplate)
-        searchTemplate.placeholderString = SearchURLTemplate.defaultValue
-        let azureKey = NSSecureTextField(string: azureDictionaryKey)
-        azureKey.placeholderString = "Azure Translator APIキー"
-        let azureRegion = NSTextField(string: azureDictionaryRegion)
-        azureRegion.placeholderString = "japaneast など  グローバルキーでは空欄"
-        for field in [searchTemplate, azureKey, azureRegion] {
-            field.frame.size.width = 480
-        }
-        let stack = NSStackView(views: [
-            NSTextField(labelWithString: "Web検索URL  %sを検索語へ置換"),
-            searchTemplate,
-            NSTextField(labelWithString: "Azure Translator APIキー"),
-            azureKey,
-            NSTextField(labelWithString: "Azureリージョン"),
-            azureRegion
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        stack.frame = NSRect(x: 0, y: 0, width: 480, height: 142)
-        let alert = NSAlert()
-        alert.messageText = "外部候補とWeb検索"
-        alert.accessoryView = stack
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "キャンセル")
-        alert.window.level = .floating
-        guard runModalAlert(alert, firstResponder: searchTemplate) == .alertFirstButtonReturn else {
+        guard let settings = settingsDialogController.externalCandidates(
+            webSearchTemplate: webSearchTemplate,
+            azureKey: azureDictionaryKey,
+            azureRegion: azureDictionaryRegion
+        ) else {
             return
         }
-        guard (try? SearchURLTemplate(searchTemplate.stringValue)) != nil else {
-            NSSound.beep()
-            return
-        }
-        UserDefaults.standard.set(searchTemplate.stringValue, forKey: Self.webSearchTemplateDefaultsKey)
+        UserDefaults.standard.set(
+            settings.webSearchTemplate,
+            forKey: Self.webSearchTemplateDefaultsKey
+        )
         do {
-            try externalCredentialStore.saveAzureTranslatorKey(azureKey.stringValue)
+            try externalCredentialStore.saveAzureTranslatorKey(
+                settings.azureKey
+            )
         } catch {
             NSSound.beep()
             return
         }
-        UserDefaults.standard.set(azureRegion.stringValue, forKey: Self.azureDictionaryRegionDefaultsKey)
+        UserDefaults.standard.set(
+            settings.azureRegion,
+            forKey: Self.azureDictionaryRegionDefaultsKey
+        )
         resetOfficialCandidates()
         if !inputBuffer.isEmpty, let inputClient = client() {
             refreshCandidates(client: inputClient)
@@ -988,65 +948,18 @@ final class InputController: IMKInputController {
 
     @objc
     private func configureExternalInformationPanel(_ sender: Any?) {
-        let templateField = NSTextField(
-            string: externalInformationURLTemplate
-        )
-        templateField.placeholderString =
-            "https://ja.wikipedia.org/w/index.php?search=%s"
-        templateField.frame.size.width = 520
-
-        let delayPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        let delayOptions: [(String, TimeInterval)] = [
-            ("すぐ表示", 0),
-            ("0.5秒後", 0.5),
-            ("1秒後", 1),
-            ("2秒後", 2),
-            ("3秒後", 3),
-            ("5秒後", 5)
-        ]
-        delayPopup.addItems(withTitles: delayOptions.map(\.0))
-        let selectedDelayIndex = delayOptions.firstIndex {
-            $0.1 == externalInformationDisplayDelay
-        } ?? 2
-        delayPopup.selectItem(at: selectedDelayIndex)
-
-        let stack = NSStackView(views: [
-            NSTextField(labelWithString: "検索語を挿入する位置を%sで指定"),
-            templateField,
-            NSTextField(labelWithString: "表示タイミング"),
-            delayPopup
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 96)
-
-        let alert = NSAlert()
-        alert.messageText = "外部情報パネルの検索先"
-        alert.accessoryView = stack
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "キャンセル")
-        alert.window.level = .floating
-
-        guard runModalAlert(
-            alert,
-            firstResponder: templateField
-        ) == .alertFirstButtonReturn else {
-            return
-        }
-        guard
-            let template = try? SearchURLTemplate(templateField.stringValue),
-            (try? template.url(for: "test")) != nil
-        else {
-            NSSound.beep()
+        guard let settings = settingsDialogController.externalInformation(
+            urlTemplate: externalInformationURLTemplate,
+            displayDelay: externalInformationDisplayDelay
+        ) else {
             return
         }
         UserDefaults.standard.set(
-            templateField.stringValue,
+            settings.urlTemplate,
             forKey: Self.externalInformationURLTemplateDefaultsKey
         )
         UserDefaults.standard.set(
-            delayOptions[delayPopup.indexOfSelectedItem].1,
+            settings.displayDelay,
             forKey: Self.externalInformationDisplayDelayDefaultsKey
         )
         refreshExperimentalPreview()
@@ -2971,13 +2884,6 @@ final class InputController: IMKInputController {
         return UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
     }
 
-    private static func parseCandidateFormats(_ value: String) -> [String] {
-        var seen = Set<String>()
-        return value.split(separator: ",", omittingEmptySubsequences: true)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty && seen.insert($0).inserted }
-    }
-
     private func experimentalFeatureIsEnabled(defaultsKey: String) -> Bool {
         if UserDefaults.standard.object(forKey: defaultsKey) == nil {
             return true
@@ -2997,58 +2903,6 @@ final class InputController: IMKInputController {
         alert.addButton(withTitle: "OK")
         alert.window.level = .floating
         alert.runModal()
-    }
-
-    private func runModalAlert(
-        _ alert: NSAlert,
-        firstResponder: NSView
-    ) -> NSApplication.ModalResponse {
-        let previousPolicy = NSApp.activationPolicy()
-        let changedPolicy = previousPolicy == .prohibited
-            && NSApp.setActivationPolicy(.accessory)
-
-        alert.window.initialFirstResponder = firstResponder
-        NSRunningApplication.current.activate(
-            options: [.activateIgnoringOtherApps, .activateAllWindows]
-        )
-        NSApp.activate(ignoringOtherApps: true)
-        alert.window.makeKeyAndOrderFront(nil)
-        alert.window.makeFirstResponder(firstResponder)
-        let pasteMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: .keyDown
-        ) { event in
-            guard
-                event.keyCode == 9,
-                event.modifierFlags.contains(.command),
-                let textField = firstResponder as? NSTextField,
-                let value = NSPasteboard.general.string(forType: .string)
-            else {
-                return event
-            }
-
-            if let editor = textField.currentEditor() as? NSTextView {
-                editor.insertText(
-                    value,
-                    replacementRange: editor.selectedRange()
-                )
-            } else {
-                textField.stringValue = value
-            }
-            return nil
-        }
-        DispatchQueue.main.async {
-            alert.window.makeKey()
-            alert.window.makeFirstResponder(firstResponder)
-        }
-
-        let response = alert.runModal()
-        if let pasteMonitor {
-            NSEvent.removeMonitor(pasteMonitor)
-        }
-        if changedPolicy {
-            NSApp.setActivationPolicy(previousPolicy)
-        }
-        return response
     }
 
     private static func loadDictionarySource() -> CosenseDictionarySource {
