@@ -37,7 +37,7 @@ struct CandidatePriorityOrdererTests {
             prioritizeKana: false
         )
         #expect(result == [
-            "機械", "機会", "機械的", "きかい", "キカイ", "期間"
+            "機械的", "機械", "機会", "きかい", "キカイ", "期間"
         ])
     }
 
@@ -51,5 +51,17 @@ struct CandidatePriorityOrdererTests {
             prioritizeKana: false
         )
         #expect(result == ["高尚", "交渉", "校章", "こうしょう", "コウショウ", "工廠"])
+    }
+
+    @Test
+    func selectedKanaCanMoveAheadOfDirectCandidateForLongInput() {
+        let result = CandidatePriorityOrderer.ordered(
+            kana: ["での", "デノ"],
+            direct: ["出野"],
+            others: [],
+            recencyRanks: ["での": 12],
+            prioritizeKana: false
+        )
+        #expect(result == ["での", "出野", "デノ"])
     }
 }
