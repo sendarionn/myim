@@ -56,7 +56,6 @@ enum SettingsWindowBuilder {
         let englishCompletion: Bool
         let wikipediaSuggestions: Bool
         let appleTranslation: Bool
-        let azureDictionary: Bool
         let nextInputPrediction: Bool
         let fuzzySuggestions: Bool
         let semanticSuggestions: Bool
@@ -71,7 +70,6 @@ enum SettingsWindowBuilder {
         let toggleEnglishCompletion: Selector
         let toggleWikipediaSuggestions: Selector
         let toggleAppleTranslation: Selector
-        let toggleAzureDictionary: Selector
         let toggleNextInputPrediction: Selector
         let toggleFuzzySuggestions: Selector
         let toggleSemanticSuggestions: Selector
@@ -123,7 +121,6 @@ enum SettingsWindowBuilder {
             ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
             ("Wikipedia候補を取得", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
             ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
-            ("Azure英訳候補を取得", actions.toggleAzureDictionary, states.azureDictionary),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("意味検索の「もしかして？」候補を表示", actions.toggleSemanticSuggestions, states.semanticSuggestions),
@@ -131,7 +128,7 @@ enum SettingsWindowBuilder {
         ], target: target, to: stack)
         addButtons([
             ("日時候補の書式を設定…", actions.configureDateTimeFormats),
-            ("外部候補とWeb検索を設定…", actions.configureExternalCandidates),
+            ("Web検索先を設定…", actions.configureExternalCandidates),
             ("次入力履歴を削除", actions.clearNextInputHistory)
         ], target: target, to: stack)
 

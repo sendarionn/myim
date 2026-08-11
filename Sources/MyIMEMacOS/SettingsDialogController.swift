@@ -4,8 +4,6 @@ import MyIMECore
 final class SettingsDialogController {
     struct ExternalCandidateSettings {
         let webSearchTemplate: String
-        let azureKey: String
-        let azureRegion: String
     }
 
     struct ExternalInformationSettings {
@@ -59,33 +57,20 @@ final class SettingsDialogController {
     }
 
     func externalCandidates(
-        webSearchTemplate: String,
-        azureKey: String,
-        azureRegion: String
+        webSearchTemplate: String
     ) -> ExternalCandidateSettings? {
         let searchTemplate = NSTextField(string: webSearchTemplate)
         searchTemplate.placeholderString = SearchURLTemplate.defaultValue
-        let keyField = NSSecureTextField(string: azureKey)
-        keyField.placeholderString = "Azure Translator APIキー"
-        let regionField = NSTextField(string: azureRegion)
-        regionField.placeholderString =
-            "japaneast など  グローバルキーでは空欄"
-        for field in [searchTemplate, keyField, regionField] {
-            field.frame.size.width = 480
-        }
+        searchTemplate.frame.size.width = 480
         let stack = verticalStack(
             views: [
                 NSTextField(labelWithString: "Web検索URL  %sを検索語へ置換"),
-                searchTemplate,
-                NSTextField(labelWithString: "Azure Translator APIキー"),
-                keyField,
-                NSTextField(labelWithString: "Azureリージョン"),
-                regionField
+                searchTemplate
             ],
-            size: NSSize(width: 480, height: 142)
+            size: NSSize(width: 480, height: 54)
         )
         let alert = makeAlert(
-            title: "外部候補とWeb検索",
+            title: "Web検索先",
             accessoryView: stack
         )
         guard runModal(alert, firstResponder: searchTemplate)
@@ -97,9 +82,7 @@ final class SettingsDialogController {
             return nil
         }
         return ExternalCandidateSettings(
-            webSearchTemplate: searchTemplate.stringValue,
-            azureKey: keyField.stringValue,
-            azureRegion: regionField.stringValue
+            webSearchTemplate: searchTemplate.stringValue
         )
     }
 

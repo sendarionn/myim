@@ -163,14 +163,11 @@ macOS標準辞書の利用範囲は`docs/MACOS_DICTIONARY.md`を参照してく�
 
 - Wikipediaの記事名候補
 - Apple Translationによる日本語から英語への候補
-- Azure Translator Dictionary Lookupによる複数英訳
 - Command＋Returnで選択候補を確定してWeb検索
 
 Web検索URLは`https://www.google.com/search?q=%s`のように指定します
 
-Wikipedia、Apple Translation、Azure、Web検索は初期状態で無効です
-
-AzureだけがAPIキーと契約内容に応じた課金を伴う可能性があります
+Wikipedia、Apple Translation、Web検索は初期状態で無効です
 
 非公開のGoogle検索候補エンドポイントは使用しません
 

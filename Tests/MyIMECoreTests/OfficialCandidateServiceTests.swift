@@ -27,8 +27,4 @@ struct OfficialCandidateServiceTests {
         #expect(try WikipediaSuggestionClient.parse(data) == ["構造計画研究所", "構造主義"])
     }
 
-    @Test func parsesAzureDictionaryTranslations() throws {
-        let data = Data(#"[{"normalizedSource":"修正","displaySource":"修正","translations":[{"normalizedTarget":"revision","displayTarget":"revision","posTag":"NOUN","confidence":1.0,"prefixWord":"","backTranslations":[]}]}]"#.utf8)
-        #expect(try AzureDictionaryClient.parse(data) == ["revision"])
-    }
 }

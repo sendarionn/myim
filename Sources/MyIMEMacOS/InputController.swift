@@ -25,9 +25,6 @@ final class InputController: IMKInputController {
         "WikipediaSuggestionsEnabled"
     private static let appleTranslationEnabledDefaultsKey =
         "AppleTranslationEnabled"
-    private static let azureDictionaryEnabledDefaultsKey =
-        "AzureDictionaryEnabled"
-    private static let azureDictionaryRegionDefaultsKey = "AzureDictionaryRegion"
     private static let webSearchEnabledDefaultsKey = "WebSearchEnabled"
     private static let webSearchTemplateDefaultsKey = "WebSearchTemplate"
     private static let externalInformationPanelEnabledDefaultsKey =
@@ -74,7 +71,6 @@ final class InputController: IMKInputController {
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var fuzzyConversionEngine: FuzzyConversionEngine
     private let cosenseSettingsController: CosenseSettingsController
-    private let externalCredentialStore = ExternalServiceCredentialStore()
     private let settingsDialogController = SettingsDialogController()
     private var cosenseCredential: CosenseCredential?
     private var candidateSelectionHistory: CandidateSelectionHistory
@@ -397,7 +393,6 @@ final class InputController: IMKInputController {
             englishCompletion: isEnglishCompletionEnabled,
             wikipediaSuggestions: isWikipediaSuggestionsEnabled,
             appleTranslation: isAppleTranslationEnabled,
-            azureDictionary: isAzureDictionaryEnabled,
             nextInputPrediction: isNextInputPredictionEnabled,
             fuzzySuggestions: isFuzzySuggestionsEnabled,
             semanticSuggestions: isSemanticSuggestionsEnabled,
@@ -414,7 +409,6 @@ final class InputController: IMKInputController {
             toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
             toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
-            toggleAzureDictionary: #selector(toggleAzureDictionary(_:)),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
             toggleSemanticSuggestions: #selector(toggleSemanticSuggestions(_:)),
@@ -741,17 +735,6 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func toggleAzureDictionary(_ sender: Any?) {
-        UserDefaults.standard.set(
-            !isAzureDictionaryEnabled,
-            forKey: Self.azureDictionaryEnabledDefaultsKey
-        )
-        resetOfficialCandidates()
-        guard !inputBuffer.isEmpty, let inputClient = client() else { return }
-        refreshCandidates(client: inputClient)
-    }
-
-    @objc
     private func toggleWebSearch(_ sender: Any?) {
         UserDefaults.standard.set(!isWebSearchEnabled, forKey: Self.webSearchEnabledDefaultsKey)
     }
@@ -759,27 +742,13 @@ final class InputController: IMKInputController {
     @objc
     private func configureExternalCandidates(_ sender: Any?) {
         guard let settings = settingsDialogController.externalCandidates(
-            webSearchTemplate: webSearchTemplate,
-            azureKey: azureDictionaryKey,
-            azureRegion: azureDictionaryRegion
+            webSearchTemplate: webSearchTemplate
         ) else {
             return
         }
         UserDefaults.standard.set(
             settings.webSearchTemplate,
             forKey: Self.webSearchTemplateDefaultsKey
-        )
-        do {
-            try externalCredentialStore.saveAzureTranslatorKey(
-                settings.azureKey
-            )
-        } catch {
-            NSSound.beep()
-            return
-        }
-        UserDefaults.standard.set(
-            settings.azureRegion,
-            forKey: Self.azureDictionaryRegionDefaultsKey
         )
         resetOfficialCandidates()
         if !inputBuffer.isEmpty, let inputClient = client() {
@@ -1788,7 +1757,7 @@ final class InputController: IMKInputController {
     }
 
     private func updateOfficialCandidatesIfNeeded(for input: String) {
-        guard isWikipediaSuggestionsEnabled || isAppleTranslationEnabled || azureDictionaryIsReady,
+        guard isWikipediaSuggestionsEnabled || isAppleTranslationEnabled,
               input.count >= 2,
               suggestionSearchSession.query(for: .official) != input else {
             return
@@ -1803,17 +1772,11 @@ final class InputController: IMKInputController {
                 async let wikipedia: [String] = isWikipediaSuggestionsEnabled
                     ? (try? await WikipediaSuggestionClient().suggestions(for: japaneseInput)) ?? []
                     : []
-                async let azure: [String] = azureDictionaryIsReady
-                    ? (try? await AzureDictionaryClient(
-                        key: azureDictionaryKey,
-                        region: azureDictionaryRegion.isEmpty ? nil : azureDictionaryRegion
-                      ).translations(for: japaneseInput)) ?? []
-                    : []
                 let apple = await appleTranslationCandidate(for: japaneseInput)
-                let suggestions = await wikipedia + apple + azure
+                let suggestions = await wikipedia + apple
                 try Task.checkCancellation()
                 guard suggestionSearchSession.isCurrent(token),
-                      isWikipediaSuggestionsEnabled || isAppleTranslationEnabled || azureDictionaryIsReady,
+                      isWikipediaSuggestionsEnabled || isAppleTranslationEnabled,
                       conversionReading == input else {
                     return
                 }
@@ -2644,29 +2607,6 @@ final class InputController: IMKInputController {
             return false
         }
         return UserDefaults.standard.bool(forKey: Self.appleTranslationEnabledDefaultsKey)
-    }
-
-    private var isAzureDictionaryEnabled: Bool {
-        if UserDefaults.standard.object(
-            forKey: Self.azureDictionaryEnabledDefaultsKey
-        ) == nil {
-            return false
-        }
-        return UserDefaults.standard.bool(
-            forKey: Self.azureDictionaryEnabledDefaultsKey
-        )
-    }
-
-    private var azureDictionaryKey: String {
-        externalCredentialStore.loadAzureTranslatorKey()
-    }
-
-    private var azureDictionaryRegion: String {
-        UserDefaults.standard.string(forKey: Self.azureDictionaryRegionDefaultsKey) ?? ""
-    }
-
-    private var azureDictionaryIsReady: Bool {
-        isAzureDictionaryEnabled && !azureDictionaryKey.isEmpty
     }
 
     private var isWebSearchEnabled: Bool {
