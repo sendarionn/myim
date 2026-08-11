@@ -90,6 +90,7 @@ final class InputController: IMKInputController {
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
     private var officialCandidateTask: Task<Void, Never>?
+    private var fuzzySuggestionTask: Task<Void, Never>?
     private var semanticSuggestionTask: Task<Void, Never>?
     private var semanticSuggestionQuery = ""
     private var officialCandidateQuery = ""
@@ -893,6 +894,7 @@ final class InputController: IMKInputController {
             !isFuzzySuggestionsEnabled,
             forKey: Self.fuzzySuggestionsEnabledDefaultsKey
         )
+        cancelFuzzySuggestionSearch()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             fuzzySuggestionWindow.hide()
             return
@@ -1350,6 +1352,7 @@ final class InputController: IMKInputController {
             index = 0
         }
         selectedCandidateIndex = index
+        cancelFuzzySuggestionSearch()
         candidatePanel.hide()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
@@ -1706,6 +1709,7 @@ final class InputController: IMKInputController {
         }
 
         selectedCandidateIndex = index
+        cancelFuzzySuggestionSearch()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
         fuzzySuggestionWindow.hide()
@@ -1721,6 +1725,7 @@ final class InputController: IMKInputController {
     }
 
     private func refreshCandidates(client sender: Any) {
+        cancelFuzzySuggestionSearch()
         if semanticSuggestionQuery != conversionReading {
             semanticSuggestionTask?.cancel()
             semanticSuggestionTask = nil
@@ -1874,7 +1879,7 @@ final class InputController: IMKInputController {
                 || !imeCandidates.exact.isEmpty
                 || !basicCandidates.exact.isEmpty
         let auxiliaryAnchorFrame = candidateAndInputFrame(for: sender)
-        showFuzzySuggestionsIfNeeded(
+        updateFuzzySuggestionsIfNeeded(
             hasDirectExactCandidates: hasDirectExactCandidates,
             near: auxiliaryAnchorFrame
         )
@@ -1885,10 +1890,12 @@ final class InputController: IMKInputController {
         showInputPreview(client: sender)
     }
 
-    private func showFuzzySuggestionsIfNeeded(
+    private func updateFuzzySuggestionsIfNeeded(
         hasDirectExactCandidates: Bool,
         near anchorFrame: NSRect
     ) {
+        fuzzySuggestionTask?.cancel()
+        fuzzySuggestionTask = nil
         guard isFuzzySuggestionsEnabled,
               conversionReading.count >= 2 else {
             fuzzySuggestionWindow.hide()
@@ -1896,46 +1903,60 @@ final class InputController: IMKInputController {
             selectedFuzzySuggestionIndex = nil
             return
         }
+
+        let query = conversionReading
+        let engine = fuzzyConversionEngine
         let visibleCandidates = Set(currentCandidates)
         let normalizedInput = RomanizedReadingNormalizer.dictionaryReading(
-            from: conversionReading
+            from: query
         )
-        let matches = fuzzyConversionEngine.matches(
-            for: conversionReading,
-            limit: 3
-        ).filter {
-            !hasDirectExactCandidates
-                || $0.distance == 0
-                || ($0.distance == 1
-                    && $0.reading.count == normalizedInput.count)
-        }.compactMap { match -> FuzzyConversionMatch? in
-            let candidates = match.candidates.filter {
-                !visibleCandidates.contains($0)
+        fuzzySuggestionTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(80))
+                let matches = await Task.detached(priority: .userInitiated) {
+                    FuzzyConversionMatchFilter.filtered(
+                        engine.matches(for: query, limit: 3),
+                        excluding: visibleCandidates,
+                        hasDirectExactCandidates: hasDirectExactCandidates,
+                        normalizedInput: normalizedInput
+                    )
+                }.value
+                try Task.checkCancellation()
+                guard let self,
+                      conversionReading == query,
+                      isFuzzySuggestionsEnabled else {
+                    return
+                }
+                applySpellingSuggestions(matches, near: anchorFrame)
+            } catch is CancellationError {
+                return
+            } catch {
+                NSLog("曖昧検索に失敗: %@", error.localizedDescription)
             }
-            guard !candidates.isEmpty else {
-                return nil
-            }
-            return FuzzyConversionMatch(
-                reading: match.reading,
-                candidates: candidates,
-                distance: match.distance
-            )
         }
-        guard !matches.isEmpty else {
+    }
+
+    private func applySpellingSuggestions(
+        _ matches: [FuzzyConversionMatch],
+        near anchorFrame: NSRect
+    ) {
+        let spellingSuggestions = matches.compactMap { match in
+            match.candidates.first.map {
+                FuzzySuggestion(
+                    candidate: $0,
+                    reading: match.reading,
+                    distance: match.distance
+                )
+            }
+        }
+        let semanticSuggestions = fuzzySuggestions.filter {
+            $0.kind == .semantic
+        }
+        fuzzySuggestions = spellingSuggestions + semanticSuggestions
+        selectedFuzzySuggestionIndex = nil
+        guard !fuzzySuggestions.isEmpty else {
             fuzzySuggestionWindow.hide()
-            fuzzySuggestions = []
-            selectedFuzzySuggestionIndex = nil
             return
-        }
-        fuzzySuggestions = matches.compactMap { match in
-            guard let candidate = match.candidates.first else {
-                return nil
-            }
-            return FuzzySuggestion(
-                candidate: candidate,
-                reading: match.reading,
-                distance: match.distance
-            )
         }
         fuzzySuggestionWindow.show(
             suggestions: fuzzySuggestions,
@@ -2355,6 +2376,7 @@ final class InputController: IMKInputController {
         tabDictionaryRegistration = nil
         currentCandidates = []
         selectedCandidateIndex = nil
+        cancelFuzzySuggestionSearch()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
         candidatePanel.hide()
@@ -2595,6 +2617,7 @@ final class InputController: IMKInputController {
         semanticSuggestionTask?.cancel()
         semanticSuggestionTask = nil
         semanticSuggestionQuery = ""
+        cancelFuzzySuggestionSearch()
         inputBuffer = ""
         tabDictionaryRegistration = nil
         currentCandidates = []
@@ -2624,6 +2647,12 @@ final class InputController: IMKInputController {
         semanticSuggestionTask?.cancel()
         semanticSuggestionTask = nil
         semanticSuggestionQuery = ""
+        cancelFuzzySuggestionSearch()
+    }
+
+    private func cancelFuzzySuggestionSearch() {
+        fuzzySuggestionTask?.cancel()
+        fuzzySuggestionTask = nil
     }
 
     private func flushPendingHistoryWrites() {
@@ -2839,6 +2868,7 @@ final class InputController: IMKInputController {
     }
 
     private func rebuildFuzzyConversionEngine() {
+        cancelFuzzySuggestionSearch()
         fuzzyConversionEngine = FuzzyConversionEngine(
             entries: (isUserDictionaryEnabled ? userEntries : [])
                 + (isExtensionDictionaryEnabled ? extensionEntries : [])
