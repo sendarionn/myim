@@ -365,59 +365,13 @@ final class InputController: IMKInputController {
     }
 
     override func menu() -> NSMenu! {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        addActionItem(
-            title: "myim設定…",
-            action: #selector(openSettingsWindow(_:)),
-            to: menu
+        InputSourceMenuBuilder.make(
+            actions: InputSourceMenuBuilder.Actions(
+                openSettings: #selector(openSettingsWindow(_:)),
+                syncCosenseDictionary: #selector(syncCosenseDictionary(_:)),
+                showStatus: #selector(showStatus(_:))
+            )
         )
-        menu.addItem(.separator())
-        addActionItem(
-            title: "Cosense辞書を更新",
-            action: #selector(syncCosenseDictionary(_:)),
-            keyEquivalent: "r",
-            modifierMask: [.command, .option, .control],
-            to: menu
-        )
-        addActionItem(
-            title: "状態を確認…",
-            action: #selector(showStatus(_:)),
-            to: menu
-        )
-        return menu
-    }
-
-    private func addActionItem(
-        title: String,
-        action: Selector,
-        keyEquivalent: String = "",
-        modifierMask: NSEvent.ModifierFlags = [],
-        to menu: NSMenu
-    ) {
-        let item = NSMenuItem(
-            title: title,
-            action: action,
-            keyEquivalent: keyEquivalent
-        )
-        item.target = nil
-        item.isEnabled = true
-        item.keyEquivalentModifierMask = modifierMask
-        menu.addItem(item)
-    }
-
-    private func settingsCheckbox(
-        title: String,
-        action: Selector,
-        enabled: Bool
-    ) -> NSButton {
-        let button = NSButton(
-            checkboxWithTitle: title,
-            target: self,
-            action: action
-        )
-        button.state = enabled ? .on : .off
-        return button
     }
 
     @objc
@@ -428,157 +382,61 @@ final class InputController: IMKInputController {
             return
         }
 
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 620),
-            styleMask: [.titled, .closable, .resizable],
-            backing: .buffered,
-            defer: false
+        let panel = SettingsWindowBuilder.make(
+            target: self,
+            states: settingsFeatureStates,
+            actions: settingsActions
         )
-        panel.title = "myim設定"
-        panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = false
-        panel.level = .floating
-        panel.minSize = NSSize(width: 480, height: 420)
-
-        let stack = NSStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(
-            top: 18,
-            left: 20,
-            bottom: 18,
-            right: 20
-        )
-
-        addSettingsSection("変換候補", to: stack)
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "ローカル基本辞書で変換候補を取得",
-            action: #selector(toggleBasicDictionary(_:)),
-            enabled: isBasicDictionaryEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "ローカルユーザー辞書を使用",
-            action: #selector(toggleUserDictionary(_:)),
-            enabled: isUserDictionaryEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "Cosense拡張辞書を使用",
-            action: #selector(toggleExtensionDictionary(_:)),
-            enabled: isExtensionDictionaryEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "英語補完を使用",
-            action: #selector(toggleEnglishCompletion(_:)),
-            enabled: isEnglishCompletionEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "Wikipedia候補を取得",
-            action: #selector(toggleWikipediaSuggestions(_:)),
-            enabled: isWikipediaSuggestionsEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "日本語入力から英語の変換候補を取得",
-            action: #selector(toggleAppleTranslation(_:)),
-            enabled: isAppleTranslationEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "Azure英訳候補を取得",
-            action: #selector(toggleAzureDictionary(_:)),
-            enabled: isAzureDictionaryEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "次入力候補を使用",
-            action: #selector(toggleNextInputPrediction(_:)),
-            enabled: isNextInputPredictionEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "曖昧検索の「もしかして？」候補を表示",
-            action: #selector(toggleFuzzySuggestions(_:)),
-            enabled: isFuzzySuggestionsEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "意味検索の「もしかして？」候補を表示",
-            action: #selector(toggleSemanticSuggestions(_:)),
-            enabled: isSemanticSuggestionsEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "日時の動的候補を表示",
-            action: #selector(toggleDateTimeCandidates(_:)),
-            enabled: isDateTimeCandidatesEnabled
-        ))
-        stack.addArrangedSubview(settingsButton(
-            "日時候補の書式を設定…",
-            action: #selector(configureDateTimeCandidateFormats(_:))
-        ))
-        stack.addArrangedSubview(settingsButton(
-            "外部候補とWeb検索を設定…",
-            action: #selector(configureExternalCandidates(_:))
-        ))
-        stack.addArrangedSubview(settingsButton(
-            "次入力履歴を削除",
-            action: #selector(clearNextInputPredictionHistory(_:))
-        ))
-
-        addSettingsSection("外部表示", to: stack)
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "外部情報パネルを使用",
-            action: #selector(toggleExternalInformationPanel(_:)),
-            enabled: isExternalInformationPanelEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "macOS辞書パネルを使用",
-            action: #selector(toggleSystemDictionaryPreview(_:)),
-            enabled: isSystemDictionaryPreviewEnabled
-        ))
-        stack.addArrangedSubview(settingsCheckbox(
-            title: "Command＋ReturnでWeb検索",
-            action: #selector(toggleWebSearch(_:)),
-            enabled: isWebSearchEnabled
-        ))
-        stack.addArrangedSubview(settingsButton(
-            "外部情報パネルの検索先を設定…",
-            action: #selector(configureExternalInformationPanel(_:))
-        ))
-
-        addSettingsSection("辞書管理", to: stack)
-        stack.addArrangedSubview(settingsButton(
-            "TKGJE基本辞書を更新",
-            action: #selector(updateBasicDictionaryIfNeeded(_:))
-        ))
-        stack.addArrangedSubview(settingsButton(
-            "Cosenseプロジェクトを設定…",
-            action: #selector(configureCosenseProject(_:))
-        ))
-        stack.addArrangedSubview(settingsButton(
-            "Cosense認証を設定…",
-            action: #selector(configureCosenseAuthentication(_:))
-        ))
-        stack.addArrangedSubview(settingsButton(
-            "Cosense辞書を更新",
-            action: #selector(syncCosenseDictionary(_:))
-        ))
-
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.documentView = stack
-        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 850)
-        panel.contentView = scrollView
         settingsWindow = panel
         NSApp.activate(ignoringOtherApps: true)
         panel.center()
         panel.makeKeyAndOrderFront(nil)
     }
 
-    private func addSettingsSection(_ title: String, to stack: NSStackView) {
-        let label = NSTextField(labelWithString: title)
-        label.font = .systemFont(ofSize: 15, weight: .semibold)
-        stack.addArrangedSubview(label)
+    private var settingsFeatureStates: SettingsWindowBuilder.FeatureStates {
+        SettingsWindowBuilder.FeatureStates(
+            basicDictionary: isBasicDictionaryEnabled,
+            userDictionary: isUserDictionaryEnabled,
+            extensionDictionary: isExtensionDictionaryEnabled,
+            englishCompletion: isEnglishCompletionEnabled,
+            wikipediaSuggestions: isWikipediaSuggestionsEnabled,
+            appleTranslation: isAppleTranslationEnabled,
+            azureDictionary: isAzureDictionaryEnabled,
+            nextInputPrediction: isNextInputPredictionEnabled,
+            fuzzySuggestions: isFuzzySuggestionsEnabled,
+            semanticSuggestions: isSemanticSuggestionsEnabled,
+            dateTimeCandidates: isDateTimeCandidatesEnabled,
+            externalInformationPanel: isExternalInformationPanelEnabled,
+            systemDictionaryPreview: isSystemDictionaryPreviewEnabled,
+            webSearch: isWebSearchEnabled
+        )
     }
 
-    private func settingsButton(_ title: String, action: Selector) -> NSButton {
-        NSButton(title: title, target: self, action: action)
+    private var settingsActions: SettingsWindowBuilder.Actions {
+        SettingsWindowBuilder.Actions(
+            toggleBasicDictionary: #selector(toggleBasicDictionary(_:)),
+            toggleUserDictionary: #selector(toggleUserDictionary(_:)),
+            toggleExtensionDictionary: #selector(toggleExtensionDictionary(_:)),
+            toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
+            toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
+            toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
+            toggleAzureDictionary: #selector(toggleAzureDictionary(_:)),
+            toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
+            toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
+            toggleSemanticSuggestions: #selector(toggleSemanticSuggestions(_:)),
+            toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
+            configureDateTimeFormats: #selector(configureDateTimeCandidateFormats(_:)),
+            configureExternalCandidates: #selector(configureExternalCandidates(_:)),
+            clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
+            toggleExternalInformationPanel: #selector(toggleExternalInformationPanel(_:)),
+            toggleSystemDictionaryPreview: #selector(toggleSystemDictionaryPreview(_:)),
+            toggleWebSearch: #selector(toggleWebSearch(_:)),
+            configureExternalInformationPanel: #selector(configureExternalInformationPanel(_:)),
+            updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:)),
+            configureCosenseProject: #selector(configureCosenseProject(_:)),
+            configureCosenseAuthentication: #selector(configureCosenseAuthentication(_:)),
+            syncCosenseDictionary: #selector(syncCosenseDictionary(_:))
+        )
     }
 
     @objc
