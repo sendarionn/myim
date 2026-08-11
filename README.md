@@ -249,7 +249,7 @@ python3 -m unittest discover -s Tests/ScriptTests -p 'test_*.py'
 
 - 辞書登録と外部情報パネルのInputMethodKit実機テストを拡充
 - カーソル位置の入力モードインジケータをライト・ダーク両モードで安定化
-- 誤入力補完と意味検索の速度、メモリ、候補精度を改善
+- 意味検索の速度、メモリ、候補精度を改善
 - 選択履歴を使って「もしかして？」候補を順位調整
 - 変換エンジンをmacOS固有実装から分離してWindowsへ対応
 
@@ -260,10 +260,10 @@ python3 -m unittest discover -s Tests/ScriptTests -p 'test_*.py'
 - Wikipedia、翻訳、英語補完、Web検索の外部候補処理を共通管理
 - 各パネルの配置、表示、フォーカス復帰を共通管理
 - UserDefaultsの設定キー、初期値、読み書きを型付き設定へ集約
-- ローマ字入力、ローカル辞書検索、候補統合、選択、確定をコア機能として独立
+- `InputController`に残る候補選択と確定を`MyIMECore`へ移動
 - Cosense、外部候補、誤入力補完・意味検索、次入力予測、日時候補、外部情報表示を拡張機能として分離
-- 拡張機能が候補と一致度を返し、コアの候補パイプラインが共通規則で順位付けする内部APIを整備
-- コア、拡張API、標準拡張、macOS接続層をSwift Package Target単位で分離
+- 通常候補だけでなく拡張機能の候補も`CandidatePipeline`で順位付け
+- 拡張APIと標準拡張を独立したSwift Package Targetへ分離
 - 必要性と安全性を確認した機能だけ、将来XPCなどの外部プラグイン方式を検討
 
 ## 関連資料
