@@ -2047,9 +2047,14 @@ final class InputController: IMKInputController {
             return true
         }
 
+        let wasSelectingCandidate = selectedCandidateIndex != nil
         selectedCandidateIndex = nil
         candidateWindow.clearSelection()
         updateMarkedText(in: sender)
+        if wasSelectingCandidate {
+            refreshCandidates(client: sender)
+            return true
+        }
         showInputPreview(client: sender)
         return true
     }
