@@ -1557,7 +1557,7 @@ final class InputController: IMKInputController {
             } catch is CancellationError {
                 return
             } catch {
-                NSLog("曖昧検索に失敗: %@", error.localizedDescription)
+                NSLog("誤入力補完に失敗: %@", error.localizedDescription)
             }
         }
         suggestionSearchSession.attach(task, to: token)
@@ -2499,6 +2499,9 @@ final class InputController: IMKInputController {
             entries: userEntries
                 + (isExtensionDictionaryEnabled ? extensionEntries : [])
                 + basicEntries
+                + VerbInflectionCandidateGenerator.typoSearchEntries(
+                    from: basicEntries
+                )
                 + SupplementalDictionary.entries
         )
     }

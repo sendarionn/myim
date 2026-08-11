@@ -125,7 +125,7 @@ enum SettingsWindowBuilder {
             ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
             ("Azure英訳候補を取得", actions.toggleAzureDictionary, states.azureDictionary),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
-            ("曖昧検索の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
+            ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("意味検索の「もしかして？」候補を表示", actions.toggleSemanticSuggestions, states.semanticSuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)

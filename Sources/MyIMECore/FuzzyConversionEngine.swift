@@ -150,7 +150,7 @@ public struct FuzzyConversionEngine: Sendable {
         switch length {
         case ..<4:
             0
-        case 4...7:
+        case 4...6:
             1
         default:
             2

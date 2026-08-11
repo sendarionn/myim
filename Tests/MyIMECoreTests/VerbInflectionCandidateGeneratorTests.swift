@@ -3,6 +3,27 @@ import Testing
 
 @Suite
 struct VerbInflectionCandidateGeneratorTests {
+    @Test
+    func createsTypoSearchEntryForTeForm() {
+        let entries = VerbInflectionCandidateGenerator.typoSearchEntries(
+            from: [
+                DictionaryEntry(
+                    reading: "susumeru",
+                    candidates: ["進める", "勧める"]
+                )
+            ]
+        )
+
+        #expect(entries.contains {
+            $0.reading == "susumete"
+                && $0.candidates == ["進めて", "勧めて"]
+        })
+        let engine = FuzzyConversionEngine(entries: entries)
+        #expect(engine.matches(for: "susmete").first?.candidates == [
+            "進めて", "勧めて"
+        ])
+    }
+
     private let generator = VerbInflectionCandidateGenerator(entries: [
         DictionaryEntry(reading: "utsuru", candidates: ["移る", "写る"]),
         DictionaryEntry(reading: "yomu", candidates: ["読む"]),

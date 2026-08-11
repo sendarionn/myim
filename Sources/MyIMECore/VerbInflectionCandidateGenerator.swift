@@ -20,6 +20,51 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         }
     }
 
+    public static func typoSearchEntries(
+        from entries: [DictionaryEntry]
+    ) -> [DictionaryEntry] {
+        let teFormRules: [(String, String, String, String)] = [
+            ("suru", "する", "shite", "して"),
+            ("tsu", "つ", "tte", "って"),
+            ("mu", "む", "nde", "んで"),
+            ("bu", "ぶ", "nde", "んで"),
+            ("nu", "ぬ", "nde", "んで"),
+            ("ku", "く", "ite", "いて"),
+            ("gu", "ぐ", "ide", "いで"),
+            ("su", "す", "shite", "して"),
+            ("u", "う", "tte", "って"),
+            ("ru", "る", "te", "て")
+        ]
+        var generated: [DictionaryEntry] = []
+        for entry in entries {
+            let reading = RomanizedReadingNormalizer.dictionaryReading(
+                from: entry.reading
+            )
+            for rule in teFormRules
+            where reading.hasSuffix(rule.0) {
+                let candidates: [String] = entry.candidates.compactMap {
+                    candidate -> String? in
+                    guard candidate.hasSuffix(rule.1) else {
+                        return nil
+                    }
+                    return String(candidate.dropLast(rule.1.count)) + rule.3
+                }
+                guard !candidates.isEmpty else {
+                    continue
+                }
+                generated.append(
+                    DictionaryEntry(
+                        reading: String(reading.dropLast(rule.0.count))
+                            + rule.2,
+                        candidates: candidates
+                    )
+                )
+                break
+            }
+        }
+        return generated
+    }
+
     public static func candidates(
         for reading: String,
         lookup: (String) -> [String]

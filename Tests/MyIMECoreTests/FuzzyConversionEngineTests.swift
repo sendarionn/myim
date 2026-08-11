@@ -10,6 +10,7 @@ struct FuzzyConversionEngineTests {
         DictionaryEntry(reading: "hiduke", candidates: ["日付"]),
         DictionaryEntry(reading: "genin", candidates: ["原因"]),
         DictionaryEntry(reading: "aimai", candidates: ["曖昧"]),
+        DictionaryEntry(reading: "hitsuyou", candidates: ["必要"]),
         DictionaryEntry(reading: "wo", candidates: ["を"]),
         DictionaryEntry(reading: "konnichiha", candidates: ["こんにちは"]),
         DictionaryEntry(reading: "shinbun", candidates: ["新聞"]),
@@ -118,5 +119,13 @@ struct FuzzyConversionEngineTests {
     @Test
     func acceptsOmittedLongVowels() {
         #expect(engine.matches(for: "tokyo").first?.candidates == ["東京"])
+    }
+
+    @Test
+    func findsTwoEditTypoForSevenCharacterInput() {
+        let match = engine.matches(for: "hiruyou").first
+        #expect(match?.reading == "hitsuyou")
+        #expect(match?.candidates == ["必要"])
+        #expect(match?.distance == 2)
     }
 }
