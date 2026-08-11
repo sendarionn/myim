@@ -1180,13 +1180,12 @@ final class InputController: IMKInputController {
             candidateWindow.show(
                 candidates: [
                     "読み: \(registration.reading)",
-                    "登録: \(confirmedCandidate)",
-                    "登録する語句を入力中…",
-                    "候補を続けて入力 / Returnで辞書登録を確定"
+                    "登録: \(confirmedCandidate)"
                 ],
                 selectedIndex: nil,
                 near: inputLocation(for: sender),
-                guide: "↩ 登録を確定　Esc 中止"
+                guide: "↩ 登録を確定　Esc 中止",
+                modeTitle: "登録したい文字列を入力"
             )
             return
         }
@@ -1197,13 +1196,12 @@ final class InputController: IMKInputController {
         candidateWindow.show(
             candidates: [
                 "読み: \(registration.reading)",
-                candidateDisplay,
-                "登録する語句を入力中…",
-                "Returnで現在の入力を追加 / Escで中止"
+                candidateDisplay
             ],
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "↩ 入力を追加　⌘V 貼付　Esc 中止"
+            guide: "↩ 入力を追加　⌘V 貼付　Esc 中止",
+            modeTitle: "登録したい文字列を入力"
         )
     }
 
@@ -1892,15 +1890,28 @@ final class InputController: IMKInputController {
             return
         }
 
+        let isDictionaryRegistration = tabDictionaryRegistration != nil
+        let guide: String
+        if isDictionaryRegistration {
+            guide = selectedCandidateIndex == nil
+                ? "Tab 候補選択　↩ 入力を追加　Esc 登録中止"
+                : "Tab / ⇧Tab / 矢印 移動　↩ 入力を追加　Esc 登録中止"
+        } else {
+            guide = selectedCandidateIndex == nil
+                ? "Tab 選択　⌥↩ 辞書登録\nF6–F10 文字種変換　⌘O 外部ページ"
+                : "Tab / ⇧Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
+        }
+
         candidateWindow.show(
             candidates: currentCandidates[pageStart..<pageEnd].map {
                 candidateValueForCommit($0)
             },
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
-            guide: selectedCandidateIndex == nil
-                ? "Tab 選択　⇧Tab もしかして？　⌥↩ 辞書登録\nF6–F10 文字種変換　⌘O 外部ページ"
-                : "Tab / ⇧Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
+            guide: guide,
+            modeTitle: isDictionaryRegistration
+                ? "登録したい文字列を入力"
+                : nil
         )
     }
 

@@ -69,6 +69,7 @@ final class CandidateWindowController: NSObject {
     private static let guideVerticalPadding: CGFloat = 4
     private static let minimumGuideWidth: CGFloat = 180
     private static let maximumGuideWidth: CGFloat = 320
+    private static let modeHeaderHeight: CGFloat = 28
 
     private let panel: NSPanel
     private let collectionView: NSCollectionView
@@ -76,6 +77,8 @@ final class CandidateWindowController: NSObject {
     private let scrollView: NSScrollView
     private let guideLabel: NSTextField
     private let separator: NSBox
+    private let modeLabel: NSTextField
+    private let modeSeparator: NSBox
     private var candidates: [String] = []
     private var itemSizes: [NSSize] = []
 
@@ -85,6 +88,8 @@ final class CandidateWindowController: NSObject {
         scrollView = NSScrollView()
         guideLabel = NSTextField(wrappingLabelWithString: "")
         separator = NSBox()
+        modeLabel = NSTextField(labelWithString: "")
+        modeSeparator = NSBox()
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 280, height: 40),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -122,10 +127,20 @@ final class CandidateWindowController: NSObject {
         separator.boxType = .separator
         separator.isHidden = true
 
+        modeLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+        modeLabel.textColor = .controlAccentColor
+        modeLabel.lineBreakMode = .byTruncatingTail
+        modeLabel.isHidden = true
+
+        modeSeparator.boxType = .separator
+        modeSeparator.isHidden = true
+
         let contentView = NSView()
         contentView.addSubview(scrollView)
         contentView.addSubview(separator)
         contentView.addSubview(guideLabel)
+        contentView.addSubview(modeLabel)
+        contentView.addSubview(modeSeparator)
         panel.contentView = contentView
         panel.backgroundColor = .windowBackgroundColor
         panel.hasShadow = true
@@ -143,7 +158,8 @@ final class CandidateWindowController: NSObject {
         candidates: [String],
         selectedIndex: Int?,
         near anchorFrame: NSRect,
-        guide: String? = nil
+        guide: String? = nil,
+        modeTitle: String? = nil
     ) {
         self.candidates = candidates
         itemSizes = candidates.map { itemSize(for: $0) }
@@ -166,6 +182,12 @@ final class CandidateWindowController: NSObject {
         guideLabel.stringValue = guideText
         guideLabel.isHidden = !hasGuide
         separator.isHidden = !hasGuide
+        let modeText = modeTitle?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasModeHeader = !modeText.isEmpty
+        modeLabel.stringValue = modeText
+        modeLabel.isHidden = !hasModeHeader
+        modeSeparator.isHidden = !hasModeHeader
         let guideWidth = hasGuide
             ? min(
                 max(
@@ -177,7 +199,13 @@ final class CandidateWindowController: NSObject {
             )
             : 0
         let panelWidth = min(
-            max(contentSize.width, guideWidth),
+            max(
+                contentSize.width,
+                guideWidth,
+                hasModeHeader
+                    ? ceil(modeLabel.attributedStringValue.size().width) + 20
+                    : 0
+            ),
             min(Self.maximumPanelWidth, visibleFrame.width)
         )
         let packedHeight = packedContentHeight(
@@ -207,10 +235,11 @@ final class CandidateWindowController: NSObject {
         let guideHeight = hasGuide
             ? guideTextHeight + Self.guideVerticalPadding * 2
             : 0
+        let modeHeaderHeight = hasModeHeader ? Self.modeHeaderHeight : 0
 
         panel.setContentSize(NSSize(
             width: panelWidth,
-            height: panelHeight + guideHeight
+            height: panelHeight + guideHeight + modeHeaderHeight
         ))
         scrollView.frame = NSRect(
             x: 0,
@@ -230,6 +259,23 @@ final class CandidateWindowController: NSObject {
             width: max(panelWidth - Self.guideHorizontalPadding * 2, 0),
             height: max(guideHeight - Self.guideVerticalPadding * 2, 0)
         )
+        modeSeparator.frame = NSRect(
+            x: 0,
+            y: guideHeight + panelHeight,
+            width: panelWidth,
+            height: 1
+        )
+        modeLabel.frame = NSRect(
+            x: 10,
+            y: guideHeight + panelHeight + 1,
+            width: max(panelWidth - 20, 0),
+            height: max(modeHeaderHeight - 1, 0)
+        )
+        panel.contentView?.wantsLayer = hasModeHeader
+        panel.contentView?.layer?.borderWidth = hasModeHeader ? 1 : 0
+        panel.contentView?.layer?.borderColor = hasModeHeader
+            ? NSColor.controlAccentColor.withAlphaComponent(0.75).cgColor
+            : NSColor.clear.cgColor
         panel.setFrameOrigin(
             panelOrigin(
                 panelSize: panel.frame.size,
