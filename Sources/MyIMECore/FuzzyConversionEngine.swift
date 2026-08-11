@@ -20,7 +20,10 @@ public struct FuzzyConversionEngine: Sendable {
         let order: Int
     }
 
-    private let entriesByLength: [Int: [IndexedEntry]]
+    private static let indexedMaximumDistance = 2
+    private static let dictionaryOrderWeight = 0.32
+    private let indexedEntries: [IndexedEntry]
+    private let deletionIndex: SymmetricDeleteIndex
     private let entriesByReading: [String: IndexedEntry]
 
     public init(entries: [DictionaryEntry]) {
@@ -43,7 +46,7 @@ public struct FuzzyConversionEngine: Sendable {
             }
         }
 
-        var buckets: [Int: [IndexedEntry]] = [:]
+        var entries: [IndexedEntry] = []
         var indexedByReading: [String: IndexedEntry] = [:]
         for (order, reading) in readingOrder.enumerated() {
             let canonicalEntry = IndexedEntry(
@@ -54,18 +57,21 @@ public struct FuzzyConversionEngine: Sendable {
             )
             indexedByReading[reading] = canonicalEntry
             for searchReading in Self.fuzzyReadingVariants(from: reading) {
-                let characters = Array(searchReading)
-                buckets[characters.count, default: []].append(
+                entries.append(
                     IndexedEntry(
                         reading: reading,
-                        characters: characters,
+                        characters: Array(searchReading),
                         candidates: merged[reading] ?? [],
                         order: order
                     )
                 )
             }
         }
-        entriesByLength = buckets
+        indexedEntries = entries
+        deletionIndex = SymmetricDeleteIndex(
+            terms: entries.map { String($0.characters) },
+            maximumDistance: Self.indexedMaximumDistance
+        )
         entriesByReading = indexedByReading
     }
 
@@ -83,52 +89,78 @@ public struct FuzzyConversionEngine: Sendable {
             return []
         }
 
-        var bestMatches: [String: (IndexedEntry, Int, Int)] = [:]
-        for correctedReading in Self.adjacentKeyboardReadings(from: reading) {
+        var bestMatches: [
+            String: (IndexedEntry, Int, Int, Double, Double)
+        ] = [:]
+        for correctedReading in RomajiKeyboardTypoGenerator.corrections(
+            for: reading
+        ) {
             guard let entry = entriesByReading[correctedReading],
                   entry.reading != reading else {
                 continue
             }
+            let typoCost = RomajiTypoScorer.cost(
+                from: reading,
+                to: entry.reading
+            )
             bestMatches[entry.reading] = (
                 entry,
                 1,
-                Self.commonPrefixLength(source, entry.characters)
+                Self.commonPrefixLength(source, entry.characters),
+                typoCost + Self.dictionaryOrderPenalty(entry.order),
+                typoCost
             )
         }
         for sourceReading in sourceReadings {
             let sourceCharacters = Array(sourceReading)
-            let minimumLength = max(1, sourceCharacters.count - allowedDistance)
-            let maximumLength = sourceCharacters.count + allowedDistance
-            for length in minimumLength...maximumLength {
-                for entry in entriesByLength[length] ?? []
-                where entry.reading != reading {
-                    guard let distance = Self.damerauLevenshteinDistance(
-                        sourceCharacters,
-                        entry.characters,
-                        maximumDistance: allowedDistance
-                    ) else {
-                        continue
-                    }
-                    let prefixLength = Self.commonPrefixLength(
-                        sourceCharacters,
-                        entry.characters
-                    )
-                    if let current = bestMatches[entry.reading],
-                       current.1 < distance
-                        || current.1 == distance && current.2 >= prefixLength {
-                        continue
-                    }
-                    bestMatches[entry.reading] = (
-                        entry,
-                        distance,
-                        prefixLength
-                    )
+            let identifiers = deletionIndex.candidateIdentifiers(
+                for: sourceReading,
+                maximumDistance: allowedDistance
+            )
+            for identifier in identifiers {
+                let entry = indexedEntries[identifier]
+                guard entry.reading != reading,
+                      let distance = Self.damerauLevenshteinDistance(
+                          sourceCharacters,
+                          entry.characters,
+                          maximumDistance: allowedDistance
+                      ) else {
+                    continue
                 }
+                let prefixLength = Self.commonPrefixLength(
+                    sourceCharacters,
+                    entry.characters
+                )
+                let typoCost = RomajiTypoScorer.cost(
+                    from: sourceReading,
+                    to: String(entry.characters)
+                )
+                let rankingCost = typoCost
+                    + Self.dictionaryOrderPenalty(entry.order)
+                if let current = bestMatches[entry.reading],
+                   current.3 < rankingCost
+                    || current.3 == rankingCost && current.1 < distance
+                    || current.3 == rankingCost && current.1 == distance
+                        && current.2 >= prefixLength {
+                    continue
+                }
+                bestMatches[entry.reading] = (
+                    entry,
+                    distance,
+                    prefixLength,
+                    rankingCost,
+                    typoCost
+                )
             }
         }
 
-        var matches = Array(bestMatches.values)
+        var matches = bestMatches.values.filter {
+            $0.4 <= Self.maximumTypoCost(forLength: source.count)
+        }
         matches.sort {
+            if $0.3 != $1.3 {
+                return $0.3 < $1.3
+            }
             if $0.1 != $1.1 {
                 return $0.1 < $1.1
             }
@@ -157,6 +189,21 @@ public struct FuzzyConversionEngine: Sendable {
         }
     }
 
+    private static func dictionaryOrderPenalty(_ order: Int) -> Double {
+        log1p(Double(order + 1)) * dictionaryOrderWeight
+    }
+
+    private static func maximumTypoCost(forLength length: Int) -> Double {
+        switch length {
+        case ..<4:
+            0.5
+        case 4...6:
+            1
+        default:
+            1.25
+        }
+    }
+
     private static func fuzzyReadingVariants(from reading: String) -> [String] {
         var variants: [String] = []
         var seen = Set<String>()
@@ -181,33 +228,6 @@ public struct FuzzyConversionEngine: Sendable {
         append(normalizedLongVowels(in: nasal))
         append(normalizedLabialNasal(in: moraicN))
         return variants
-    }
-
-    private static func adjacentKeyboardReadings(from reading: String) -> [String] {
-        var readings: [String] = []
-        let keyboardNeighbors: [Character: String] = [
-            "q": "wa", "w": "qeas", "e": "wrsd", "r": "etdf",
-            "t": "ryfg", "y": "tugh", "u": "yihj", "i": "uojk",
-            "o": "ipkl", "p": "ol",
-            "a": "qwsz", "s": "weadzx", "d": "erfsxc",
-            "f": "rtgdvc", "g": "tyfhvb", "h": "yugjbn",
-            "j": "uihknm", "k": "iojlnm", "l": "opk",
-            "z": "asx", "x": "zsdc", "c": "xdfv", "v": "cfgb",
-            "b": "vghn", "n": "bhjm", "m": "njk"
-        ]
-
-        let characters = Array(reading)
-        for index in characters.indices {
-            guard let neighbors = keyboardNeighbors[characters[index]] else {
-                continue
-            }
-            for neighbor in neighbors {
-                var corrected = characters
-                corrected[index] = neighbor
-                readings.append(String(corrected))
-            }
-        }
-        return readings
     }
 
     private static func collapsedMoraicN(in reading: String) -> String {

@@ -128,4 +128,11 @@ struct FuzzyConversionEngineTests {
         #expect(match?.candidates == ["必要"])
         #expect(match?.distance == 2)
     }
+
+    @Test
+    func rejectsTwoUnrelatedConsonantEdits() {
+        #expect(engine.matches(for: "hipuyou").allSatisfy {
+            $0.reading != "hitsuyou"
+        })
+    }
 }

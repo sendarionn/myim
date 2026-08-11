@@ -70,6 +70,7 @@ final class InputController: IMKInputController {
     private let supplementalConversionEngine: ConversionEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var fuzzyConversionEngine: FuzzyConversionEngine
+    private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let cosenseSettingsController: CosenseSettingsController
     private let settingsDialogController = SettingsDialogController()
     private var cosenseCredential: CosenseCredential?
@@ -163,12 +164,7 @@ final class InputController: IMKInputController {
         verbInflectionGenerator = VerbInflectionCandidateGenerator(
             entries: bundledEntries
         )
-        fuzzyConversionEngine = FuzzyConversionEngine(
-            entries: cachedUserEntries
-                + cachedExtensionEntries
-                + bundledEntries
-                + SupplementalDictionary.entries
-        )
+        fuzzyConversionEngine = FuzzyConversionEngine(entries: [])
         candidatePanel = IMKCandidates(
             server: server,
             panelType: kIMKSingleColumnScrollingCandidatePanel
@@ -184,6 +180,7 @@ final class InputController: IMKInputController {
         basicDictionaryStatus = bundledEntries.isEmpty
             ? "読込失敗"
             : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(indexedIMEEngine.readingCount)読み）"
+        rebuildFuzzyConversionEngine()
         updateBasicDictionaryIfNeeded(nil)
         Task { [semanticVectorSearchEngine] in
             await semanticVectorSearchEngine.prepare()
@@ -505,6 +502,7 @@ final class InputController: IMKInputController {
             return
         }
         resetTransientInteractionState()
+        fuzzyEngineBuildTask?.cancel()
         flushPendingHistoryWrites()
         super.inputControllerWillClose()
     }
@@ -1473,10 +1471,7 @@ final class InputController: IMKInputController {
                 || !imeCandidates.exact.isEmpty
                 || !basicCandidates.exact.isEmpty
         let auxiliaryAnchorFrame = candidateAndInputFrame(for: sender)
-        updateFuzzySuggestionsIfNeeded(
-            hasDirectExactCandidates: hasDirectExactCandidates,
-            near: auxiliaryAnchorFrame
-        )
+        updateFuzzySuggestionsIfNeeded(near: auxiliaryAnchorFrame)
         updateSemanticSuggestionsIfNeeded(
             hasDirectExactCandidates: hasDirectExactCandidates,
             near: auxiliaryAnchorFrame
@@ -1484,10 +1479,7 @@ final class InputController: IMKInputController {
         showInputPreview(client: sender)
     }
 
-    private func updateFuzzySuggestionsIfNeeded(
-        hasDirectExactCandidates: Bool,
-        near anchorFrame: NSRect
-    ) {
+    private func updateFuzzySuggestionsIfNeeded(near anchorFrame: NSRect) {
         suggestionSearchSession.cancel(.fuzzy)
         guard isFuzzySuggestionsEnabled,
               conversionReading.count >= 2 else {
@@ -1499,21 +1491,27 @@ final class InputController: IMKInputController {
 
         let query = conversionReading
         let engine = fuzzyConversionEngine
+        let imeDictionary = imeConversionEngine
         let visibleCandidates = Set(currentCandidates)
-        let normalizedInput = RomanizedReadingNormalizer.dictionaryReading(
-            from: query
-        )
         let token = suggestionSearchSession.begin(.fuzzy, query: query)
         let task = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(80))
                 let matches = await Task.detached(priority: .userInitiated) {
-                    FuzzyConversionMatchFilter.filtered(
-                        engine.matches(for: query, limit: 3),
-                        excluding: visibleCandidates,
-                        hasDirectExactCandidates: hasDirectExactCandidates,
-                        normalizedInput: normalizedInput
-                    )
+                    let keyboardMatches =
+                        RomajiKeyboardTypoGenerator.dictionaryMatches(
+                            for: query,
+                            dictionary: imeDictionary
+                        )
+                    var seenReadings = Set<String>()
+                    let combined = (keyboardMatches
+                        + engine.matches(for: query, limit: 6)).filter {
+                            seenReadings.insert($0.reading).inserted
+                        }
+                    return Array(FuzzyConversionMatchFilter.filtered(
+                        combined,
+                        excluding: visibleCandidates
+                    ).prefix(3))
                 }.value
                 try Task.checkCancellation()
                 guard let self,
@@ -2458,15 +2456,34 @@ final class InputController: IMKInputController {
 
     private func rebuildFuzzyConversionEngine() {
         cancelFuzzySuggestionSearch()
-        fuzzyConversionEngine = FuzzyConversionEngine(
-            entries: userEntries
-                + (isExtensionDictionaryEnabled ? extensionEntries : [])
-                + basicEntries
-                + VerbInflectionCandidateGenerator.typoSearchEntries(
-                    from: basicEntries
+        fuzzyEngineBuildTask?.cancel()
+        let userEntries = userEntries
+        let extensionEntries = isExtensionDictionaryEnabled
+            ? extensionEntries
+            : []
+        let basicEntries = basicEntries
+        fuzzyEngineBuildTask = Task { @MainActor [weak self] in
+            let engine = await Task.detached(priority: .utility) {
+                FuzzyConversionEngine(
+                    entries: userEntries
+                        + extensionEntries
+                        + basicEntries
+                        + VerbInflectionCandidateGenerator.typoSearchEntries(
+                            from: basicEntries
+                        )
+                        + SupplementalDictionary.entries
                 )
-                + SupplementalDictionary.entries
-        )
+            }.value
+            guard !Task.isCancelled, let self else {
+                return
+            }
+            fuzzyConversionEngine = engine
+            fuzzyEngineBuildTask = nil
+            guard !inputBuffer.isEmpty, let inputClient = client() else {
+                return
+            }
+            refreshCandidates(client: inputClient)
+        }
     }
 
     private var conversionReading: String {

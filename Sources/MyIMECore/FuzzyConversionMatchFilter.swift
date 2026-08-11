@@ -1,16 +1,9 @@
 public enum FuzzyConversionMatchFilter {
     public static func filtered(
         _ matches: [FuzzyConversionMatch],
-        excluding visibleCandidates: Set<String>,
-        hasDirectExactCandidates: Bool,
-        normalizedInput: String
+        excluding visibleCandidates: Set<String>
     ) -> [FuzzyConversionMatch] {
-        matches.filter {
-            !hasDirectExactCandidates
-                || $0.distance == 0
-                || ($0.distance == 1
-                    && $0.reading.count == normalizedInput.count)
-        }.compactMap { match in
+        matches.compactMap { match in
             let candidates = match.candidates.filter {
                 !visibleCandidates.contains($0)
             }

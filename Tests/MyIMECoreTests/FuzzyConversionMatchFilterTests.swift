@@ -4,7 +4,7 @@ import Testing
 @Suite
 struct FuzzyConversionMatchFilterTests {
     @Test
-    func excludesVisibleAndWeakMatchesWhenDirectCandidateExists() {
+    func excludesOnlyCandidatesAlreadyVisibleInMainPanel() {
         let matches = [
             FuzzyConversionMatch(
                 reading: "genninn",
@@ -25,9 +25,7 @@ struct FuzzyConversionMatchFilterTests {
 
         let filtered = FuzzyConversionMatchFilter.filtered(
             matches,
-            excluding: ["原因"],
-            hasDirectExactCandidates: true,
-            normalizedInput: "genninn"
+            excluding: ["原因"]
         )
 
         #expect(filtered == [
@@ -35,7 +33,38 @@ struct FuzzyConversionMatchFilterTests {
                 reading: "genninn",
                 candidates: ["原人"],
                 distance: 1
+            ),
+            FuzzyConversionMatch(
+                reading: "genninns",
+                candidates: ["別候補"],
+                distance: 1
+            ),
+            FuzzyConversionMatch(
+                reading: "genin",
+                candidates: ["弱い候補"],
+                distance: 2
             )
         ])
+    }
+
+    @Test
+    func retainsInsertionAndTwoEditCorrections() {
+        let matches = [
+            FuzzyConversionMatch(
+                reading: "hitsuyou",
+                candidates: ["必要"],
+                distance: 2
+            ),
+            FuzzyConversionMatch(
+                reading: "susumete",
+                candidates: ["進めて"],
+                distance: 1
+            )
+        ]
+
+        #expect(FuzzyConversionMatchFilter.filtered(
+            matches,
+            excluding: []
+        ) == matches)
     }
 }
