@@ -7,6 +7,11 @@ enum CandidateNavigationDirection {
     case down
 }
 
+enum PanelShortcutGuideStyle {
+    static let font = NSFont.systemFont(ofSize: 11)
+    static let color = NSColor.secondaryLabelColor
+}
+
 private final class CandidateCollectionItem: NSCollectionViewItem {
     private let label = NSTextField(labelWithString: "")
 
@@ -108,8 +113,8 @@ final class CandidateWindowController: NSObject {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
 
-        guideLabel.font = .systemFont(ofSize: 10.5)
-        guideLabel.textColor = .secondaryLabelColor
+        guideLabel.font = PanelShortcutGuideStyle.font
+        guideLabel.textColor = PanelShortcutGuideStyle.color
         guideLabel.maximumNumberOfLines = 3
         guideLabel.lineBreakMode = .byWordWrapping
         guideLabel.isHidden = true

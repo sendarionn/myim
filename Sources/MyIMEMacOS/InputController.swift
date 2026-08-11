@@ -2026,31 +2026,41 @@ final class InputController: IMKInputController {
                 || !dateTimeCandidates.isEmpty
                 || !imeExactCandidates.isEmpty
                 || !basicExactCandidates.isEmpty
+        let auxiliaryAnchorFrame = candidateAndInputFrame(for: sender)
         showFuzzySuggestionsIfNeeded(
-            hasDirectExactCandidates: hasDirectExactCandidates
+            hasDirectExactCandidates: hasDirectExactCandidates,
+            near: auxiliaryAnchorFrame
         )
         updateSemanticSuggestionsIfNeeded(
-            hasDirectExactCandidates: hasDirectExactCandidates
+            hasDirectExactCandidates: hasDirectExactCandidates,
+            near: auxiliaryAnchorFrame
         )
         showInputPreview(client: sender)
     }
 
     private func showFuzzySuggestionsIfNeeded(
-        hasDirectExactCandidates: Bool
+        hasDirectExactCandidates: Bool,
+        near anchorFrame: NSRect
     ) {
         guard isFuzzySuggestionsEnabled,
-              conversionReading.count >= 4 else {
+              conversionReading.count >= 2 else {
             fuzzySuggestionWindow.hide()
             fuzzySuggestions = []
             selectedFuzzySuggestionIndex = nil
             return
         }
         let visibleCandidates = Set(currentCandidates)
+        let normalizedInput = RomanizedReadingNormalizer.dictionaryReading(
+            from: conversionReading
+        )
         let matches = fuzzyConversionEngine.matches(
             for: conversionReading,
             limit: 3
         ).filter {
-            !hasDirectExactCandidates || $0.distance == 0
+            !hasDirectExactCandidates
+                || $0.distance == 0
+                || ($0.distance == 1
+                    && $0.reading.count == normalizedInput.count)
         }.compactMap { match -> FuzzyConversionMatch? in
             let candidates = match.candidates.filter {
                 !visibleCandidates.contains($0)
@@ -2083,12 +2093,13 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.show(
             suggestions: fuzzySuggestions,
             selectedIndex: nil,
-            near: candidateWindow.frame
+            near: anchorFrame
         )
     }
 
     private func updateSemanticSuggestionsIfNeeded(
-        hasDirectExactCandidates: Bool
+        hasDirectExactCandidates: Bool,
+        near anchorFrame: NSRect
     ) {
         guard isSemanticSuggestionsEnabled,
               !hasDirectExactCandidates,
@@ -2142,7 +2153,7 @@ final class InputController: IMKInputController {
                 fuzzySuggestionWindow.show(
                     suggestions: fuzzySuggestions,
                     selectedIndex: nil,
-                    near: candidateWindow.frame
+                    near: anchorFrame
                 )
             } catch is CancellationError {
                 return
@@ -2207,7 +2218,7 @@ final class InputController: IMKInputController {
             fuzzySuggestionWindow.show(
                 suggestions: fuzzySuggestions,
                 selectedIndex: nil,
-                near: candidateWindow.frame
+                near: candidateAndInputFrame(for: sender)
             )
             return true
         default:
@@ -2244,7 +2255,7 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.show(
             suggestions: fuzzySuggestions,
             selectedIndex: index,
-            near: candidateWindow.frame
+            near: candidateAndInputFrame(for: sender)
         )
         showPreview(for: suggestion.candidate)
         return true
@@ -2575,6 +2586,14 @@ final class InputController: IMKInputController {
             lineHeightRectangle: &lineRect
         )
         return lineRect
+    }
+
+    private func candidateAndInputFrame(for sender: Any) -> NSRect {
+        let inputFrame = inputLocation(for: sender)
+        guard inputFrame != .zero else {
+            return candidateWindow.frame
+        }
+        return candidateWindow.frame.union(inputFrame)
     }
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {

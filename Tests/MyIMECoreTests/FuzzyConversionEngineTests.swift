@@ -9,6 +9,8 @@ struct FuzzyConversionEngineTests {
         DictionaryEntry(reading: "shuusei", candidates: ["修正"]),
         DictionaryEntry(reading: "hiduke", candidates: ["日付"]),
         DictionaryEntry(reading: "genin", candidates: ["原因"]),
+        DictionaryEntry(reading: "aimai", candidates: ["曖昧"]),
+        DictionaryEntry(reading: "wo", candidates: ["を"]),
         DictionaryEntry(reading: "konnichiha", candidates: ["こんにちは"]),
         DictionaryEntry(reading: "shinbun", candidates: ["新聞"]),
         DictionaryEntry(reading: "toukyou", candidates: ["東京"])
@@ -21,6 +23,30 @@ struct FuzzyConversionEngineTests {
             candidates: ["拡充"],
             distance: 0
         ))
+    }
+
+    @Test
+    func findsSingleConsonantSubstitution() {
+        let match = engine.matches(for: "ainai").first
+        #expect(match?.reading == "aimai")
+        #expect(match?.candidates == ["曖昧"])
+        #expect(match?.distance == 1)
+    }
+
+    @Test
+    func findsAdjacentKeyboardTypoForShortReading() {
+        let match = engine.matches(for: "eo").first
+        #expect(match?.reading == "wo")
+        #expect(match?.candidates == ["を"])
+        #expect(match?.distance == 1)
+    }
+
+    @Test
+    func findsAdjacentKeyboardTypoForLongReading() {
+        let match = engine.matches(for: "shjusei").first
+        #expect(match?.reading == "shuusei")
+        #expect(match?.candidates == ["修正"])
+        #expect(match?.distance == 1)
     }
 
     @Test

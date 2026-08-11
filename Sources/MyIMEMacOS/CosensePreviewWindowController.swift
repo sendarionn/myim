@@ -60,6 +60,8 @@ final class ExternalInformationWindowController: NSObject {
             action: #selector(openDisplayedPageInDefaultBrowser(_:))
         )
         openInBrowserButton.bezelStyle = .inline
+        openInBrowserButton.font = PanelShortcutGuideStyle.font
+        openInBrowserButton.contentTintColor = PanelShortcutGuideStyle.color
         openInBrowserButton.toolTip = "現在のページを既定ブラウザで開く（Command＋O）"
         let browserAccessory = NSTitlebarAccessoryViewController()
         browserAccessory.layoutAttribute = .right

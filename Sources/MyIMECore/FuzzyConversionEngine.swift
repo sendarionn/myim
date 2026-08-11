@@ -21,6 +21,7 @@ public struct FuzzyConversionEngine: Sendable {
     }
 
     private let entriesByLength: [Int: [IndexedEntry]]
+    private let entriesByReading: [String: IndexedEntry]
 
     public init(entries: [DictionaryEntry]) {
         var merged: [String: [String]] = [:]
@@ -43,7 +44,15 @@ public struct FuzzyConversionEngine: Sendable {
         }
 
         var buckets: [Int: [IndexedEntry]] = [:]
+        var indexedByReading: [String: IndexedEntry] = [:]
         for (order, reading) in readingOrder.enumerated() {
+            let canonicalEntry = IndexedEntry(
+                reading: reading,
+                characters: Array(reading),
+                candidates: merged[reading] ?? [],
+                order: order
+            )
+            indexedByReading[reading] = canonicalEntry
             for searchReading in Self.fuzzyReadingVariants(from: reading) {
                 let characters = Array(searchReading)
                 buckets[characters.count, default: []].append(
@@ -57,6 +66,7 @@ public struct FuzzyConversionEngine: Sendable {
             }
         }
         entriesByLength = buckets
+        entriesByReading = indexedByReading
     }
 
     public func matches(
@@ -69,11 +79,22 @@ public struct FuzzyConversionEngine: Sendable {
         let source = Array(reading)
         let allowedDistance = maximumDistance
             ?? Self.defaultMaximumDistance(forLength: source.count)
-        guard !source.isEmpty, allowedDistance > 0, limit > 0 else {
+        guard !source.isEmpty, allowedDistance >= 0, limit > 0 else {
             return []
         }
 
         var bestMatches: [String: (IndexedEntry, Int, Int)] = [:]
+        for correctedReading in Self.adjacentKeyboardReadings(from: reading) {
+            guard let entry = entriesByReading[correctedReading],
+                  entry.reading != reading else {
+                continue
+            }
+            bestMatches[entry.reading] = (
+                entry,
+                1,
+                Self.commonPrefixLength(source, entry.characters)
+            )
+        }
         for sourceReading in sourceReadings {
             let sourceCharacters = Array(sourceReading)
             let minimumLength = max(1, sourceCharacters.count - allowedDistance)
@@ -160,6 +181,33 @@ public struct FuzzyConversionEngine: Sendable {
         append(normalizedLongVowels(in: nasal))
         append(normalizedLabialNasal(in: moraicN))
         return variants
+    }
+
+    private static func adjacentKeyboardReadings(from reading: String) -> [String] {
+        var readings: [String] = []
+        let keyboardNeighbors: [Character: String] = [
+            "q": "wa", "w": "qeas", "e": "wrsd", "r": "etdf",
+            "t": "ryfg", "y": "tugh", "u": "yihj", "i": "uojk",
+            "o": "ipkl", "p": "ol",
+            "a": "qwsz", "s": "weadzx", "d": "erfsxc",
+            "f": "rtgdvc", "g": "tyfhvb", "h": "yugjbn",
+            "j": "uihknm", "k": "iojlnm", "l": "opk",
+            "z": "asx", "x": "zsdc", "c": "xdfv", "v": "cfgb",
+            "b": "vghn", "n": "bhjm", "m": "njk"
+        ]
+
+        let characters = Array(reading)
+        for index in characters.indices {
+            guard let neighbors = keyboardNeighbors[characters[index]] else {
+                continue
+            }
+            for neighbor in neighbors {
+                var corrected = characters
+                corrected[index] = neighbor
+                readings.append(String(corrected))
+            }
+        }
+        return readings
     }
 
     private static func collapsedMoraicN(in reading: String) -> String {
