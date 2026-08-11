@@ -17,7 +17,7 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func ranksFrequencyBeforeRecency() {
+    func prioritizesMostRecentFollowerBeforeFrequency() {
         var model = NextInputPredictionModel()
         model.record("A")
         model.record("B")
@@ -26,7 +26,35 @@ struct NextInputPredictionModelTests {
         model.record("A")
         model.record("C")
 
-        #expect(model.candidates(after: "A") == ["B", "C"])
+        #expect(model.candidates(after: "A") == ["C", "B"])
+    }
+
+    @Test
+    func keepsFrequencyOrderAfterMostRecentFollower() {
+        var model = NextInputPredictionModel()
+        for follower in ["B", "D", "B", "D", "C"] {
+            model.record("A")
+            model.record(follower)
+            model.breakSequence()
+        }
+
+        #expect(model.candidates(after: "A") == ["C", "D", "B"])
+    }
+
+    @Test
+    func retainsMostRecentFollowerWhenPruning() {
+        var model = NextInputPredictionModel()
+        for index in 0..<NextInputPredictionModel.maximumFollowersPerContext {
+            for _ in 0..<2 {
+                model.record("A")
+                model.record("候補\(index)")
+                model.breakSequence()
+            }
+        }
+        model.record("A")
+        model.record("直前候補")
+
+        #expect(model.candidates(after: "A").first == "直前候補")
     }
 
     @Test

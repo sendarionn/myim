@@ -52,17 +52,28 @@ public struct NextInputPredictionModel: Codable, Sendable {
         else {
             return []
         }
-        return context.candidates.sorted {
-            if $0.value.count != $1.value.count {
-                return $0.value.count > $1.value.count
-            }
+        guard let mostRecent = context.candidates.max(by: {
             if $0.value.lastUsed != $1.value.lastUsed {
-                return $0.value.lastUsed > $1.value.lastUsed
+                return $0.value.lastUsed < $1.value.lastUsed
             }
-            return $0.key < $1.key
+            return $0.key > $1.key
+        }) else {
+            return []
         }
-        .prefix(limit)
-        .map(\.key)
+        let remaining = context.candidates
+            .filter { $0.key != mostRecent.key }
+            .sorted {
+                if $0.value.count != $1.value.count {
+                    return $0.value.count > $1.value.count
+                }
+                if $0.value.lastUsed != $1.value.lastUsed {
+                    return $0.value.lastUsed > $1.value.lastUsed
+                }
+                return $0.key < $1.key
+            }
+        return ([mostRecent] + remaining)
+            .prefix(limit)
+            .map(\.key)
     }
 
     public mutating func removeAll() {
@@ -99,15 +110,28 @@ public struct NextInputPredictionModel: Codable, Sendable {
         guard candidates.count > maximumFollowersPerContext else {
             return candidates
         }
-        let retainedKeys = Set(
-            candidates.sorted {
-                if $0.value.count != $1.value.count {
-                    return $0.value.count > $1.value.count
-                }
-                return $0.value.lastUsed > $1.value.lastUsed
+        guard let mostRecent = candidates.max(by: {
+            if $0.value.lastUsed != $1.value.lastUsed {
+                return $0.value.lastUsed < $1.value.lastUsed
             }
-            .prefix(maximumFollowersPerContext)
-            .map(\.key)
+            return $0.key > $1.key
+        }) else {
+            return candidates
+        }
+        let retainedKeys = Set(
+            [mostRecent.key] + candidates
+                .filter { $0.key != mostRecent.key }
+                .sorted {
+                    if $0.value.count != $1.value.count {
+                        return $0.value.count > $1.value.count
+                    }
+                    if $0.value.lastUsed != $1.value.lastUsed {
+                        return $0.value.lastUsed > $1.value.lastUsed
+                    }
+                    return $0.key < $1.key
+                }
+                .prefix(maximumFollowersPerContext - 1)
+                .map(\.key)
         )
         return candidates.filter { retainedKeys.contains($0.key) }
     }
