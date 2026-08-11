@@ -39,6 +39,9 @@ struct RomajiConverterTests {
             JapaneseSymbolConverter.candidates(for: "=")
                 == ["＝", "≒", "≠"]
         )
+        for input in ["z-", "z[", "z]", "z,", "z.", "z/"] {
+            #expect(JapaneseSymbolConverter.candidates(for: input).isEmpty)
+        }
         #expect(
             JapaneseSymbolConverter.candidates(for: "|") == ["｜"]
         )

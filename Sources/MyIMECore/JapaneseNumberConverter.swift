@@ -11,9 +11,13 @@ public enum JapaneseNumberConverter {
             return []
         }
 
-        var candidates = [circledNumber(value), fullWidthNumber(input)]
+        var candidates = [input]
+        if let circled = circledNumber(value) {
+            candidates.append(circled)
+        }
+        candidates.append(fullWidthNumber(input))
         candidates.append(contentsOf: kanjiNumbers[value] ?? [])
-        return candidates.compactMap { $0 }
+        return candidates
     }
 
     private static func circledNumber(_ value: Int) -> String? {

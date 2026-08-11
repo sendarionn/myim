@@ -7,11 +7,11 @@ struct JapaneseNumberConverterTests {
     func createsSingleDigitCandidates() {
         #expect(
             JapaneseNumberConverter.candidates(for: "1")
-                == ["①", "１", "一", "壱"]
+                == ["1", "①", "１", "一", "壱"]
         )
         #expect(
             JapaneseNumberConverter.candidates(for: "0")
-                == ["⓪", "０", "零", "〇"]
+                == ["0", "⓪", "０", "零", "〇"]
         )
     }
 
@@ -19,11 +19,11 @@ struct JapaneseNumberConverterTests {
     func createsCandidatesThroughTwenty() {
         #expect(
             JapaneseNumberConverter.candidates(for: "12")
-                == ["⑫", "１２", "十二"]
+                == ["12", "⑫", "１２", "十二"]
         )
         #expect(
             JapaneseNumberConverter.candidates(for: "20")
-                == ["⑳", "２０", "二十"]
+                == ["20", "⑳", "２０", "二十"]
         )
     }
 
