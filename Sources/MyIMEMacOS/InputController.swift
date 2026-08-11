@@ -201,7 +201,7 @@ final class InputController: IMKInputController {
             return false
         }
 
-        if tabDictionaryRegistration != nil {
+        if interactionState == .registeringDictionary {
             return handleTabDictionaryRegistration(event, client: sender)
         }
 
@@ -626,21 +626,7 @@ final class InputController: IMKInputController {
         if !inputBuffer.isEmpty {
             commit(inputBuffer, to: sender as Any)
         }
-        candidatePanel.hide()
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
-        previewWindow.hide()
-        nextInputDismissTimer?.invalidate()
-        nextInputDismissTimer = nil
-        officialCandidateTask?.cancel()
-        officialCandidateTask = nil
-        semanticSuggestionTask?.cancel()
-        semanticSuggestionTask = nil
-        semanticSuggestionQuery = ""
-        nextInputCandidates = []
-        selectedNextInputIndex = nil
+        resetTransientInteractionState()
         nextInputPredictionModel.breakSequence()
         super.deactivateServer(sender)
     }
@@ -650,21 +636,7 @@ final class InputController: IMKInputController {
             super.inputControllerWillClose()
             return
         }
-        candidatePanel.hide()
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
-        previewWindow.hide()
-        nextInputDismissTimer?.invalidate()
-        nextInputDismissTimer = nil
-        officialCandidateTask?.cancel()
-        officialCandidateTask = nil
-        semanticSuggestionTask?.cancel()
-        semanticSuggestionTask = nil
-        semanticSuggestionQuery = ""
-        nextInputCandidates = []
-        selectedNextInputIndex = nil
+        resetTransientInteractionState()
         super.inputControllerWillClose()
     }
 
@@ -2032,7 +2004,8 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool? {
-        guard let selectedFuzzySuggestionIndex,
+        guard interactionState == .selectingFuzzySuggestion,
+              let selectedFuzzySuggestionIndex,
               fuzzySuggestions.indices.contains(selectedFuzzySuggestionIndex) else {
             return nil
         }
@@ -2614,6 +2587,24 @@ final class InputController: IMKInputController {
         recordCommittedInput(value, client: sender)
     }
 
+    private func resetTransientInteractionState() {
+        candidatePanel.hide()
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        fuzzySuggestions = []
+        selectedFuzzySuggestionIndex = nil
+        nextInputCandidates = []
+        selectedNextInputIndex = nil
+        nextInputDismissTimer?.invalidate()
+        nextInputDismissTimer = nil
+        officialCandidateTask?.cancel()
+        officialCandidateTask = nil
+        semanticSuggestionTask?.cancel()
+        semanticSuggestionTask = nil
+        semanticSuggestionQuery = ""
+    }
+
     private func moveNextInputCandidate(
         _ direction: CandidateNavigationDirection,
         client sender: Any
@@ -2843,6 +2834,16 @@ final class InputController: IMKInputController {
                 $0.isASCII
                     && ($0.isLetter || $0 == "-" || $0 == "'")
             }
+        )
+    }
+
+    private var interactionState: InputInteractionState {
+        InputInteractionState.resolve(
+            hasInput: !inputBuffer.isEmpty,
+            isRegisteringDictionary: tabDictionaryRegistration != nil,
+            hasSelectedCandidate: selectedCandidateIndex != nil,
+            hasSelectedFuzzySuggestion: selectedFuzzySuggestionIndex != nil,
+            hasSelectedNextInput: selectedNextInputIndex != nil
         )
     }
 
