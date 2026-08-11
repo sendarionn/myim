@@ -58,7 +58,6 @@ enum SettingsWindowBuilder {
         let appleTranslation: Bool
         let nextInputPrediction: Bool
         let fuzzySuggestions: Bool
-        let semanticSuggestions: Bool
         let dateTimeCandidates: Bool
         let externalInformationPanel: Bool
         let systemDictionaryPreview: Bool
@@ -72,7 +71,6 @@ enum SettingsWindowBuilder {
         let toggleAppleTranslation: Selector
         let toggleNextInputPrediction: Selector
         let toggleFuzzySuggestions: Selector
-        let toggleSemanticSuggestions: Selector
         let toggleDateTimeCandidates: Selector
         let configureDateTimeFormats: Selector
         let configureExternalCandidates: Selector
@@ -123,7 +121,6 @@ enum SettingsWindowBuilder {
             ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
-            ("意味検索の「もしかして？」候補を表示", actions.toggleSemanticSuggestions, states.semanticSuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)
         addButtons([

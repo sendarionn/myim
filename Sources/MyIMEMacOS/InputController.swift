@@ -39,8 +39,6 @@ final class InputController: IMKInputController {
         "SystemDictionaryPreviewEnabled"
     private static let fuzzySuggestionsEnabledDefaultsKey =
         "FuzzySuggestionsEnabled"
-    private static let semanticSuggestionsEnabledDefaultsKey =
-        "SemanticSuggestionsEnabled"
     private static let dateTimeCandidatesEnabledDefaultsKey =
         "DateTimeCandidatesEnabled"
     private static let dateCandidateFormatsDefaultsKey =
@@ -94,10 +92,6 @@ final class InputController: IMKInputController {
     private let previewWindow = ExternalInformationWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private let romajiConverter = RomajiConverter()
-    private let semanticVectorSearchEngine: SemanticVectorSearchEngine
-#if canImport(Translation)
-    private var semanticTranslationProvider: AnyObject?
-#endif
     private var settingsWindow: NSWindow?
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
@@ -109,14 +103,6 @@ final class InputController: IMKInputController {
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
         let selectionHistory = Self.loadCandidateSelectionHistory()
         let nextInputModel = Self.loadNextInputPredictionModel()
-        let semanticDictionaryURL = Self.inputMethodResourceURL(
-            forResource: "semantic-dictionary",
-            withExtension: "jsonl"
-        )
-        let semanticVectorIndexURL = Self.inputMethodResourceURL(
-            forResource: "semantic-vectors",
-            withExtension: "bin"
-        )
 
         dictionarySource = source
         self.cosenseSettingsController = cosenseSettingsController
@@ -148,10 +134,6 @@ final class InputController: IMKInputController {
                 )
             }
         )
-        semanticVectorSearchEngine = SemanticVectorSearchEngine(
-            dictionaryURL: semanticDictionaryURL,
-            vectorIndexURL: semanticVectorIndexURL
-        )
         userConversionEngine = ConversionEngine(entries: cachedUserEntries)
         extensionConversionEngine = ConversionEngine(
             entries: cachedExtensionEntries
@@ -182,9 +164,6 @@ final class InputController: IMKInputController {
             : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(indexedIMEEngine.readingCount)読み）"
         rebuildFuzzyConversionEngine()
         updateBasicDictionaryIfNeeded(nil)
-        Task { [semanticVectorSearchEngine] in
-            await semanticVectorSearchEngine.prepare()
-        }
     }
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
@@ -392,7 +371,6 @@ final class InputController: IMKInputController {
             appleTranslation: isAppleTranslationEnabled,
             nextInputPrediction: isNextInputPredictionEnabled,
             fuzzySuggestions: isFuzzySuggestionsEnabled,
-            semanticSuggestions: isSemanticSuggestionsEnabled,
             dateTimeCandidates: isDateTimeCandidatesEnabled,
             externalInformationPanel: isExternalInformationPanelEnabled,
             systemDictionaryPreview: isSystemDictionaryPreviewEnabled,
@@ -408,7 +386,6 @@ final class InputController: IMKInputController {
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
-            toggleSemanticSuggestions: #selector(toggleSemanticSuggestions(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
             configureDateTimeFormats: #selector(configureDateTimeCandidateFormats(_:)),
             configureExternalCandidates: #selector(configureExternalCandidates(_:)),
@@ -630,19 +607,6 @@ final class InputController: IMKInputController {
         cancelFuzzySuggestionSearch()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             fuzzySuggestionWindow.hide()
-            return
-        }
-        refreshCandidates(client: inputClient)
-    }
-
-    @objc
-    private func toggleSemanticSuggestions(_ sender: Any?) {
-        UserDefaults.standard.set(
-            !isSemanticSuggestionsEnabled,
-            forKey: Self.semanticSuggestionsEnabledDefaultsKey
-        )
-        suggestionSearchSession.cancel(.semantic)
-        guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
         }
         refreshCandidates(client: inputClient)
@@ -1327,10 +1291,6 @@ final class InputController: IMKInputController {
 
     private func refreshCandidates(client sender: Any) {
         cancelFuzzySuggestionSearch()
-        if suggestionSearchSession.query(for: .semantic)
-            != conversionReading {
-            suggestionSearchSession.cancel(.semantic)
-        }
         fuzzySuggestionWindow.hide()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
@@ -1465,17 +1425,8 @@ final class InputController: IMKInputController {
         }
 
         showCandidateWindow(client: sender)
-        let hasDirectExactCandidates = !userCandidates.exact.isEmpty
-                || !extensionCandidates.exact.isEmpty
-                || !dateTimeCandidates.isEmpty
-                || !imeCandidates.exact.isEmpty
-                || !basicCandidates.exact.isEmpty
         let auxiliaryAnchorFrame = candidateAndInputFrame(for: sender)
         updateFuzzySuggestionsIfNeeded(near: auxiliaryAnchorFrame)
-        updateSemanticSuggestionsIfNeeded(
-            hasDirectExactCandidates: hasDirectExactCandidates,
-            near: auxiliaryAnchorFrame
-        )
         showInputPreview(client: sender)
     }
 
@@ -1543,10 +1494,7 @@ final class InputController: IMKInputController {
                 )
             }
         }
-        let semanticSuggestions = fuzzySuggestions.filter {
-            $0.kind == .semantic
-        }
-        fuzzySuggestions = spellingSuggestions + semanticSuggestions
+        fuzzySuggestions = spellingSuggestions
         selectedFuzzySuggestionIndex = nil
         guard !fuzzySuggestions.isEmpty else {
             fuzzySuggestionWindow.hide()
@@ -1557,92 +1505,6 @@ final class InputController: IMKInputController {
             selectedIndex: nil,
             near: anchorFrame
         )
-    }
-
-    private func updateSemanticSuggestionsIfNeeded(
-        hasDirectExactCandidates: Bool,
-        near anchorFrame: NSRect
-    ) {
-        guard isSemanticSuggestionsEnabled,
-              !hasDirectExactCandidates,
-              conversionReading.count >= 2,
-              suggestionSearchSession.query(for: .semantic)
-                != conversionReading else {
-            return
-        }
-        let query = conversionReading
-        let japaneseQuery = romajiConverter.hiragana(from: query) ?? query
-        let excludedCandidates = Set(currentCandidates)
-        let token = suggestionSearchSession.begin(.semantic, query: query)
-        let task = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .milliseconds(350))
-                guard let self else { return }
-                guard let semanticQuery = await semanticSearchQuery(
-                    japaneseInput: japaneseQuery
-                ) else {
-                    return
-                }
-                let matches = await semanticVectorSearchEngine.matches(
-                    for: semanticQuery,
-                    sourceReading: query,
-                    excluding: excludedCandidates,
-                    limit: 3
-                )
-                try Task.checkCancellation()
-                guard suggestionSearchSession.isCurrent(token),
-                      conversionReading == query,
-                      isSemanticSuggestionsEnabled,
-                      !matches.isEmpty else {
-                    return
-                }
-                let semanticSuggestions = matches.map {
-                    FuzzySuggestion(
-                        candidate: $0.candidate,
-                        reading: $0.reading,
-                        distance: 0,
-                        kind: .semantic
-                    )
-                }
-                let semanticCandidates = Set(
-                    semanticSuggestions.map(\.candidate)
-                )
-                let spellingSuggestions = fuzzySuggestions.filter {
-                    $0.kind == .spelling
-                        && !semanticCandidates.contains($0.candidate)
-                }
-                fuzzySuggestions = spellingSuggestions + semanticSuggestions
-                selectedFuzzySuggestionIndex = nil
-                fuzzySuggestionWindow.show(
-                    suggestions: fuzzySuggestions,
-                    selectedIndex: nil,
-                    near: anchorFrame
-                )
-            } catch is CancellationError {
-                return
-            } catch {
-                NSLog("意味検索に失敗: %@", error.localizedDescription)
-            }
-        }
-        suggestionSearchSession.attach(task, to: token)
-    }
-
-    @MainActor
-    private func semanticSearchQuery(japaneseInput: String) async -> String? {
-#if canImport(Translation)
-        if #available(macOS 15.0, *) {
-            let provider: AppleTranslationCandidateProvider
-            if let existing = semanticTranslationProvider
-                as? AppleTranslationCandidateProvider {
-                provider = existing
-            } else {
-                provider = AppleTranslationCandidateProvider()
-                semanticTranslationProvider = provider
-            }
-            return await provider.translateJapaneseToEnglish(japaneseInput)
-        }
-#endif
-        return nil
     }
 
     private func handleFuzzySuggestionSelection(
@@ -2239,7 +2101,6 @@ final class InputController: IMKInputController {
 
     private func cancelAuxiliarySuggestionSearches() {
         suggestionSearchSession.cancel(.fuzzy)
-        suggestionSearchSession.cancel(.semantic)
     }
 
     private func flushPendingHistoryWrites() {
@@ -2647,12 +2508,6 @@ final class InputController: IMKInputController {
     private var isFuzzySuggestionsEnabled: Bool {
         UserDefaults.standard.bool(
             forKey: Self.fuzzySuggestionsEnabledDefaultsKey
-        )
-    }
-
-    private var isSemanticSuggestionsEnabled: Bool {
-        UserDefaults.standard.bool(
-            forKey: Self.semanticSuggestionsEnabledDefaultsKey
         )
     }
 

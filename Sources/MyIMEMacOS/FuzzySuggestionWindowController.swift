@@ -1,26 +1,18 @@
 @preconcurrency import AppKit
 
-enum FuzzySuggestionKind: Equatable {
-    case spelling
-    case semantic
-}
-
 struct FuzzySuggestion: Equatable {
     let candidate: String
     let reading: String
     let distance: Int
-    let kind: FuzzySuggestionKind
 
     init(
         candidate: String,
         reading: String,
-        distance: Int,
-        kind: FuzzySuggestionKind = .spelling
+        distance: Int
     ) {
         self.candidate = candidate
         self.reading = reading
         self.distance = distance
-        self.kind = kind
     }
 }
 

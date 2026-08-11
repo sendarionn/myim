@@ -40,26 +40,6 @@ myimではローマ字化されたIDを読み、日本語見出しを候補と�
 
 通常変換用の基本辞書には英語の語義や用例を保持しません
 
-意味検索では基本変換辞書と分離したJSONL派生データを使用します
-
-保持する項目はID、日本語見出し、ローマ字読み、品詞、英語語義、短い説明、出典だけです
-
-用例全文、ノート、相互参照、AIモデル情報、作成・更新日時は保持しません
-
-同梱する意味辞書はTKGJEリビジョン`2345ac680fba576a76d526641f48c2cc289e292e`から生成した30,296項目、約11.4MBです
-
-ベクトル索引はBasic・Core・Generalを含む30,295項目を対象にします
-
-英語語義と説明はmacOSの英語単語埋め込みを平均し、全項目の重心を除去して正規化します
-
-生成した300次元ベクトルはFloat16の`semantic-vectors.bin`へ保存し、実行時はメモリマップで読み込みます
-
-ベクトルは起動時に生成しません
-
-日本語入力はApple Translationで英訳してから比較し、外部APIへ送信しません
-
-連続したローマ字入力は辞書読みに分割し、該当項目の英語語義を検索文へ追加します
-
 ```text
 miru
  見る
@@ -83,22 +63,6 @@ myim形式へ変換します
 ./Scripts/convert-tkgje-dictionary.py \
   /tmp/tkgje-entries-index.json \
   /tmp/tkgje-dictionary.txt
-```
-
-意味検索用JSONLを生成する場合は、個別項目を含むTKGJEリポジトリを指定します
-
-```shell
-./Scripts/convert-tkgje-semantic-dictionary.py \
-  /path/to/je-dict-1 \
-  /tmp/tkgje-semantic-dictionary.jsonl
-```
-
-macOSの英語単語埋め込みから実行時索引を生成します
-
-```shell
-./Scripts/generate-semantic-vector-index.swift \
-  Sources/MyIMEMacOS/Resources/semantic-dictionary.jsonl \
-  Sources/MyIMEMacOS/Resources/semantic-vectors.bin
 ```
 
 BasicとCoreだけを取り込む場合は語彙階層を指定します

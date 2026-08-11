@@ -18,24 +18,24 @@ struct SuggestionSearchSessionTests {
     func kindsAreManagedIndependently() {
         let session = SuggestionSearchSession()
         let fuzzy = session.begin(.fuzzy, query: "fuzzy")
-        let semantic = session.begin(.semantic, query: "semantic")
+        let official = session.begin(.official, query: "official")
 
         session.cancel(.fuzzy)
 
         #expect(!session.isCurrent(fuzzy))
-        #expect(session.isCurrent(semantic))
-        #expect(session.query(for: .semantic) == "semantic")
+        #expect(session.isCurrent(official))
+        #expect(session.query(for: .official) == "official")
     }
 
     @Test
     func cancelAllInvalidatesEveryToken() {
         let session = SuggestionSearchSession()
         let official = session.begin(.official, query: "official")
-        let semantic = session.begin(.semantic, query: "semantic")
+        let fuzzy = session.begin(.fuzzy, query: "fuzzy")
 
         session.cancelAll()
 
         #expect(!session.isCurrent(official))
-        #expect(!session.isCurrent(semantic))
+        #expect(!session.isCurrent(fuzzy))
     }
 }
