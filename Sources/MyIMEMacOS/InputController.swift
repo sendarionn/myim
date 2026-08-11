@@ -81,7 +81,11 @@ final class InputController: IMKInputController {
     private let externalCredentialStore = ExternalServiceCredentialStore()
     private var cosenseCredential: CosenseCredential?
     private var candidateSelectionHistory: CandidateSelectionHistory
+    private let candidateSelectionHistoryWriter:
+        DeferredJSONFileWriter<[String: Int]>
     private var nextInputPredictionModel: NextInputPredictionModel
+    private let nextInputPredictionWriter:
+        DeferredJSONFileWriter<NextInputPredictionModel>
     private var nextInputCandidates: [String] = []
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
@@ -131,7 +135,27 @@ final class InputController: IMKInputController {
         basicEntries = bundledEntries
         extensionEntries = cachedExtensionEntries
         candidateSelectionHistory = selectionHistory
+        candidateSelectionHistoryWriter = DeferredJSONFileWriter(
+            fileURL: Self.candidateSelectionHistoryURL(),
+            queueLabel: "myim.candidate-selection-history",
+            errorHandler: {
+                NSLog(
+                    "候補選択履歴の保存に失敗: %@",
+                    $0.localizedDescription
+                )
+            }
+        )
         nextInputPredictionModel = nextInputModel
+        nextInputPredictionWriter = DeferredJSONFileWriter(
+            fileURL: Self.nextInputPredictionModelURL(),
+            queueLabel: "myim.next-input-history",
+            errorHandler: {
+                NSLog(
+                    "次入力履歴の保存に失敗: %@",
+                    $0.localizedDescription
+                )
+            }
+        )
         semanticVectorSearchEngine = SemanticVectorSearchEngine(
             dictionaryURL: semanticDictionaryURL,
             vectorIndexURL: semanticVectorIndexURL
@@ -628,6 +652,7 @@ final class InputController: IMKInputController {
         }
         resetTransientInteractionState()
         nextInputPredictionModel.breakSequence()
+        flushPendingHistoryWrites()
         super.deactivateServer(sender)
     }
 
@@ -637,6 +662,7 @@ final class InputController: IMKInputController {
             return
         }
         resetTransientInteractionState()
+        flushPendingHistoryWrites()
         super.inputControllerWillClose()
     }
 
@@ -1200,7 +1226,9 @@ final class InputController: IMKInputController {
         dismissNextInputSuggestions(clearMarkedTextIn: client())
         nextInputPredictionModel.removeAll()
         do {
-            try Self.saveNextInputPredictionModel(nextInputPredictionModel)
+            try nextInputPredictionWriter.writeImmediately(
+                nextInputPredictionModel
+            )
         } catch {
             NSLog(
                 "次入力履歴の削除に失敗: %@",
@@ -2446,16 +2474,9 @@ final class InputController: IMKInputController {
 
     private func recordCandidateSelection(_ candidate: String) {
         candidateSelectionHistory.record(candidate)
-        do {
-            try Self.saveCandidateSelectionRanks(
-                candidateSelectionHistory.ranks
-            )
-        } catch {
-            NSLog(
-                "候補選択履歴の保存に失敗: %@",
-                error.localizedDescription
-            )
-        }
+        candidateSelectionHistoryWriter.schedule(
+            candidateSelectionHistory.ranks
+        )
     }
 
     private func candidatesOrderedByRecency(
@@ -2605,6 +2626,11 @@ final class InputController: IMKInputController {
         semanticSuggestionQuery = ""
     }
 
+    private func flushPendingHistoryWrites() {
+        candidateSelectionHistoryWriter.flush()
+        nextInputPredictionWriter.flush()
+    }
+
     private func moveNextInputCandidate(
         _ direction: CandidateNavigationDirection,
         client sender: Any
@@ -2669,14 +2695,7 @@ final class InputController: IMKInputController {
             return
         }
         nextInputPredictionModel.record(value)
-        do {
-            try Self.saveNextInputPredictionModel(nextInputPredictionModel)
-        } catch {
-            NSLog(
-                "次入力履歴の保存に失敗: %@",
-                error.localizedDescription
-            )
-        }
+        nextInputPredictionWriter.schedule(nextInputPredictionModel)
 
         nextInputCandidates = nextInputPredictionModel.candidates(
             after: value,
@@ -3358,12 +3377,6 @@ final class InputController: IMKInputController {
         return CandidateSelectionHistory(ranks: ranks)
     }
 
-    private static func saveCandidateSelectionRanks(
-        _ ranks: [String: Int]
-    ) throws {
-        try saveUserData(ranks, to: candidateSelectionHistoryURL())
-    }
-
     private static func candidateSelectionHistoryURL() -> URL {
         userDataURL(fileName: "candidate-selection-history.json")
     }
@@ -3383,31 +3396,8 @@ final class InputController: IMKInputController {
         return model
     }
 
-    private static func saveNextInputPredictionModel(
-        _ model: NextInputPredictionModel
-    ) throws {
-        try saveUserData(model, to: nextInputPredictionModelURL())
-    }
-
     private static func nextInputPredictionModelURL() -> URL {
         userDataURL(fileName: "next-input-model.json")
-    }
-
-    private static func saveUserData<Value: Encodable>(
-        _ value: Value,
-        to fileURL: URL
-    ) throws {
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true,
-            attributes: [.posixPermissions: 0o700]
-        )
-        try JSONEncoder().encode(value).write(to: fileURL, options: .atomic)
-        try fileManager.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: fileURL.path
-        )
     }
 
     private static func userDataURL(fileName: String) -> URL {
