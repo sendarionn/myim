@@ -208,11 +208,6 @@ final class InputController: IMKInputController {
             return true
         }
 
-        if isUserDictionaryRegistrationShortcut(event),
-           !inputBuffer.isEmpty {
-            return !registerClipboardInUserDictionary(client: sender)
-        }
-
         if isUserDictionaryDeletionShortcut(event),
            !inputBuffer.isEmpty {
             removeSelectedUserDictionaryCandidate(client: sender)
@@ -936,7 +931,7 @@ final class InputController: IMKInputController {
             return false
         }
         let nextInputControlKeyCodes: Set<UInt16> = [
-            36, 48, 49, 53, 76, 123, 124, 125, 126
+            36, 48, 53, 76, 123, 124, 125, 126
         ]
         return !nextInputControlKeyCodes.contains(event.keyCode)
     }
@@ -1124,7 +1119,7 @@ final class InputController: IMKInputController {
             break
         }
 
-        if isUserDictionaryRegistrationShortcut(event) {
+        if isPasteShortcut(event) {
             let pasted = NSPasteboard.general.string(forType: .string)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !pasted.isEmpty else {
@@ -1713,34 +1708,6 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func registerClipboardInUserDictionary(client sender: Any) -> Bool {
-        let reading = conversionReading.lowercased()
-        let candidate = NSPasteboard.general.string(
-            forType: .string
-        )?
-        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !reading.isEmpty, !candidate.isEmpty else {
-            NSSound.beep()
-            return false
-        }
-
-        do {
-            try saveUserDictionaryEntry(
-                reading: reading,
-                candidate: candidate
-            )
-            clearCompositionForSystemPaste(in: sender)
-            return true
-        } catch {
-            NSLog(
-                "ユーザー辞書の保存に失敗: %@",
-                error.localizedDescription
-            )
-            NSSound.beep()
-            return false
-        }
-    }
-
     private func saveUserDictionaryEntry(
         reading: String,
         candidate: String
@@ -1853,7 +1820,7 @@ final class InputController: IMKInputController {
             || event.charactersIgnoringModifiers?.lowercased() == "z"
     }
 
-    private func isUserDictionaryRegistrationShortcut(
+    private func isPasteShortcut(
         _ event: NSEvent
     ) -> Bool {
         let deviceIndependentFlags = event.modifierFlags
@@ -2210,7 +2177,7 @@ final class InputController: IMKInputController {
             candidates: nextInputCandidates,
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "Tab / ⇧Tab / 矢印 選択　↩ 確定\nSpace 維持　文字入力で確定"
+            guide: "Tab / ⇧Tab / 矢印 選択　↩ 確定\n文字入力で確定"
         )
         scheduleNextInputDismissal()
     }
