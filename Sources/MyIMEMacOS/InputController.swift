@@ -63,6 +63,8 @@ final class InputController: IMKInputController {
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
     private static let fuzzyEngineRepository = FuzzyEngineRepository()
+    private static let basicDictionaryUpdateCoordinator =
+        BasicDictionaryUpdateCoordinator()
 
     private var inputBuffer = ""
     private var inputCursor = 0
@@ -922,9 +924,19 @@ final class InputController: IMKInputController {
         }
 
         basicDictionaryStatus = "確認中"
+        let force = sender != nil
         Task { @MainActor [weak self] in
             do {
-                let snapshot = try await TKGDictionaryClient().fetch()
+                guard let snapshot = try await Self
+                    .basicDictionaryUpdateCoordinator
+                    .fetchIfNeeded(force: force) else {
+                    guard let self else {
+                        return
+                    }
+                    basicDictionaryStatus =
+                        "確認済み（\(basicEntries.count)読み）"
+                    return
+                }
                 let cache = try Self.basicDictionaryCache()
                 let currentRevision = try cache.loadMetadata()?.sourceRevision
                     ?? Self.bundledBasicDictionaryRevision()
