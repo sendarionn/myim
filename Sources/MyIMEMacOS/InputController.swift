@@ -52,6 +52,7 @@ final class InputController: IMKInputController {
     private static let nextInputDismissInterval: TimeInterval = 5
 
     private var inputBuffer = ""
+    private var inputCursor = 0
     private var activatedAt: TimeInterval?
     private var currentCandidates: [String] = []
     private var selectedCandidateIndex: Int?
@@ -259,13 +260,21 @@ final class InputController: IMKInputController {
             }
             return handleSpace(client: sender)
         case 123:
-            return moveCandidate(.left, client: sender)
+            return selectedCandidateIndex == nil
+                ? moveInputCursor(by: -1, client: sender)
+                : moveCandidate(.left, client: sender)
         case 124:
-            return moveCandidate(.right, client: sender)
+            return selectedCandidateIndex == nil
+                ? moveInputCursor(by: 1, client: sender)
+                : moveCandidate(.right, client: sender)
         case 125:
-            return moveCandidate(.down, client: sender)
+            return selectedCandidateIndex == nil
+                ? false
+                : moveCandidate(.down, client: sender)
         case 126:
-            return moveCandidate(.up, client: sender)
+            return selectedCandidateIndex == nil
+                ? false
+                : moveCandidate(.up, client: sender)
         case 36, 76:
             return commitFirstCandidateOrInput(to: sender)
         case 51:
@@ -305,7 +314,7 @@ final class InputController: IMKInputController {
             return false
         }
 
-        inputBuffer += characters
+        insertIntoInputBuffer(characters)
         selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
@@ -980,6 +989,7 @@ final class InputController: IMKInputController {
             reading: conversionReading.lowercased()
         )
         inputBuffer = ""
+        inputCursor = 0
         currentCandidates = []
         candidatePanel.hide()
         previewWindow.hide()
@@ -1044,6 +1054,7 @@ final class InputController: IMKInputController {
             registration.pastedCandidate = nil
             tabDictionaryRegistration = registration
             inputBuffer = ""
+            inputCursor = 0
             currentCandidates = []
             selectedCandidateIndex = nil
             showTabDictionaryRegistration(client: sender)
@@ -1068,6 +1079,7 @@ final class InputController: IMKInputController {
             registration.pastedCandidate = nil
             tabDictionaryRegistration = registration
             inputBuffer = ""
+            inputCursor = 0
             currentCandidates = []
             selectedCandidateIndex = nil
             setMarkedText(registration.confirmedCandidate ?? "", in: sender)
@@ -1076,13 +1088,21 @@ final class InputController: IMKInputController {
         case 48:
             return handleTab(event, client: sender)
         case 123:
-            return moveCandidate(.left, client: sender)
+            return selectedCandidateIndex == nil
+                ? moveInputCursor(by: -1, client: sender)
+                : moveCandidate(.left, client: sender)
         case 124:
-            return moveCandidate(.right, client: sender)
+            return selectedCandidateIndex == nil
+                ? moveInputCursor(by: 1, client: sender)
+                : moveCandidate(.right, client: sender)
         case 125:
-            return moveCandidate(.down, client: sender)
+            return selectedCandidateIndex == nil
+                ? false
+                : moveCandidate(.down, client: sender)
         case 126:
-            return moveCandidate(.up, client: sender)
+            return selectedCandidateIndex == nil
+                ? false
+                : moveCandidate(.up, client: sender)
         case 51:
             if inputBuffer.isEmpty,
                registration.pastedCandidate == nil,
@@ -1110,6 +1130,7 @@ final class InputController: IMKInputController {
         case 53:
             tabDictionaryRegistration = nil
             inputBuffer = registration.originalInput
+            inputCursor = inputBuffer.count
             currentCandidates = []
             selectedCandidateIndex = nil
             updateMarkedText(in: sender)
@@ -1129,6 +1150,7 @@ final class InputController: IMKInputController {
             registration.pastedCandidate = pasted
             tabDictionaryRegistration = registration
             inputBuffer = ""
+            inputCursor = 0
             currentCandidates = []
             selectedCandidateIndex = nil
             setMarkedText(
@@ -1150,16 +1172,19 @@ final class InputController: IMKInputController {
             registration.confirmedCandidate =
                 (registration.confirmedCandidate ?? "") + selectedValue
             inputBuffer = ""
+            inputCursor = 0
             currentCandidates = []
             selectedCandidateIndex = nil
         }
         registration.pastedCandidate = nil
         tabDictionaryRegistration = registration
-        inputBuffer += characters
+        insertIntoInputBuffer(characters)
         selectedCandidateIndex = nil
         setMarkedText(
             (registration.confirmedCandidate ?? "") + inputBuffer,
-            in: sender
+            in: sender,
+            selectionOffset: (registration.confirmedCandidate ?? "")
+                .utf16.count + inputCursor
         )
         refreshCandidates(client: sender)
         return true
@@ -1797,6 +1822,7 @@ final class InputController: IMKInputController {
             replacementRange: NSRange(location: NSNotFound, length: NSNotFound)
         )
         inputBuffer = ""
+        inputCursor = 0
         tabDictionaryRegistration = nil
         currentCandidates = []
         selectedCandidateIndex = nil
@@ -2000,17 +2026,22 @@ final class InputController: IMKInputController {
             return false
         }
 
-        inputBuffer = InputBufferDeletion.deletingBackward(
-            from: inputBuffer,
-            unit: unit
+        var editor = InputBufferEditor(
+            value: inputBuffer,
+            cursor: inputCursor
         )
+        editor.deleteBackward(unit: unit)
+        inputBuffer = editor.value
+        inputCursor = editor.cursor
         selectedCandidateIndex = nil
         candidatePanel.hide()
         previewWindow.hide()
         setMarkedText(
             (tabDictionaryRegistration?.confirmedCandidate ?? "")
                 + inputBuffer,
-            in: sender
+            in: sender,
+            selectionOffset: (tabDictionaryRegistration?.confirmedCandidate
+                ?? "").utf16.count + inputCursor
         )
         refreshCandidates(client: sender)
         return true
@@ -2058,6 +2089,7 @@ final class InputController: IMKInputController {
         )
         suggestionSearchSession.cancelAll()
         inputBuffer = ""
+        inputCursor = 0
         tabDictionaryRegistration = nil
         currentCandidates = []
         selectedCandidateIndex = nil
@@ -2211,10 +2243,18 @@ final class InputController: IMKInputController {
     }
 
     private func updateMarkedText(in sender: Any) {
-        setMarkedText(inputBuffer, in: sender)
+        setMarkedText(
+            inputBuffer,
+            in: sender,
+            selectionOffset: inputCursor
+        )
     }
 
-    private func setMarkedText(_ value: String, in sender: Any) {
+    private func setMarkedText(
+        _ value: String,
+        in sender: Any,
+        selectionOffset: Int? = nil
+    ) {
         guard let textClient = sender as? IMKTextInput else {
             return
         }
@@ -2226,9 +2266,42 @@ final class InputController: IMKInputController {
             : NSRange(location: NSNotFound, length: NSNotFound)
         textClient.setMarkedText(
             value,
-            selectionRange: NSRange(location: value.utf16.count, length: 0),
+            selectionRange: NSRange(
+                location: selectionOffset ?? value.utf16.count,
+                length: 0
+            ),
             replacementRange: replacementRange
         )
+    }
+
+    private func insertIntoInputBuffer(_ text: String) {
+        var editor = InputBufferEditor(
+            value: inputBuffer,
+            cursor: inputCursor
+        )
+        editor.insert(text)
+        inputBuffer = editor.value
+        inputCursor = editor.cursor
+    }
+
+    private func moveInputCursor(by offset: Int, client sender: Any) -> Bool {
+        guard !inputBuffer.isEmpty else { return false }
+        var editor = InputBufferEditor(
+            value: inputBuffer,
+            cursor: inputCursor
+        )
+        guard editor.move(by: offset) else { return true }
+        inputCursor = editor.cursor
+        if let confirmed = tabDictionaryRegistration?.confirmedCandidate {
+            setMarkedText(
+                confirmed + inputBuffer,
+                in: sender,
+                selectionOffset: confirmed.utf16.count + inputCursor
+            )
+        } else {
+            updateMarkedText(in: sender)
+        }
+        return true
     }
 
     private func showInputPreview(client sender: Any) {
