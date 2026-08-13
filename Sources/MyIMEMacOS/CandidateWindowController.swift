@@ -68,7 +68,7 @@ final class CandidateWindowController: NSObject {
     private static let guideHorizontalPadding: CGFloat = 10
     private static let guideVerticalPadding: CGFloat = 4
     private static let minimumGuideWidth: CGFloat = 180
-    private static let maximumGuideWidth: CGFloat = 320
+    private static let maximumGuideWidth: CGFloat = 560
     private static let modeHeaderHeight: CGFloat = 28
 
     private let panel: NSPanel
@@ -120,7 +120,7 @@ final class CandidateWindowController: NSObject {
 
         guideLabel.font = PanelShortcutGuideStyle.font
         guideLabel.textColor = PanelShortcutGuideStyle.color
-        guideLabel.maximumNumberOfLines = 3
+        guideLabel.maximumNumberOfLines = 0
         guideLabel.lineBreakMode = .byWordWrapping
         guideLabel.isHidden = true
 
@@ -188,14 +188,30 @@ final class CandidateWindowController: NSObject {
         modeLabel.stringValue = modeText
         modeLabel.isHidden = !hasModeHeader
         modeSeparator.isHidden = !hasModeHeader
+        let maximumPanelWidth = min(
+            Self.maximumPanelWidth,
+            visibleFrame.width
+        )
+        let measuredGuideWidth = hasGuide
+            ? ceil(
+                (guideText as NSString).boundingRect(
+                    with: NSSize(
+                        width: CGFloat.greatestFiniteMagnitude,
+                        height: CGFloat.greatestFiniteMagnitude
+                    ),
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: [.font: guideLabel.font!]
+                ).width
+            )
+            : 0
         let guideWidth = hasGuide
             ? min(
                 max(
-                    ceil(guideLabel.attributedStringValue.size().width)
+                    measuredGuideWidth
                         + Self.guideHorizontalPadding * 2,
                     Self.minimumGuideWidth
                 ),
-                Self.maximumGuideWidth
+                min(Self.maximumGuideWidth, maximumPanelWidth)
             )
             : 0
         let panelWidth = min(
@@ -206,7 +222,7 @@ final class CandidateWindowController: NSObject {
                     ? ceil(modeLabel.attributedStringValue.size().width) + 20
                     : 0
             ),
-            min(Self.maximumPanelWidth, visibleFrame.width)
+            maximumPanelWidth
         )
         let packedHeight = packedContentHeight(
             itemSizes: itemSizes,

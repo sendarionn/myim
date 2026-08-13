@@ -25,6 +25,8 @@ final class InputController: IMKInputController {
         "WikipediaSuggestionsEnabled"
     private static let appleTranslationEnabledDefaultsKey =
         "AppleTranslationEnabled"
+    private static let translationModeEnabledDefaultsKey =
+        "TranslationModeEnabled"
     private static let webSearchEnabledDefaultsKey = "WebSearchEnabled"
     private static let webSearchTemplateDefaultsKey = "WebSearchTemplate"
     private static let externalInformationPanelEnabledDefaultsKey =
@@ -54,6 +56,8 @@ final class InputController: IMKInputController {
     private var inputBuffer = ""
     private var inputCursor = 0
     private var reconversionOriginal: String?
+    private var translationDraft: String?
+    private var translationTask: Task<Void, Never>?
     private var activatedAt: TimeInterval?
     private var currentCandidates: [String] = []
     private var selectedCandidateIndex: Int?
@@ -90,6 +94,7 @@ final class InputController: IMKInputController {
     private var basicDictionaryStatus = "未確認"
     private let candidatePanel: IMKCandidates
     private let candidateWindow = CandidateWindowController()
+    private let modeStatusWindow = ModeStatusWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
@@ -194,6 +199,14 @@ final class InputController: IMKInputController {
             return false
         }
 
+        if isTranslationModeShortcut(event) {
+            toggleTranslationMode(nil)
+            if !inputBuffer.isEmpty {
+                refreshCandidates(client: sender)
+            }
+            return true
+        }
+
         if interactionState == .registeringDictionary {
             return handleTabDictionaryRegistration(event, client: sender)
         }
@@ -259,7 +272,9 @@ final class InputController: IMKInputController {
                 activatedAt = nil
                 return true
             }
-            return handleSpace(client: sender)
+            return isTranslationModeEnabled
+                ? handleTranslationSpace(client: sender)
+                : handleSpace(client: sender)
         case 123:
             return selectedCandidateIndex == nil
                 ? moveInputCursor(by: -1, client: sender)
@@ -277,13 +292,19 @@ final class InputController: IMKInputController {
                 ? false
                 : moveCandidate(.up, client: sender)
         case 36, 76:
-            return commitFirstCandidateOrInput(to: sender)
+            return isTranslationModeEnabled
+                ? handleTranslationReturn(client: sender)
+                : commitFirstCandidateOrInput(to: sender)
         case 51:
             return deleteBackward(
                 from: sender,
                 unit: deletionUnit(for: event)
             )
         case 53:
+            if translationDraft != nil, inputBuffer.isEmpty {
+                finishTranslationDraftAsJapanese(client: sender)
+                return true
+            }
             return cancelInput(in: sender)
         default:
             break
@@ -301,8 +322,15 @@ final class InputController: IMKInputController {
         }
 
         if let selectedValue = selectedCandidateValue {
-            recordSelectedCandidate()
-            commit(selectedValue, to: sender)
+            if isTranslationModeEnabled {
+                appendCurrentInputToTranslationDraft(
+                    suffix: "",
+                    client: sender
+                )
+            } else {
+                recordSelectedCandidate()
+                commit(selectedValue, to: sender)
+            }
         }
 
         let isASCIIInput = characters.unicodeScalars.allSatisfy {
@@ -343,6 +371,8 @@ final class InputController: IMKInputController {
         InputSourceMenuBuilder.make(
             actions: InputSourceMenuBuilder.Actions(
                 openSettings: #selector(openSettingsWindow(_:)),
+                toggleTranslationMode: #selector(toggleTranslationMode(_:)),
+                translationModeEnabled: isTranslationModeEnabled,
                 syncCosenseDictionary: #selector(syncCosenseDictionary(_:)),
                 showStatus: #selector(showStatus(_:))
             )
@@ -374,6 +404,7 @@ final class InputController: IMKInputController {
             englishCompletion: isEnglishCompletionEnabled,
             wikipediaSuggestions: isWikipediaSuggestionsEnabled,
             appleTranslation: isAppleTranslationEnabled,
+            translationMode: isTranslationModeEnabled,
             nextInputPrediction: isNextInputPredictionEnabled,
             fuzzySuggestions: isFuzzySuggestionsEnabled,
             dateTimeCandidates: isDateTimeCandidatesEnabled,
@@ -389,6 +420,7 @@ final class InputController: IMKInputController {
             toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
             toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
+            toggleTranslationMode: #selector(toggleTranslationMode(_:)),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
@@ -439,6 +471,14 @@ final class InputController: IMKInputController {
         }
 
         recordCandidateSelection(candidate)
+        if isTranslationModeEnabled {
+            selectedCandidateIndex = currentCandidates.firstIndex(of: candidate)
+            appendCurrentInputToTranslationDraft(
+                suffix: "",
+                client: client() as Any
+            )
+            return
+        }
         commit(
             candidateValueForCommit(candidate) + conversionSuffix,
             to: client() as Any
@@ -452,6 +492,10 @@ final class InputController: IMKInputController {
 
         if reconversionOriginal != nil {
             restoreReconversionOriginal(client: sender)
+            return
+        }
+        if translationDraft != nil {
+            finishTranslationDraftAsJapanese(client: sender)
             return
         }
         tabDictionaryRegistration = nil
@@ -476,11 +520,19 @@ final class InputController: IMKInputController {
         if !inputBuffer.isEmpty {
             if reconversionOriginal != nil {
                 restoreReconversionOriginal(client: sender as Any)
+            } else if translationDraft != nil {
+                finishTranslationDraftAsJapanese(client: sender as Any)
             } else {
                 commit(inputBuffer, to: sender as Any)
             }
+        } else if translationDraft != nil {
+            finishTranslationDraftAsJapanese(client: sender as Any)
         }
         resetTransientInteractionState()
+        modeStatusWindow.hide()
+        translationTask?.cancel()
+        translationTask = nil
+        translationDraft = nil
         nextInputPredictionModel.breakSequence()
         flushPendingHistoryWrites()
         super.deactivateServer(sender)
@@ -492,6 +544,10 @@ final class InputController: IMKInputController {
             return
         }
         resetTransientInteractionState()
+        modeStatusWindow.hide()
+        translationTask?.cancel()
+        translationTask = nil
+        translationDraft = nil
         fuzzyEngineBuildTask?.cancel()
         flushPendingHistoryWrites()
         super.inputControllerWillClose()
@@ -710,6 +766,34 @@ final class InputController: IMKInputController {
     }
 
     @objc
+    private func toggleTranslationMode(_ sender: Any?) {
+#if canImport(Translation)
+        guard #available(macOS 15.0, *) else {
+            NSSound.beep()
+            return
+        }
+        UserDefaults.standard.set(
+            !isTranslationModeEnabled,
+            forKey: Self.translationModeEnabledDefaultsKey
+        )
+        if let inputClient = client() {
+            modeStatusWindow.show(
+                enabled: isTranslationModeEnabled,
+                near: inputLocation(for: inputClient)
+            )
+        }
+        if translationDraft != nil, let inputClient = client() {
+            finishTranslationDraftAsJapanese(client: inputClient)
+        } else {
+            translationTask?.cancel()
+            translationTask = nil
+        }
+#else
+        NSSound.beep()
+#endif
+    }
+
+    @objc
     private func toggleWebSearch(_ sender: Any?) {
         UserDefaults.standard.set(!isWebSearchEnabled, forKey: Self.webSearchEnabledDefaultsKey)
     }
@@ -886,6 +970,119 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func handleTranslationSpace(client sender: Any) -> Bool {
+        guard !inputBuffer.isEmpty else {
+            return translationDraft != nil
+        }
+        appendCurrentInputToTranslationDraft(suffix: " ", client: sender)
+        return true
+    }
+
+    private func handleTranslationReturn(client sender: Any) -> Bool {
+        if !inputBuffer.isEmpty {
+            appendCurrentInputToTranslationDraft(suffix: "", client: sender)
+            return true
+        }
+        guard translationDraft != nil else { return false }
+        return translateDraft(client: sender)
+    }
+
+    private func appendCurrentInputToTranslationDraft(
+        suffix: String,
+        client sender: Any
+    ) {
+        let value: String
+        if let selectedCandidateValue {
+            value = candidateValueForCommit(selectedCandidateValue)
+                + conversionSuffix
+        } else {
+            value = inputBuffer
+        }
+        recordSelectedCandidate()
+        translationDraft = (translationDraft ?? "")
+            + value
+            + suffix
+        inputBuffer = ""
+        inputCursor = 0
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        fuzzySuggestions = []
+        selectedFuzzySuggestionIndex = nil
+        candidatePanel.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        updateMarkedText(in: sender)
+        showTranslationDraft(client: sender)
+    }
+
+    private func showTranslationDraft(client sender: Any) {
+        guard let translationDraft else { return }
+        candidateWindow.show(
+            candidates: [translationDraft],
+            selectedIndex: nil,
+            near: inputLocation(for: sender),
+            guide: "↩ 翻訳して確定　Esc 日本語で確定　⌥T 翻訳モード終了",
+            modeTitle: "翻訳する日本語"
+        )
+    }
+
+    private func translateDraft(client sender: Any) -> Bool {
+        guard translationTask == nil,
+              let source = translationDraft,
+              !source.isEmpty else {
+            return true
+        }
+        candidateWindow.show(
+            candidates: [source],
+            selectedIndex: nil,
+            near: inputLocation(for: sender),
+            guide: "翻訳中…",
+            modeTitle: "翻訳する日本語"
+        )
+        translationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+#if canImport(Translation)
+            if #available(macOS 15.0, *) {
+                let provider = AppleTranslationCandidateProvider()
+                let translated = await provider.translateJapaneseToEnglish(source)
+                guard !Task.isCancelled,
+                      self.translationDraft == source else {
+                    self.translationTask = nil
+                    return
+                }
+                if let translated {
+                    let value = translated.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                    if !value.isEmpty {
+                        self.translationDraft = nil
+                        self.translationTask = nil
+                        self.commit(
+                            value,
+                            to: sender,
+                            replacingMarkedText: true
+                        )
+                        return
+                    }
+                }
+            }
+#endif
+            self.translationTask = nil
+            self.showTranslationDraft(client: sender)
+            NSSound.beep()
+        }
+        return true
+    }
+
+    private func finishTranslationDraftAsJapanese(client sender: Any) {
+        translationTask?.cancel()
+        translationTask = nil
+        guard let draft = translationDraft else { return }
+        let value = draft + inputBuffer
+        translationDraft = nil
+        commit(value, to: sender, replacingMarkedText: true)
+    }
+
     private func handleInputFormFunctionKey(
         _ event: NSEvent,
         client sender: Any
@@ -936,7 +1133,7 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
         setMarkedText(
-            (tabDictionaryRegistration?.confirmedCandidate ?? "") + candidate,
+            compositionPrefix + candidate,
             in: sender
         )
         return true
@@ -1383,7 +1580,7 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.hide()
         showCandidateWindow(client: sender)
         let registrationPrefix = tabDictionaryRegistration?
-            .confirmedCandidate ?? ""
+            .confirmedCandidate ?? translationDraft ?? ""
         setMarkedText(
             registrationPrefix + currentCandidates[index] + conversionSuffix,
             in: sender
@@ -1749,7 +1946,10 @@ final class InputController: IMKInputController {
                 async let wikipedia: [String] = isWikipediaSuggestionsEnabled
                     ? (try? await WikipediaSuggestionClient().suggestions(for: japaneseInput)) ?? []
                     : []
-                let apple = await appleTranslationCandidate(for: japaneseInput)
+                let apple = await appleTranslationCandidate(
+                    for: japaneseInput,
+                    sentenceMode: false
+                )
                 let suggestions = await wikipedia + apple
                 try Task.checkCancellation()
                 guard suggestionSearchSession.isCurrent(token),
@@ -1774,16 +1974,27 @@ final class InputController: IMKInputController {
         suggestionSearchSession.attach(task, to: token)
     }
 
-    private func appleTranslationCandidate(for text: String) async -> [String] {
-        guard isAppleTranslationEnabled else { return [] }
+    private func appleTranslationCandidate(
+        for text: String,
+        sentenceMode: Bool
+    ) async -> [String] {
+        guard isAppleTranslationEnabled || sentenceMode else { return [] }
 #if canImport(Translation)
         if #available(macOS 15.0, *) {
             let provider = await MainActor.run {
                 AppleTranslationCandidateProvider()
             }
-            if let value = await provider.translateJapaneseToEnglish(text),
-               !value.isEmpty {
-                return [value]
+            if let value = await provider.translateJapaneseToEnglish(text) {
+                if sentenceMode {
+                    let trimmed = value.trimmingCharacters(
+                        in: .whitespacesAndNewlines
+                    )
+                    return trimmed.isEmpty ? [] : [trimmed]
+                }
+                if let normalized = TranslationCandidateNormalizer
+                    .wordCandidate(from: value) {
+                    return [normalized]
+                }
             }
         }
 #endif
@@ -1955,6 +2166,15 @@ final class InputController: IMKInputController {
             || event.charactersIgnoringModifiers?.lowercased() == "x"
     }
 
+    private func isTranslationModeShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        return flags == [.option]
+            && (event.keyCode == 17
+                || event.charactersIgnoringModifiers?.lowercased() == "t")
+    }
+
     private func showCandidateWindow(client sender: Any) {
         let selectedIndex = selectedCandidateIndex ?? 0
         let pageStart = selectedIndex / Self.maximumCandidateCount
@@ -1969,11 +2189,16 @@ final class InputController: IMKInputController {
         }
 
         let isDictionaryRegistration = tabDictionaryRegistration != nil
+        let isTranslationInput = isTranslationModeEnabled
         let guide: String
         if isDictionaryRegistration {
             guide = selectedCandidateIndex == nil
                 ? "Tab 候補選択　↩ 入力を追加　Esc 登録中止"
                 : "Tab / ⇧Tab / 矢印 移動　↩ 入力を追加　Esc 登録中止"
+        } else if isTranslationInput {
+            guide = selectedCandidateIndex == nil
+                ? "Tab 候補選択　↩ 日本語を追加　Esc 日本語で確定\n⌥T 翻訳モード終了"
+                : "Tab / ⇧Tab / 矢印 移動　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
         } else {
             guide = selectedCandidateIndex == nil
                 ? "Tab 選択　⌥↩ 辞書登録\nF6–F10 文字種変換　⌘O 外部ページ"
@@ -1989,7 +2214,7 @@ final class InputController: IMKInputController {
             guide: guide,
             modeTitle: isDictionaryRegistration
                 ? "登録したい文字列を入力"
-                : nil
+                : (isTranslationInput ? "翻訳する日本語" : nil)
         )
     }
 
@@ -2122,11 +2347,9 @@ final class InputController: IMKInputController {
         candidatePanel.hide()
         previewWindow.hide()
         setMarkedText(
-            (tabDictionaryRegistration?.confirmedCandidate ?? "")
-                + inputBuffer,
+            compositionPrefix + inputBuffer,
             in: sender,
-            selectionOffset: (tabDictionaryRegistration?.confirmedCandidate
-                ?? "").utf16.count + inputCursor
+            selectionOffset: compositionPrefix.utf16.count + inputCursor
         )
         refreshCandidates(client: sender)
         return true
@@ -2335,10 +2558,16 @@ final class InputController: IMKInputController {
 
     private func updateMarkedText(in sender: Any) {
         setMarkedText(
-            inputBuffer,
+            compositionPrefix + inputBuffer,
             in: sender,
-            selectionOffset: inputCursor
+            selectionOffset: compositionPrefix.utf16.count + inputCursor
         )
+    }
+
+    private var compositionPrefix: String {
+        tabDictionaryRegistration?.confirmedCandidate
+            ?? translationDraft
+            ?? ""
     }
 
     private func setMarkedText(
@@ -2383,11 +2612,11 @@ final class InputController: IMKInputController {
         )
         guard editor.move(by: offset) else { return true }
         inputCursor = editor.cursor
-        if let confirmed = tabDictionaryRegistration?.confirmedCandidate {
+        if !compositionPrefix.isEmpty {
             setMarkedText(
-                confirmed + inputBuffer,
+                compositionPrefix + inputBuffer,
                 in: sender,
-                selectionOffset: confirmed.utf16.count + inputCursor
+                selectionOffset: compositionPrefix.utf16.count + inputCursor
             )
         } else {
             updateMarkedText(in: sender)
@@ -2639,6 +2868,17 @@ final class InputController: IMKInputController {
             return false
         }
         return UserDefaults.standard.bool(forKey: Self.appleTranslationEnabledDefaultsKey)
+    }
+
+    private var isTranslationModeEnabled: Bool {
+#if canImport(Translation)
+        if #available(macOS 15.0, *) {
+            return UserDefaults.standard.bool(
+                forKey: Self.translationModeEnabledDefaultsKey
+            )
+        }
+#endif
+        return false
     }
 
     private var isWebSearchEnabled: Bool {

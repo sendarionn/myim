@@ -3,6 +3,8 @@
 enum InputSourceMenuBuilder {
     struct Actions {
         let openSettings: Selector
+        let toggleTranslationMode: Selector
+        let translationModeEnabled: Bool
         let syncCosenseDictionary: Selector
         let showStatus: Selector
     }
@@ -15,6 +17,16 @@ enum InputSourceMenuBuilder {
             selector: actions.openSettings,
             to: menu
         )
+        let translationMode = NSMenuItem(
+            title: "翻訳モード",
+            action: actions.toggleTranslationMode,
+            keyEquivalent: "t"
+        )
+        translationMode.target = nil
+        translationMode.isEnabled = true
+        translationMode.keyEquivalentModifierMask = [.option]
+        translationMode.state = actions.translationModeEnabled ? .on : .off
+        menu.addItem(translationMode)
         menu.addItem(.separator())
         addAction(
             title: "Cosense辞書を更新",
@@ -56,6 +68,7 @@ enum SettingsWindowBuilder {
         let englishCompletion: Bool
         let wikipediaSuggestions: Bool
         let appleTranslation: Bool
+        let translationMode: Bool
         let nextInputPrediction: Bool
         let fuzzySuggestions: Bool
         let dateTimeCandidates: Bool
@@ -69,6 +82,7 @@ enum SettingsWindowBuilder {
         let toggleEnglishCompletion: Selector
         let toggleWikipediaSuggestions: Selector
         let toggleAppleTranslation: Selector
+        let toggleTranslationMode: Selector
         let toggleNextInputPrediction: Selector
         let toggleFuzzySuggestions: Selector
         let toggleDateTimeCandidates: Selector
@@ -119,6 +133,7 @@ enum SettingsWindowBuilder {
             ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
             ("Wikipedia候補を取得", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
             ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
+            ("翻訳モード", actions.toggleTranslationMode, states.translationMode),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
