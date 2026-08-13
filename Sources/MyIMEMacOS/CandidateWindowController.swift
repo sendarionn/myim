@@ -75,7 +75,7 @@ final class CandidateWindowController: NSObject {
     private let collectionView: NSCollectionView
     private let layout: NSCollectionViewFlowLayout
     private let scrollView: NSScrollView
-    private let guideLabel: NSTextField
+    private let guideLabel: NSTextView
     private let separator: NSBox
     private let modeLabel: NSTextField
     private let modeSeparator: NSBox
@@ -86,7 +86,7 @@ final class CandidateWindowController: NSObject {
         collectionView = NSCollectionView()
         layout = NSCollectionViewFlowLayout()
         scrollView = NSScrollView()
-        guideLabel = NSTextField(wrappingLabelWithString: "")
+        guideLabel = NSTextView(frame: .zero)
         separator = NSBox()
         modeLabel = NSTextField(labelWithString: "")
         modeSeparator = NSBox()
@@ -120,8 +120,14 @@ final class CandidateWindowController: NSObject {
 
         guideLabel.font = PanelShortcutGuideStyle.font
         guideLabel.textColor = PanelShortcutGuideStyle.color
-        guideLabel.maximumNumberOfLines = 0
-        guideLabel.lineBreakMode = .byWordWrapping
+        guideLabel.isEditable = false
+        guideLabel.isSelectable = false
+        guideLabel.drawsBackground = false
+        guideLabel.textContainerInset = .zero
+        guideLabel.textContainer?.lineFragmentPadding = 0
+        guideLabel.textContainer?.widthTracksTextView = true
+        guideLabel.isHorizontallyResizable = false
+        guideLabel.isVerticallyResizable = true
         guideLabel.isHidden = true
 
         separator.boxType = .separator
@@ -179,7 +185,16 @@ final class CandidateWindowController: NSObject {
         )
         let guideText = guide?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasGuide = !guideText.isEmpty
-        guideLabel.stringValue = guideText
+        let guideParagraphStyle = NSMutableParagraphStyle()
+        guideParagraphStyle.lineBreakMode = .byCharWrapping
+        guideLabel.textStorage?.setAttributedString(NSAttributedString(
+            string: guideText,
+            attributes: [
+                .font: PanelShortcutGuideStyle.font,
+                .foregroundColor: PanelShortcutGuideStyle.color,
+                .paragraphStyle: guideParagraphStyle
+            ]
+        ))
         guideLabel.isHidden = !hasGuide
         separator.isHidden = !hasGuide
         let modeText = modeTitle?
@@ -193,16 +208,14 @@ final class CandidateWindowController: NSObject {
             visibleFrame.width
         )
         let measuredGuideWidth = hasGuide
-            ? ceil(
-                (guideText as NSString).boundingRect(
-                    with: NSSize(
-                        width: CGFloat.greatestFiniteMagnitude,
-                        height: CGFloat.greatestFiniteMagnitude
-                    ),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: [.font: guideLabel.font!]
-                ).width
-            )
+            ? guideText
+                .components(separatedBy: .newlines)
+                .map {
+                    ceil(($0 as NSString).size(
+                        withAttributes: [.font: PanelShortcutGuideStyle.font]
+                    ).width)
+                }
+                .max() ?? 0
             : 0
         let guideWidth = hasGuide
             ? min(
@@ -236,17 +249,23 @@ final class CandidateWindowController: NSObject {
             panelWidth - Self.guideHorizontalPadding * 2,
             1
         )
+        guideLabel.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: guideContentWidth,
+            height: 10_000
+        )
+        guideLabel.textContainer?.containerSize = NSSize(
+            width: guideContentWidth,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        guideLabel.layoutManager?.ensureLayout(
+            for: guideLabel.textContainer!
+        )
         let guideTextHeight = hasGuide
-            ? ceil(
-                (guideText as NSString).boundingRect(
-                    with: NSSize(
-                        width: guideContentWidth,
-                        height: .greatestFiniteMagnitude
-                    ),
-                    options: [.usesLineFragmentOrigin, .usesFontLeading],
-                    attributes: [.font: guideLabel.font!]
-                ).height
-            )
+            ? ceil(guideLabel.layoutManager?.usedRect(
+                for: guideLabel.textContainer!
+            ).height ?? 0) + 2
             : 0
         let guideHeight = hasGuide
             ? guideTextHeight + Self.guideVerticalPadding * 2

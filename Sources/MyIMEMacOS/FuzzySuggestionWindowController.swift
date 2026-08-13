@@ -60,15 +60,22 @@ final class FuzzySuggestionWindowController {
         let title = NSTextField(labelWithString: "もしかして？")
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         title.textColor = .secondaryLabelColor
-        let guide = NSTextField(labelWithString: selectedIndex == nil
+        let guide = NSTextField(wrappingLabelWithString: selectedIndex == nil
             ? "⇧Tab 選択"
             : "矢印 移動　Return 確定　Esc 戻る")
         guide.font = PanelShortcutGuideStyle.font
         guide.textColor = PanelShortcutGuideStyle.color
+        guide.maximumNumberOfLines = 0
+        guide.lineBreakMode = .byCharWrapping
+        guide.cell?.usesSingleLineMode = false
+        guide.cell?.wraps = true
+        guide.cell?.isScrollable = false
+        guide.cell?.truncatesLastVisibleLine = false
+        guide.preferredMaxLayoutWidth = 404
         let header = NSStackView(views: [title, guide])
-        header.orientation = .horizontal
-        header.alignment = .firstBaseline
-        header.spacing = 7
+        header.orientation = .vertical
+        header.alignment = .leading
+        header.spacing = 2
         stackView.addArrangedSubview(header)
 
         for (index, suggestion) in suggestions.enumerated() {

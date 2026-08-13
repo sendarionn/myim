@@ -1021,7 +1021,7 @@ final class InputController: IMKInputController {
             candidates: [translationDraft],
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "↩ 翻訳して確定　Esc 日本語で確定　⌥T 翻訳モード終了",
+            guide: "↩ 翻訳して確定　Esc 日本語で確定\n⌥T 翻訳モード終了",
             modeTitle: "翻訳する日本語"
         )
     }
@@ -2193,11 +2193,11 @@ final class InputController: IMKInputController {
         let guide: String
         if isDictionaryRegistration {
             guide = selectedCandidateIndex == nil
-                ? "Tab 候補選択　↩ 入力を追加　Esc 登録中止"
-                : "Tab / ⇧Tab / 矢印 移動　↩ 入力を追加　Esc 登録中止"
+                ? "Tab 候補選択　↩ 入力を追加\nEsc 登録中止"
+                : "Tab / ⇧Tab / 矢印 移動\n↩ 入力を追加　Esc 登録中止"
         } else if isTranslationInput {
             guide = selectedCandidateIndex == nil
-                ? "Tab 候補選択　↩ 日本語を追加　Esc 日本語で確定\n⌥T 翻訳モード終了"
+                ? "Tab 候補選択　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
                 : "Tab / ⇧Tab / 矢印 移動　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
         } else {
             guide = selectedCandidateIndex == nil
