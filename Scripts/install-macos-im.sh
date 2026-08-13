@@ -22,9 +22,7 @@ for process_name in myim my-ime myim-external-browser; do
         sleep 0.1
     done
 done
-launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 if [[ -d "$app_destination" ]]; then
-    "$launch_services_register" -u "$app_destination" 2>/dev/null || true
     rm -rf "$app_destination"
 fi
 if [[ -d "$legacy_destination" ]]; then
@@ -36,41 +34,50 @@ ditto "$app_source" "$app_destination"
 import Carbon
 import Foundation
 
-let appURL = URL(fileURLWithPath: NSHomeDirectory())
-    .appendingPathComponent("Library/Input Methods/myim.app") as CFURL
-let status = TISRegisterInputSource(appURL)
-guard status == noErr else {
-    fatalError("入力ソースの登録に失敗しました: \(status)")
+let targetIdentifier = "io.github.sendarionn.inputmethod.myime.Japanese"
+func findTargetSource() -> TISInputSource? {
+    let sources = TISCreateInputSourceList(nil, true).takeRetainedValue()
+        as! [TISInputSource]
+    for source in sources {
+        guard let pointer = TISGetInputSourceProperty(
+            source,
+            kTISPropertyInputSourceID
+        ) else {
+            continue
+        }
+        let identifier = Unmanaged<CFString>
+            .fromOpaque(pointer)
+            .takeUnretainedValue() as String
+        if identifier == targetIdentifier {
+            return source
+        }
+    }
+    return nil
 }
 
-let sources = TISCreateInputSourceList(nil, true).takeRetainedValue()
-    as! [TISInputSource]
-var targetSource: TISInputSource?
-for source in sources {
-    guard let pointer = TISGetInputSourceProperty(
-        source,
-        kTISPropertyInputSourceID
-    ) else {
-        continue
+var targetSource = findTargetSource()
+let isFirstRegistration = targetSource == nil
+if isFirstRegistration {
+    let appURL = URL(fileURLWithPath: NSHomeDirectory())
+        .appendingPathComponent("Library/Input Methods/myim.app") as CFURL
+    let status = TISRegisterInputSource(appURL)
+    guard status == noErr else {
+        fatalError("入力ソースの登録に失敗しました: \(status)")
     }
-    let identifier = Unmanaged<CFString>
-        .fromOpaque(pointer)
-        .takeUnretainedValue() as String
-    if identifier == "io.github.sendarionn.inputmethod.myime.Japanese" {
-        targetSource = source
-        break
-    }
+    targetSource = findTargetSource()
 }
 guard let targetSource else {
     fatalError("登録後のmyim入力ソースが見つかりません")
 }
-let enableStatus = TISEnableInputSource(targetSource)
-guard enableStatus == noErr else {
-    fatalError("入力ソースの有効化に失敗しました: \(enableStatus)")
-}
-let selectionStatus = TISSelectInputSource(targetSource)
-guard selectionStatus == noErr else {
-    fatalError("入力ソースの選択に失敗しました: \(selectionStatus)")
+if isFirstRegistration {
+    let enableStatus = TISEnableInputSource(targetSource)
+    guard enableStatus == noErr else {
+        fatalError("入力ソースの有効化に失敗しました: \(enableStatus)")
+    }
+    let selectionStatus = TISSelectInputSource(targetSource)
+    guard selectionStatus == noErr else {
+        fatalError("入力ソースの選択に失敗しました: \(selectionStatus)")
+    }
 }
 '
 

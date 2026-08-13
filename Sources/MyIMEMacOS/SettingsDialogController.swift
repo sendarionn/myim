@@ -2,10 +2,6 @@
 import MyIMECore
 
 final class SettingsDialogController {
-    struct ExternalCandidateSettings {
-        let webSearchTemplate: String
-    }
-
     struct ExternalInformationSettings {
         let urlTemplate: String
         let displayDelay: TimeInterval
@@ -56,34 +52,27 @@ final class SettingsDialogController {
         )
     }
 
-    func externalCandidates(
-        webSearchTemplate: String
-    ) -> ExternalCandidateSettings? {
-        let searchTemplate = NSTextField(string: webSearchTemplate)
-        searchTemplate.placeholderString = SearchURLTemplate.defaultValue
-        searchTemplate.frame.size.width = 480
+    func webSearchTemplate(current: String) -> String? {
+        let field = NSTextField(string: current)
+        field.placeholderString = SearchURLTemplate.defaultValue
+        field.frame.size.width = 520
         let stack = verticalStack(
             views: [
-                NSTextField(labelWithString: "Web検索URL  %sを検索語へ置換"),
-                searchTemplate
+                NSTextField(labelWithString: "%sを検索語へ置換"),
+                field
             ],
-            size: NSSize(width: 480, height: 54)
+            size: NSSize(width: 520, height: 54)
         )
         let alert = makeAlert(
             title: "Web検索先",
             accessoryView: stack
         )
-        guard runModal(alert, firstResponder: searchTemplate)
-            == .alertFirstButtonReturn else {
+        guard runModal(alert, firstResponder: field)
+            == .alertFirstButtonReturn,
+              (try? SearchURLTemplate(field.stringValue)) != nil else {
             return nil
         }
-        guard (try? SearchURLTemplate(searchTemplate.stringValue)) != nil else {
-            NSSound.beep()
-            return nil
-        }
-        return ExternalCandidateSettings(
-            webSearchTemplate: searchTemplate.stringValue
-        )
+        return field.stringValue
     }
 
     func externalInformation(
@@ -157,17 +146,29 @@ final class SettingsDialogController {
             guard
                 event.keyCode == 9,
                 event.modifierFlags.contains(.command),
-                let textField = firstResponder as? NSTextField,
                 let value = NSPasteboard.general.string(forType: .string)
             else {
                 return event
             }
-            if let editor = textField.currentEditor() as? NSTextView {
-                editor.insertText(value, replacementRange: editor.selectedRange())
-            } else {
-                textField.stringValue = value
+            if let textView = alert.window.firstResponder as? NSTextView {
+                textView.insertText(
+                    value,
+                    replacementRange: textView.selectedRange()
+                )
+                return nil
             }
-            return nil
+            if let textView = firstResponder as? NSTextView {
+                textView.insertText(
+                    value,
+                    replacementRange: textView.selectedRange()
+                )
+                return nil
+            }
+            if let textField = firstResponder as? NSTextField {
+                textField.stringValue = value
+                return nil
+            }
+            return event
         }
         DispatchQueue.main.async {
             alert.window.makeKey()
@@ -208,4 +209,5 @@ final class SettingsDialogController {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && seen.insert($0).inserted }
     }
+
 }

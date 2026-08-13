@@ -7,6 +7,20 @@
 - macOSが拒否していたアンダースコア形式の`InputMethodConnectionName`をドット区切りへ修正
 - Info.plistと`IMKServer`で同じ接続名を使用し、入力と入力ソースメニューの接続を復旧
 
+### Wikipedia候補へ復元
+
+- 汎用JSON API辞書、OpenSearch自動検出、Web辞書サイト登録を削除
+- 外部候補をWikipedia OpenSearch APIとApple Translationのシンプルな構成へ復元
+- Web検索URLの設定と外部情報パネルの任意URL設定は維持
+- 設定名を「Wikipediaを辞書として利用」へ変更
+- myim設定から翻訳モードのオン・オフを削除し、入力ソースメニューだけに集約
+
+### 入力ソースの更新
+
+- インストーラーは登録済み入力ソースを再登録せず、初回だけ登録と選択を実行
+- 更新時のLaunch Services登録解除をやめ、システム設定の許可画面が毎回開く問題を修正
+- 登録済みmyimへの`TISEnableInputSource`も省略し、`swift-frontend`による有効化許可を更新時に表示しないよう修正
+
 ## 2026-07-26
 
 ### コマンドライン版モックアップ

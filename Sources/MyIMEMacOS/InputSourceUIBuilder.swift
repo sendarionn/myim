@@ -68,7 +68,6 @@ enum SettingsWindowBuilder {
         let englishCompletion: Bool
         let wikipediaSuggestions: Bool
         let appleTranslation: Bool
-        let translationMode: Bool
         let nextInputPrediction: Bool
         let fuzzySuggestions: Bool
         let dateTimeCandidates: Bool
@@ -82,12 +81,11 @@ enum SettingsWindowBuilder {
         let toggleEnglishCompletion: Selector
         let toggleWikipediaSuggestions: Selector
         let toggleAppleTranslation: Selector
-        let toggleTranslationMode: Selector
         let toggleNextInputPrediction: Selector
         let toggleFuzzySuggestions: Selector
         let toggleDateTimeCandidates: Selector
         let configureDateTimeFormats: Selector
-        let configureExternalCandidates: Selector
+        let configureWebSearch: Selector
         let clearNextInputHistory: Selector
         let toggleExternalInformationPanel: Selector
         let toggleSystemDictionaryPreview: Selector
@@ -131,16 +129,15 @@ enum SettingsWindowBuilder {
         addCheckboxes([
             ("Cosense拡張辞書を使用", actions.toggleExtensionDictionary, states.extensionDictionary),
             ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
-            ("Wikipedia候補を取得", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
+            ("Wikipediaを辞書として利用", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
             ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
-            ("翻訳モード", actions.toggleTranslationMode, states.translationMode),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)
         addButtons([
             ("日時候補の書式を設定…", actions.configureDateTimeFormats),
-            ("Web検索先を設定…", actions.configureExternalCandidates),
+            ("Web検索先を設定…", actions.configureWebSearch),
             ("次入力履歴を削除", actions.clearNextInputHistory)
         ], target: target, to: stack)
 

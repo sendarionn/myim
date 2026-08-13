@@ -404,7 +404,6 @@ final class InputController: IMKInputController {
             englishCompletion: isEnglishCompletionEnabled,
             wikipediaSuggestions: isWikipediaSuggestionsEnabled,
             appleTranslation: isAppleTranslationEnabled,
-            translationMode: isTranslationModeEnabled,
             nextInputPrediction: isNextInputPredictionEnabled,
             fuzzySuggestions: isFuzzySuggestionsEnabled,
             dateTimeCandidates: isDateTimeCandidatesEnabled,
@@ -420,12 +419,11 @@ final class InputController: IMKInputController {
             toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
             toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
-            toggleTranslationMode: #selector(toggleTranslationMode(_:)),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
             configureDateTimeFormats: #selector(configureDateTimeCandidateFormats(_:)),
-            configureExternalCandidates: #selector(configureExternalCandidates(_:)),
+            configureWebSearch: #selector(configureWebSearch(_:)),
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
             toggleExternalInformationPanel: #selector(toggleExternalInformationPanel(_:)),
             toggleSystemDictionaryPreview: #selector(toggleSystemDictionaryPreview(_:)),
@@ -799,20 +797,14 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func configureExternalCandidates(_ sender: Any?) {
-        guard let settings = settingsDialogController.externalCandidates(
-            webSearchTemplate: webSearchTemplate
-        ) else {
-            return
-        }
+    private func configureWebSearch(_ sender: Any?) {
+        guard let value = settingsDialogController.webSearchTemplate(
+            current: webSearchTemplate
+        ) else { return }
         UserDefaults.standard.set(
-            settings.webSearchTemplate,
+            value,
             forKey: Self.webSearchTemplateDefaultsKey
         )
-        resetOfficialCandidates()
-        if !inputBuffer.isEmpty, let inputClient = client() {
-            refreshCandidates(client: inputClient)
-        }
     }
 
     private func resetOfficialCandidates() {
