@@ -1,5 +1,9 @@
 @preconcurrency import AppKit
 
+private final class TopAlignedSettingsStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
 enum InputSourceMenuBuilder {
     struct Actions {
         let openSettings: Selector
@@ -114,7 +118,7 @@ enum SettingsWindowBuilder {
         panel.level = .floating
         panel.minSize = NSSize(width: 480, height: 420)
 
-        let stack = NSStackView()
+        let stack = TopAlignedSettingsStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -165,6 +169,9 @@ enum SettingsWindowBuilder {
         scrollView.documentView = stack
         stack.frame = NSRect(x: 0, y: 0, width: 520, height: 850)
         panel.contentView = scrollView
+        panel.layoutIfNeeded()
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
         return panel
     }
 

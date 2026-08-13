@@ -382,6 +382,7 @@ final class InputController: IMKInputController {
     @objc
     private func openSettingsWindow(_ sender: Any?) {
         if let settingsWindow {
+            resetSettingsScrollPosition(settingsWindow)
             NSApp.activate(ignoringOtherApps: true)
             settingsWindow.makeKeyAndOrderFront(nil)
             return
@@ -393,9 +394,19 @@ final class InputController: IMKInputController {
             actions: settingsActions
         )
         settingsWindow = panel
+        resetSettingsScrollPosition(panel)
         NSApp.activate(ignoringOtherApps: true)
         panel.center()
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func resetSettingsScrollPosition(_ window: NSWindow) {
+        guard let scrollView = window.contentView as? NSScrollView else {
+            return
+        }
+        window.layoutIfNeeded()
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     private var settingsFeatureStates: SettingsWindowBuilder.FeatureStates {
