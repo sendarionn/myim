@@ -4,7 +4,7 @@
 
 GyaimとSKKにインスピレーションを受けて制作しました
 
-![Gyazo](https://gyazo.com/f745a75d33f477da560609ace860a20d.gif)
+![Gyazo](https://gyazo.com/a8d668eefaa4fe0e5885024b2095a043.gif)
 
 ## 設計思想
 
