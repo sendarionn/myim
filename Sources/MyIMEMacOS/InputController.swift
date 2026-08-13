@@ -786,21 +786,26 @@ final class InputController: IMKInputController {
             NSSound.beep()
             return
         }
+        let wasEnabled = isTranslationModeEnabled
+        let enabled = !wasEnabled
         UserDefaults.standard.set(
-            !isTranslationModeEnabled,
+            enabled,
             forKey: Self.translationModeEnabledDefaultsKey
         )
-        if let inputClient = client() {
-            modeStatusWindow.show(
-                enabled: isTranslationModeEnabled,
-                near: inputLocation(for: inputClient)
-            )
-        }
-        if translationDraft != nil, let inputClient = client() {
+        if wasEnabled,
+           !enabled,
+           let inputClient = client(),
+           translationDraft != nil || !inputBuffer.isEmpty {
             finishTranslationDraftAsJapanese(client: inputClient)
         } else {
             translationTask?.cancel()
             translationTask = nil
+        }
+        if let inputClient = client() {
+            modeStatusWindow.show(
+                enabled: enabled,
+                near: inputLocation(for: inputClient)
+            )
         }
 #else
         NSSound.beep()
@@ -977,7 +982,13 @@ final class InputController: IMKInputController {
 
     private func handleTranslationSpace(client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            return translationDraft != nil
+            guard translationDraft != nil else {
+                return false
+            }
+            translationDraft?.append(" ")
+            updateMarkedText(in: sender)
+            showTranslationDraft(client: sender)
+            return true
         }
         appendCurrentInputToTranslationDraft(suffix: " ", client: sender)
         return true
@@ -1082,8 +1093,15 @@ final class InputController: IMKInputController {
     private func finishTranslationDraftAsJapanese(client sender: Any) {
         translationTask?.cancel()
         translationTask = nil
-        guard let draft = translationDraft else { return }
-        let value = draft + inputBuffer
+        let currentInput: String
+        if let selectedCandidateValue {
+            currentInput = candidateValueForCommit(selectedCandidateValue)
+                + conversionSuffix
+        } else {
+            currentInput = inputBuffer
+        }
+        let value = (translationDraft ?? "") + currentInput
+        guard !value.isEmpty else { return }
         translationDraft = nil
         commit(value, to: sender, replacingMarkedText: true)
     }
@@ -2341,7 +2359,10 @@ final class InputController: IMKInputController {
         unit: InputBufferDeletionUnit = .character
     ) -> Bool {
         guard !inputBuffer.isEmpty else {
-            return false
+            return deleteBackwardFromTranslationDraft(
+                client: sender,
+                unit: unit
+            )
         }
 
         var editor = InputBufferEditor(
@@ -2360,6 +2381,36 @@ final class InputController: IMKInputController {
             selectionOffset: compositionPrefix.utf16.count + inputCursor
         )
         refreshCandidates(client: sender)
+        return true
+    }
+
+    private func deleteBackwardFromTranslationDraft(
+        client sender: Any,
+        unit: InputBufferDeletionUnit
+    ) -> Bool {
+        guard let draft = translationDraft else {
+            return false
+        }
+
+        translationTask?.cancel()
+        translationTask = nil
+        let updatedDraft = InputBufferDeletion.deletingBackward(
+            from: draft,
+            unit: unit
+        )
+        translationDraft = updatedDraft.nilIfEmpty
+        selectedCandidateIndex = nil
+        currentCandidates = []
+        candidatePanel.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        updateMarkedText(in: sender)
+
+        if translationDraft == nil {
+            candidateWindow.hide()
+        } else {
+            showTranslationDraft(client: sender)
+        }
         return true
     }
 

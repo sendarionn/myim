@@ -43,4 +43,13 @@ struct InputBufferEditorTests {
         #expect(editor.value.isEmpty)
         #expect(editor.cursor == 0)
     }
+
+    @Test
+    func deletesJapaneseCharacterFromEnd() {
+        var editor = InputBufferEditor(value: "翻訳する文章")
+        editor.deleteBackward(unit: .character)
+
+        #expect(editor.value == "翻訳する文")
+        #expect(editor.cursor == 5)
+    }
 }
