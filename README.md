@@ -4,8 +4,6 @@
 
 GyaimとSKKにインスピレーションを受けて制作しました
 
-![Gyazo](https://gyazo.com/a8d668eefaa4fe0e5885024b2095a043.gif)
-
 ## 設計思想
 
 myimは、日本語入力と英語入力を別のモードへ分けず、ローマ字から必要な表記を選ぶInput Methodです
