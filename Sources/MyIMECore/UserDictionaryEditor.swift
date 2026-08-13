@@ -61,4 +61,20 @@ public enum UserDictionaryEditor {
             )
         }
     }
+
+    public static func removing(
+        candidate: String,
+        from entries: [DictionaryEntry]
+    ) -> [DictionaryEntry] {
+        guard !candidate.isEmpty else { return entries }
+
+        return entries.compactMap { entry in
+            let candidates = entry.candidates.filter { $0 != candidate }
+            guard !candidates.isEmpty else { return nil }
+            return DictionaryEntry(
+                reading: entry.reading,
+                candidates: candidates
+            )
+        }
+    }
 }

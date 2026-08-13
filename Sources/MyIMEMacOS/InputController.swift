@@ -1770,17 +1770,8 @@ final class InputController: IMKInputController {
             return
         }
         let candidate = currentCandidates[selectedCandidateIndex]
-        let normalizedReading =
-            RomanizedReadingNormalizer.dictionaryReading(
-                from: conversionReading
-            )
-        let lookupReadings =
-            RomanizedReadingNormalizer.dictionaryLookupReadings(
-                from: normalizedReading
-            )
         let updatedEntries = UserDictionaryEditor.removing(
             candidate: candidate,
-            matchingReadings: lookupReadings,
             from: userEntries
         )
         guard updatedEntries != userEntries else {
