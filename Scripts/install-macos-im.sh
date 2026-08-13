@@ -43,8 +43,9 @@ guard status == noErr else {
     fatalError("入力ソースの登録に失敗しました: \(status)")
 }
 
-let sources = TISCreateInputSourceList(nil, false).takeRetainedValue()
+let sources = TISCreateInputSourceList(nil, true).takeRetainedValue()
     as! [TISInputSource]
+var targetSource: TISInputSource?
 for source in sources {
     guard let pointer = TISGetInputSourceProperty(
         source,
@@ -56,12 +57,20 @@ for source in sources {
         .fromOpaque(pointer)
         .takeUnretainedValue() as String
     if identifier == "io.github.sendarionn.inputmethod.myime.Japanese" {
-        let selectionStatus = TISSelectInputSource(source)
-        guard selectionStatus == noErr else {
-            fatalError("入力ソースの選択に失敗しました: \(selectionStatus)")
-        }
+        targetSource = source
         break
     }
+}
+guard let targetSource else {
+    fatalError("登録後のmyim入力ソースが見つかりません")
+}
+let enableStatus = TISEnableInputSource(targetSource)
+guard enableStatus == noErr else {
+    fatalError("入力ソースの有効化に失敗しました: \(enableStatus)")
+}
+let selectionStatus = TISSelectInputSource(targetSource)
+guard selectionStatus == noErr else {
+    fatalError("入力ソースの選択に失敗しました: \(selectionStatus)")
 }
 '
 

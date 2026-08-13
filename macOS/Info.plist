@@ -58,7 +58,7 @@
         </array>
     </dict>
     <key>InputMethodConnectionName</key>
-    <string>io.github.sendarionn.inputmethod.myime_Connection</string>
+    <string>io.github.sendarionn.inputmethod.myime.connection</string>
     <key>InputMethodServerControllerClass</key>
     <string>MyIMEInputController</string>
     <key>InputMethodServerDelegateClass</key>

@@ -2,7 +2,7 @@ import AppKit
 import InputMethodKit
 
 private let bundleIdentifier = "io.github.sendarionn.inputmethod.myime"
-private let connectionName = "\(bundleIdentifier)_Connection"
+private let connectionName = "\(bundleIdentifier).connection"
 
 let application = NSApplication.shared
 application.setActivationPolicy(.accessory)

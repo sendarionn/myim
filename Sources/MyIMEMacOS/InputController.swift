@@ -961,12 +961,9 @@ final class InputController: IMKInputController {
         guard !inputBuffer.isEmpty else {
             return false
         }
-        if let selectedValue = selectedCandidateValue {
-            recordSelectedCandidate()
-            commit(selectedValue + conversionSuffix + " ", to: sender)
-        } else {
-            commit(inputBuffer + " ", to: sender)
-        }
+        let value = selectedCandidateValue ?? inputBuffer
+        recordSelectedCandidate()
+        commit(value + " ", to: sender, historyValue: value)
         return true
     }
 
@@ -1146,7 +1143,7 @@ final class InputController: IMKInputController {
             return false
         }
         let nextInputControlKeyCodes: Set<UInt16> = [
-            36, 48, 53, 76, 123, 124, 125, 126
+            36, 48, 49, 53, 76, 123, 124, 125, 126
         ]
         return !nextInputControlKeyCodes.contains(event.keyCode)
     }
@@ -2360,7 +2357,13 @@ final class InputController: IMKInputController {
             guard !nextInputCandidates.isEmpty else {
                 return false
             }
-            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+            if selectedNextInputIndex != nil {
+                setMarkedText("", in: sender)
+            }
+            selectedNextInputIndex = nil
+            candidateWindow.clearSelection()
+            previewWindow.hide()
+            scheduleNextInputDismissal()
             return true
         }
 
@@ -2384,7 +2387,8 @@ final class InputController: IMKInputController {
     private func commit(
         _ value: String,
         to sender: Any,
-        replacingMarkedText: Bool = false
+        replacingMarkedText: Bool = false,
+        historyValue: String? = nil
     ) {
         guard let textClient = sender as? IMKTextInput else {
             return
@@ -2413,7 +2417,7 @@ final class InputController: IMKInputController {
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
-        recordCommittedInput(value, client: sender)
+        recordCommittedInput(historyValue ?? value, client: sender)
     }
 
     private func resetTransientInteractionState() {
