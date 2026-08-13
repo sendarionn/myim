@@ -53,6 +53,7 @@ final class InputController: IMKInputController {
 
     private var inputBuffer = ""
     private var inputCursor = 0
+    private var reconversionOriginal: String?
     private var activatedAt: TimeInterval?
     private var currentCandidates: [String] = []
     private var selectedCandidateIndex: Int?
@@ -449,6 +450,10 @@ final class InputController: IMKInputController {
             return
         }
 
+        if reconversionOriginal != nil {
+            restoreReconversionOriginal(client: sender)
+            return
+        }
         tabDictionaryRegistration = nil
         if inputBuffer.isEmpty {
             dismissNextInputSuggestions(clearMarkedTextIn: sender)
@@ -469,7 +474,11 @@ final class InputController: IMKInputController {
             return
         }
         if !inputBuffer.isEmpty {
-            commit(inputBuffer, to: sender as Any)
+            if reconversionOriginal != nil {
+                restoreReconversionOriginal(client: sender as Any)
+            } else {
+                commit(inputBuffer, to: sender as Any)
+            }
         }
         resetTransientInteractionState()
         nextInputPredictionModel.breakSequence()
@@ -964,6 +973,10 @@ final class InputController: IMKInputController {
 
     private func handleTab(_ event: NSEvent, client sender: Any) -> Bool {
         if inputBuffer.isEmpty {
+            if !event.modifierFlags.contains(.shift),
+               beginReconversionIfPossible(client: sender) {
+                return true
+            }
             guard !nextInputCandidates.isEmpty else {
                 return false
             }
@@ -981,6 +994,78 @@ final class InputController: IMKInputController {
                 + currentCandidates.count
         ) % currentCandidates.count
         return selectCandidate(index: nextIndex, client: sender)
+    }
+
+    private func beginReconversionIfPossible(client sender: Any) -> Bool {
+        guard let candidate = selectedText(from: sender) else { return false }
+        let readings = reconversionReadings(for: candidate)
+        guard let reading = readings.first else { return false }
+
+        reconversionOriginal = candidate
+        inputBuffer = reading
+        inputCursor = reading.count
+        selectedCandidateIndex = nil
+        setMarkedText(reading, in: sender, selectionOffset: inputCursor)
+        refreshCandidates(client: sender)
+        guard !currentCandidates.isEmpty else {
+            restoreReconversionOriginal(client: sender)
+            return true
+        }
+        return selectCandidate(index: 0, client: sender)
+    }
+
+    private func reconversionReadings(for candidate: String) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        func append(_ readings: [String]) {
+            for reading in readings where seen.insert(reading).inserted {
+                result.append(reading)
+            }
+        }
+        append(userConversionEngine.readings(for: candidate))
+        if isExtensionDictionaryEnabled {
+            append(extensionConversionEngine.readings(for: candidate))
+        }
+        append(basicConversionEngine.readings(for: candidate))
+        append(supplementalConversionEngine.readings(for: candidate))
+        append(imeConversionEngine.readings(for: candidate).compactMap(
+            romanizedReading(from:)
+        ))
+        return result
+    }
+
+    private func romanizedReading(from kana: String) -> String? {
+        guard var value = kana.applyingTransform(.toLatin, reverse: false)?
+            .lowercased() else {
+            return nil
+        }
+        let macrons: [(String, String)] = [
+            ("ā", "a-"), ("ī", "i-"), ("ū", "u-"),
+            ("ē", "e-"), ("ō", "o-")
+        ]
+        for (macron, replacement) in macrons {
+            value = value.replacingOccurrences(of: macron, with: replacement)
+        }
+        value = value.replacingOccurrences(of: " ", with: "")
+        return value.unicodeScalars.allSatisfy {
+            $0.isASCII && ($0.properties.isAlphabetic || $0 == "-" || $0 == "'")
+        } ? value : nil
+    }
+
+    private func selectedText(from sender: Any) -> String? {
+        guard let textClient = sender as? IMKTextInput else { return nil }
+        let range = textClient.selectedRange()
+        guard range.location != NSNotFound, range.length > 0,
+              let value = textClient.attributedSubstring(from: range)?.string,
+              !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    private func restoreReconversionOriginal(client sender: Any) {
+        guard let original = reconversionOriginal else { return }
+        commit(original, to: sender, replacingMarkedText: true)
     }
 
     private func beginTabDictionaryRegistration(client sender: Any) -> Bool {
@@ -1822,6 +1907,7 @@ final class InputController: IMKInputController {
         )
         inputBuffer = ""
         inputCursor = 0
+        reconversionOriginal = nil
         tabDictionaryRegistration = nil
         currentCandidates = []
         selectedCandidateIndex = nil
@@ -2055,6 +2141,11 @@ final class InputController: IMKInputController {
             return true
         }
 
+        if reconversionOriginal != nil {
+            restoreReconversionOriginal(client: sender)
+            return true
+        }
+
         let wasSelectingCandidate = selectedCandidateIndex != nil
         selectedCandidateIndex = nil
         candidateWindow.clearSelection()
@@ -2089,6 +2180,7 @@ final class InputController: IMKInputController {
         suggestionSearchSession.cancelAll()
         inputBuffer = ""
         inputCursor = 0
+        reconversionOriginal = nil
         tabDictionaryRegistration = nil
         currentCandidates = []
         selectedCandidateIndex = nil

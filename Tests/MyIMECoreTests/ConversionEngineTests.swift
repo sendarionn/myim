@@ -121,4 +121,15 @@ struct ConversionEngineTests {
         #expect(engine.candidates(for: "hiduke") == ["日付"])
         #expect(engine.candidates(matching: "hidu") == ["日付"])
     }
+
+    @Test
+    func findsReadingsForCandidate() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "readme", candidates: ["README"]),
+            DictionaryEntry(reading: "setsumei", candidates: ["説明", "README"])
+        ])
+
+        #expect(engine.readings(for: "README") == ["readme", "setsumei"])
+        #expect(engine.readings(for: "未登録").isEmpty)
+    }
 }

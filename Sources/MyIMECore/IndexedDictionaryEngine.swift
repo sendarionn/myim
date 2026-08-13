@@ -39,6 +39,46 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
         candidateGroups(matching: prefix, limit: limit).all
     }
 
+    public func readings(for candidate: String, limit: Int = 8) -> [String] {
+        guard !candidate.isEmpty, limit > 0 else { return [] }
+        let target = Data(candidate.utf8)
+        var result: [String] = []
+        for index in readingOffsets.indices {
+            if containsCandidate(target, at: index),
+               let reading = String(data: reading(at: index), encoding: .utf8) {
+                result.append(reading)
+                if result.count == limit { break }
+            }
+        }
+        return result
+    }
+
+    private func containsCandidate(_ target: Data, at index: Int) -> Bool {
+        var position = lineEnd(startingAt: readingOffsets[index])
+        while position < data.count {
+            let start = position
+            let end = lineEnd(startingAt: start)
+            position = end < data.count ? end + 1 : end
+            guard start < end else { continue }
+            let first = data[start]
+            guard first == 0x20 || first == 0x09 else { break }
+            var valueStart = start
+            while valueStart < end,
+                  data[valueStart] == 0x20 || data[valueStart] == 0x09 {
+                valueStart += 1
+            }
+            var valueEnd = end
+            while valueEnd > valueStart,
+                  data[valueEnd - 1] == 0x0D || data[valueEnd - 1] == 0x20 {
+                valueEnd -= 1
+            }
+            if data[valueStart..<valueEnd].elementsEqual(target) {
+                return true
+            }
+        }
+        return false
+    }
+
     public func candidateGroups(
         matching prefix: String,
         limit: Int = .max

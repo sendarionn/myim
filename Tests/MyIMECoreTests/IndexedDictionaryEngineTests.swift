@@ -54,4 +54,10 @@ struct IndexedDictionaryEngineTests {
     func reportsReadingCount() {
         #expect(engine.readingCount == 3)
     }
+
+    @Test
+    func findsReadingsForCandidate() {
+        #expect(engine.readings(for: "愛") == ["あい"])
+        #expect(engine.readings(for: "未登録").isEmpty)
+    }
 }
