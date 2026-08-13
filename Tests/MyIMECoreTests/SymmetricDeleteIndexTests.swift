@@ -30,4 +30,17 @@ struct SymmetricDeleteIndexTests {
 
         #expect(keys == ["abc", "bc", "ac", "ab"])
     }
+
+    @Test
+    func findsEveryTermSharingADeletionKey() {
+        let index = SymmetricDeleteIndex(
+            terms: ["abc", "abd", "xyz"],
+            maximumDistance: 1
+        )
+
+        #expect(index.candidateIdentifiers(
+            for: "ab",
+            maximumDistance: 1
+        ) == [0, 1])
+    }
 }

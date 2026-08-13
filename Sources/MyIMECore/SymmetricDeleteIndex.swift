@@ -1,21 +1,37 @@
 import Foundation
 
 struct SymmetricDeleteIndex: Sendable {
-    private let valuesByDeleteHash: [UInt64: [Int]]
+    private struct Row: Sendable {
+        let hash: UInt64
+        let identifier: Int
+    }
+
+    /// Sorted rows avoid the per-key Dictionary and Array allocations that
+    /// dominate the typo index's resident memory.
+    private let rows: [Row]
     let maximumDistance: Int
 
     init(terms: [String], maximumDistance: Int) {
         self.maximumDistance = max(0, maximumDistance)
-        var index: [UInt64: [Int]] = [:]
+        var rows: [Row] = []
         for (identifier, term) in terms.enumerated() {
             for key in Self.keys(
                 for: term,
                 maximumDistance: self.maximumDistance
             ) {
-                index[Self.hash(key), default: []].append(identifier)
+                rows.append(Row(
+                    hash: Self.hash(key),
+                    identifier: identifier
+                ))
             }
         }
-        valuesByDeleteHash = index
+        rows.sort {
+            if $0.hash != $1.hash {
+                return $0.hash < $1.hash
+            }
+            return $0.identifier < $1.identifier
+        }
+        self.rows = rows
     }
 
     func candidateIdentifiers(
@@ -25,9 +41,28 @@ struct SymmetricDeleteIndex: Sendable {
         let distance = min(max(0, maximumDistance), self.maximumDistance)
         var identifiers = Set<Int>()
         for key in Self.keys(for: term, maximumDistance: distance) {
-            identifiers.formUnion(valuesByDeleteHash[Self.hash(key)] ?? [])
+            let hash = Self.hash(key)
+            var index = lowerBound(for: hash)
+            while index < rows.count, rows[index].hash == hash {
+                identifiers.insert(rows[index].identifier)
+                index += 1
+            }
         }
         return identifiers
+    }
+
+    private func lowerBound(for hash: UInt64) -> Int {
+        var lower = 0
+        var upper = rows.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if rows[middle].hash < hash {
+                lower = middle + 1
+            } else {
+                upper = middle
+            }
+        }
+        return lower
     }
 
     static func keys(

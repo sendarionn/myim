@@ -1,9 +1,7 @@
 @preconcurrency import AppKit
-@preconcurrency import WebKit
 import MyIMECore
 
-final class ExternalInformationWindowController: NSObject,
-    WKNavigationDelegate, WKUIDelegate {
+final class ExternalInformationWindowController: NSObject {
     private struct PendingPresentation {
         let url: URL?
         let panelTitle: String
@@ -17,10 +15,12 @@ final class ExternalInformationWindowController: NSObject,
     private static let informationPanelSize = NSSize(width: 420, height: 420)
 
     private let definitionPanel: NSPanel
-    private let informationPanel: NSPanel
-    private let webView: WKWebView
     private let definitionTextView: NSTextView
     private let externalBrowser = ExternalBrowserBridge()
+    private var informationPanelFrame = NSRect(
+        origin: .zero,
+        size: informationPanelSize
+    )
     private var displayedURL: URL?
     private var requestID = UUID()
     private var displayTask: Task<Void, Never>?
@@ -33,21 +33,9 @@ final class ExternalInformationWindowController: NSObject,
 
     override init() {
         definitionTextView = NSTextView(frame: .zero)
-        let webConfiguration = WKWebViewConfiguration()
-        webConfiguration.websiteDataStore = .default()
-        webView = InteractiveInformationWebView(
-            frame: .zero,
-            configuration: webConfiguration
-        )
         definitionPanel = Self.makePanel(
             title: "macOS辞書",
-            size: NSSize(width: 420, height: 220),
-            interactive: false
-        )
-        informationPanel = Self.makePanel(
-            title: "外部情報",
-            size: Self.informationPanelSize,
-            interactive: true
+            size: NSSize(width: 420, height: 220)
         )
 
         super.init()
@@ -56,40 +44,6 @@ final class ExternalInformationWindowController: NSObject,
         externalBrowser.onInteractionBegan = { [weak self] in
             self?.beginInteraction()
         }
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
-
-        let openInBrowserButton = NSButton(
-            title: "ブラウザで開く  ⌘O",
-            target: self,
-            action: #selector(openDisplayedPageInDefaultBrowser(_:))
-        )
-        openInBrowserButton.bezelStyle = .inline
-        openInBrowserButton.font = PanelShortcutGuideStyle.font
-        openInBrowserButton.contentTintColor = PanelShortcutGuideStyle.color
-        openInBrowserButton.toolTip = "現在のページを既定ブラウザで開く（Command＋O）"
-        let browserAccessory = NSTitlebarAccessoryViewController()
-        browserAccessory.layoutAttribute = .right
-        browserAccessory.view = openInBrowserButton
-        informationPanel.addTitlebarAccessoryViewController(browserAccessory)
-
-        if let panel = informationPanel as? InteractiveInformationPanel {
-            panel.onInteractionBegan = { [weak self] in
-                self?.beginInteraction()
-            }
-            panel.onInteractionEnded = { [weak self] in
-                self?.endInteraction()
-            }
-        }
-        if let interactiveWebView = webView as? InteractiveInformationWebView {
-            interactiveWebView.onInteractionBegan = { [weak self] in
-                self?.beginInteraction()
-            }
-            interactiveWebView.onEscape = { [weak self] in
-                self?.endInteraction(resignPanel: true)
-            }
-        }
-
         definitionTextView.isEditable = false
         definitionTextView.isSelectable = true
         definitionTextView.drawsBackground = false
@@ -102,7 +56,6 @@ final class ExternalInformationWindowController: NSObject,
         definitionScrollView.autohidesScrollers = true
         definitionScrollView.drawsBackground = false
         definitionPanel.contentView = definitionScrollView
-        informationPanel.contentView = webView
     }
 
     func show(
@@ -147,7 +100,6 @@ final class ExternalInformationWindowController: NSObject,
         navigationTask?.cancel()
         let currentRequestID = UUID()
         requestID = currentRequestID
-        informationPanel.orderOut(nil)
         externalBrowser.hide()
 
         if definitions.isEmpty {
@@ -165,9 +117,7 @@ final class ExternalInformationWindowController: NSObject,
             return
         }
 
-        informationPanel.title = panelTitle
         if displayedURL != url {
-            webView.stopLoading()
             let navigationDelay = min(
                 Self.navigationDebounce,
                 displayDelay
@@ -225,7 +175,7 @@ final class ExternalInformationWindowController: NSObject,
         title: String,
         isVisible: Bool
     ) -> ExternalBrowserCommand {
-        let frame = informationPanel.frame
+        let frame = informationPanelFrame
         return ExternalBrowserCommand(
             url: url,
             title: title,
@@ -250,44 +200,15 @@ final class ExternalInformationWindowController: NSObject,
         try? FileManager.default.removeItem(at: file)
     }
 
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-    ) {
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.cancel)
-            return
-        }
-        let allowed = url.scheme == "https" || url.scheme == "about"
-        decisionHandler(allowed ? .allow : .cancel)
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        createWebViewWith configuration: WKWebViewConfiguration,
-        for navigationAction: WKNavigationAction,
-        windowFeatures: WKWindowFeatures
-    ) -> WKWebView? {
-        guard let url = navigationAction.request.url,
-              url.scheme == "https" else {
-            return nil
-        }
-        webView.load(URLRequest(url: url))
-        return nil
-    }
-
     func hide() {
         displayTask?.cancel()
         displayTask = nil
         navigationTask?.cancel()
         navigationTask = nil
-        webView.stopLoading()
         requestID = UUID()
         pendingPresentation = nil
         isInteractionActive = false
         definitionPanel.orderOut(nil)
-        informationPanel.orderOut(nil)
         externalBrowser.hide()
     }
 
@@ -301,14 +222,11 @@ final class ExternalInformationWindowController: NSObject,
         onInteractionBegan?()
     }
 
-    private func endInteraction(resignPanel: Bool = false) {
+    private func endInteraction() {
         guard isInteractionActive else {
             return
         }
         isInteractionActive = false
-        if resignPanel {
-            informationPanel.resignKey()
-        }
         onInteractionEnded?()
 
         guard let pendingPresentation else {
@@ -339,7 +257,7 @@ final class ExternalInformationWindowController: NSObject,
 
     @discardableResult
     func openDisplayedPageInDefaultBrowser() -> Bool {
-        guard let url = webView.url ?? displayedURL,
+        guard let url = displayedURL,
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else {
             return false
@@ -347,38 +265,16 @@ final class ExternalInformationWindowController: NSObject,
         return NSWorkspace.shared.open(url)
     }
 
-    @objc
-    private func openDisplayedPageInDefaultBrowser(_ sender: Any?) {
-        if !openDisplayedPageInDefaultBrowser() {
-            NSSound.beep()
-        }
-    }
-
     private static func makePanel(
         title: String,
-        size: NSSize,
-        interactive: Bool
+        size: NSSize
     ) -> NSPanel {
-        let styleMask: NSWindow.StyleMask = interactive
-            ? [.titled, .closable, .resizable, .nonactivatingPanel]
-            : [.titled, .nonactivatingPanel]
-        let panel: NSPanel
-        if interactive {
-            panel = InteractiveInformationPanel(
-                contentRect: NSRect(origin: .zero, size: size),
-                styleMask: styleMask,
-                backing: .buffered,
-                defer: true
-            )
-            panel.becomesKeyOnlyIfNeeded = false
-        } else {
-            panel = NSPanel(
-                contentRect: NSRect(origin: .zero, size: size),
-                styleMask: styleMask,
-                backing: .buffered,
-                defer: true
-            )
-        }
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
         panel.title = title
         panel.hidesOnDeactivate = false
         panel.level = .floating
@@ -409,12 +305,10 @@ final class ExternalInformationWindowController: NSObject,
 
     private func positionInformationPanel(near candidateFrame: NSRect) {
         let visibleFrame = visibleFrame(near: candidateFrame)
-        let panelHeight = min(Self.informationPanelSize.height, visibleFrame.height)
-        let panelWidth = min(Self.informationPanelSize.width, visibleFrame.width)
-        informationPanel.setContentSize(
-            NSSize(width: panelWidth, height: panelHeight)
+        let panelSize = NSSize(
+            width: min(Self.informationPanelSize.width, visibleFrame.width),
+            height: min(Self.informationPanelSize.height, visibleFrame.height)
         )
-        let panelSize = informationPanel.frame.size
         let occupiedFrame = definitionPanel.isVisible
             ? candidateFrame.union(definitionPanel.frame)
             : candidateFrame
@@ -433,7 +327,10 @@ final class ExternalInformationWindowController: NSObject,
             minimum: visibleFrame.minY,
             maximum: visibleFrame.maxY - panelSize.height
         )
-        informationPanel.setFrameOrigin(NSPoint(x: x, y: y))
+        informationPanelFrame = NSRect(
+            origin: NSPoint(x: x, y: y),
+            size: panelSize
+        )
     }
 
     private func visibleFrame(near candidateFrame: NSRect) -> NSRect {
@@ -487,60 +384,5 @@ final class ExternalInformationWindowController: NSObject,
             )
         }
         return result
-    }
-}
-
-private final class InteractiveInformationPanel: NSPanel {
-    var onInteractionBegan: (() -> Void)?
-    var onInteractionEnded: (() -> Void)?
-
-    override var canBecomeKey: Bool {
-        false
-    }
-
-    override var canBecomeMain: Bool {
-        false
-    }
-
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown
-            || event.type == .rightMouseDown
-            || event.type == .otherMouseDown
-            || event.type == .scrollWheel {
-            onInteractionBegan?()
-        }
-        super.sendEvent(event)
-    }
-
-    override func close() {
-        onInteractionEnded?()
-        super.close()
-    }
-}
-
-private final class InteractiveInformationWebView: WKWebView {
-    var onInteractionBegan: (() -> Void)?
-    var onEscape: (() -> Void)?
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        onInteractionBegan?()
-        super.mouseDown(with: event)
-    }
-
-    override func scrollWheel(with event: NSEvent) {
-        onInteractionBegan?()
-        super.scrollWheel(with: event)
-    }
-
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {
-            onEscape?()
-            return
-        }
-        super.keyDown(with: event)
     }
 }

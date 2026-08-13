@@ -82,12 +82,14 @@ private final class BrowserWebView: WKWebView {
 
 private final class BrowserController: NSObject, NSApplicationDelegate,
     NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
+    private static let idleTerminationInterval: TimeInterval = 30
     private static let notificationName = Notification.Name(
         "io.github.sendarionn.myim.external-browser.command"
     )
     private var panel: BrowserPanel!
     private var webView: WKWebView!
     private var displayedURL: URL?
+    private var idleTerminationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let configuration = WKWebViewConfiguration()
@@ -138,11 +140,14 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
         guard let command = loadCommand() else {
             return
         }
+        idleTerminationTask?.cancel()
+        idleTerminationTask = nil
         guard let url = command.url else {
             if panel.isKeyWindow {
                 return
             }
             panel.orderOut(nil)
+            scheduleIdleTermination()
             return
         }
         guard url.scheme == "https" else {
@@ -227,7 +232,27 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         panel.orderOut(nil)
+        scheduleIdleTermination()
         return false
+    }
+
+    private func scheduleIdleTermination() {
+        idleTerminationTask?.cancel()
+        idleTerminationTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(
+                for: .seconds(Self.idleTerminationInterval)
+            )
+            guard !Task.isCancelled,
+                  let self,
+                  !panel.isVisible,
+                  !panel.isKeyWindow else {
+                return
+            }
+            webView.stopLoading()
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+            NSApplication.shared.terminate(nil)
+        }
     }
 }
 

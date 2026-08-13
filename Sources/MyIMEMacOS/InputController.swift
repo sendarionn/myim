@@ -52,6 +52,17 @@ final class InputController: IMKInputController {
     private static let maximumCandidateCount = 7
     private static let maximumIMEDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
+    private static let sharedBasicEntries = loadBasicEntries()
+    private static let sharedBasicConversionEngine = ConversionEngine(
+        entries: sharedBasicEntries
+    )
+    private static let sharedIMEConversionEngine = loadIMEDictionaryEngine()
+    private static let sharedSupplementalConversionEngine = ConversionEngine(
+        entries: SupplementalDictionary.entries
+    )
+    private static let sharedVerbInflectionGenerator =
+        VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
+    private static let fuzzyEngineRepository = FuzzyEngineRepository()
 
     private var inputBuffer = ""
     private var inputCursor = 0
@@ -73,7 +84,6 @@ final class InputController: IMKInputController {
     private let imeConversionEngine: IndexedDictionaryEngine
     private let supplementalConversionEngine: ConversionEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
-    private var fuzzyConversionEngine: FuzzyConversionEngine
     private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let cosenseSettingsController: CosenseSettingsController
     private let settingsDialogController = SettingsDialogController()
@@ -105,8 +115,8 @@ final class InputController: IMKInputController {
         let source = Self.loadDictionarySource()
         let cosenseSettingsController = CosenseSettingsController()
         let cachedUserEntries = Self.loadUserEntries()
-        let bundledEntries = Self.loadBasicEntries()
-        let indexedIMEEngine = Self.loadIMEDictionaryEngine()
+        let bundledEntries = Self.sharedBasicEntries
+        let indexedIMEEngine = Self.sharedIMEConversionEngine
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
         let selectionHistory = Self.loadCandidateSelectionHistory()
         let nextInputModel = Self.loadNextInputPredictionModel()
@@ -145,15 +155,10 @@ final class InputController: IMKInputController {
         extensionConversionEngine = ConversionEngine(
             entries: cachedExtensionEntries
         )
-        basicConversionEngine = ConversionEngine(entries: bundledEntries)
+        basicConversionEngine = Self.sharedBasicConversionEngine
         imeConversionEngine = indexedIMEEngine
-        supplementalConversionEngine = ConversionEngine(
-            entries: SupplementalDictionary.entries
-        )
-        verbInflectionGenerator = VerbInflectionCandidateGenerator(
-            entries: bundledEntries
-        )
-        fuzzyConversionEngine = FuzzyConversionEngine(entries: [])
+        supplementalConversionEngine = Self.sharedSupplementalConversionEngine
+        verbInflectionGenerator = Self.sharedVerbInflectionGenerator
         candidatePanel = IMKCandidates(
             server: server,
             panelType: kIMKSingleColumnScrollingCandidatePanel
@@ -924,7 +929,7 @@ final class InputController: IMKInputController {
                 }) ?? true else {
                     if let self, basicEntries.isEmpty {
                         basicEntries = snapshot.entries
-                        rebuildConversionEngine()
+                        rebuildConversionEngine(basicDictionaryChanged: true)
                     }
                     self?.basicDictionaryStatus =
                         "最新版（\(snapshot.entries.count)読み）"
@@ -945,7 +950,7 @@ final class InputController: IMKInputController {
                     return
                 }
                 basicEntries = snapshot.entries
-                rebuildConversionEngine()
+                rebuildConversionEngine(basicDictionaryChanged: true)
                 basicDictionaryStatus = "更新完了（\(snapshot.entries.count)読み）"
 
                 if !inputBuffer.isEmpty, let inputClient = client() {
@@ -1749,7 +1754,6 @@ final class InputController: IMKInputController {
         }
 
         let query = conversionReading
-        let engine = fuzzyConversionEngine
         let imeDictionary = imeConversionEngine
         let visibleCandidates = Set(currentCandidates)
         let token = suggestionSearchSession.begin(.fuzzy, query: query)
@@ -1763,8 +1767,12 @@ final class InputController: IMKInputController {
                             dictionary: imeDictionary
                         )
                     var seenReadings = Set<String>()
+                    let fuzzyMatches = Self.fuzzyEngineRepository.matches(
+                        for: query,
+                        limit: 6
+                    )
                     let combined = (keyboardMatches
-                        + engine.matches(for: query, limit: 6)).filter {
+                        + fuzzyMatches).filter {
                             seenReadings.insert($0.reading).inserted
                         }
                     return Array(FuzzyConversionMatchFilter.filtered(
@@ -2692,15 +2700,19 @@ final class InputController: IMKInputController {
         )
     }
 
-    private func rebuildConversionEngine() {
+    private func rebuildConversionEngine(
+        basicDictionaryChanged: Bool = false
+    ) {
         userConversionEngine = ConversionEngine(entries: userEntries)
         extensionConversionEngine = ConversionEngine(
             entries: extensionEntries
         )
-        basicConversionEngine = ConversionEngine(entries: basicEntries)
-        verbInflectionGenerator = VerbInflectionCandidateGenerator(
-            entries: basicEntries
-        )
+        if basicDictionaryChanged {
+            basicConversionEngine = ConversionEngine(entries: basicEntries)
+            verbInflectionGenerator = VerbInflectionCandidateGenerator(
+                entries: basicEntries
+            )
+        }
         rebuildFuzzyConversionEngine()
     }
 
@@ -2713,21 +2725,19 @@ final class InputController: IMKInputController {
             : []
         let basicEntries = basicEntries
         fuzzyEngineBuildTask = Task { @MainActor [weak self] in
-            let engine = await Task.detached(priority: .utility) {
-                FuzzyConversionEngine(
-                    entries: userEntries
-                        + extensionEntries
-                        + basicEntries
-                        + VerbInflectionCandidateGenerator.typoSearchEntries(
-                            from: basicEntries
-                        )
-                        + SupplementalDictionary.entries
-                )
+            await Task.detached(priority: .utility) {
+                let entries = userEntries
+                    + extensionEntries
+                    + basicEntries
+                    + VerbInflectionCandidateGenerator.typoSearchEntries(
+                        from: basicEntries
+                    )
+                    + SupplementalDictionary.entries
+                Self.fuzzyEngineRepository.prepare(for: entries)
             }.value
             guard !Task.isCancelled, let self else {
                 return
             }
-            fuzzyConversionEngine = engine
             fuzzyEngineBuildTask = nil
             guard !inputBuffer.isEmpty, let inputClient = client() else {
                 return
