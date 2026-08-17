@@ -1,0 +1,8 @@
+#!/bin/zsh
+
+set -u
+
+/usr/bin/pkill -x myim 2>/dev/null || true
+/usr/bin/pkill -x myim-external-browser 2>/dev/null || true
+
+exit 0

@@ -12,23 +12,34 @@ browser_bundle="$helpers_directory/myim-external-browser.app"
 browser_contents="$browser_bundle/Contents"
 browser_executable_directory="$browser_contents/MacOS"
 iconset_directory="$repository_root/.build/myim.iconset"
+menu_assets_directory="$repository_root/.build/myim-menu-assets"
 ime_executable="$executable_directory/myim"
 browser_executable="$browser_executable_directory/myim-external-browser"
+code_sign_identity=${MYIM_CODE_SIGN_IDENTITY:--}
+architectures=(${=MYIM_ARCHITECTURES:-})
+version=${MYIM_VERSION:-}
+build_number=${MYIM_BUILD_NUMBER:-}
 
 cd "$repository_root"
-"$repository_root/Scripts/verify-history-date.sh"
-swift build -c release --product myim-macos
-swift build -c release --product myim-external-browser
+"$repository_root/Scripts/verify-history-date.sh" --allow-existing
+swift_build_arguments=(-c release --disable-sandbox)
+for architecture in "${architectures[@]}"; do
+    swift_build_arguments+=(--arch "$architecture")
+done
+swift build "${swift_build_arguments[@]}" --product myim-macos
+swift build "${swift_build_arguments[@]}" --product myim-external-browser
+products_directory=$(swift build "${swift_build_arguments[@]}" --show-bin-path)
 
-rm -rf "$application_bundle" "$iconset_directory"
+rm -rf "$application_bundle" "$iconset_directory" "$menu_assets_directory"
 
 mkdir -p \
     "$executable_directory" \
     "$resources_directory" \
     "$browser_executable_directory"
 mkdir -p "$iconset_directory"
-cp ".build/release/myim-macos" "$ime_executable"
-cp ".build/release/myim-external-browser" "$browser_executable"
+mkdir -p "$menu_assets_directory"
+cp "$products_directory/myim-macos" "$ime_executable"
+cp "$products_directory/myim-external-browser" "$browser_executable"
 cp "macOS/ExternalBrowser-Info.plist" "$browser_contents/Info.plist"
 
 developer_rpaths=("${(@f)$(otool -l "$ime_executable" | awk '
@@ -44,6 +55,7 @@ developer_rpaths=("${(@f)$(otool -l "$ime_executable" | awk '
 ')}")
 
 for developer_rpath in "${developer_rpaths[@]}"; do
+    [[ -n "$developer_rpath" ]] || continue
     install_name_tool -delete_rpath "$developer_rpath" "$ime_executable"
 done
 
@@ -60,10 +72,27 @@ browser_developer_rpaths=("${(@f)$(otool -l "$browser_executable" | awk '
 ')}")
 
 for developer_rpath in "${browser_developer_rpaths[@]}"; do
+    [[ -n "$developer_rpath" ]] || continue
     install_name_tool -delete_rpath "$developer_rpath" "$browser_executable"
 done
 
 cp "macOS/Info.plist" "$contents_directory/Info.plist"
+if [[ -n "$version" ]]; then
+    /usr/libexec/PlistBuddy \
+        -c "Set :CFBundleShortVersionString $version" \
+        "$contents_directory/Info.plist"
+    /usr/libexec/PlistBuddy \
+        -c "Set :CFBundleShortVersionString $version" \
+        "$browser_contents/Info.plist"
+fi
+if [[ -n "$build_number" ]]; then
+    /usr/libexec/PlistBuddy \
+        -c "Set :CFBundleVersion $build_number" \
+        "$contents_directory/Info.plist"
+    /usr/libexec/PlistBuddy \
+        -c "Set :CFBundleVersion $build_number" \
+        "$browser_contents/Info.plist"
+fi
 cp "macOS/InfoPlist.strings" "$resources_directory/InfoPlist.strings"
 cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary.txt" \
@@ -89,24 +118,24 @@ cp \
 xcrun swift "Scripts/generate-ime-icon.swift" \
     "$resources_directory/myimChip.pdf" 28 36 26 white
 xcrun swift "Scripts/generate-ime-icon.swift" \
-    "$iconset_directory/myim-menu-1x.pdf" 22 16 13
+    "$menu_assets_directory/myim-menu-1x.pdf" 22 16 13
 xcrun swift "Scripts/generate-ime-icon.swift" \
-    "$iconset_directory/myim-menu-2x.pdf" 44 32 26
+    "$menu_assets_directory/myim-menu-2x.pdf" 44 32 26
 xcrun swift "Scripts/generate-ime-icon.swift" \
     "$resources_directory/app-icon.pdf" 1024 1024 640 app
 sips -s format tiff -s dpiWidth 72 -s dpiHeight 72 \
-    "$iconset_directory/myim-menu-1x.pdf" \
-    --out "$iconset_directory/myim-menu-1x.tiff" >/dev/null
+    "$menu_assets_directory/myim-menu-1x.pdf" \
+    --out "$menu_assets_directory/myim-menu-1x.tiff" >/dev/null
 sips -m '/System/Library/ColorSync/Profiles/Generic Gray Profile.icc' \
-    "$iconset_directory/myim-menu-1x.tiff" >/dev/null
+    "$menu_assets_directory/myim-menu-1x.tiff" >/dev/null
 sips -s format tiff -s dpiWidth 144 -s dpiHeight 144 \
-    "$iconset_directory/myim-menu-2x.pdf" \
-    --out "$iconset_directory/myim-menu-2x.tiff" >/dev/null
+    "$menu_assets_directory/myim-menu-2x.pdf" \
+    --out "$menu_assets_directory/myim-menu-2x.tiff" >/dev/null
 sips -m '/System/Library/ColorSync/Profiles/Generic Gray Profile.icc' \
-    "$iconset_directory/myim-menu-2x.tiff" >/dev/null
+    "$menu_assets_directory/myim-menu-2x.tiff" >/dev/null
 tiffutil -cat \
-    "$iconset_directory/myim-menu-1x.tiff" \
-    "$iconset_directory/myim-menu-2x.tiff" \
+    "$menu_assets_directory/myim-menu-1x.tiff" \
+    "$menu_assets_directory/myim-menu-2x.tiff" \
     -out "$resources_directory/myimMenuTemplate.tiff"
 sips -s format png -z 16 16 "$resources_directory/app-icon.pdf" \
     --out "$iconset_directory/icon_16x16.png" >/dev/null
@@ -131,15 +160,30 @@ sips -s format png -z 1024 1024 "$resources_directory/app-icon.pdf" \
 iconutil -c icns "$iconset_directory" -o "$resources_directory/AppIcon.icns"
 chmod +x "$ime_executable"
 chmod +x "$browser_executable"
+xattr -cr "$application_bundle"
 
 plutil -lint "$contents_directory/Info.plist"
 plutil -lint "$browser_contents/Info.plist"
-codesign --force --sign - "$browser_bundle"
-codesign \
-    --force \
-    --deep \
-    --sign - \
-    --entitlements "macOS/myim.entitlements" \
-    "$application_bundle"
+if [[ "$code_sign_identity" == "-" ]]; then
+    codesign --force --sign - "$browser_bundle"
+    codesign \
+        --force \
+        --sign - \
+        --entitlements "macOS/myim.entitlements" \
+        "$application_bundle"
+else
+    codesign \
+        --force \
+        --sign "$code_sign_identity" \
+        --options runtime \
+        --timestamp \
+        "$browser_bundle"
+    codesign \
+        --force \
+        --sign "$code_sign_identity" \
+        --options runtime \
+        --timestamp \
+        "$application_bundle"
+fi
 
 echo "$application_bundle"

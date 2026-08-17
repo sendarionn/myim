@@ -21,7 +21,6 @@ myimは、日本語入力と英語入力を別のモードへ分けず、ロー�
 ## 必要環境
 
 - macOS 13以降
-- Swift 6以降
 - Apple Translationを使う機能はmacOS 15以降
 
 ## 基本操作
@@ -259,6 +258,19 @@ ikiru
 
 ## ビルドとインストール
 
+### GitHub Releaseからインストール
+
+1. GitHub Releaseから最新版の`myim-バージョン.pkg`をダウンロード
+2. PKGを開いてインストール
+3. 「システム設定」→「キーボード」→「テキスト入力」→「編集」を開く
+4. `myim`を追加
+
+PKGは`/Library/Input Methods/myim.app`へインストールします
+
+### ソースからインストール
+
+Swift 6以降が必要です
+
 ```shell
 ./Scripts/install-macos-im.sh
 ```
@@ -312,3 +324,4 @@ python3 -m unittest discover -s Tests/ScriptTests -p 'test_*.py'
 - `docs/DICTIONARY_DATASETS.md` 辞書の生成方法と実行時構成
 - `docs/DICTIONARY_LICENSES.md` 辞書の出典とライセンス
 - `docs/MACOS_DICTIONARY.md` macOS標準辞書の利用方針
+- `docs/RELEASING.md` 署名、公証、GitHub Releaseの手順

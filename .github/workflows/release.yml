@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Import signing certificates
+        env:
+          CERTIFICATES_P12: ${{ secrets.APPLE_CERTIFICATES_P12_BASE64 }}
+          CERTIFICATES_PASSWORD: ${{ secrets.APPLE_CERTIFICATES_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+        run: |
+          certificate_path="$RUNNER_TEMP/certificates.p12"
+          keychain_path="$RUNNER_TEMP/myim-signing.keychain-db"
+          printf '%s' "$CERTIFICATES_P12" | base64 -D > "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$CERTIFICATES_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$keychain_path"
+
+      - name: Build signed universal package
+        env:
+          MYIM_VERSION: ${{ github.ref_name }}
+          MYIM_BUILD_NUMBER: ${{ github.run_number }}
+          MYIM_CODE_SIGN_IDENTITY: ${{ secrets.APPLE_APPLICATION_IDENTITY }}
+          MYIM_INSTALLER_SIGN_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+        run: |
+          export MYIM_VERSION="${MYIM_VERSION#v}"
+          ./Scripts/build-release-pkg.sh
+
+      - name: Notarize package
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          MYIM_VERSION: ${{ github.ref_name }}
+        run: |
+          export MYIM_VERSION="${MYIM_VERSION#v}"
+          package_path=".build/release-artifacts/myim-$MYIM_VERSION.pkg"
+          xcrun notarytool submit "$package_path" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple "$package_path"
+          xcrun stapler validate "$package_path"
+          spctl --assess --type install --verbose=2 "$package_path"
+          pkgutil --check-signature "$package_path"
+          shasum -a 256 "$package_path" > "$package_path.sha256"
+
+      - name: Run tests
+        run: |
+          swift test
+          python3 -m unittest discover -s Tests/ScriptTests -p 'test_*.py'
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MYIM_VERSION: ${{ github.ref_name }}
+        run: |
+          version="${MYIM_VERSION#v}"
+          gh release create "$MYIM_VERSION" \
+            ".build/release-artifacts/myim-$version.pkg" \
+            ".build/release-artifacts/myim-$version.pkg.sha256" \
+            --verify-tag \
+            --generate-notes \
+            --title "myim $version"

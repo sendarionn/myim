@@ -1477,6 +1477,20 @@
 - myimを明示的に有効化してから選択
 - 登録後にmyimが見つからない場合を成功扱いせず、インストールエラーとして報告
 
+## 2026-08-17
+
+### GitHub Release向けPKG配布
+
+- Apple SiliconとIntelに対応するUniversal Binaryの配布ビルドを追加
+- Developer ID ApplicationとDeveloper ID Installerによる署名へ対応
+- Apple公証、Staple、Gatekeeper、PKG署名の検査処理を追加
+- バージョンタグからPKGとSHA-256をGitHub Releaseへ公開するActionsを追加
+- 利用者向けインストール手順とリリース担当者向けSecrets設定手順を追加
+- PKGによる既存アプリの再配置を禁止し、更新時に実行中のmyimを終了する処理を追加
+- PKGから不要なAppleDoubleファイルを除外し、内包ブラウザも同じ場所で更新するよう固定
+- mainとPull RequestでテストとUniversal app生成を検査するCIを追加
+- 過去コミットの再ビルドではHISTORYの日付を改変せず、未来の日付だけを拒否する検査モードを追加
+
 ## 更新方針
 
 - 実装または仕様が変更された時点でこのファイルを更新
