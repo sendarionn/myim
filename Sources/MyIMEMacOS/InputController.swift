@@ -1190,18 +1190,28 @@ final class InputController: IMKInputController {
     }
 
     private func handleTab(_ event: NSEvent, client sender: Any) -> Bool {
+        let flags = event.modifierFlags.intersection(
+            [.command, .control, .option, .shift]
+        )
         if inputBuffer.isEmpty {
-            if !event.modifierFlags.contains(.shift),
+            if selectedNextInputIndex != nil,
+               flags.isEmpty || flags == [.shift] {
+                let offset = flags.contains(.shift) ? -1 : 1
+                return selectNextInputCandidate(offset: offset, client: sender)
+            }
+            if flags.isEmpty,
                beginReconversionIfPossible(client: sender) {
                 return true
             }
-            guard !nextInputCandidates.isEmpty else {
-                return false
+            if (flags.isEmpty || flags == [.shift]),
+               !nextInputCandidates.isEmpty {
+                let offset = flags.contains(.shift) ? -1 : 1
+                return selectNextInputCandidate(offset: offset, client: sender)
             }
-            let offset = event.modifierFlags.contains(.shift) ? -1 : 1
-            return selectNextInputCandidate(offset: offset, client: sender)
+            return false
         }
 
+        guard flags.isEmpty || flags == [.shift] else { return false }
         guard !currentCandidates.isEmpty else {
             return true
         }
@@ -2413,13 +2423,7 @@ final class InputController: IMKInputController {
             guard !nextInputCandidates.isEmpty else {
                 return false
             }
-            if selectedNextInputIndex != nil {
-                setMarkedText("", in: sender)
-            }
-            selectedNextInputIndex = nil
-            candidateWindow.clearSelection()
-            previewWindow.hide()
-            scheduleNextInputDismissal()
+            dismissNextInputSuggestions(clearMarkedTextIn: sender)
             return true
         }
 
@@ -2581,7 +2585,7 @@ final class InputController: IMKInputController {
             candidates: nextInputCandidates,
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "Tab / ⇧Tab / 矢印 選択　↩ 確定\n文字入力で確定"
+            guide: "Tab 選択　Esc 閉じる\n選択後はTab / ⇧Tab / 矢印 移動　↩ 確定"
         )
         scheduleNextInputDismissal()
     }
