@@ -26,6 +26,32 @@ actor JavaScriptExtensionClient {
             .appendingPathComponent("Extensions", isDirectory: true)
     }
 
+    @discardableResult
+    nonisolated static func prepareUserExtensionDirectory() -> URL? {
+        guard let user = userExtensionDirectory else { return nil }
+        guard let builtIn = Bundle.main.resourceURL?
+            .appendingPathComponent("Extensions", isDirectory: true) else {
+            try? FileManager.default.createDirectory(
+                at: user,
+                withIntermediateDirectories: true
+            )
+            return user
+        }
+        do {
+            try DefaultExtensionInstaller.installIfNeeded(
+                from: builtIn,
+                into: user
+            )
+        } catch {
+            NSLog("標準JavaScript拡張の初期配置に失敗: %@", error.localizedDescription)
+            try? FileManager.default.createDirectory(
+                at: user,
+                withIntermediateDirectories: true
+            )
+        }
+        return user
+    }
+
     func candidates(
         for input: String,
         dateFormats: [String],
@@ -150,18 +176,11 @@ actor JavaScriptExtensionClient {
     }
 
     private static var extensionDirectories: [String] {
-        var directories: [String] = []
-        if let builtIn = Bundle.main.resourceURL?
-            .appendingPathComponent("Extensions", isDirectory: true) {
-            directories.append(builtIn.path)
+        if let user = prepareUserExtensionDirectory() {
+            return [user.path]
         }
-        if let user = userExtensionDirectory {
-            try? FileManager.default.createDirectory(
-                at: user,
-                withIntermediateDirectories: true
-            )
-            directories.append(user.path)
-        }
-        return directories
+        return Bundle.main.resourceURL.map {
+            [$0.appendingPathComponent("Extensions", isDirectory: true).path]
+        } ?? []
     }
 }

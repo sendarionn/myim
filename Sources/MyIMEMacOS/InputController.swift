@@ -157,6 +157,7 @@ final class InputController: IMKInputController {
         basicConversionEngine = Self.sharedBasicConversionEngine
         mozcConversionEngine = indexedMozcEngine
         verbInflectionGenerator = Self.sharedVerbInflectionGenerator
+        JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
 
         basicDictionaryStatus = bundledEntries.isEmpty
@@ -446,7 +447,8 @@ final class InputController: IMKInputController {
 
     @objc
     private func openJavaScriptExtensionDirectory(_ sender: Any?) {
-        guard let directory = JavaScriptExtensionClient.userExtensionDirectory
+        guard let directory = JavaScriptExtensionClient
+            .prepareUserExtensionDirectory()
         else {
             showJavaScriptExtensionDirectoryError(
                 title: "拡張フォルダを開けません",
