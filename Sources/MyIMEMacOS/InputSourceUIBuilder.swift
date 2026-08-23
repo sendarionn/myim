@@ -8,6 +8,7 @@ enum InputSourceMenuBuilder {
     struct Actions {
         let openSettings: Selector
         let openJavaScriptExtensionDirectory: Selector
+        let manageJavaScriptExtensions: Selector
         let toggleTranslationMode: Selector
         let translationModeEnabled: Bool
         let syncCosenseDictionary: Selector
@@ -25,6 +26,11 @@ enum InputSourceMenuBuilder {
         addAction(
             title: "JavaScript拡張フォルダを開く…",
             selector: actions.openJavaScriptExtensionDirectory,
+            to: menu
+        )
+        addAction(
+            title: "JavaScript拡張を管理…",
+            selector: actions.manageJavaScriptExtensions,
             to: menu
         )
         let translationMode = NSMenuItem(
@@ -121,7 +127,7 @@ enum SettingsWindowBuilder {
         panel.title = "myim設定"
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
-        panel.level = .floating
+        panel.level = .normal
         panel.minSize = NSSize(width: 480, height: 420)
 
         let stack = TopAlignedSettingsStackView()

@@ -86,6 +86,10 @@ final class InputController: IMKInputController {
     private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let cosenseSettingsController: CosenseSettingsController
     private let settingsDialogController = SettingsDialogController()
+    private lazy var javaScriptExtensionSettingsController =
+        JavaScriptExtensionSettingsController(
+            client: Self.javaScriptExtensionClient
+        )
     private var cosenseCredential: CosenseCredential?
     private var candidateSelectionHistory: CandidateSelectionHistory
     private let candidateSelectionHistoryWriter:
@@ -369,6 +373,9 @@ final class InputController: IMKInputController {
                 openJavaScriptExtensionDirectory: #selector(
                     openJavaScriptExtensionDirectory(_:)
                 ),
+                manageJavaScriptExtensions: #selector(
+                    manageJavaScriptExtensions(_:)
+                ),
                 toggleTranslationMode: #selector(toggleTranslationMode(_:)),
                 translationModeEnabled: isTranslationModeEnabled,
                 syncCosenseDictionary: #selector(syncCosenseDictionary(_:)),
@@ -461,13 +468,18 @@ final class InputController: IMKInputController {
                 at: directory,
                 withIntermediateDirectories: true
             )
-            NSWorkspace.shared.open(directory)
+            JavaScriptExtensionDirectoryPresenter.open(directory)
         } catch {
             showJavaScriptExtensionDirectoryError(
                 title: "拡張フォルダを開けません",
                 message: error.localizedDescription
             )
         }
+    }
+
+    @objc
+    private func manageJavaScriptExtensions(_ sender: Any?) {
+        javaScriptExtensionSettingsController.show()
     }
 
     private func showJavaScriptExtensionDirectoryError(

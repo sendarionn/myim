@@ -106,6 +106,15 @@ Mozcのかな読みは同梱前に正規ローマ字inputへ変換します
 ~/Library/Application Support/myim/Extensions/
 ```
 
+このフォルダは、myimがユーザーごとのJavaScript拡張を保存する場所です
+
+- macOSの非表示`Library`内にあり、入力ソースメニューの「JavaScript拡張フォルダを開く…」からFinderで表示
+- myimを初めて起動するか、メニューからフォルダを開いた時に自動作成
+- 標準の`datetime.js`も初回作成時に同じフォルダへ配置
+- ユーザーが追加した`.js`と標準拡張を同じ仕組みで実行
+- myimの再インストールや更新では、配置済みのファイルを上書きしない
+- フォルダ直下の`.js`だけを拡張として読み込み、サブフォルダは読み込まない
+
 ```javascript
 // @myim-prefix hello
 
@@ -121,6 +130,11 @@ function candidates(context) {
 `@myim-prefix`を指定すると、その文字列で始まる入力だけで拡張を実行します
 
 入力ソースメニューを開き、「myim設定…」直下の「JavaScript拡張フォルダを開く…」を押すと配置先をFinderで表示します
+
+「JavaScript拡張を管理…」では、各`.js`のファイル名、prefix、実行状態を確認できます
+チェックを外すとその拡張だけを無効化し、設定は再起動後も維持します
+「再読み込み」は補助プロセスと状態表示をリセットし、次の入力からファイルを読み直します
+構文エラーは対象ファイルの行に、タイムアウトは管理画面の上部に表示します
 
 `context`には`input`、`timestamp`、`timeZone`、日時書式設定を渡します
 候補は文字列、または`value`を持つオブジェクトの配列で返します
@@ -361,7 +375,6 @@ ls -lt ~/Library/Logs/DiagnosticReports/myim*.ips
 - 辞書登録と外部情報パネルのInputMethodKit実機テストを拡充
 - カーソル位置の入力モードインジケータをライト・ダーク両モードで安定化
 - 変換エンジンをmacOS固有実装から分離してWindowsへ対応
-- JavaScript拡張を個別に有効・無効化する設定
 - 権限と表示領域を定義した拡張フォルダ形式
 
 ### リファクタリング

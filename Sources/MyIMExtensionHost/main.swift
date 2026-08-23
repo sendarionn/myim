@@ -16,7 +16,9 @@ while let line = readLine() {
 
     var candidates: [String] = []
     var errors: [String] = []
+    var statuses: [JavaScriptExtensionStatus] = []
     var seen = Set<String>()
+    let disabledFileNames = Set(request.disabledFileNames)
 
     for directory in request.extensionDirectories {
         let directoryURL = URL(fileURLWithPath: directory, isDirectory: true)
@@ -29,17 +31,27 @@ while let line = readLine() {
         for fileURL in files
             .filter({ $0.pathExtension.lowercased() == "js" })
             .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let fileName = fileURL.lastPathComponent
+            if disabledFileNames.contains(fileName) {
+                statuses.append(.init(fileName: fileName, state: .disabled))
+                continue
+            }
             guard let source = try? String(contentsOf: fileURL, encoding: .utf8)
             else {
-                errors.append("\(fileURL.lastPathComponent): 読み込めません")
+                let message = "読み込めません"
+                errors.append("\(fileName): \(message)")
+                statuses.append(.init(fileName: fileName, state: .error, message: message))
                 continue
             }
             if let prefix = metadataValue("myim-prefix", in: source),
                !request.input.hasPrefix(prefix) {
+                statuses.append(.init(fileName: fileName, state: .ready))
                 continue
             }
             guard let context = JSContext() else {
-                errors.append("\(fileURL.lastPathComponent): JSContextを作成できません")
+                let message = "JSContextを作成できません"
+                errors.append("\(fileName): \(message)")
+                statuses.append(.init(fileName: fileName, state: .error, message: message))
                 continue
             }
             var exceptionMessage: String?
@@ -50,9 +62,9 @@ while let line = readLine() {
             guard exceptionMessage == nil,
                   let function = context.objectForKeyedSubscript("candidates"),
                   !function.isUndefined else {
-                errors.append(
-                    "\(fileURL.lastPathComponent): \(exceptionMessage ?? "candidates関数がありません")"
-                )
+                let message = exceptionMessage ?? "candidates関数がありません"
+                errors.append("\(fileName): \(message)")
+                statuses.append(.init(fileName: fileName, state: .error, message: message))
                 continue
             }
             let input: [String: Any] = [
@@ -63,9 +75,9 @@ while let line = readLine() {
             ]
             guard let value = function.call(withArguments: [input]),
                   exceptionMessage == nil else {
-                errors.append(
-                    "\(fileURL.lastPathComponent): \(exceptionMessage ?? "実行できません")"
-                )
+                let message = exceptionMessage ?? "実行できません"
+                errors.append("\(fileName): \(message)")
+                statuses.append(.init(fileName: fileName, state: .error, message: message))
                 continue
             }
             for candidate in candidateStrings(from: value) {
@@ -75,13 +87,15 @@ while let line = readLine() {
                     candidates.append(trimmed)
                 }
             }
+            statuses.append(.init(fileName: fileName, state: .ready))
         }
     }
 
     let response = JavaScriptExtensionResponse(
         id: request.id,
         candidates: candidates,
-        errors: errors
+        errors: errors,
+        statuses: statuses
     )
     if let output = try? encoder.encode(response) {
         FileHandle.standardOutput.write(output)

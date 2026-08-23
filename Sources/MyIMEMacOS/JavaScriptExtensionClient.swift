@@ -2,8 +2,18 @@ import Foundation
 import MyIMECore
 
 actor JavaScriptExtensionClient {
+    struct ExtensionInfo: Sendable {
+        let fileName: String
+        let prefix: String?
+        let isEnabled: Bool
+        let status: JavaScriptExtensionStatus?
+    }
+
+    private static let disabledFileNamesDefaultsKey =
+        "DisabledJavaScriptExtensionFileNames"
+
     private struct PendingRequest {
-        let continuation: CheckedContinuation<[String], Never>
+        let continuation: CheckedContinuation<JavaScriptExtensionResponse?, Never>
         let timeout: Task<Void, Never>
     }
 
@@ -12,6 +22,8 @@ actor JavaScriptExtensionClient {
     private var outputPipe: Pipe?
     private var outputBuffer = Data()
     private var pending: [UUID: PendingRequest] = [:]
+    private var latestStatuses: [String: JavaScriptExtensionStatus] = [:]
+    private var latestRuntimeError: String?
 
     deinit {
         process?.terminate()
@@ -52,6 +64,49 @@ actor JavaScriptExtensionClient {
         return user
     }
 
+    nonisolated static func setEnabled(_ enabled: Bool, fileName: String) {
+        var disabled = disabledFileNames
+        if enabled {
+            disabled.remove(fileName)
+        } else {
+            disabled.insert(fileName)
+        }
+        UserDefaults.standard.set(
+            disabled.sorted(),
+            forKey: disabledFileNamesDefaultsKey
+        )
+    }
+
+    func extensionInfos() -> (items: [ExtensionInfo], runtimeError: String?) {
+        guard let directory = Self.prepareUserExtensionDirectory() else {
+            return ([], "拡張フォルダが見つかりません")
+        }
+        let files = ((try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? [])
+            .filter { $0.pathExtension.lowercased() == "js" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let disabled = Self.disabledFileNames
+        let items = files.map { file -> ExtensionInfo in
+            let source = try? String(contentsOf: file, encoding: .utf8)
+            return ExtensionInfo(
+                fileName: file.lastPathComponent,
+                prefix: source.flatMap(Self.prefixMetadata),
+                isEnabled: !disabled.contains(file.lastPathComponent),
+                status: latestStatuses[file.lastPathComponent]
+            )
+        }
+        return (items, latestRuntimeError)
+    }
+
+    func reload() {
+        latestStatuses.removeAll()
+        latestRuntimeError = nil
+        stopHost()
+    }
+
     func candidates(
         for input: String,
         dateFormats: [String],
@@ -64,6 +119,7 @@ actor JavaScriptExtensionClient {
             timestamp: ISO8601DateFormatter().string(from: Date()),
             timeZone: TimeZone.current.identifier,
             extensionDirectories: Self.extensionDirectories,
+            disabledFileNames: Self.disabledFileNames.sorted(),
             settings: [
                 "dateFormats": dateFormats,
                 "timeFormats": timeFormats,
@@ -72,7 +128,7 @@ actor JavaScriptExtensionClient {
         )
         guard let data = try? JSONEncoder().encode(request) else { return [] }
 
-        return await withCheckedContinuation { continuation in
+        let response = await withCheckedContinuation { continuation in
             let timeout = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(100))
                 guard !Task.isCancelled else { return }
@@ -86,10 +142,18 @@ actor JavaScriptExtensionClient {
                 try inputPipe?.fileHandleForWriting.write(contentsOf: data)
                 try inputPipe?.fileHandleForWriting.write(contentsOf: Data([0x0A]))
             } catch {
-                finish(request.id, candidates: [])
+                finish(request.id, response: nil)
                 stopHost()
             }
         }
+        if let response {
+            latestStatuses = Dictionary(
+                uniqueKeysWithValues: response.statuses.map { ($0.fileName, $0) }
+            )
+            latestRuntimeError = nil
+            return response.candidates
+        }
+        return []
     }
 
     private func startIfNeeded() -> Bool {
@@ -137,20 +201,21 @@ actor JavaScriptExtensionClient {
             if !response.errors.isEmpty {
                 NSLog("JavaScript拡張: %@", response.errors.joined(separator: " / "))
             }
-            finish(response.id, candidates: response.candidates)
+            finish(response.id, response: response)
         }
     }
 
     private func timeout(_ id: UUID) {
         guard pending[id] != nil else { return }
-        finish(id, candidates: [])
+        latestRuntimeError = "JavaScript拡張の実行が100ミリ秒を超えました"
+        finish(id, response: nil)
         stopHost()
     }
 
-    private func finish(_ id: UUID, candidates: [String]) {
+    private func finish(_ id: UUID, response: JavaScriptExtensionResponse?) {
         guard let request = pending.removeValue(forKey: id) else { return }
         request.timeout.cancel()
-        request.continuation.resume(returning: candidates)
+        request.continuation.resume(returning: response)
     }
 
     private func hostTerminated() {
@@ -158,7 +223,7 @@ actor JavaScriptExtensionClient {
         pending.removeAll()
         for request in requests.values {
             request.timeout.cancel()
-            request.continuation.resume(returning: [])
+            request.continuation.resume(returning: nil)
         }
         process = nil
         inputPipe = nil
@@ -182,5 +247,25 @@ actor JavaScriptExtensionClient {
         return Bundle.main.resourceURL.map {
             [$0.appendingPathComponent("Extensions", isDirectory: true).path]
         } ?? []
+    }
+
+    private nonisolated static var disabledFileNames: Set<String> {
+        Set(UserDefaults.standard.stringArray(
+            forKey: disabledFileNamesDefaultsKey
+        ) ?? [])
+    }
+
+    private nonisolated static func prefixMetadata(in source: String) -> String? {
+        let marker = "// @myim-prefix "
+        return source.split(separator: "\n", omittingEmptySubsequences: false)
+            .prefix(20)
+            .compactMap { line -> String? in
+                let text = String(line)
+                guard text.hasPrefix(marker) else { return nil }
+                let value = String(text.dropFirst(marker.count))
+                    .trimmingCharacters(in: .whitespaces)
+                return value.isEmpty ? nil : value
+            }
+            .first
     }
 }
