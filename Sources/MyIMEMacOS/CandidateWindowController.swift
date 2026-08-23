@@ -259,14 +259,17 @@ final class CandidateWindowController: NSObject {
             width: guideContentWidth,
             height: CGFloat.greatestFiniteMagnitude
         )
-        guideLabel.layoutManager?.ensureLayout(
-            for: guideLabel.textContainer!
-        )
-        let guideTextHeight = hasGuide
-            ? ceil(guideLabel.layoutManager?.usedRect(
-                for: guideLabel.textContainer!
-            ).height ?? 0) + 2
-            : 0
+        let guideTextHeight: CGFloat
+        if hasGuide,
+           let textContainer = guideLabel.textContainer,
+           let layoutManager = guideLabel.layoutManager {
+            layoutManager.ensureLayout(for: textContainer)
+            guideTextHeight = ceil(
+                layoutManager.usedRect(for: textContainer).height
+            ) + 2
+        } else {
+            guideTextHeight = 0
+        }
         let guideHeight = hasGuide
             ? guideTextHeight + Self.guideVerticalPadding * 2
             : 0

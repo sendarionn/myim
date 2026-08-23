@@ -104,7 +104,6 @@ final class InputController: IMKInputController {
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
-    private let candidatePanel: IMKCandidates
     private let candidateWindow = CandidateWindowController()
     private let modeStatusWindow = ModeStatusWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
@@ -161,17 +160,7 @@ final class InputController: IMKInputController {
         imeConversionEngine = indexedIMEEngine
         supplementalConversionEngine = Self.sharedSupplementalConversionEngine
         verbInflectionGenerator = Self.sharedVerbInflectionGenerator
-        candidatePanel = IMKCandidates(
-            server: server,
-            panelType: kIMKSingleColumnScrollingCandidatePanel
-        )
-
         super.init(server: server, delegate: delegate, client: inputClient)
-
-        candidatePanel.setDismissesAutomatically(true)
-        candidatePanel.setAttributes([
-            IMKCandidatesSendServerKeyEventFirst: false
-        ])
 
         basicDictionaryStatus = bundledEntries.isEmpty
             ? "読込失敗"
@@ -352,7 +341,6 @@ final class InputController: IMKInputController {
 
         insertIntoInputBuffer(characters)
         selectedCandidateIndex = nil
-        candidatePanel.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
         refreshCandidates(client: sender)
@@ -1036,7 +1024,6 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = nil
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
-        candidatePanel.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
@@ -1163,7 +1150,6 @@ final class InputController: IMKInputController {
         }
         selectedCandidateIndex = index
         cancelAuxiliarySuggestionSearches()
-        candidatePanel.hide()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
@@ -1308,7 +1294,6 @@ final class InputController: IMKInputController {
         inputBuffer = ""
         inputCursor = 0
         currentCandidates = []
-        candidatePanel.hide()
         previewWindow.hide()
         setMarkedText("", in: sender)
         showTabDictionaryRegistration(client: sender)
@@ -2163,7 +2148,6 @@ final class InputController: IMKInputController {
         suggestionSearchSession.cancelAll()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
-        candidatePanel.hide()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
@@ -2385,7 +2369,6 @@ final class InputController: IMKInputController {
         inputBuffer = editor.value
         inputCursor = editor.cursor
         selectedCandidateIndex = nil
-        candidatePanel.hide()
         previewWindow.hide()
         setMarkedText(
             compositionPrefix + inputBuffer,
@@ -2413,7 +2396,6 @@ final class InputController: IMKInputController {
         translationDraft = updatedDraft.nilIfEmpty
         selectedCandidateIndex = nil
         currentCandidates = []
-        candidatePanel.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
@@ -2487,7 +2469,6 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = nil
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
-        candidatePanel.hide()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
@@ -2495,7 +2476,6 @@ final class InputController: IMKInputController {
     }
 
     private func resetTransientInteractionState() {
-        candidatePanel.hide()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
@@ -2629,7 +2609,6 @@ final class InputController: IMKInputController {
         }
         nextInputCandidates = []
         selectedNextInputIndex = nil
-        candidatePanel.hide()
         candidateWindow.hide()
         previewWindow.hide()
     }

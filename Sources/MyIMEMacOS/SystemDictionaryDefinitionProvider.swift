@@ -34,6 +34,10 @@ final class SystemDictionaryDefinitionProvider {
         var definitionsByName: [String: String] = [:]
 
         for value in dictionaries {
+            let cfValue = value as CFTypeRef
+            guard CFGetTypeID(cfValue) == DCSDictionaryGetTypeID() else {
+                continue
+            }
             let dictionary = value as! DCSDictionary
             guard
                 let dictionaryName = DCSDictionaryGetName(dictionary)?
@@ -92,3 +96,6 @@ private func DCSCopyAvailableDictionaries() -> Unmanaged<CFArray>?
 private func DCSDictionaryGetName(
     _ dictionary: DCSDictionary
 ) -> Unmanaged<CFString>?
+
+@_silgen_name("DCSDictionaryGetTypeID")
+private func DCSDictionaryGetTypeID() -> CFTypeID
