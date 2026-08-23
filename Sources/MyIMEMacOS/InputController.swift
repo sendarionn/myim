@@ -62,6 +62,7 @@ final class InputController: IMKInputController {
     private static let fuzzyEngineRepository = FuzzyEngineRepository()
     private static let basicDictionaryUpdateCoordinator =
         BasicDictionaryUpdateCoordinator()
+    private static let javaScriptExtensionClient = JavaScriptExtensionClient()
 
     private var inputBuffer = ""
     private var inputCursor = 0
@@ -97,6 +98,7 @@ final class InputController: IMKInputController {
     private var nextInputDismissTimer: Timer?
     private let suggestionSearchSession = SuggestionSearchSession()
     private var officialCandidates: [String] = []
+    private var javaScriptExtensionCandidates: [String] = []
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
@@ -1648,6 +1650,7 @@ final class InputController: IMKInputController {
         let suggestionInput = conversionReading
         defer {
             updateOfficialCandidatesIfNeeded(for: suggestionInput)
+            updateJavaScriptExtensionCandidatesIfNeeded(for: suggestionInput)
         }
 
         let normalizedReading = RomajiCanonicalizer.canonicalInput(
@@ -1699,6 +1702,11 @@ final class InputController: IMKInputController {
             == conversionReading
             ? officialCandidates
             : []
+        let scriptCandidates = suggestionSearchSession.query(
+            for: .javaScriptExtensions
+        ) == conversionReading
+            ? javaScriptExtensionCandidates
+            : []
         let inflectionCandidates = mergedCandidates(
             lookup: {
                 verbInflectionGenerator.candidates(for: $0)
@@ -1721,6 +1729,7 @@ final class InputController: IMKInputController {
         let directCandidates = userCandidates.exact
             + extensionCandidates.exact
             + dateTimeCandidates
+            + scriptCandidates
             + imeCandidates.exact
             + basicCandidates.exact
             + inflectionCandidates
@@ -1993,6 +2002,47 @@ final class InputController: IMKInputController {
                     "公式外部候補の取得に失敗: %@",
                     error.localizedDescription
                 )
+            }
+        }
+        suggestionSearchSession.attach(task, to: token)
+    }
+
+    private func updateJavaScriptExtensionCandidatesIfNeeded(for input: String) {
+        guard !input.isEmpty,
+              suggestionSearchSession.query(for: .javaScriptExtensions)
+                != input else {
+            return
+        }
+        javaScriptExtensionCandidates = []
+        let token = suggestionSearchSession.begin(
+            .javaScriptExtensions,
+            query: input
+        )
+        let dateFormats = isDateTimeCandidatesEnabled
+            ? dateCandidateFormats
+            : []
+        let timeFormats = isDateTimeCandidatesEnabled
+            ? timeCandidateFormats
+            : []
+        let dateTimeFormats = isDateTimeCandidatesEnabled
+            ? dateTimeCandidateFormats
+            : []
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let candidates = await Self.javaScriptExtensionClient.candidates(
+                for: input,
+                dateFormats: dateFormats,
+                timeFormats: timeFormats,
+                dateTimeFormats: dateTimeFormats
+            )
+            guard !Task.isCancelled,
+                  suggestionSearchSession.isCurrent(token),
+                  conversionReading == input else {
+                return
+            }
+            javaScriptExtensionCandidates = candidates
+            if let inputClient = client() {
+                refreshCandidates(client: inputClient)
             }
         }
         suggestionSearchSession.attach(task, to: token)

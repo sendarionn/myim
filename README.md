@@ -91,11 +91,43 @@ Mozcのかな読みは同梱前に正規ローマ字inputへ変換します
 - 文字種変換: F6〜F10でひらがな、カタカナ、英数字へ直接変換
 - 日付: `kyou` `kinou` `ashita`から対象日を候補として表示
 - 時刻: `ima` `jikoku`から現在時刻を候補として表示
+- JavaScript拡張: 入力から動的な候補を生成
 
 計算は四則演算、小数、括弧に対応し、式の末尾が`=`の場合だけ実行します
 
 日付と時刻は設定の「日時の動的候補を表示」を有効にすると利用できます
 書式は`YYYYMMDD` `YYYY-MM-DD` `HH:mm:ss`などをカンマ区切りで指定できます
+
+### JavaScript拡張
+
+次のフォルダへ`.js`ファイルを追加すると、入力に応じた候補を生成できます
+
+```text
+~/Library/Application Support/myim/Extensions/
+```
+
+```javascript
+// @myim-prefix hello
+
+function candidates(context) {
+  if (context.input === "hello") {
+    return ["Hello", "こんにちは"]
+  }
+  return []
+}
+```
+
+ファイルの追加、変更、削除は次の入力から反映します
+`@myim-prefix`を指定すると、その文字列で始まる入力だけで拡張を実行します
+
+`context`には`input`、`timestamp`、`timeZone`、日時書式設定を渡します
+候補は文字列、または`value`を持つオブジェクトの配列で返します
+
+標準の日時候補も同じAPIを使う`datetime.js`として同梱しています
+既存のSwift版と結果を比較できる移行期間中は、重複を候補統合時に除去します
+
+JavaScriptはネットワーク、ファイル、シェルへ接続するAPIを持たない補助プロセスで実行します
+応答しない拡張は100ミリ秒で補助プロセスごと停止し、myim本体での入力を継続します
 
 ### 「もしかして？」候補
 
@@ -325,6 +357,8 @@ ls -lt ~/Library/Logs/DiagnosticReports/myim*.ips
 - 辞書登録と外部情報パネルのInputMethodKit実機テストを拡充
 - カーソル位置の入力モードインジケータをライト・ダーク両モードで安定化
 - 変換エンジンをmacOS固有実装から分離してWindowsへ対応
+- JavaScript拡張を個別に有効・無効化する設定
+- 権限と表示領域を定義した拡張フォルダ形式
 
 ### リファクタリング
 
@@ -334,9 +368,9 @@ ls -lt ~/Library/Logs/DiagnosticReports/myim*.ips
 - 各パネルの配置、表示、フォーカス復帰を共通管理
 - UserDefaultsの設定キー、初期値、読み書きを型付き設定へ集約
 - `InputController`に残る候補選択と確定を`MyIMECore`へ移動
-- Cosense、外部候補、誤入力補完、次入力予測、日時候補、外部情報表示を拡張機能として分離
+- Cosense、外部候補、誤入力補完、次入力予測、外部情報表示を拡張機能として分離
 - 通常候補だけでなく拡張機能の候補も`CandidatePipeline`で順位付け
-- 拡張APIと標準拡張を独立したSwift Package Targetへ分離
+- JavaScript実行エンジンを抽象化し、Windows版では交換可能にする
 - 必要性と安全性を確認した機能だけ、将来XPCなどの外部プラグイン方式を検討
 
 ## 関連資料

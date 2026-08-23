@@ -15,6 +15,7 @@ iconset_directory="$repository_root/.build/myim.iconset"
 menu_assets_directory="$repository_root/.build/myim-menu-assets"
 ime_executable="$executable_directory/myim"
 browser_executable="$browser_executable_directory/myim-external-browser"
+extension_host="$helpers_directory/myim-extension-host"
 code_sign_identity=${MYIM_CODE_SIGN_IDENTITY:--}
 architectures=(${=MYIM_ARCHITECTURES:-})
 version=${MYIM_VERSION:-}
@@ -28,6 +29,7 @@ for architecture in "${architectures[@]}"; do
 done
 swift build "${swift_build_arguments[@]}" --product myim-macos
 swift build "${swift_build_arguments[@]}" --product myim-external-browser
+swift build "${swift_build_arguments[@]}" --product myim-extension-host
 products_directory=$(swift build "${swift_build_arguments[@]}" --show-bin-path)
 
 rm -rf "$application_bundle" "$iconset_directory" "$menu_assets_directory"
@@ -40,6 +42,7 @@ mkdir -p "$iconset_directory"
 mkdir -p "$menu_assets_directory"
 cp "$products_directory/myim-macos" "$ime_executable"
 cp "$products_directory/myim-external-browser" "$browser_executable"
+cp "$products_directory/myim-extension-host" "$extension_host"
 cp "macOS/ExternalBrowser-Info.plist" "$browser_contents/Info.plist"
 
 developer_rpaths=("${(@f)$(otool -l "$ime_executable" | awk '
@@ -112,6 +115,9 @@ cp \
 cp \
     "Sources/MyIMEMacOS/Resources/mozc-dictionary-NOTICE.txt" \
     "$resources_directory/mozc-dictionary-NOTICE.txt"
+cp -R \
+    "Sources/MyIMEMacOS/Resources/Extensions" \
+    "$resources_directory/Extensions"
 cp \
     "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
     "$resources_directory/mozc-LICENSE.txt"
@@ -160,11 +166,13 @@ sips -s format png -z 1024 1024 "$resources_directory/app-icon.pdf" \
 iconutil -c icns "$iconset_directory" -o "$resources_directory/AppIcon.icns"
 chmod +x "$ime_executable"
 chmod +x "$browser_executable"
+chmod +x "$extension_host"
 xattr -cr "$application_bundle"
 
 plutil -lint "$contents_directory/Info.plist"
 plutil -lint "$browser_contents/Info.plist"
 if [[ "$code_sign_identity" == "-" ]]; then
+    codesign --force --sign - "$extension_host"
     codesign --force --sign - "$browser_bundle"
     codesign \
         --force \
@@ -172,6 +180,12 @@ if [[ "$code_sign_identity" == "-" ]]; then
         --entitlements "macOS/myim.entitlements" \
         "$application_bundle"
 else
+    codesign \
+        --force \
+        --sign "$code_sign_identity" \
+        --options runtime \
+        --timestamp \
+        "$extension_host"
     codesign \
         --force \
         --sign "$code_sign_identity" \

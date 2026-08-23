@@ -3,6 +3,7 @@ import Foundation
 public enum SuggestionSearchKind: Hashable, Sendable {
     case official
     case fuzzy
+    case javaScriptExtensions
 }
 
 public final class SuggestionSearchSession: @unchecked Sendable {

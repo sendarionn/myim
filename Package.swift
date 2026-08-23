@@ -10,6 +10,10 @@ let package = Package(
     products: [
         .executable(name: "myim-macos", targets: ["MyIMEMacOS"]),
         .executable(
+            name: "myim-extension-host",
+            targets: ["MyIMExtensionHost"]
+        ),
+        .executable(
             name: "myim-external-browser",
             targets: ["MyIMExternalBrowser"]
         )
@@ -39,6 +43,16 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("WebKit")
+            ]
+        ),
+        .executableTarget(
+            name: "MyIMExtensionHost",
+            dependencies: ["MyIMECore"],
+            swiftSettings: [
+                .swiftLanguageMode(.v5)
+            ],
+            linkerSettings: [
+                .linkedFramework("JavaScriptCore")
             ]
         ),
         .testTarget(
