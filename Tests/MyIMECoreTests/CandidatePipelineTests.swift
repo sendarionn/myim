@@ -77,4 +77,22 @@ struct CandidatePipelineTests {
 
         #expect(candidates == ["カナ", "かな"])
     }
+
+    @Test
+    func keepsEnglishCandidatesAfterCloseJapaneseCandidates() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["こーど", "コード"],
+                direct: ["高度", "コード"],
+                other: ["行動"],
+                english: ["code", "coder"],
+                recencyRanks: ["code": 20],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates == [
+            "高度", "コード", "こーど", "code", "coder", "行動"
+        ])
+    }
 }

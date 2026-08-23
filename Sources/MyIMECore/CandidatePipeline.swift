@@ -3,6 +3,7 @@ public struct CandidatePipeline: Sendable {
         public let kana: [String]
         public let direct: [String]
         public let other: [String]
+        public let english: [String]
         public let recencyRanks: [String: Int]
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
@@ -11,6 +12,7 @@ public struct CandidatePipeline: Sendable {
             kana: [String],
             direct: [String],
             other: [String],
+            english: [String] = [],
             recencyRanks: [String: Int],
             contextualCandidates: [String] = [],
             prioritizeKana: Bool
@@ -18,6 +20,7 @@ public struct CandidatePipeline: Sendable {
             self.kana = kana
             self.direct = direct
             self.other = other
+            self.english = english
             self.recencyRanks = recencyRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
@@ -31,13 +34,17 @@ public struct CandidatePipeline: Sendable {
             input.kana,
             matching: input.direct
         )
-        return CandidatePriorityOrderer.ordered(
+        let candidates = CandidatePriorityOrderer.ordered(
             kana: kana,
             direct: input.direct,
-            others: input.other,
+            others: input.other + input.english,
             recencyRanks: input.recencyRanks,
             contextualCandidates: input.contextualCandidates,
             prioritizeKana: input.prioritizeKana
+        )
+        return candidates.movingEnglishCandidatesAfterCloseJapaneseCandidates(
+            english: input.english,
+            closeJapanese: kana + input.direct
         )
     }
 
@@ -55,5 +62,30 @@ public struct CandidatePipeline: Sendable {
             return kana
         }
         return [preferred] + kana.filter { $0 != preferred }
+    }
+}
+
+private extension Array where Element == String {
+    func movingEnglishCandidatesAfterCloseJapaneseCandidates(
+        english: [String],
+        closeJapanese: [String]
+    ) -> [String] {
+        let englishSet = Set(english)
+        guard !englishSet.isEmpty else { return self }
+
+        let closeJapaneseSet = Set(closeJapanese).subtracting(englishSet)
+        let englishCandidates = filter { englishSet.contains($0) }
+        var otherCandidates = filter { !englishSet.contains($0) }
+        guard let lastCloseJapaneseIndex = otherCandidates.lastIndex(where: {
+            closeJapaneseSet.contains($0)
+        }) else {
+            return self
+        }
+
+        otherCandidates.insert(
+            contentsOf: englishCandidates,
+            at: otherCandidates.index(after: lastCloseJapaneseIndex)
+        )
+        return otherCandidates
     }
 }

@@ -1797,7 +1797,6 @@ final class InputController: IMKInputController {
             + inflectionCandidates
         let otherCandidates = userCandidates.prefix
             + extensionCandidates.prefix
-            + englishCandidates
             + remoteCandidates
             + imeCandidates.prefix
             + basicCandidates.prefix
@@ -1811,6 +1810,7 @@ final class InputController: IMKInputController {
                 kana: kanaCandidates,
                 direct: directCandidates,
                 other: otherCandidates,
+                english: englishCandidates,
                 recencyRanks: candidateSelectionHistory.ranks,
                 contextualCandidates: contextualCandidates,
                 prioritizeKana: kanaCandidates.first?.count == 1
