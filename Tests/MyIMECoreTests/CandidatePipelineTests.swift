@@ -19,7 +19,7 @@ struct CandidatePipelineTests {
     }
 
     @Test
-    func prioritizesKatakanaWhenDictionaryUsesKatakana() {
+    func keepsHiraganaFirstForSingleCharacterInput() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
                 kana: ["き", "キ"],
@@ -30,7 +30,22 @@ struct CandidatePipelineTests {
             )
         )
 
-        #expect(candidates == ["キ", "き", "木"])
+        #expect(candidates == ["き", "キ", "木"])
+    }
+
+    @Test
+    func prioritizesKatakanaForLongerDictionaryInput() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["さじぇすと", "サジェスト"],
+                direct: ["サジェスト", "差ジェスト"],
+                other: [],
+                recencyRanks: [:],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates == ["サジェスト", "差ジェスト", "さじぇすと"])
     }
 
     @Test
@@ -52,14 +67,14 @@ struct CandidatePipelineTests {
     func usesDictionaryOrderWhenBothKanaFormsExist() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
-                kana: ["き", "キ"],
-                direct: ["キ", "き"],
+                kana: ["かな", "カナ"],
+                direct: ["カナ", "かな"],
                 other: [],
                 recencyRanks: [:],
-                prioritizeKana: true
+                prioritizeKana: false
             )
         )
 
-        #expect(candidates == ["キ", "き"])
+        #expect(candidates == ["カナ", "かな"])
     }
 }

@@ -45,6 +45,9 @@ public struct CandidatePipeline: Sendable {
         _ kana: [String],
         matching dictionaryCandidates: [String]
     ) -> [String] {
+        guard kana.first?.count != 1 else {
+            return kana
+        }
         let kanaSet = Set(kana)
         guard let preferred = dictionaryCandidates.first(where: {
             kanaSet.contains($0)
