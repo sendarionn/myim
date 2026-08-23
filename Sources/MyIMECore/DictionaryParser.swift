@@ -1,13 +1,20 @@
 import Foundation
 
 public struct DictionaryEntry: Equatable, Sendable {
-    public let reading: String
+    public let input: String
     public let candidates: [String]
 
-    public init(reading: String, candidates: [String]) {
-        self.reading = reading
+    public init(input: String, candidates: [String]) {
+        self.input = input
         self.candidates = candidates
     }
+
+    public init(reading: String, candidates: [String]) {
+        self.input = reading
+        self.candidates = candidates
+    }
+
+    public var reading: String { input }
 }
 
 public enum DictionaryParserError: Error, Equatable, LocalizedError {
@@ -89,14 +96,14 @@ public struct DictionaryParser: Sendable {
         var candidatesByReading: [String: [String]] = [:]
 
         for entry in entries {
-            if candidatesByReading[entry.reading] == nil {
-                order.append(entry.reading)
-                candidatesByReading[entry.reading] = []
+            if candidatesByReading[entry.input] == nil {
+                order.append(entry.input)
+                candidatesByReading[entry.input] = []
             }
 
             for candidate in entry.candidates
-            where candidatesByReading[entry.reading]?.contains(candidate) == false {
-                candidatesByReading[entry.reading]?.append(candidate)
+            where candidatesByReading[entry.input]?.contains(candidate) == false {
+                candidatesByReading[entry.input]?.append(candidate)
             }
         }
 

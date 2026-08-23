@@ -33,7 +33,7 @@ struct BundledTypoCorrectionTests {
         })
         let imeDictionaryURL = dictionaryURL
             .deletingLastPathComponent()
-            .appendingPathComponent("ime-dictionary.txt")
+            .appendingPathComponent("mozc-dictionary.txt")
         let imeDictionary = try IndexedDictionaryEngine(
             contentsOf: imeDictionaryURL
         )
@@ -48,7 +48,7 @@ struct BundledTypoCorrectionTests {
     @Test
     func findsKeyboardTypoInIMEDictionary() {
         let dictionary = IndexedDictionaryEngine(
-            data: Data("がいよう\n 概要\nばいよう\n 培養\n".utf8)
+            data: Data("baiyou\n 培養\ngaiyou\n 概要\n".utf8)
         )
         let matches = RomajiKeyboardTypoGenerator.dictionaryMatches(
             for: "vaiyou",

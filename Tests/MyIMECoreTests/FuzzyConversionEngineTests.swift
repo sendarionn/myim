@@ -127,7 +127,7 @@ struct FuzzyConversionEngineTests {
         let match = engine.matches(for: "hiruyou").first
         #expect(match?.reading == "hitsuyou")
         #expect(match?.candidates == ["必要"])
-        #expect(match?.distance == 2)
+        #expect(match?.distance == 1)
     }
 
     @Test

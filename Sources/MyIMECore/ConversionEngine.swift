@@ -16,20 +16,17 @@ public struct ConversionEngine: Sendable {
 
         for layer in layers {
             for entry in layer {
-                let normalizedReading =
-                    RomanizedReadingNormalizer.dictionaryReading(
-                        from: entry.reading
-                    )
-                if mergedCandidates[normalizedReading] == nil {
-                    readingOrder.append(normalizedReading)
-                    mergedCandidates[normalizedReading] = []
+                let input = entry.input.lowercased()
+                if mergedCandidates[input] == nil {
+                    readingOrder.append(input)
+                    mergedCandidates[input] = []
                 }
 
                 for candidate in entry.candidates
-                where mergedCandidates[normalizedReading]?.contains(candidate) == false {
-                    mergedCandidates[normalizedReading]?.append(candidate)
-                    if reverseReadings[candidate]?.contains(normalizedReading) != true {
-                        reverseReadings[candidate, default: []].append(normalizedReading)
+                where mergedCandidates[input]?.contains(candidate) == false {
+                    mergedCandidates[input]?.append(candidate)
+                    if reverseReadings[candidate]?.contains(input) != true {
+                        reverseReadings[candidate, default: []].append(input)
                     }
                 }
             }
@@ -41,9 +38,7 @@ public struct ConversionEngine: Sendable {
     }
 
     public func candidates(for reading: String) -> [String] {
-        let normalizedReading =
-            RomanizedReadingNormalizer.dictionaryReading(from: reading)
-        return candidatesByReading[normalizedReading] ?? []
+        candidateGroups(matching: reading).exact
     }
 
     public func readings(for candidate: String) -> [String] {
@@ -61,42 +56,49 @@ public struct ConversionEngine: Sendable {
         matching readingPrefix: String,
         limit: Int = .max
     ) -> DictionaryCandidateGroups {
-        let normalizedPrefix =
-            RomanizedReadingNormalizer.dictionaryReading(from: readingPrefix)
-        guard !normalizedPrefix.isEmpty, limit > 0 else {
+        let rawInput = readingPrefix.lowercased()
+        guard !rawInput.isEmpty, limit > 0 else {
             return DictionaryCandidateGroups()
         }
 
+        let lookupInputs = RomajiCanonicalizer.exactLookupInputs(
+            from: rawInput
+        )
         var seen = Set<String>()
         var exact: [String] = []
         var prefix: [String] = []
 
-        if let exactCandidates = candidatesByReading[normalizedPrefix] {
-            for candidate in exactCandidates where seen.insert(candidate).inserted {
-                exact.append(candidate)
-                if exact.count == limit {
-                    return DictionaryCandidateGroups(exact: exact)
+        for input in lookupInputs {
+            if let exactCandidates = candidatesByReading[input] {
+                for candidate in exactCandidates
+                where seen.insert(candidate).inserted {
+                    exact.append(candidate)
+                    if exact.count == limit {
+                        return DictionaryCandidateGroups(exact: exact)
+                    }
                 }
             }
         }
 
-        var index = lowerBound(of: normalizedPrefix)
-        while index < sortedReadings.count,
-              sortedReadings[index].hasPrefix(normalizedPrefix) {
-            let reading = sortedReadings[index]
-            if reading != normalizedPrefix {
-                for candidate in candidatesByReading[reading] ?? []
-                where seen.insert(candidate).inserted {
-                    prefix.append(candidate)
-                    if exact.count + prefix.count == limit {
-                        return DictionaryCandidateGroups(
-                            exact: exact,
-                            prefix: prefix
-                        )
+        for input in lookupInputs {
+            var index = lowerBound(of: input)
+            while index < sortedReadings.count,
+                  sortedReadings[index].hasPrefix(input) {
+                let storedInput = sortedReadings[index]
+                if storedInput != input {
+                    for candidate in candidatesByReading[storedInput] ?? []
+                    where seen.insert(candidate).inserted {
+                        prefix.append(candidate)
+                        if exact.count + prefix.count == limit {
+                            return DictionaryCandidateGroups(
+                                exact: exact,
+                                prefix: prefix
+                            )
+                        }
                     }
                 }
+                index += 1
             }
-            index += 1
         }
 
         return DictionaryCandidateGroups(exact: exact, prefix: prefix)

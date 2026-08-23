@@ -104,14 +104,14 @@ cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary-source.json" \
     "$resources_directory/basic-dictionary-source.json"
 cp \
-    "Sources/MyIMEMacOS/Resources/ime-dictionary.txt" \
-    "$resources_directory/ime-dictionary.txt"
+    "Sources/MyIMEMacOS/Resources/mozc-dictionary.txt" \
+    "$resources_directory/mozc-dictionary.txt"
 cp \
-    "Sources/MyIMEMacOS/Resources/ime-dictionary-source.json" \
-    "$resources_directory/ime-dictionary-source.json"
+    "Sources/MyIMEMacOS/Resources/mozc-dictionary-source.json" \
+    "$resources_directory/mozc-dictionary-source.json"
 cp \
-    "Sources/MyIMEMacOS/Resources/ime-dictionary-LICENSE.txt" \
-    "$resources_directory/ime-dictionary-LICENSE.txt"
+    "Sources/MyIMEMacOS/Resources/mozc-dictionary-NOTICE.txt" \
+    "$resources_directory/mozc-dictionary-NOTICE.txt"
 cp \
     "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
     "$resources_directory/mozc-LICENSE.txt"

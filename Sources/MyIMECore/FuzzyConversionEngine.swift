@@ -30,8 +30,8 @@ public struct FuzzyConversionEngine: Sendable {
         var merged: [String: [String]] = [:]
         var readingOrder: [String] = []
         for entry in entries {
-            let reading = RomanizedReadingNormalizer.dictionaryReading(
-                from: entry.reading
+            let reading = RomajiCanonicalizer.canonicalInput(
+                from: entry.input
             )
             guard !reading.isEmpty else {
                 continue
@@ -80,7 +80,7 @@ public struct FuzzyConversionEngine: Sendable {
         maximumDistance: Int? = nil,
         limit: Int = 3
     ) -> [FuzzyConversionMatch] {
-        let reading = RomanizedReadingNormalizer.dictionaryReading(from: input)
+        let reading = RomajiCanonicalizer.canonicalInput(from: input)
         let sourceReadings = Self.fuzzyReadingVariants(from: reading)
         let source = Array(reading)
         let allowedDistance = maximumDistance
@@ -92,16 +92,20 @@ public struct FuzzyConversionEngine: Sendable {
         var bestMatches: [
             String: (IndexedEntry, Int, Int, Double, Double)
         ] = [:]
-        for correctedReading in RomajiKeyboardTypoGenerator.corrections(
+        let directCorrections = RomajiKeyboardTypoGenerator.corrections(
             for: reading
-        ) {
-            guard let entry = entriesByReading[correctedReading],
+        ) + Self.adjacentTranspositions(in: reading)
+        for correctedReading in directCorrections {
+            let canonicalCorrection = RomajiCanonicalizer.canonicalInput(
+                from: correctedReading
+            )
+            guard let entry = entriesByReading[canonicalCorrection],
                   entry.reading != reading else {
                 continue
             }
-            let typoCost = RomajiTypoScorer.cost(
-                from: reading,
-                to: entry.reading
+            let typoCost = min(
+                RomajiTypoScorer.cost(from: reading, to: entry.reading),
+                RomajiTypoScorer.cost(from: reading, to: correctedReading)
             )
             bestMatches[entry.reading] = (
                 entry,
@@ -294,6 +298,19 @@ public struct FuzzyConversionEngine: Sendable {
         _ right: [Character]
     ) -> Int {
         zip(left, right).prefix { $0 == $1 }.count
+    }
+
+    private static func adjacentTranspositions(in input: String) -> [String] {
+        let characters = Array(input)
+        guard characters.count >= 2 else { return [] }
+        return (0..<(characters.count - 1)).compactMap { index in
+            guard characters[index] != characters[index + 1] else {
+                return nil
+            }
+            var transposed = characters
+            transposed.swapAt(index, index + 1)
+            return String(transposed)
+        }
     }
 
     private static func damerauLevenshteinDistance(

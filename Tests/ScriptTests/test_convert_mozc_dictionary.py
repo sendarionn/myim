@@ -22,7 +22,14 @@ class ConvertMozcDictionaryTests(unittest.TestCase):
                 encoding="utf-8",
             )
             result = MODULE.convert(source, maximum_candidates=2)
-            self.assertEqual(result["かくじゅう"], ["拡充", "角十"])
+            self.assertEqual(result["kakujuu"], ["拡充", "角十"])
+
+    def test_converts_kana_readings_to_canonical_romaji(self):
+        self.assertEqual(MODULE.kana_to_romaji("しる"), "shiru")
+        self.assertEqual(MODULE.kana_to_romaji("しゅうせい"), "shuusei")
+        self.assertEqual(MODULE.kana_to_romaji("まっちゃ"), "matcha")
+        self.assertEqual(MODULE.kana_to_romaji("ちゃーと"), "chaato")
+        self.assertEqual(MODULE.kana_to_romaji("かんい"), "kan'i")
 
     def test_rejects_invalid_candidate_limit(self):
         with self.assertRaises(ValueError):
@@ -37,8 +44,8 @@ class ConvertMozcDictionaryTests(unittest.TestCase):
                 encoding="utf-8",
             )
             result = MODULE.convert(source, maximum_candidates=2)
-            self.assertEqual(result["こ"], ["個"])
-            self.assertEqual(result["から"], ["〜"])
+            self.assertEqual(result["ko"], ["個"])
+            self.assertEqual(result["kara"], ["〜"])
 
 
 if __name__ == "__main__":

@@ -40,6 +40,11 @@ public struct RomajiConverter: Sendable {
                     index += 2
                     continue
                 }
+                if next == "-" {
+                    result.append("ん")
+                    index += 1
+                    continue
+                }
                 if next == "n" || (isConsonant(next) && next != "y") {
                     result.append("ん")
                     index += next == "n" ? 1 : 1
@@ -87,7 +92,7 @@ public struct RomajiConverter: Sendable {
             && !"aeiou".contains(character)
     }
 
-    private static let mapping: [String: String] = [
+    fileprivate static let mapping: [String: String] = [
         "a": "あ", "i": "い", "u": "う", "e": "え", "o": "お",
         "ka": "か", "ki": "き", "ku": "く", "ke": "け", "ko": "こ",
         "kya": "きゃ", "kyu": "きゅ", "kyo": "きょ",
@@ -133,6 +138,7 @@ public struct RomajiConverter: Sendable {
         "va": "ゔぁ", "vi": "ゔぃ", "vu": "ゔ", "ve": "ゔぇ", "vo": "ゔぉ",
         "xa": "ぁ", "xi": "ぃ", "xu": "ぅ", "xe": "ぇ", "xo": "ぉ",
         "xya": "ゃ", "xyu": "ゅ", "xyo": "ょ", "xtsu": "っ", "xtu": "っ",
+        "xwa": "ゎ", "xka": "ゕ", "xke": "ゖ",
         "la": "ぁ", "li": "ぃ", "lu": "ぅ", "le": "ぇ", "lo": "ぉ",
         "lya": "ゃ", "lyu": "ゅ", "lyo": "ょ", "ltsu": "っ", "ltu": "っ"
     ]
@@ -185,72 +191,107 @@ public enum JapaneseSymbolConverter {
     ]
 }
 
-public enum RomanizedReadingNormalizer {
-    public static func dictionaryLookupReadings(
+public enum RomajiCanonicalizer {
+    public static func dictionaryLookupInputs(
         from input: String
     ) -> [String] {
-        let normalized = dictionaryReading(from: input)
-        guard let unvoiced = unvoicedInitialReading(normalized) else {
-            return [normalized]
+        var inputs = exactLookupInputs(from: input)
+        let canonical = inputs.last ?? input.lowercased()
+        if let unvoiced = unvoicedInitialInput(canonical),
+           !inputs.contains(unvoiced) {
+            inputs.append(unvoiced)
         }
-        return [normalized, unvoiced]
+        return inputs
     }
 
-    public static func dictionaryReading(from input: String) -> String {
-        var normalized = input.lowercased()
-        let protectedSyllables = [
-            ("shu", "__MYIM_SHU__"),
-            ("chu", "__MYIM_CHU__"),
-            ("thu", "__MYIM_THU__"),
-            ("dhu", "__MYIM_DHU__")
-        ]
-        for (syllable, placeholder) in protectedSyllables {
-            normalized = normalized.replacingOccurrences(
-                of: syllable,
-                with: placeholder
-            )
-        }
-        let aliases = [
-            ("tu", "tsu"), ("hu", "fu"), ("si", "shi"),
-            ("ti", "chi"), ("zi", "ji"), ("du", "zu"),
-            ("sya", "sha"), ("syu", "shu"), ("syo", "sho"),
-            ("tya", "cha"), ("tyu", "chu"), ("tyo", "cho"),
-            ("cya", "cha"), ("cyu", "chu"), ("cyo", "cho"),
-            ("zya", "ja"), ("zyu", "ju"), ("zyo", "jo"),
-            ("jya", "ja"), ("jyu", "ju"), ("jyo", "jo")
-        ]
-        for (source, destination) in aliases {
-            normalized = normalized.replacingOccurrences(
-                of: source,
-                with: destination
-            )
-        }
-        for (syllable, placeholder) in protectedSyllables {
-            normalized = normalized.replacingOccurrences(
-                of: placeholder,
-                with: syllable
-            )
-        }
+    public static func exactLookupInputs(from input: String) -> [String] {
+        let raw = input.lowercased()
+        let canonical = canonicalInput(from: raw)
+        return raw == canonical ? [raw] : [raw, canonical]
+    }
 
+    public static func canonicalInput(from input: String) -> String {
+        let source = Array(input.lowercased())
         var result = ""
+        var index = 0
         var lastVowel: Character?
 
-        for character in normalized {
-            if character == "-", let lastVowel {
+        while index < source.count {
+            if source[index] == "-" {
+                guard let lastVowel else { return input.lowercased() }
                 result.append(lastVowel)
+                index += 1
                 continue
             }
-            result.append(character)
-            if "aeiou".contains(character) {
-                lastVowel = character
+
+            if index + 1 < source.count,
+               source[index] == source[index + 1],
+               isConsonant(source[index]),
+               source[index] != "n" {
+                result.append(source[index])
+                index += 1
+                continue
             }
+
+            if source[index] == "n" {
+                if index + 1 == source.count {
+                    result.append("n")
+                    index += 1
+                    continue
+                }
+                let next = source[index + 1]
+                if next == "'" {
+                    result.append("n'")
+                    index += 2
+                    continue
+                }
+                if next == "n" || (isConsonant(next) && next != "y") {
+                    result.append("n")
+                    index += 1
+                    continue
+                }
+            }
+
+            var match: String?
+            for length in stride(
+                from: min(4, source.count - index),
+                through: 1,
+                by: -1
+            ) {
+                let token = String(source[index..<(index + length)])
+                if RomajiConverter.mapping[token] != nil {
+                    match = token
+                    index += length
+                    break
+                }
+            }
+            guard let match else { return input.lowercased() }
+            let canonical = aliases[match] ?? match
+            result.append(canonical)
+            lastVowel = canonical.last(where: { "aeiou".contains($0) })
         }
 
         return result
     }
 
-    private static func unvoicedInitialReading(
-        _ reading: String
+    private static let aliases: [String: String] = [
+        "si": "shi", "ti": "chi", "tu": "tsu", "hu": "fu",
+        "du": "zu",
+        "sya": "sha", "syu": "shu", "syo": "sho",
+        "tya": "cha", "tyu": "chu", "tyo": "cho",
+        "cya": "cha", "cyu": "chu", "cyo": "cho",
+        "zi": "ji", "zya": "ja", "zyu": "ju", "zyo": "jo",
+        "jya": "ja", "jyu": "ju", "jyo": "jo"
+    ]
+
+    private static func isConsonant(_ character: Character) -> Bool {
+        character.isASCII
+            && character.isLetter
+            && !"aeiou".contains(character)
+    }
+
+    private static func unvoicedInitialInput(
+        _ input: String
     ) -> String? {
         let replacements = [
             ("gya", "kya"), ("gyu", "kyu"), ("gyo", "kyo"),
@@ -266,10 +307,10 @@ public enum RomanizedReadingNormalizer {
             ("pe", "he"), ("po", "ho")
         ]
         guard let replacement = replacements.first(where: {
-            reading.hasPrefix($0.0)
+            input.hasPrefix($0.0)
         }) else {
             return nil
         }
-        return replacement.1 + reading.dropFirst(replacement.0.count)
+        return replacement.1 + input.dropFirst(replacement.0.count)
     }
 }

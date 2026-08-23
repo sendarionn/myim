@@ -66,33 +66,41 @@ struct RomajiConverterTests {
     @Test
     func expandsLongVowelHyphensForDictionarySearch() {
         #expect(
-            RomanizedReadingNormalizer.dictionaryReading(from: "cha-to")
+            RomajiCanonicalizer.canonicalInput(from: "cha-to")
                 == "chaato"
         )
         #expect(
-            RomanizedReadingNormalizer.dictionaryReading(from: "ko-hi-")
+            RomajiCanonicalizer.canonicalInput(from: "ko-hi-")
                 == "koohii"
         )
         #expect(
-            RomanizedReadingNormalizer.dictionaryReading(from: "tuujou")
+            RomajiCanonicalizer.canonicalInput(from: "tuujou")
                 == "tsuujou"
         )
         #expect(
-            RomanizedReadingNormalizer.dictionaryReading(from: "hukumu")
+            RomajiCanonicalizer.canonicalInput(from: "hukumu")
                 == "fukumu"
         )
         #expect(
-            RomanizedReadingNormalizer.dictionaryReading(from: "syuusei")
+            RomajiCanonicalizer.canonicalInput(from: "syuusei")
                 == "shuusei"
         )
         #expect(
-            RomanizedReadingNormalizer.dictionaryReading(from: "shuusei")
+            RomajiCanonicalizer.canonicalInput(from: "shuusei")
                 == "shuusei"
         )
         #expect(
-            RomanizedReadingNormalizer.dictionaryReading(from: "hiduke")
+            RomajiCanonicalizer.canonicalInput(from: "hiduke")
                 == "hizuke"
         )
+    }
+
+    @Test
+    func canonicalizesOnlyCompleteJapaneseRomajiInput() {
+        #expect(RomajiCanonicalizer.canonicalInput(from: "siru") == "shiru")
+        #expect(RomajiCanonicalizer.canonicalInput(from: "syuusei") == "shuusei")
+        #expect(RomajiCanonicalizer.canonicalInput(from: "rlj") == "rlj")
+        #expect(RomajiCanonicalizer.canonicalInput(from: "chatgpt") == "chatgpt")
     }
 
     @Test
@@ -106,21 +114,21 @@ struct RomajiConverterTests {
 
         #expect(
             engine.candidates(
-                for: RomanizedReadingNormalizer.dictionaryReading(
+                for: RomajiCanonicalizer.canonicalInput(
                     from: "tuujou"
                 )
             ) == ["通常"]
         )
         #expect(
             engine.candidates(
-                for: RomanizedReadingNormalizer.dictionaryReading(
+                for: RomajiCanonicalizer.canonicalInput(
                     from: "hukumu"
                 )
             ) == ["含む"]
         )
         #expect(
             engine.candidates(
-                for: RomanizedReadingNormalizer.dictionaryReading(
+                for: RomajiCanonicalizer.canonicalInput(
                     from: "syuusei"
                 )
             ) == ["修正"]
@@ -128,7 +136,7 @@ struct RomajiConverterTests {
         #expect(engine.candidates(for: "hiduke") == ["日付"])
         #expect(
             engine.candidates(
-                for: RomanizedReadingNormalizer.dictionaryReading(
+                for: RomajiCanonicalizer.canonicalInput(
                     from: "shuusei"
                 )
             ) == ["修正"]
@@ -138,17 +146,17 @@ struct RomajiConverterTests {
     @Test
     func createsUnvoicedInitialLookupForRendaku() {
         #expect(
-            RomanizedReadingNormalizer.dictionaryLookupReadings(
+            RomajiCanonicalizer.dictionaryLookupInputs(
                 from: "doori"
             ) == ["doori", "toori"]
         )
         #expect(
-            RomanizedReadingNormalizer.dictionaryLookupReadings(
+            RomajiCanonicalizer.dictionaryLookupInputs(
                 from: "gawa"
             ) == ["gawa", "kawa"]
         )
         #expect(
-            RomanizedReadingNormalizer.dictionaryLookupReadings(
+            RomajiCanonicalizer.dictionaryLookupInputs(
                 from: "tsuujou"
             ) == ["tsuujou"]
         )
@@ -161,7 +169,7 @@ struct RomajiConverterTests {
             DictionaryEntry(reading: "toori", candidates: ["通り"])
         ])
         let candidates =
-            RomanizedReadingNormalizer.dictionaryLookupReadings(
+            RomajiCanonicalizer.dictionaryLookupInputs(
                 from: "doori"
             )
             .flatMap {

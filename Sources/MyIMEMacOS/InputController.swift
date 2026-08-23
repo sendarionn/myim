@@ -50,16 +50,13 @@ final class InputController: IMKInputController {
     private static let dateTimeCandidateFormatsDefaultsKey =
         "DateTimeCandidateFormats"
     private static let maximumCandidateCount = 7
-    private static let maximumIMEDictionaryPrefixCandidates = 2048
+    private static let maximumMozcDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
     private static let sharedBasicEntries = loadBasicEntries()
     private static let sharedBasicConversionEngine = ConversionEngine(
         entries: sharedBasicEntries
     )
-    private static let sharedIMEConversionEngine = loadIMEDictionaryEngine()
-    private static let sharedSupplementalConversionEngine = ConversionEngine(
-        entries: SupplementalDictionary.entries
-    )
+    private static let sharedMozcConversionEngine = loadMozcDictionaryEngine()
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
     private static let fuzzyEngineRepository = FuzzyEngineRepository()
@@ -83,8 +80,7 @@ final class InputController: IMKInputController {
     private var userConversionEngine: ConversionEngine
     private var extensionConversionEngine: ConversionEngine
     private var basicConversionEngine: ConversionEngine
-    private let imeConversionEngine: IndexedDictionaryEngine
-    private let supplementalConversionEngine: ConversionEngine
+    private let mozcConversionEngine: IndexedDictionaryEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let cosenseSettingsController: CosenseSettingsController
@@ -117,7 +113,7 @@ final class InputController: IMKInputController {
         let cosenseSettingsController = CosenseSettingsController()
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.sharedBasicEntries
-        let indexedIMEEngine = Self.sharedIMEConversionEngine
+        let indexedMozcEngine = Self.sharedMozcConversionEngine
         let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
         let selectionHistory = Self.loadCandidateSelectionHistory()
         let nextInputModel = Self.loadNextInputPredictionModel()
@@ -157,14 +153,13 @@ final class InputController: IMKInputController {
             entries: cachedExtensionEntries
         )
         basicConversionEngine = Self.sharedBasicConversionEngine
-        imeConversionEngine = indexedIMEEngine
-        supplementalConversionEngine = Self.sharedSupplementalConversionEngine
+        mozcConversionEngine = indexedMozcEngine
         verbInflectionGenerator = Self.sharedVerbInflectionGenerator
         super.init(server: server, delegate: delegate, client: inputClient)
 
         basicDictionaryStatus = bundledEntries.isEmpty
             ? "読込失敗"
-            : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(indexedIMEEngine.readingCount)読み）"
+            : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(indexedMozcEngine.readingCount)input）"
         rebuildFuzzyConversionEngine()
         updateBasicDictionaryIfNeeded(nil)
     }
@@ -1277,29 +1272,8 @@ final class InputController: IMKInputController {
             append(extensionConversionEngine.readings(for: candidate))
         }
         append(basicConversionEngine.readings(for: candidate))
-        append(supplementalConversionEngine.readings(for: candidate))
-        append(imeConversionEngine.readings(for: candidate).compactMap(
-            romanizedReading(from:)
-        ))
+        append(mozcConversionEngine.readings(for: candidate))
         return result
-    }
-
-    private func romanizedReading(from kana: String) -> String? {
-        guard var value = kana.applyingTransform(.toLatin, reverse: false)?
-            .lowercased() else {
-            return nil
-        }
-        let macrons: [(String, String)] = [
-            ("ā", "a-"), ("ī", "i-"), ("ū", "u-"),
-            ("ē", "e-"), ("ō", "o-")
-        ]
-        for (macron, replacement) in macrons {
-            value = value.replacingOccurrences(of: macron, with: replacement)
-        }
-        value = value.replacingOccurrences(of: " ", with: "")
-        return value.unicodeScalars.allSatisfy {
-            $0.isASCII && ($0.properties.isAlphabetic || $0 == "-" || $0 == "'")
-        } ? value : nil
     }
 
     private func selectedText(from sender: Any) -> String? {
@@ -1676,12 +1650,12 @@ final class InputController: IMKInputController {
             updateOfficialCandidatesIfNeeded(for: suggestionInput)
         }
 
-        let normalizedReading = RomanizedReadingNormalizer.dictionaryReading(
+        let normalizedReading = RomajiCanonicalizer.canonicalInput(
             from: conversionReading
         )
         let lookupReadings =
-            RomanizedReadingNormalizer.dictionaryLookupReadings(
-                from: normalizedReading
+            RomajiCanonicalizer.dictionaryLookupInputs(
+                from: conversionReading
             )
         let dateTimeCandidates = isDateTimeCandidatesEnabled
             ? DateTimeCandidateGenerator().candidates(
@@ -1709,21 +1683,12 @@ final class InputController: IMKInputController {
             lookup: { basicConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
         )
-        let kanaLookupReadings = lookupReadings.compactMap {
-            romajiConverter.hiragana(from: $0)
-        }
         let imeCandidates = mergedCandidateGroups(
             lookup: {
-                imeConversionEngine.candidateGroups(
+                mozcConversionEngine.candidateGroups(
                     matching: $0,
-                    limit: Self.maximumIMEDictionaryPrefixCandidates
+                    limit: Self.maximumMozcDictionaryPrefixCandidates
                 )
-            },
-            readings: kanaLookupReadings
-        )
-        let supplementalCandidates = mergedCandidateGroups(
-            lookup: {
-                supplementalConversionEngine.candidateGroups(matching: $0)
             },
             readings: lookupReadings
         )
@@ -1738,7 +1703,7 @@ final class InputController: IMKInputController {
             lookup: {
                 verbInflectionGenerator.candidates(for: $0)
                     + VerbInflectionCandidateGenerator.candidates(for: $0) {
-                        imeConversionEngine.candidates(for: $0)
+                        mozcConversionEngine.candidates(for: $0)
                     }
             },
             readings: lookupReadings
@@ -1759,10 +1724,8 @@ final class InputController: IMKInputController {
             + imeCandidates.exact
             + basicCandidates.exact
             + inflectionCandidates
-            + supplementalCandidates.exact
         let otherCandidates = userCandidates.prefix
             + extensionCandidates.prefix
-            + supplementalCandidates.prefix
             + englishCandidates
             + remoteCandidates
             + imeCandidates.prefix
@@ -1807,7 +1770,7 @@ final class InputController: IMKInputController {
         }
 
         let query = conversionReading
-        let imeDictionary = imeConversionEngine
+        let mozcDictionary = mozcConversionEngine
         let visibleCandidates = Set(currentCandidates)
         let token = suggestionSearchSession.begin(.fuzzy, query: query)
         let task = Task { @MainActor [weak self] in
@@ -1817,7 +1780,7 @@ final class InputController: IMKInputController {
                     let keyboardMatches =
                         RomajiKeyboardTypoGenerator.dictionaryMatches(
                             for: query,
-                            dictionary: imeDictionary
+                            dictionary: mozcDictionary
                         )
                     var seenReadings = Set<String>()
                     let fuzzyMatches = Self.fuzzyEngineRepository.matches(
@@ -2806,7 +2769,6 @@ final class InputController: IMKInputController {
                     + VerbInflectionCandidateGenerator.typoSearchEntries(
                         from: basicEntries
                     )
-                    + SupplementalDictionary.entries
                 Self.fuzzyEngineRepository.prepare(for: entries)
             }.value
             guard !Task.isCancelled, let self else {
@@ -3083,10 +3045,10 @@ final class InputController: IMKInputController {
         return entries
     }
 
-    private static func loadIMEDictionaryEngine() -> IndexedDictionaryEngine {
+    private static func loadMozcDictionaryEngine() -> IndexedDictionaryEngine {
         guard
             let dictionaryURL = inputMethodResourceURL(
-                forResource: "ime-dictionary",
+                forResource: "mozc-dictionary",
                 withExtension: "txt"
             ),
             let engine = try? IndexedDictionaryEngine(contentsOf: dictionaryURL)

@@ -5,14 +5,14 @@ public enum UserDictionaryEditor {
         to entries: [DictionaryEntry]
     ) -> [DictionaryEntry] {
         let normalizedReading =
-            RomanizedReadingNormalizer.dictionaryReading(from: reading)
+            RomajiCanonicalizer.canonicalInput(from: reading)
         guard !normalizedReading.isEmpty, !candidate.isEmpty else {
             return entries
         }
 
         var result = entries
         if let index = result.firstIndex(where: {
-            RomanizedReadingNormalizer.dictionaryReading(from: $0.reading)
+            RomajiCanonicalizer.canonicalInput(from: $0.input)
                 == normalizedReading
         }) {
             var candidates = result[index].candidates
@@ -37,7 +37,7 @@ public enum UserDictionaryEditor {
         from entries: [DictionaryEntry]
     ) -> [DictionaryEntry] {
         let normalizedReadings = Set(readings.map {
-            RomanizedReadingNormalizer.dictionaryReading(from: $0)
+            RomajiCanonicalizer.canonicalInput(from: $0)
         })
         guard !candidate.isEmpty, !normalizedReadings.isEmpty else {
             return entries
@@ -45,8 +45,8 @@ public enum UserDictionaryEditor {
 
         return entries.compactMap { entry in
             let normalizedReading =
-                RomanizedReadingNormalizer.dictionaryReading(
-                    from: entry.reading
+                RomajiCanonicalizer.canonicalInput(
+                    from: entry.input
                 )
             guard normalizedReadings.contains(normalizedReading) else {
                 return entry
@@ -56,7 +56,7 @@ public enum UserDictionaryEditor {
                 return nil
             }
             return DictionaryEntry(
-                reading: entry.reading,
+                input: entry.input,
                 candidates: candidates
             )
         }
@@ -72,7 +72,7 @@ public enum UserDictionaryEditor {
             let candidates = entry.candidates.filter { $0 != candidate }
             guard !candidates.isEmpty else { return nil }
             return DictionaryEntry(
-                reading: entry.reading,
+                input: entry.input,
                 candidates: candidates
             )
         }

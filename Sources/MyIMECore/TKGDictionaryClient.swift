@@ -92,7 +92,7 @@ public struct TKGDictionaryClient: Sendable {
                 : DictionaryEntry(reading: reading, candidates: candidates)
         }
         let dictionaryText = entries.map { entry in
-            ([entry.reading] + entry.candidates.map { " \($0)" })
+            ([entry.input] + entry.candidates.map { " \($0)" })
                 .joined(separator: "\n")
         }
         .joined(separator: "\n\n") + "\n"

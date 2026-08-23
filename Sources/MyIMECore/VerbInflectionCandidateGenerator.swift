@@ -6,8 +6,8 @@ public struct VerbInflectionCandidateGenerator: Sendable {
     public init(entries: [DictionaryEntry]) {
         var values: [String: [String]] = [:]
         for entry in entries {
-            let reading = RomanizedReadingNormalizer.dictionaryReading(
-                from: entry.reading
+            let reading = RomajiCanonicalizer.canonicalInput(
+                from: entry.input
             )
             values[reading, default: []].append(contentsOf: entry.candidates)
         }
@@ -37,8 +37,8 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         ]
         var generated: [DictionaryEntry] = []
         for entry in entries {
-            let reading = RomanizedReadingNormalizer.dictionaryReading(
-                from: entry.reading
+            let reading = RomajiCanonicalizer.canonicalInput(
+                from: entry.input
             )
             for rule in teFormRules
             where reading.hasSuffix(rule.0) {
@@ -69,7 +69,7 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         for reading: String,
         lookup: (String) -> [String]
     ) -> [String] {
-        let normalized = RomanizedReadingNormalizer.dictionaryReading(
+        let normalized = RomajiCanonicalizer.canonicalInput(
             from: reading
         )
         var result: [String] = []

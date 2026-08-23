@@ -122,6 +122,18 @@ struct ConversionEngineTests {
         #expect(engine.candidates(matching: "hidu") == ["日付"])
     }
 
+
+    @Test
+    func prioritizesRawInputBeforeCanonicalRomajiInput() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "si", candidates: ["SI"]),
+            DictionaryEntry(reading: "shi", candidates: ["詩"])
+        ])
+
+        #expect(engine.candidates(for: "si") == ["SI", "詩"])
+        #expect(engine.candidates(for: "shi") == ["詩"])
+    }
+
     @Test
     func findsReadingsForCandidate() {
         let engine = ConversionEngine(entries: [
