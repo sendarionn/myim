@@ -365,6 +365,9 @@ final class InputController: IMKInputController {
         InputSourceMenuBuilder.make(
             actions: InputSourceMenuBuilder.Actions(
                 openSettings: #selector(openSettingsWindow(_:)),
+                openJavaScriptExtensionDirectory: #selector(
+                    openJavaScriptExtensionDirectory(_:)
+                ),
                 toggleTranslationMode: #selector(toggleTranslationMode(_:)),
                 translationModeEnabled: isTranslationModeEnabled,
                 syncCosenseDictionary: #selector(syncCosenseDictionary(_:)),
@@ -439,6 +442,43 @@ final class InputController: IMKInputController {
             configureCosenseAuthentication: #selector(configureCosenseAuthentication(_:)),
             syncCosenseDictionary: #selector(syncCosenseDictionary(_:))
         )
+    }
+
+    @objc
+    private func openJavaScriptExtensionDirectory(_ sender: Any?) {
+        guard let directory = JavaScriptExtensionClient.userExtensionDirectory
+        else {
+            showJavaScriptExtensionDirectoryError(
+                title: "拡張フォルダを開けません",
+                message: "Application Supportフォルダが見つかりません"
+            )
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            NSWorkspace.shared.open(directory)
+        } catch {
+            showJavaScriptExtensionDirectoryError(
+                title: "拡張フォルダを開けません",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func showJavaScriptExtensionDirectoryError(
+        title: String,
+        message: String
+    ) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "閉じる")
+        alert.window.level = .floating
+        NSApp.activate(ignoringOtherApps: true)
+        _ = alert.runModal()
     }
 
     @objc

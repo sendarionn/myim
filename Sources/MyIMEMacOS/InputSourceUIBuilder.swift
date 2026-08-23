@@ -7,6 +7,7 @@ private final class TopAlignedSettingsStackView: NSStackView {
 enum InputSourceMenuBuilder {
     struct Actions {
         let openSettings: Selector
+        let openJavaScriptExtensionDirectory: Selector
         let toggleTranslationMode: Selector
         let translationModeEnabled: Bool
         let syncCosenseDictionary: Selector
@@ -19,6 +20,11 @@ enum InputSourceMenuBuilder {
         addAction(
             title: "myim設定…",
             selector: actions.openSettings,
+            to: menu
+        )
+        addAction(
+            title: "JavaScript拡張フォルダを開く…",
+            selector: actions.openJavaScriptExtensionDirectory,
             to: menu
         )
         let translationMode = NSMenuItem(

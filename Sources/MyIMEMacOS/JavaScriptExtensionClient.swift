@@ -17,6 +17,15 @@ actor JavaScriptExtensionClient {
         process?.terminate()
     }
 
+    nonisolated static var userExtensionDirectory: URL? {
+        FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first?
+            .appendingPathComponent("myim", isDirectory: true)
+            .appendingPathComponent("Extensions", isDirectory: true)
+    }
+
     func candidates(
         for input: String,
         dateFormats: [String],
@@ -146,13 +155,7 @@ actor JavaScriptExtensionClient {
             .appendingPathComponent("Extensions", isDirectory: true) {
             directories.append(builtIn.path)
         }
-        if let support = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first {
-            let user = support
-                .appendingPathComponent("myim", isDirectory: true)
-                .appendingPathComponent("Extensions", isDirectory: true)
+        if let user = userExtensionDirectory {
             try? FileManager.default.createDirectory(
                 at: user,
                 withIntermediateDirectories: true

@@ -120,6 +120,8 @@ function candidates(context) {
 ファイルの追加、変更、削除は次の入力から反映します
 `@myim-prefix`を指定すると、その文字列で始まる入力だけで拡張を実行します
 
+入力ソースメニューを開き、「myim設定…」直下の「JavaScript拡張フォルダを開く…」を押すと配置先をFinderで表示します
+
 `context`には`input`、`timestamp`、`timeZone`、日時書式設定を渡します
 候補は文字列、または`value`を持つオブジェクトの配列で返します
 
