@@ -12,6 +12,12 @@ struct RomajiConverterTests {
         #expect(converter.hiragana(from: "Tsuujou") == "つうじょう")
         #expect(converter.hiragana(from: "cha-to") == "ちゃーと")
         #expect(converter.hiragana(from: "matcha") == "まっちゃ")
+        #expect(converter.hiragana(from: "sajesuto") == "さじぇすと")
+        #expect(converter.katakana(from: "sajesuto") == "サジェスト")
+        #expect(converter.katakana(from: "shefu") == "シェフ")
+        #expect(converter.katakana(from: "che-n") == "チェーン")
+        #expect(converter.katakana(from: "kwa-tetto") == "クァーテット")
+        #expect(converter.katakana(from: "twuin") == "トゥイン")
     }
 
     @Test
