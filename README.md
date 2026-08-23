@@ -2,7 +2,7 @@
 
 複数のローカル辞書と拡張辞書を使うmacOS向けInput Method
 
-GyaimとSKKにインスピレーションを受けて制作しました
+POBox、Gyaim、SKKにインスピレーションを受けて制作しました
 
 ## 設計思想
 
