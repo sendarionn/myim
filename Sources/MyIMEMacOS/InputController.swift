@@ -70,6 +70,7 @@ final class InputController: IMKInputController {
     private var translationDraft: String?
     private var translationTask: Task<Void, Never>?
     private var activatedAt: TimeInterval?
+    private var secureInputPassthroughActive = false
     private var currentCandidates: [String] = []
     private var selectedCandidateIndex: Int?
     private var fuzzySuggestions: [FuzzySuggestion] = []
@@ -179,6 +180,12 @@ final class InputController: IMKInputController {
         guard event.type == .keyDown else {
             return false
         }
+
+        if SecureInputDetector.isEnabled {
+            beginSecureInputPassthroughIfNeeded(client: sender)
+            return false
+        }
+        secureInputPassthroughActive = false
 
         if previewWindow.isInteractionActive {
             previewWindow.finishInteraction()
@@ -504,7 +511,8 @@ final class InputController: IMKInputController {
             "拡張辞書: \(dictionarySource.projectURLDescription)",
             "Cosense認証: \(cosenseAuthenticationStatus)",
             "Cosense更新: \(cosenseSyncStatus)",
-            "TKGJE更新: \(basicDictionaryStatus)"
+            "TKGJE更新: \(basicDictionaryStatus)",
+            "保護入力: \(secureInputStatusDescription)"
         ].joined(separator: "\n")
         alert.addButton(withTitle: "閉じる")
         alert.window.level = .floating
@@ -2256,6 +2264,27 @@ final class InputController: IMKInputController {
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
+    }
+
+    private func beginSecureInputPassthroughIfNeeded(client sender: Any) {
+        guard !secureInputPassthroughActive else { return }
+        secureInputPassthroughActive = true
+        activatedAt = nil
+        NSLog("myim: Secure Event Inputを検知し、キー処理を停止")
+        clearCompositionForSystemPaste(in: sender)
+        translationTask?.cancel()
+        translationTask = nil
+        translationDraft = nil
+        resetTransientInteractionState()
+        modeStatusWindow.hide()
+        nextInputPredictionModel.breakSequence()
+    }
+
+    private var secureInputStatusDescription: String {
+        if SecureInputDetector.isEnabled {
+            return "検知中（myim処理停止）"
+        }
+        return secureInputPassthroughActive ? "直前に検知" : "通常"
     }
 
     private func isSystemUndoRedoShortcut(_ event: NSEvent) -> Bool {

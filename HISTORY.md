@@ -2,6 +2,14 @@
 
 ## 2026-08-23
 
+### 保護入力の透過
+
+- macOSのSecure Event Inputを検知中はmyimのキー処理を通さず入力先へ返すよう変更
+- 保護入力へ移った時に未確定入力、候補、次入力候補、外部情報、通信処理を解除
+- 保護入力中は候補生成、履歴保存、外部通信を停止
+- Secure Event Input終了後は次の入力から通常動作へ自動復帰
+- 入力ソースメニューの状態確認へ現在と直前の保護入力検知状態を追加
+
 ### JavaScript拡張
 
 - `~/Library/Application Support/myim/Extensions`の`.js`から動的候補を生成
