@@ -38,4 +38,12 @@ struct RomajiTypoScorerTests {
 
         #expect(transposition < substitutions)
     }
+
+    @Test
+    func penalizesAddingVoicingToUnvoicedInput() {
+        let addedVoicing = RomajiTypoScorer.cost(from: "kaku", to: "gaku")
+        let ordinaryTypo = RomajiTypoScorer.cost(from: "ainai", to: "aimai")
+
+        #expect(addedVoicing > ordinaryTypo)
+    }
 }

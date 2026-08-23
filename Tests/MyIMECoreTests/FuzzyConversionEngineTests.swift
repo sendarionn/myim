@@ -14,7 +14,8 @@ struct FuzzyConversionEngineTests {
         DictionaryEntry(reading: "wo", candidates: ["を"]),
         DictionaryEntry(reading: "konnichiha", candidates: ["こんにちは"]),
         DictionaryEntry(reading: "shinbun", candidates: ["新聞"]),
-        DictionaryEntry(reading: "toukyou", candidates: ["東京"])
+        DictionaryEntry(reading: "toukyou", candidates: ["東京"]),
+        DictionaryEntry(reading: "gakkou", candidates: ["学校"])
     ])
 
     @Test
@@ -133,6 +134,13 @@ struct FuzzyConversionEngineTests {
     func rejectsTwoUnrelatedConsonantEdits() {
         #expect(engine.matches(for: "hipuyou").allSatisfy {
             $0.reading != "hitsuyou"
+        })
+    }
+
+    @Test
+    func doesNotSuggestReadingThatOnlyAddsVoicing() {
+        #expect(engine.matches(for: "kakkou").allSatisfy {
+            $0.reading != "gakkou"
         })
     }
 }
