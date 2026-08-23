@@ -264,13 +264,15 @@ final class InputController: IMKInputController {
         case 48:
             return handleTab(event, client: sender)
         case 49:
-            if inputBuffer.isEmpty, shouldSuppressActivationSpace(event) {
+            let space = isFullWidthSpaceShortcut(event) ? "　" : " "
+            if space == " ", inputBuffer.isEmpty,
+               shouldSuppressActivationSpace(event) {
                 activatedAt = nil
                 return true
             }
             return isTranslationModeEnabled
-                ? handleTranslationSpace(client: sender)
-                : handleSpace(client: sender)
+                ? handleTranslationSpace(space: space, client: sender)
+                : handleSpace(space: space, client: sender)
         case 123:
             return selectedCandidateIndex == nil
                 ? moveInputCursor(by: -1, client: sender)
@@ -970,28 +972,48 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func handleSpace(client sender: Any) -> Bool {
+    private func handleSpace(space: String, client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            return false
+            if let selectedNextInputIndex,
+               nextInputCandidates.indices.contains(selectedNextInputIndex) {
+                let value = nextInputCandidates[selectedNextInputIndex]
+                commit(value + space, to: sender, historyValue: value)
+                return true
+            }
+            guard space == "　" else { return false }
+            commit(space, to: sender)
+            return true
         }
         let value = selectedCandidateValue ?? inputBuffer
         recordSelectedCandidate()
-        commit(value + " ", to: sender, historyValue: value)
+        commit(value + space, to: sender, historyValue: value)
         return true
     }
 
-    private func handleTranslationSpace(client sender: Any) -> Bool {
+    private func handleTranslationSpace(
+        space: String,
+        client sender: Any
+    ) -> Bool {
         guard !inputBuffer.isEmpty else {
             guard translationDraft != nil else {
-                return false
+                guard space == "　" else { return false }
+                commit(space, to: sender)
+                return true
             }
-            translationDraft?.append(" ")
+            translationDraft?.append(space)
             updateMarkedText(in: sender)
             showTranslationDraft(client: sender)
             return true
         }
-        appendCurrentInputToTranslationDraft(suffix: " ", client: sender)
+        appendCurrentInputToTranslationDraft(suffix: space, client: sender)
         return true
+    }
+
+    private func isFullWidthSpaceShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(
+            [.command, .control, .option, .shift]
+        )
+        return flags == [.shift]
     }
 
     private func handleTranslationReturn(client sender: Any) -> Bool {
