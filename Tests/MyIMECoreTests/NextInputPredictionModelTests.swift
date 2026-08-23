@@ -17,6 +17,17 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
+    func returnsCandidatesForCurrentContext() {
+        var model = NextInputPredictionModel()
+        model.record("構造")
+        model.record("計画")
+        model.breakSequence()
+        model.record("構造")
+
+        #expect(model.candidatesAfterLastInput() == ["計画"])
+    }
+
+    @Test
     func prioritizesMostRecentFollowerBeforeFrequency() {
         var model = NextInputPredictionModel()
         model.record("A")

@@ -4,6 +4,7 @@ public struct CandidatePipeline: Sendable {
         public let direct: [String]
         public let other: [String]
         public let recencyRanks: [String: Int]
+        public let contextualCandidates: [String]
         public let prioritizeKana: Bool
 
         public init(
@@ -11,12 +12,14 @@ public struct CandidatePipeline: Sendable {
             direct: [String],
             other: [String],
             recencyRanks: [String: Int],
+            contextualCandidates: [String] = [],
             prioritizeKana: Bool
         ) {
             self.kana = kana
             self.direct = direct
             self.other = other
             self.recencyRanks = recencyRanks
+            self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
         }
     }
@@ -29,6 +32,7 @@ public struct CandidatePipeline: Sendable {
             direct: input.direct,
             others: input.other,
             recencyRanks: input.recencyRanks,
+            contextualCandidates: input.contextualCandidates,
             prioritizeKana: input.prioritizeKana
         )
     }

@@ -76,6 +76,13 @@ public struct NextInputPredictionModel: Codable, Sendable {
             .map(\.key)
     }
 
+    public func candidatesAfterLastInput(limit: Int = 7) -> [String] {
+        guard let lastInput else {
+            return []
+        }
+        return candidates(after: lastInput, limit: limit)
+    }
+
     public mutating func removeAll() {
         contexts = [:]
         sequence = 0

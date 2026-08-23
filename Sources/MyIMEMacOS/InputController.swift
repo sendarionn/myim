@@ -1745,12 +1745,18 @@ final class InputController: IMKInputController {
             + remoteCandidates
             + imeCandidates.prefix
             + basicCandidates.prefix
+        let contextualCandidates = isNextInputPredictionEnabled
+            ? nextInputPredictionModel.candidatesAfterLastInput(
+                limit: NextInputPredictionModel.maximumFollowersPerContext
+            )
+            : []
         currentCandidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
                 kana: kanaCandidates,
                 direct: directCandidates,
                 other: otherCandidates,
                 recencyRanks: candidateSelectionHistory.ranks,
+                contextualCandidates: contextualCandidates,
                 prioritizeKana: kanaCandidates.first?.count == 1
             )
         )

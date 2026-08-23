@@ -4,6 +4,7 @@ public enum CandidatePriorityOrderer {
         direct: [String],
         others: [String],
         recencyRanks: [String: Int],
+        contextualCandidates: [String] = [],
         prioritizeKana: Bool
     ) -> [String] {
         var seen = Set<String>()
@@ -16,10 +17,29 @@ public enum CandidatePriorityOrderer {
             }
         }
 
+        func orderedByContext(_ candidates: [String]) -> [String] {
+            let recencyOrdered = CandidateRecencyOrderer.ordered(
+                candidates,
+                ranks: recencyRanks
+            )
+            let available = Set(recencyOrdered)
+            var contextual = Set<String>()
+            let preferred = contextualCandidates.filter {
+                available.contains($0) && contextual.insert($0).inserted
+            }
+            return preferred + recencyOrdered.filter {
+                !contextual.contains($0)
+            }
+        }
+
         if prioritizeKana {
             appendUnique(kana)
+            let contextualSet = Set(contextualCandidates)
+            appendUnique(orderedByContext(
+                (direct + others).filter { contextualSet.contains($0) }
+            ))
             appendUnique(CandidateRecencyOrderer.ordered(
-                direct,
+                direct.filter { !seen.contains($0) },
                 ranks: recencyRanks
             ))
             appendUnique(CandidateRecencyOrderer.ordered(
@@ -29,9 +49,8 @@ public enum CandidatePriorityOrderer {
             return result
         }
 
-        appendUnique(CandidateRecencyOrderer.ordered(
-            direct + kana + others,
-            ranks: recencyRanks
+        appendUnique(orderedByContext(
+            direct + kana + others
         ))
         return result
     }
