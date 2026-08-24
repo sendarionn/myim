@@ -2407,8 +2407,15 @@ final class InputController: IMKInputController {
         }
 
         let value = selectedCandidateValue ?? inputBuffer
+        let calculatorNextInputCandidates = selectedCandidateIndex == nil
+            ? CalculatorCandidateGenerator.candidates(for: inputBuffer)
+            : []
         recordSelectedCandidate()
-        commit(value, to: sender)
+        commit(
+            value,
+            to: sender,
+            preferredNextInputCandidates: calculatorNextInputCandidates
+        )
         return true
     }
 
@@ -2571,7 +2578,8 @@ final class InputController: IMKInputController {
         _ value: String,
         to sender: Any,
         replacingMarkedText: Bool = false,
-        historyValue: String? = nil
+        historyValue: String? = nil,
+        preferredNextInputCandidates: [String] = []
     ) {
         guard let textClient = sender as? IMKTextInput else {
             return
@@ -2599,7 +2607,11 @@ final class InputController: IMKInputController {
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
-        recordCommittedInput(historyValue ?? value, client: sender)
+        recordCommittedInput(
+            historyValue ?? value,
+            preferredCandidates: preferredNextInputCandidates,
+            client: sender
+        )
     }
 
     private func resetTransientInteractionState() {
@@ -2687,15 +2699,25 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func recordCommittedInput(_ value: String, client sender: Any) {
-        guard isNextInputPredictionEnabled else {
-            return
-        }
-        nextInputPredictionModel.record(value)
-        nextInputPredictionWriter.schedule(nextInputPredictionModel)
+    private func recordCommittedInput(
+        _ value: String,
+        preferredCandidates: [String] = [],
+        client sender: Any
+    ) {
+        var learnedCandidates: [String] = []
+        if isNextInputPredictionEnabled {
+            nextInputPredictionModel.record(value)
+            nextInputPredictionWriter.schedule(nextInputPredictionModel)
 
-        nextInputCandidates = nextInputPredictionModel.candidates(
-            after: value,
+            learnedCandidates = nextInputPredictionModel.candidates(
+                after: value,
+                limit: Self.maximumCandidateCount
+            )
+        }
+
+        nextInputCandidates = NextInputCandidateMerger.merged(
+            preferred: preferredCandidates,
+            learned: learnedCandidates,
             limit: Self.maximumCandidateCount
         )
         selectedNextInputIndex = nil

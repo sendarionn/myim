@@ -157,3 +157,17 @@ public struct NextInputPredictionModel: Codable, Sendable {
         return normalized
     }
 }
+
+public enum NextInputCandidateMerger {
+    public static func merged(
+        preferred: [String],
+        learned: [String],
+        limit: Int
+    ) -> [String] {
+        guard limit > 0 else { return [] }
+        var seen = Set<String>()
+        return (preferred + learned).filter {
+            seen.insert($0).inserted
+        }.prefix(limit).map { $0 }
+    }
+}
