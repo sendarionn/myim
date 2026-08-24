@@ -1,0 +1,227 @@
+@preconcurrency import AppKit
+
+private final class CalendarPanel: NSPanel {
+    var cancelAction: (() -> Void)?
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func cancelOperation(_ sender: Any?) {
+        cancelAction?()
+    }
+}
+
+private final class CalendarDatePicker: NSDatePicker {
+    var confirmAction: (() -> Void)?
+    var cancelAction: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 36, 76:
+            confirmAction?()
+        case 53:
+            cancelAction?()
+        default:
+            super.keyDown(with: event)
+        }
+    }
+}
+
+private final class CalendarFormatKeyPanel: NSPanel {
+    var candidateCount = 0
+    var selectedIndex: Int?
+    var selectionChanged: ((Int?) -> Void)?
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 48, 124, 125:
+            guard candidateCount > 0 else { return }
+            let direction = event.keyCode == 48
+                && event.modifierFlags.contains(.shift) ? -1 : 1
+            moveSelection(by: direction)
+        case 123, 126:
+            moveSelection(by: -1)
+        case 36, 76:
+            guard selectedIndex != nil else { return }
+            NSApp.stopModal(withCode: .OK)
+        case 53:
+            NSApp.stopModal(withCode: .cancel)
+        default:
+            break
+        }
+    }
+
+    private func moveSelection(by offset: Int) {
+        guard candidateCount > 0 else { return }
+        let current = selectedIndex ?? (offset > 0 ? -1 : 0)
+        selectedIndex = (current + offset + candidateCount) % candidateCount
+        selectionChanged?(selectedIndex)
+    }
+}
+
+final class CalendarWindowController: NSObject {
+    private let panel: CalendarPanel
+    private let formatKeyPanel: CalendarFormatKeyPanel
+    private let datePicker: NSDatePicker
+    private var selectedDate: Date?
+
+    override init() {
+        datePicker = CalendarDatePicker(
+            frame: NSRect(x: 12, y: 12, width: 260, height: 190)
+        )
+        datePicker.datePickerStyle = .clockAndCalendar
+        datePicker.datePickerElements = [.yearMonthDay]
+        datePicker.isBordered = false
+
+        panel = CalendarPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 284, height: 214),
+            styleMask: [.titled, .utilityWindow],
+            backing: .buffered,
+            defer: true
+        )
+        formatKeyPanel = CalendarFormatKeyPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true
+        )
+        super.init()
+
+        panel.title = "日付を選択"
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentView?.addSubview(datePicker)
+        panel.cancelAction = { [weak self] in
+            self?.cancelSelection()
+        }
+        if let calendarDatePicker = datePicker as? CalendarDatePicker {
+            calendarDatePicker.confirmAction = { [weak self] in
+                self?.confirmSelection()
+            }
+            calendarDatePicker.cancelAction = { [weak self] in
+                self?.cancelSelection()
+            }
+        }
+        datePicker.target = self
+        datePicker.action = #selector(selectDate(_:))
+        formatKeyPanel.level = .popUpMenu
+        formatKeyPanel.alphaValue = 0.01
+        formatKeyPanel.isOpaque = false
+        formatKeyPanel.backgroundColor = .clear
+        formatKeyPanel.isReleasedWhenClosed = false
+    }
+
+    var isVisible: Bool {
+        panel.isVisible
+    }
+
+    func runSelection(
+        near anchorFrame: NSRect,
+        initialDate: Date = Date()
+    ) -> Date? {
+        selectedDate = nil
+        datePicker.dateValue = initialDate
+        position(near: anchorFrame)
+
+        let previousApplication = NSWorkspace.shared.frontmostApplication
+        let previousPolicy = NSApp.activationPolicy()
+        if previousPolicy == .prohibited {
+            _ = NSApp.setActivationPolicy(.accessory)
+        }
+        NSRunningApplication.current.activate(
+            options: [.activateIgnoringOtherApps, .activateAllWindows]
+        )
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(datePicker)
+
+        let response = NSApp.runModal(for: panel)
+        panel.orderOut(nil)
+        if NSApp.activationPolicy() != previousPolicy {
+            _ = NSApp.setActivationPolicy(previousPolicy)
+        }
+        previousApplication?.activate(options: [.activateIgnoringOtherApps])
+
+        guard response == .OK else { return nil }
+        return selectedDate
+    }
+
+    func hide() {
+        if NSApp.modalWindow === panel {
+            NSApp.abortModal()
+        }
+        panel.orderOut(nil)
+        formatKeyPanel.orderOut(nil)
+    }
+
+    func runFormatSelection(
+        candidateCount: Int,
+        selectionChanged: @escaping (Int?) -> Void
+    ) -> Int? {
+        guard candidateCount > 0 else { return nil }
+        formatKeyPanel.candidateCount = candidateCount
+        formatKeyPanel.selectedIndex = nil
+        formatKeyPanel.selectionChanged = selectionChanged
+
+        let previousApplication = NSWorkspace.shared.frontmostApplication
+        let previousPolicy = NSApp.activationPolicy()
+        if previousPolicy == .prohibited {
+            _ = NSApp.setActivationPolicy(.accessory)
+        }
+        formatKeyPanel.setFrameOrigin(NSPoint(x: -10, y: -10))
+        NSRunningApplication.current.activate(
+            options: [.activateIgnoringOtherApps, .activateAllWindows]
+        )
+        NSApp.activate(ignoringOtherApps: true)
+        formatKeyPanel.makeKeyAndOrderFront(nil)
+        formatKeyPanel.makeFirstResponder(formatKeyPanel)
+
+        let response = NSApp.runModal(for: formatKeyPanel)
+        let selectedIndex = formatKeyPanel.selectedIndex
+        formatKeyPanel.orderOut(nil)
+        formatKeyPanel.selectionChanged = nil
+        if NSApp.activationPolicy() != previousPolicy {
+            _ = NSApp.setActivationPolicy(previousPolicy)
+        }
+        previousApplication?.activate(options: [.activateIgnoringOtherApps])
+
+        return response == .OK ? selectedIndex : nil
+    }
+
+    private func position(near anchorFrame: NSRect) {
+        let screen = NSScreen.screens.first {
+            $0.frame.intersects(anchorFrame)
+        } ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        let size = panel.frame.size
+        let x = min(
+            max(anchorFrame.minX, visibleFrame.minX),
+            visibleFrame.maxX - size.width
+        )
+        var y = anchorFrame.minY - size.height - 6
+        if y < visibleFrame.minY {
+            y = min(anchorFrame.maxY + 6, visibleFrame.maxY - size.height)
+        }
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    @objc private func selectDate(_ sender: NSDatePicker) {
+        confirmSelection()
+    }
+
+    private func confirmSelection() {
+        selectedDate = datePicker.dateValue
+        NSApp.stopModal(withCode: .OK)
+    }
+
+    private func cancelSelection() {
+        selectedDate = nil
+        NSApp.stopModal(withCode: .cancel)
+    }
+}

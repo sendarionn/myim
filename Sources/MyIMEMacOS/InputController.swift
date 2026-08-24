@@ -107,6 +107,10 @@ final class InputController: IMKInputController {
     private var unfilteredCandidates: [String]?
     private var candidateFilterConditions: [CandidateFilterCondition] = []
     private var candidateFilterDraft: CandidateFilterDraft?
+    private var calendarFormatCandidates: [String]?
+    private var selectedCalendarFormatIndex: Int?
+    private var calendarFormatTask: Task<Void, Never>?
+    private var calendarSessionActive = false
     private var fuzzySuggestions: [FuzzySuggestion] = []
     private var selectedFuzzySuggestionIndex: Int?
     private var dictionarySource: CosenseDictionarySource
@@ -142,6 +146,7 @@ final class InputController: IMKInputController {
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
     private let candidateWindow = CandidateWindowController()
+    private let calendarWindow = CalendarWindowController()
     private let modeStatusWindow = ModeStatusWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
@@ -244,6 +249,21 @@ final class InputController: IMKInputController {
                 refreshCandidates(client: sender)
             }
             return true
+        }
+
+        if calendarWindow.isVisible {
+            if event.keyCode == 53 {
+                calendarWindow.hide()
+            }
+            return true
+        }
+
+        if calendarFormatCandidates != nil {
+            return handleCalendarFormatSelection(event, client: sender)
+        }
+
+        if isCalendarShortcut(event) {
+            return beginCalendarSelection(client: sender)
         }
 
 
@@ -659,6 +679,10 @@ final class InputController: IMKInputController {
 
     override func deactivateServer(_ sender: Any!) {
         if previewWindow.shouldPreserveForExternalInteraction() {
+            super.deactivateServer(sender)
+            return
+        }
+        if calendarSessionActive {
             super.deactivateServer(sender)
             return
         }
@@ -1765,6 +1789,153 @@ final class InputController: IMKInputController {
         return flags == [.option]
             && (event.keyCode == 3
                 || event.charactersIgnoringModifiers?.lowercased() == "f")
+    }
+
+    private func isCalendarShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        return flags == [.option]
+            && (event.keyCode == 8
+                || event.charactersIgnoringModifiers?.lowercased() == "c")
+    }
+
+    private func beginCalendarSelection(client sender: Any) -> Bool {
+        guard inputBuffer.isEmpty,
+              translationDraft == nil,
+              tabDictionaryRegistration == nil else {
+            return true
+        }
+        dismissNextInputSuggestions(clearMarkedTextIn: sender)
+        candidateWindow.hide()
+        previewWindow.hide()
+        calendarFormatTask?.cancel()
+        calendarFormatCandidates = nil
+        selectedCalendarFormatIndex = nil
+        calendarSessionActive = true
+        guard let date = calendarWindow.runSelection(
+            near: inputLocation(for: sender)
+        ) else {
+            clearCalendarSelection()
+            candidateWindow.hide()
+            return true
+        }
+        loadCalendarFormats(for: date, client: sender)
+        return true
+    }
+
+    private func loadCalendarFormats(for date: Date, client sender: Any) {
+        calendarFormatTask?.cancel()
+        calendarFormatCandidates = []
+        selectedCalendarFormatIndex = nil
+        candidateWindow.show(
+            candidates: ["書式を読み込み中"],
+            selectedIndex: nil,
+            near: inputLocation(for: sender),
+            guide: "Esc 中止",
+            modeTitle: "日付の書式を選択"
+        )
+        calendarFormatTask = Task { @MainActor [weak self] in
+            let candidates = await Self.javaScriptExtensionClient
+                .calendarCandidates(for: date)
+            guard !Task.isCancelled else { return }
+            guard let self else { return }
+            self.calendarFormatCandidates = self.candidatesOrderedByRecency(
+                candidates
+            )
+            self.selectedCalendarFormatIndex = nil
+            self.showCalendarFormatCandidates(client: sender)
+            guard let orderedCandidates = self.calendarFormatCandidates,
+                  !orderedCandidates.isEmpty else {
+                return
+            }
+            guard let selectedIndex = self.calendarWindow.runFormatSelection(
+                candidateCount: orderedCandidates.count,
+                selectionChanged: { [weak self] index in
+                    guard let self else { return }
+                    self.selectedCalendarFormatIndex = index
+                    self.showCalendarFormatCandidates(client: sender)
+                }
+            ), orderedCandidates.indices.contains(selectedIndex) else {
+                self.clearCalendarSelection()
+                self.candidateWindow.hide()
+                return
+            }
+            let value = orderedCandidates[selectedIndex]
+            self.recordCandidateSelection(value)
+            self.clearCalendarSelection()
+            self.commit(value, to: sender)
+        }
+    }
+
+    private func handleCalendarFormatSelection(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        guard let candidates = calendarFormatCandidates else { return false }
+        switch event.keyCode {
+        case 48, 124, 125:
+            guard !candidates.isEmpty else { return true }
+            selectedCalendarFormatIndex = (
+                (selectedCalendarFormatIndex ?? -1) + 1
+            ) % candidates.count
+            showCalendarFormatCandidates(client: sender)
+        case 123, 126:
+            guard !candidates.isEmpty else { return true }
+            selectedCalendarFormatIndex = (
+                (selectedCalendarFormatIndex ?? 0) - 1 + candidates.count
+            ) % candidates.count
+            showCalendarFormatCandidates(client: sender)
+        case 36, 76:
+            guard let index = selectedCalendarFormatIndex,
+                  candidates.indices.contains(index) else {
+                return true
+            }
+            let value = candidates[index]
+            recordCandidateSelection(value)
+            clearCalendarSelection()
+            commit(value, to: sender)
+        case 53:
+            clearCalendarSelection()
+            candidateWindow.hide()
+        default:
+            break
+        }
+        return true
+    }
+
+    private func showCalendarFormatCandidates(client sender: Any) {
+        guard let candidates = calendarFormatCandidates else { return }
+        guard !candidates.isEmpty else {
+            candidateWindow.show(
+                candidates: ["書式候補なし"],
+                selectedIndex: nil,
+                near: inputLocation(for: sender),
+                guide: "calendar.jsを確認　Esc 中止",
+                modeTitle: "日付の書式を選択"
+            )
+            return
+        }
+        let selectedIndex = selectedCalendarFormatIndex ?? 0
+        let pageStart = selectedIndex / Self.maximumCandidateCount
+            * Self.maximumCandidateCount
+        let pageEnd = min(pageStart + Self.maximumCandidateCount, candidates.count)
+        candidateWindow.show(
+            candidates: Array(candidates[pageStart..<pageEnd]),
+            selectedIndex: selectedCalendarFormatIndex.map { $0 - pageStart },
+            near: inputLocation(for: sender),
+            guide: "Tab / 矢印 選択　↩ 入力　Esc 中止",
+            modeTitle: "日付の書式を選択"
+        )
+    }
+
+    private func clearCalendarSelection() {
+        calendarFormatTask?.cancel()
+        calendarFormatTask = nil
+        calendarFormatCandidates = nil
+        selectedCalendarFormatIndex = nil
+        calendarSessionActive = false
+        calendarWindow.hide()
     }
 
     private func beginCandidateFilterInput(client sender: Any) -> Bool {
@@ -2985,6 +3156,7 @@ final class InputController: IMKInputController {
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
+        clearCalendarSelection()
         resetCandidateFilters()
         recordCommittedInput(
             historyValue ?? value,
@@ -3004,6 +3176,7 @@ final class InputController: IMKInputController {
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
         suggestionSearchSession.cancelAll()
+        clearCalendarSelection()
         resetCandidateFilters()
     }
 

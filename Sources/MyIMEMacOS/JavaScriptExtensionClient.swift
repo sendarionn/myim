@@ -113,18 +113,34 @@ actor JavaScriptExtensionClient {
         timeFormats: [String],
         dateTimeFormats: [String]
     ) async -> [String] {
-        guard !input.isEmpty, startIfNeeded() else { return [] }
-        let request = JavaScriptExtensionRequest(
-            input: input,
-            timestamp: ISO8601DateFormatter().string(from: Date()),
-            timeZone: TimeZone.current.identifier,
-            extensionDirectories: Self.extensionDirectories,
-            disabledFileNames: Self.disabledFileNames.sorted(),
+        await candidates(
+            for: input,
+            timestamp: Date(),
             settings: [
                 "dateFormats": dateFormats,
                 "timeFormats": timeFormats,
                 "dateTimeFormats": dateTimeFormats
             ]
+        )
+    }
+
+    func calendarCandidates(for date: Date) async -> [String] {
+        await candidates(for: "calendar", timestamp: date, settings: [:])
+    }
+
+    private func candidates(
+        for input: String,
+        timestamp: Date,
+        settings: [String: [String]]
+    ) async -> [String] {
+        guard !input.isEmpty, startIfNeeded() else { return [] }
+        let request = JavaScriptExtensionRequest(
+            input: input,
+            timestamp: ISO8601DateFormatter().string(from: timestamp),
+            timeZone: TimeZone.current.identifier,
+            extensionDirectories: Self.extensionDirectories,
+            disabledFileNames: Self.disabledFileNames.sorted(),
+            settings: settings
         )
         guard let data = try? JSONEncoder().encode(request) else { return [] }
 
