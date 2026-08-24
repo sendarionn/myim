@@ -121,6 +121,18 @@ cp -R \
 cp \
     "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
     "$resources_directory/mozc-LICENSE.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/candidate-filter-aliases.txt" \
+    "$resources_directory/candidate-filter-aliases.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/kanji-filter-data.txt" \
+    "$resources_directory/kanji-filter-data.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/UNICODE-LICENSE.txt" \
+    "$resources_directory/UNICODE-LICENSE.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/kanji-filter-data-source.json" \
+    "$resources_directory/kanji-filter-data-source.json"
 xcrun swift "Scripts/generate-ime-icon.swift" \
     "$resources_directory/myimChip.pdf" 28 36 26 white
 xcrun swift "Scripts/generate-ime-icon.swift" \

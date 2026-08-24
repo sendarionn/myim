@@ -11,6 +11,24 @@ final class InputController: IMKInputController {
         var confirmedCandidate: String?
     }
 
+    private struct CandidateFilterDraft {
+        var input = ""
+        var choices: [CandidateFilterDraftChoice] = []
+        var selectedIndex: Int?
+    }
+
+    private enum CandidateFilterDraftChoice {
+        case input(String)
+        case filter(CandidateFilterChoice)
+
+        var label: String {
+            switch self {
+            case let .input(value): value
+            case let .filter(choice): choice.label
+            }
+        }
+    }
+
     private static let defaultDictionarySource = CosenseDictionarySource(
         project: "sendarionn-public",
         pageTitle: "dictionary"
@@ -63,6 +81,13 @@ final class InputController: IMKInputController {
     private static let basicDictionaryUpdateCoordinator =
         BasicDictionaryUpdateCoordinator()
     private static let javaScriptExtensionClient = JavaScriptExtensionClient()
+    private static let candidateFilterDatabase = loadCandidateFilterDatabase()
+    private static let candidateFilterChoiceGenerator =
+        CandidateFilterChoiceGenerator(
+            aliasDictionaryText: loadBundledText(
+                resource: "candidate-filter-aliases"
+            ) ?? ""
+        )
 
     private var inputBuffer = ""
     private var inputCursor = 0
@@ -73,6 +98,9 @@ final class InputController: IMKInputController {
     private var secureInputPassthroughActive = false
     private var currentCandidates: [String] = []
     private var selectedCandidateIndex: Int?
+    private var unfilteredCandidates: [String]?
+    private var candidateFilterConditions: [CandidateFilterCondition] = []
+    private var candidateFilterDraft: CandidateFilterDraft?
     private var fuzzySuggestions: [FuzzySuggestion] = []
     private var selectedFuzzySuggestionIndex: Int?
     private var dictionarySource: CosenseDictionarySource
@@ -210,6 +238,15 @@ final class InputController: IMKInputController {
                 refreshCandidates(client: sender)
             }
             return true
+        }
+
+
+        if candidateFilterDraft != nil {
+            return handleCandidateFilterInput(event, client: sender)
+        }
+
+        if isCandidateFilterShortcut(event) {
+            return beginCandidateFilterInput(client: sender)
         }
 
         if interactionState == .registeringDictionary {
@@ -1678,6 +1715,217 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func isCandidateFilterShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        return flags == [.option]
+            && (event.keyCode == 3
+                || event.charactersIgnoringModifiers?.lowercased() == "f")
+    }
+
+    private func beginCandidateFilterInput(client sender: Any) -> Bool {
+        guard !inputBuffer.isEmpty,
+              unfilteredCandidates != nil || !currentCandidates.isEmpty else {
+            return false
+        }
+        if unfilteredCandidates == nil {
+            unfilteredCandidates = currentCandidates
+        }
+        suggestionSearchSession.cancelAll()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        selectedCandidateIndex = nil
+        candidateFilterDraft = CandidateFilterDraft()
+        updateCandidateFilterChoices(client: sender)
+        return true
+    }
+
+    private func handleCandidateFilterInput(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        guard var draft = candidateFilterDraft else { return false }
+        switch event.keyCode {
+        case 36, 76:
+            candidateFilterDraft = draft
+            return applySelectedCandidateFilter(client: sender)
+        case 48, 124, 125:
+            guard !draft.choices.isEmpty else { return true }
+            draft.selectedIndex = ((draft.selectedIndex ?? -1) + 1)
+                % draft.choices.count
+            candidateFilterDraft = draft
+            showCandidateFilterChoices(client: sender)
+            return true
+        case 123, 126:
+            guard !draft.choices.isEmpty else { return true }
+            draft.selectedIndex = (
+                (draft.selectedIndex ?? 0) - 1 + draft.choices.count
+            ) % draft.choices.count
+            candidateFilterDraft = draft
+            showCandidateFilterChoices(client: sender)
+            return true
+        case 51:
+            if !draft.input.isEmpty {
+                draft.input.removeLast()
+                draft.selectedIndex = nil
+                candidateFilterDraft = draft
+                updateCandidateFilterChoices(client: sender)
+            }
+            return true
+        case 53:
+            candidateFilterDraft = nil
+            showFilteredCandidates(client: sender)
+            return true
+        default:
+            break
+        }
+
+        let flags = event.modifierFlags.intersection([.command, .control, .option])
+        guard flags.isEmpty,
+              let characters = event.characters,
+              !characters.isEmpty else {
+            return true
+        }
+        draft.input.append(contentsOf: characters)
+        draft.selectedIndex = nil
+        candidateFilterDraft = draft
+        updateCandidateFilterChoices(client: sender)
+        return true
+    }
+
+    private func updateCandidateFilterChoices(client sender: Any) {
+        guard var draft = candidateFilterDraft else { return }
+        var choices: [CandidateFilterDraftChoice] = []
+        var seen = Set<String>()
+        let queries = candidateFilterQueryVariants(for: draft.input)
+        for convertedInput in queries.dropFirst()
+        where seen.insert(convertedInput).inserted {
+            choices.append(.input(convertedInput))
+        }
+        for query in queries {
+            for choice in Self.candidateFilterChoiceGenerator.choices(
+                for: query,
+                activeConditions: candidateFilterConditions
+            ) where seen.insert(choice.label).inserted {
+                choices.append(.filter(choice))
+            }
+        }
+        draft.choices = choices
+        if let selectedIndex = draft.selectedIndex,
+           !choices.indices.contains(selectedIndex) {
+            draft.selectedIndex = nil
+        }
+        candidateFilterDraft = draft
+        showCandidateFilterChoices(client: sender)
+    }
+
+    private func candidateFilterQueryVariants(for input: String) -> [String] {
+        guard !input.isEmpty else { return [""] }
+        var values = [input]
+        if let hiragana = romajiConverter.hiragana(from: input) {
+            values.append(hiragana)
+        }
+        if let katakana = romajiConverter.katakana(from: input) {
+            values.append(katakana)
+        }
+        for reading in RomajiCanonicalizer.dictionaryLookupInputs(from: input) {
+            values.append(contentsOf: userConversionEngine.candidates(for: reading))
+            values.append(contentsOf: extensionConversionEngine.candidates(for: reading))
+            values.append(contentsOf: mozcConversionEngine.candidates(for: reading))
+            values.append(contentsOf: basicConversionEngine.candidates(for: reading))
+        }
+        var seen = Set<String>()
+        return values.filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    private func showCandidateFilterChoices(client sender: Any) {
+        guard let draft = candidateFilterDraft else { return }
+        let chips = candidateFilterConditions.map {
+            "[\($0.label) ×]"
+        }.joined(separator: " ")
+        let input = draft.input.isEmpty ? "条件を入力" : draft.input
+        let title = (["候補フィルター: \(input)", chips]
+            .filter { !$0.isEmpty })
+            .joined(separator: "　")
+        candidateWindow.show(
+            candidates: draft.choices.map(\.label),
+            selectedIndex: draft.selectedIndex,
+            near: inputLocation(for: sender),
+            guide: "Tab / 矢印 選択　↩ 適用　Esc 戻る",
+            modeTitle: title
+        )
+    }
+
+    private func applySelectedCandidateFilter(client sender: Any) -> Bool {
+        guard let draft = candidateFilterDraft,
+              let choice = draft.selectedIndex.flatMap({
+                  draft.choices.indices.contains($0) ? draft.choices[$0] : nil
+              }) ?? draft.choices.first else {
+            return true
+        }
+        switch choice {
+        case let .input(value):
+            var updatedDraft = draft
+            updatedDraft.input = value
+            updatedDraft.selectedIndex = nil
+            candidateFilterDraft = updatedDraft
+            updateCandidateFilterChoices(client: sender)
+            return true
+        case let .filter(.apply(condition)):
+            if !candidateFilterConditions.contains(condition) {
+                candidateFilterConditions.append(condition)
+            }
+        case let .filter(.remove(index, _)):
+            if candidateFilterConditions.indices.contains(index) {
+                candidateFilterConditions.remove(at: index)
+            }
+        }
+        candidateFilterDraft = nil
+        showFilteredCandidates(client: sender)
+        return true
+    }
+
+    private func showFilteredCandidates(client sender: Any) {
+        guard let unfilteredCandidates else { return }
+        currentCandidates = CandidateFilter(
+            kanjiDatabase: Self.candidateFilterDatabase
+        ).filtered(
+            unfilteredCandidates,
+            conditions: candidateFilterConditions,
+            semanticScorer: { query, candidate in
+                CandidateSemanticScorer.score(
+                    query: query,
+                    candidate: candidate,
+                    definitions: self.definitionProvider.definitions(
+                        for: candidate
+                    ).map(\.text)
+                )
+            }
+        )
+        selectedCandidateIndex = nil
+        updateMarkedText(in: sender)
+        if currentCandidates.isEmpty {
+            candidateWindow.show(
+                candidates: ["一致する候補なし"],
+                selectedIndex: nil,
+                near: inputLocation(for: sender),
+                guide: "⌥F 条件を変更　Esc 入力へ戻る",
+                modeTitle: candidateFilterConditions.map {
+                    "[\($0.label) ×]"
+                }.joined(separator: " ")
+            )
+            return
+        }
+        showCandidateWindow(client: sender)
+    }
+
+    private func resetCandidateFilters() {
+        unfilteredCandidates = nil
+        candidateFilterConditions = []
+        candidateFilterDraft = nil
+    }
+
     private func refreshCandidates(client sender: Any) {
         cancelFuzzySuggestionSearch()
         fuzzySuggestionWindow.hide()
@@ -2360,6 +2608,9 @@ final class InputController: IMKInputController {
                 : "Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
         }
 
+        let filterTitle = candidateFilterConditions.isEmpty
+            ? nil
+            : candidateFilterConditions.map { "[\($0.label) ×]" }.joined(separator: " ")
         candidateWindow.show(
             candidates: currentCandidates[pageStart..<pageEnd].map {
                 candidateValueForCommit($0)
@@ -2367,9 +2618,9 @@ final class InputController: IMKInputController {
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
             guide: guide,
-            modeTitle: isDictionaryRegistration
+            modeTitle: filterTitle ?? (isDictionaryRegistration
                 ? "登録したい文字列を入力"
-                : (isTranslationInput ? "翻訳する日本語" : nil)
+                : (isTranslationInput ? "翻訳する日本語" : nil))
         )
     }
 
@@ -2501,6 +2752,8 @@ final class InputController: IMKInputController {
             )
         }
 
+        resetCandidateFilters()
+
         var editor = InputBufferEditor(
             value: inputBuffer,
             cursor: inputCursor
@@ -2607,6 +2860,7 @@ final class InputController: IMKInputController {
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
+        resetCandidateFilters()
         recordCommittedInput(
             historyValue ?? value,
             preferredCandidates: preferredNextInputCandidates,
@@ -2625,6 +2879,7 @@ final class InputController: IMKInputController {
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
         suggestionSearchSession.cancelAll()
+        resetCandidateFilters()
     }
 
     private func cancelFuzzySuggestionSearch() {
@@ -2801,6 +3056,7 @@ final class InputController: IMKInputController {
     }
 
     private func insertIntoInputBuffer(_ text: String) {
+        resetCandidateFilters()
         var editor = InputBufferEditor(
             value: inputBuffer,
             cursor: inputCursor
@@ -3197,6 +3453,22 @@ final class InputController: IMKInputController {
         }
 
         return entries
+    }
+
+    private static func loadBundledText(resource: String) -> String? {
+        guard let url = inputMethodResourceURL(
+            forResource: resource,
+            withExtension: "txt"
+        ) else {
+            return nil
+        }
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
+
+    private static func loadCandidateFilterDatabase() -> KanjiFilterDatabase {
+        KanjiFilterDatabase(
+            text: loadBundledText(resource: "kanji-filter-data") ?? ""
+        )
     }
 
     private static func loadMozcDictionaryEngine() -> IndexedDictionaryEngine {

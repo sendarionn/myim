@@ -33,6 +33,7 @@ let package = Package(
                 .linkedFramework("Carbon"),
                 .linkedFramework("CoreServices"),
                 .linkedFramework("InputMethodKit"),
+                .linkedFramework("NaturalLanguage"),
                 .linkedFramework("WebKit")
             ]
         ),
