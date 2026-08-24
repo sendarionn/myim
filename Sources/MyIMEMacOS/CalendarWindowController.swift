@@ -63,21 +63,30 @@ private final class CalendarFormatKeyPanel: NSPanel {
 }
 
 final class CalendarWindowController: NSObject {
+    private static let calendarScale: CGFloat = 1.2
+
     private let panel: CalendarPanel
     private let formatKeyPanel: CalendarFormatKeyPanel
     private let datePicker: NSDatePicker
     private var selectedDate: Date?
 
     override init() {
-        datePicker = CalendarDatePicker(
-            frame: NSRect(x: 12, y: 12, width: 260, height: 190)
-        )
-        datePicker.datePickerStyle = .clockAndCalendar
-        datePicker.datePickerElements = [.yearMonthDay]
-        datePicker.isBordered = false
+        let calendarDatePicker = CalendarDatePicker(frame: .zero)
+        calendarDatePicker.datePickerStyle = .clockAndCalendar
+        calendarDatePicker.datePickerElements = [.yearMonthDay]
+        calendarDatePicker.isBordered = false
+        calendarDatePicker.focusRingType = .none
+        calendarDatePicker.sizeToFit()
+        let unscaledSize = calendarDatePicker.frame.size
+        calendarDatePicker.setFrameSize(NSSize(
+            width: unscaledSize.width * Self.calendarScale,
+            height: unscaledSize.height * Self.calendarScale
+        ))
+        calendarDatePicker.bounds = NSRect(origin: .zero, size: unscaledSize)
+        datePicker = calendarDatePicker
 
         panel = CalendarPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 284, height: 214),
+            contentRect: NSRect(origin: .zero, size: calendarDatePicker.frame.size),
             styleMask: [.titled, .utilityWindow],
             backing: .buffered,
             defer: true
@@ -95,6 +104,7 @@ final class CalendarWindowController: NSObject {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        datePicker.frame = panel.contentView?.bounds ?? datePicker.frame
         panel.contentView?.addSubview(datePicker)
         panel.cancelAction = { [weak self] in
             self?.cancelSelection()

@@ -263,7 +263,10 @@ final class InputController: IMKInputController {
         }
 
         if isCalendarShortcut(event) {
-            return beginCalendarSelection(client: sender)
+            DispatchQueue.main.async { [weak self] in
+                _ = self?.beginCalendarSelection(client: sender)
+            }
+            return true
         }
 
 
