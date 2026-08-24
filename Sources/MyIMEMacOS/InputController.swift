@@ -1274,32 +1274,31 @@ final class InputController: IMKInputController {
         let flags = event.modifierFlags.intersection(
             [.command, .control, .option, .shift]
         )
+        if flags == [.shift] {
+            return true
+        }
         if inputBuffer.isEmpty {
             if selectedNextInputIndex != nil,
-               flags.isEmpty || flags == [.shift] {
-                let offset = flags.contains(.shift) ? -1 : 1
-                return selectNextInputCandidate(offset: offset, client: sender)
+               flags.isEmpty {
+                return selectNextInputCandidate(offset: 1, client: sender)
             }
             if flags.isEmpty,
                beginReconversionIfPossible(client: sender) {
                 return true
             }
-            if (flags.isEmpty || flags == [.shift]),
-               !nextInputCandidates.isEmpty {
-                let offset = flags.contains(.shift) ? -1 : 1
-                return selectNextInputCandidate(offset: offset, client: sender)
+            if flags.isEmpty, !nextInputCandidates.isEmpty {
+                return selectNextInputCandidate(offset: 1, client: sender)
             }
             return false
         }
 
-        guard flags.isEmpty || flags == [.shift] else { return false }
+        guard flags.isEmpty else { return false }
         guard !currentCandidates.isEmpty else {
             return true
         }
-        let offset = event.modifierFlags.contains(.shift) ? -1 : 1
         let nextIndex = (
-            (selectedCandidateIndex ?? (offset > 0 ? -1 : 0))
-                + offset
+            (selectedCandidateIndex ?? -1)
+                + 1
                 + currentCandidates.count
         ) % currentCandidates.count
         return selectCandidate(index: nextIndex, client: sender)
@@ -2350,15 +2349,15 @@ final class InputController: IMKInputController {
         if isDictionaryRegistration {
             guide = selectedCandidateIndex == nil
                 ? "Tab 候補選択　↩ 入力を追加\nEsc 登録中止"
-                : "Tab / ⇧Tab / 矢印 移動\n↩ 入力を追加　Esc 登録中止"
+                : "Tab / 矢印 移動\n↩ 入力を追加　Esc 登録中止"
         } else if isTranslationInput {
             guide = selectedCandidateIndex == nil
                 ? "Tab 候補選択　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
-                : "Tab / ⇧Tab / 矢印 移動　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
+                : "Tab / 矢印 移動　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
         } else {
             guide = selectedCandidateIndex == nil
                 ? "Tab 選択　⌥↩ 辞書登録\nF6–F10 文字種変換　⌘O 外部ページ"
-                : "Tab / ⇧Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
+                : "Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
         }
 
         candidateWindow.show(
@@ -2709,7 +2708,7 @@ final class InputController: IMKInputController {
             candidates: nextInputCandidates,
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "Tab 選択　Esc 閉じる\n選択後はTab / ⇧Tab / 矢印 移動　↩ 確定"
+            guide: "Tab 選択　Esc 閉じる\n選択後はTab / 矢印 移動　↩ 確定"
         )
         scheduleNextInputDismissal()
     }
