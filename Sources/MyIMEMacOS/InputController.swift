@@ -255,6 +255,13 @@ final class InputController: IMKInputController {
             return beginCandidateFilterInput(client: sender)
         }
 
+        if shouldBeginAdditionalCandidateFilter(with: event) {
+            guard beginCandidateFilterInput(client: sender) else {
+                return false
+            }
+            return handleCandidateFilterInput(event, client: sender)
+        }
+
         if interactionState == .registeringDictionary {
             return handleTabDictionaryRegistration(event, client: sender)
         }
@@ -342,6 +349,9 @@ final class InputController: IMKInputController {
                 ? false
                 : moveCandidate(.up, client: sender)
         case 36, 76:
+            if unfilteredCandidates != nil, currentCandidates.isEmpty {
+                return true
+            }
             return isTranslationModeEnabled
                 ? handleTranslationReturn(client: sender)
                 : commitFirstCandidateOrInput(to: sender)
@@ -356,7 +366,7 @@ final class InputController: IMKInputController {
                 return true
             }
             if unfilteredCandidates != nil {
-                cancelCandidateFiltering(client: sender)
+                removeLastCandidateFilter(client: sender)
                 return true
             }
             return cancelInput(in: sender)
@@ -421,11 +431,15 @@ final class InputController: IMKInputController {
                 if candidateFilterDraft != nil {
                     handleCandidateFilterEscape(client: inputClient)
                 } else {
-                    cancelCandidateFiltering(client: inputClient)
+                    removeLastCandidateFilter(client: inputClient)
                 }
                 return
             case "deleteBackward:":
                 if candidateFilterDraft?.stage == .filter {
+                    return
+                }
+            case "insertNewline:", "insertNewlineIgnoringFieldEditor:":
+                if unfilteredCandidates != nil, currentCandidates.isEmpty {
                     return
                 }
             default:
@@ -1770,6 +1784,22 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func shouldBeginAdditionalCandidateFilter(with event: NSEvent) -> Bool {
+        guard unfilteredCandidates != nil,
+              !candidateFilterConditions.isEmpty else {
+            return false
+        }
+        let flags = event.modifierFlags.intersection([.command, .control, .option])
+        guard flags.isEmpty,
+              let characters = event.characters,
+              !characters.isEmpty else {
+            return false
+        }
+        return characters.unicodeScalars.allSatisfy {
+            !CharacterSet.controlCharacters.contains($0)
+        }
+    }
+
     private func handleCandidateFilterInput(
         _ event: NSEvent,
         client sender: Any
@@ -1831,13 +1861,21 @@ final class InputController: IMKInputController {
             candidateFilterDraft = draft
             updateCandidateFilterChoices(client: sender)
         } else {
-            cancelCandidateFiltering(client: sender)
+            removeLastCandidateFilter(client: sender)
         }
     }
 
-    private func cancelCandidateFiltering(client sender: Any) {
+    private func removeLastCandidateFilter(client sender: Any) {
         guard let originalCandidates = unfilteredCandidates else {
             candidateFilterDraft = nil
+            return
+        }
+        candidateFilterDraft = nil
+        if !candidateFilterConditions.isEmpty {
+            candidateFilterConditions.removeLast()
+        }
+        guard candidateFilterConditions.isEmpty else {
+            showFilteredCandidates(client: sender)
             return
         }
         currentCandidates = originalCandidates
@@ -1851,7 +1889,9 @@ final class InputController: IMKInputController {
         guard var draft = candidateFilterDraft else { return }
         var choices: [CandidateFilterDraftChoice] = []
         var seen = Set<String>()
-        if draft.input.isEmpty || draft.stage == .filter {
+        if draft.input.isEmpty {
+            choices = []
+        } else if draft.stage == .filter {
             for choice in Self.candidateFilterChoiceGenerator.choices(
                 for: draft.input,
                 activeConditions: candidateFilterConditions
@@ -1908,7 +1948,7 @@ final class InputController: IMKInputController {
     private func showCandidateFilterChoices(client sender: Any) {
         guard let draft = candidateFilterDraft else { return }
         let chips = candidateFilterConditions.map {
-            "[\($0.label) ×]"
+            "[\($0.label)]"
         }.joined(separator: " ")
         let input = draft.input.isEmpty ? "条件を入力" : draft.input
         let stageTitle = draft.stage == .conversion ? "条件語を変換" : "条件を選択"
@@ -1938,11 +1978,11 @@ final class InputController: IMKInputController {
 
     private func applySelectedCandidateFilter(client sender: Any) -> Bool {
         guard let draft = candidateFilterDraft,
-              let choice = draft.selectedIndex.flatMap({
-                  draft.choices.indices.contains($0) ? draft.choices[$0] : nil
-              }) ?? draft.choices.first else {
+              let selectedIndex = draft.selectedIndex,
+              draft.choices.indices.contains(selectedIndex) else {
             return true
         }
+        let choice = draft.choices[selectedIndex]
         switch choice {
         case let .input(value):
             recordCandidateSelection(value)
@@ -1991,9 +2031,9 @@ final class InputController: IMKInputController {
                 candidates: ["一致する候補なし"],
                 selectedIndex: nil,
                 near: inputLocation(for: sender),
-                guide: "⌥F 条件を変更　Esc 入力へ戻る",
+                guide: "一致なし: ↩ 無効　Esc 最後の条件を解除",
                 modeTitle: candidateFilterConditions.map {
-                    "[\($0.label) ×]"
+                    "[\($0.label)]"
                 }.joined(separator: " ")
             )
             return
@@ -2674,7 +2714,7 @@ final class InputController: IMKInputController {
 
         let isDictionaryRegistration = tabDictionaryRegistration != nil
         let isTranslationInput = isTranslationModeEnabled
-        let guide: String
+        var guide: String
         if isDictionaryRegistration {
             guide = selectedCandidateIndex == nil
                 ? "Tab 候補選択　↩ 入力を追加\nEsc 登録中止"
@@ -2689,9 +2729,13 @@ final class InputController: IMKInputController {
                 : "Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
         }
 
+        if !candidateFilterConditions.isEmpty {
+            guide += "\n文字入力 次の条件を追加"
+        }
+
         let filterTitle = candidateFilterConditions.isEmpty
             ? nil
-            : candidateFilterConditions.map { "[\($0.label) ×]" }.joined(separator: " ")
+            : candidateFilterConditions.map { "[\($0.label)]" }.joined(separator: " ")
         candidateWindow.show(
             candidates: currentCandidates[pageStart..<pageEnd].map {
                 candidateValueForCommit($0)
