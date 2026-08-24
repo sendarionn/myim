@@ -13,8 +13,14 @@ final class InputController: IMKInputController {
 
     private struct CandidateFilterDraft {
         var input = ""
+        var stage: CandidateFilterDraftStage = .conversion
         var choices: [CandidateFilterDraftChoice] = []
         var selectedIndex: Int?
+    }
+
+    private enum CandidateFilterDraftStage {
+        case conversion
+        case filter
     }
 
     private enum CandidateFilterDraftChoice {
@@ -349,6 +355,10 @@ final class InputController: IMKInputController {
                 finishTranslationDraftAsJapanese(client: sender)
                 return true
             }
+            if unfilteredCandidates != nil {
+                cancelCandidateFiltering(client: sender)
+                return true
+            }
             return cancelInput(in: sender)
         default:
             break
@@ -403,6 +413,25 @@ final class InputController: IMKInputController {
         by aSelector: Selector!,
         command infoDictionary: [AnyHashable: Any]!
     ) {
+        if let aSelector,
+           candidateFilterDraft != nil || unfilteredCandidates != nil,
+           let inputClient = client() {
+            switch NSStringFromSelector(aSelector) {
+            case "cancelOperation:":
+                if candidateFilterDraft != nil {
+                    handleCandidateFilterEscape(client: inputClient)
+                } else {
+                    cancelCandidateFiltering(client: inputClient)
+                }
+                return
+            case "deleteBackward:":
+                if candidateFilterDraft?.stage == .filter {
+                    return
+                }
+            default:
+                break
+            }
+        }
         guard let aSelector, responds(to: aSelector) else {
             super.doCommand(by: aSelector, command: infoDictionary)
             return
@@ -1766,7 +1795,7 @@ final class InputController: IMKInputController {
             showCandidateFilterChoices(client: sender)
             return true
         case 51:
-            if !draft.input.isEmpty {
+            if draft.stage == .conversion, !draft.input.isEmpty {
                 draft.input.removeLast()
                 draft.selectedIndex = nil
                 candidateFilterDraft = draft
@@ -1774,8 +1803,7 @@ final class InputController: IMKInputController {
             }
             return true
         case 53:
-            candidateFilterDraft = nil
-            showFilteredCandidates(client: sender)
+            handleCandidateFilterEscape(client: sender)
             return true
         default:
             break
@@ -1787,6 +1815,7 @@ final class InputController: IMKInputController {
               !characters.isEmpty else {
             return true
         }
+        draft.stage = .conversion
         draft.input.append(contentsOf: characters)
         draft.selectedIndex = nil
         candidateFilterDraft = draft
@@ -1794,21 +1823,49 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func handleCandidateFilterEscape(client sender: Any) {
+        guard var draft = candidateFilterDraft else { return }
+        if draft.stage == .filter {
+            draft.stage = .conversion
+            draft.selectedIndex = nil
+            candidateFilterDraft = draft
+            updateCandidateFilterChoices(client: sender)
+        } else {
+            cancelCandidateFiltering(client: sender)
+        }
+    }
+
+    private func cancelCandidateFiltering(client sender: Any) {
+        guard let originalCandidates = unfilteredCandidates else {
+            candidateFilterDraft = nil
+            return
+        }
+        currentCandidates = originalCandidates
+        selectedCandidateIndex = nil
+        resetCandidateFilters()
+        updateMarkedText(in: sender)
+        showCandidateWindow(client: sender)
+    }
+
     private func updateCandidateFilterChoices(client sender: Any) {
         guard var draft = candidateFilterDraft else { return }
         var choices: [CandidateFilterDraftChoice] = []
         var seen = Set<String>()
-        let queries = candidateFilterQueryVariants(for: draft.input)
-        for convertedInput in queries.dropFirst()
-        where seen.insert(convertedInput).inserted {
-            choices.append(.input(convertedInput))
-        }
-        for query in queries {
+        if draft.input.isEmpty || draft.stage == .filter {
             for choice in Self.candidateFilterChoiceGenerator.choices(
-                for: query,
+                for: draft.input,
                 activeConditions: candidateFilterConditions
             ) where seen.insert(choice.label).inserted {
                 choices.append(.filter(choice))
+            }
+        } else {
+            let queries = candidateFilterQueryVariants(for: draft.input)
+            let conversionCandidates = queries.count > 1
+                ? queries.dropFirst()
+                : queries[...]
+            for convertedInput in conversionCandidates
+            where seen.insert(convertedInput).inserted {
+                choices.append(.input(convertedInput))
             }
         }
         draft.choices = choices
@@ -1822,19 +1879,28 @@ final class InputController: IMKInputController {
 
     private func candidateFilterQueryVariants(for input: String) -> [String] {
         guard !input.isEmpty else { return [""] }
-        var values = [input]
+        var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(from: input) {
-            values.append(hiragana)
+            kanaCandidates.append(hiragana)
         }
         if let katakana = romajiConverter.katakana(from: input) {
-            values.append(katakana)
+            kanaCandidates.append(katakana)
         }
+        var directCandidates: [String] = []
         for reading in RomajiCanonicalizer.dictionaryLookupInputs(from: input) {
-            values.append(contentsOf: userConversionEngine.candidates(for: reading))
-            values.append(contentsOf: extensionConversionEngine.candidates(for: reading))
-            values.append(contentsOf: mozcConversionEngine.candidates(for: reading))
-            values.append(contentsOf: basicConversionEngine.candidates(for: reading))
+            directCandidates.append(contentsOf: userConversionEngine.candidates(for: reading))
+            directCandidates.append(contentsOf: extensionConversionEngine.candidates(for: reading))
+            directCandidates.append(contentsOf: mozcConversionEngine.candidates(for: reading))
+            directCandidates.append(contentsOf: basicConversionEngine.candidates(for: reading))
         }
+        let orderedCandidates = CandidatePriorityOrderer.ordered(
+            kana: kanaCandidates,
+            direct: directCandidates,
+            others: [],
+            recencyRanks: candidateSelectionHistory.ranks,
+            prioritizeKana: kanaCandidates.first?.count == 1
+        )
+        let values = [input] + orderedCandidates
         var seen = Set<String>()
         return values.filter { !$0.isEmpty && seen.insert($0).inserted }
     }
@@ -1845,14 +1911,27 @@ final class InputController: IMKInputController {
             "[\($0.label) ×]"
         }.joined(separator: " ")
         let input = draft.input.isEmpty ? "条件を入力" : draft.input
-        let title = (["候補フィルター: \(input)", chips]
+        let stageTitle = draft.stage == .conversion ? "条件語を変換" : "条件を選択"
+        let title = (["候補フィルター（\(stageTitle)）: \(input)", chips]
             .filter { !$0.isEmpty })
             .joined(separator: "　")
+        let selectedIndex = draft.selectedIndex ?? 0
+        let pageStart = selectedIndex / Self.maximumCandidateCount
+            * Self.maximumCandidateCount
+        let pageEnd = min(
+            pageStart + Self.maximumCandidateCount,
+            draft.choices.count
+        )
+        let visibleChoices = pageStart < pageEnd
+            ? Array(draft.choices[pageStart..<pageEnd])
+            : []
         candidateWindow.show(
-            candidates: draft.choices.map(\.label),
-            selectedIndex: draft.selectedIndex,
+            candidates: visibleChoices.map(\.label),
+            selectedIndex: draft.selectedIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
-            guide: "Tab / 矢印 選択　↩ 適用　Esc 戻る",
+            guide: draft.stage == .conversion
+                ? "Tab / 矢印 選択　↩ 変換確定　Esc 戻る"
+                : "Tab / 矢印 選択　↩ 適用　Esc 変換へ戻る",
             modeTitle: title
         )
     }
@@ -1866,8 +1945,10 @@ final class InputController: IMKInputController {
         }
         switch choice {
         case let .input(value):
+            recordCandidateSelection(value)
             var updatedDraft = draft
             updatedDraft.input = value
+            updatedDraft.stage = .filter
             updatedDraft.selectedIndex = nil
             candidateFilterDraft = updatedDraft
             updateCandidateFilterChoices(client: sender)
