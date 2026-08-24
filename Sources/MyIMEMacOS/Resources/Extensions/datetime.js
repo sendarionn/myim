@@ -5,8 +5,8 @@ function candidates(context) {
       context.settings.dateTimeCandidatesEnabled[0] !== "true") {
     return []
   }
-  const dateFormats = ["YYYY年M月D日", "YYYY-MM-DD", "YYYY/MM/DD", "YYYYMMDD"]
-  const timeFormats = ["HH:mm", "HH:mm:ss", "H時m分", "H時m分s秒", "HHmm", "HHmmss"]
+  const dateFormats = ["YYYYMMDD", "M/DD"]
+  const timeFormats = ["H:m", "H時m分"]
   const dateTimeFormats = [
     "YYYY年M月D日 HH:mm",
     "YYYY-MM-DD HH:mm",

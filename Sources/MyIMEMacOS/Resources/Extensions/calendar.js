@@ -15,11 +15,13 @@ function candidates(context) {
     E: weekdays[date.getDay()]
   }
   const formats = [
+    "YYYYMMDD",
+    "M/D(E)",
     "YYYY/MM/DD",
     "YYYY-MM-DD",
     "YYYY年M月D日",
-    "YYYY年M月D日（E）",
-    "M月D日（E）",
+    "YYYY年M月D日(E)",
+    "M月D日(E)",
     "M/D"
   ]
   const tokens = ["YYYY", "YY", "MM", "DD", "M", "D", "E"]
