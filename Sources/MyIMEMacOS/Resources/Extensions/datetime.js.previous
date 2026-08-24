@@ -1,18 +1,6 @@
 // @myim-prefix 
 
 function candidates(context) {
-  if (!context.settings.dateTimeCandidatesEnabled ||
-      context.settings.dateTimeCandidatesEnabled[0] !== "true") {
-    return []
-  }
-  const dateFormats = ["YYYY年M月D日", "YYYY-MM-DD", "YYYY/MM/DD", "YYYYMMDD"]
-  const timeFormats = ["HH:mm", "HH:mm:ss", "H時m分", "H時m分s秒", "HHmm", "HHmmss"]
-  const dateTimeFormats = [
-    "YYYY年M月D日 HH:mm",
-    "YYYY-MM-DD HH:mm",
-    "YYYY/MM/DD HH:mm",
-    "YYYYMMDDHHmmss"
-  ]
   const dayOffsets = {
     ototoi: -2,
     kinou: -1,
@@ -27,13 +15,13 @@ function candidates(context) {
 
   if (Object.prototype.hasOwnProperty.call(dayOffsets, input)) {
     now.setDate(now.getDate() + dayOffsets[input])
-    return format(now, dateFormats)
+    return format(now, context.settings.dateFormats || [])
   }
   if (timeReadings.indexOf(input) >= 0) {
-    return format(now, timeFormats)
+    return format(now, context.settings.timeFormats || [])
   }
   if (dateTimeReadings.indexOf(input) >= 0) {
-    return format(now, dateTimeFormats)
+    return format(now, context.settings.dateTimeFormats || [])
   }
   return []
 }

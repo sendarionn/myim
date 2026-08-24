@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DefaultExtensionInstaller {
-    public static let markerName = ".myim-default-extensions-installed-v3"
+    public static let markerName = ".myim-default-extensions-installed-v4"
 
     public static func installIfNeeded(
         from sourceDirectory: URL,
@@ -24,7 +24,15 @@ public enum DefaultExtensionInstaller {
         for source in sourceFiles {
             let destination = destinationDirectory
                 .appendingPathComponent(source.lastPathComponent)
-            guard !fileManager.fileExists(atPath: destination.path) else {
+            if fileManager.fileExists(atPath: destination.path) {
+                let previous = sourceDirectory.appendingPathComponent(
+                    source.lastPathComponent + ".previous"
+                )
+                if fileManager.fileExists(atPath: previous.path),
+                   try Data(contentsOf: destination) == Data(contentsOf: previous) {
+                    try fileManager.removeItem(at: destination)
+                    try fileManager.copyItem(at: source, to: destination)
+                }
                 continue
             }
             try fileManager.copyItem(at: source, to: destination)

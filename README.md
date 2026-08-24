@@ -134,7 +134,7 @@ Mozcのかな読みは同梱前に正規ローマ字inputへ変換します
 計算は四則演算、小数、括弧に対応し、式の末尾が`=`の場合だけ実行します
 
 日付と時刻は設定の「日時の動的候補を表示」を有効にすると利用できます
-書式は`YYYYMMDD` `YYYY-MM-DD` `HH:mm:ss`などをカンマ区切りで指定できます
+書式はJavaScript拡張フォルダの`datetime.js`で変更できます
 
 ### JavaScript拡張
 
@@ -176,14 +176,17 @@ function candidates(context) {
 「再読み込み」は補助プロセスと状態表示をリセットし、次の入力からファイルを読み直します
 構文エラーは対象ファイルの行に、タイムアウトは管理画面の上部に表示します
 
-`context`には`input`、`timestamp`、`timeZone`、日時書式設定を渡します
+`context`には`input`、`timestamp`、`timeZone`、機能の有効状態を渡します
 候補は文字列、または`value`を持つオブジェクトの配列で返します
 
 標準の日時候補も同じAPIを使う`datetime.js`として同梱しています
 `nendo`では`2026年度`と`令和8年度`、`gengou`では`令和8年`と`R8`を生成します
-初回利用時に`datetime.js`、`nendo.js`、`gengou.js`、`calendar.js`をユーザー拡張フォルダへ配置します
+初回利用時に`datetime.js`、`nendo.js`、`gengou.js`、`calendar.js`、`websearch.js`、`external-information.js`をユーザー拡張フォルダへ配置します
 配置後の編集や削除は再インストール時にも上書きしません
-既存のSwift版と結果を比較できる移行期間中は、重複を候補統合時に除去します
+
+メニューバーの入力ソースメニューにある「JavaScript拡張フォルダを開く…」から設定ファイルをFinderで表示できます
+Web検索先は`websearch.js`の`@myim-url`で指定します
+外部情報パネルは`external-information.js`の`@myim-url`と`@myim-delay`で指定します
 
 JavaScriptはネットワーク、ファイル、シェルへ接続するAPIを持たない補助プロセスで実行します
 応答しない拡張は100ミリ秒で補助プロセスごと停止し、myim本体での入力を継続します
@@ -286,9 +289,7 @@ macOS標準辞書の利用範囲は`docs/MACOS_DICTIONARY.md`を参照してく�
 - Apple Translationによる日本語から英語への候補
 - Command＋Returnで選択候補を確定してWeb検索
 
-Web検索URLは`https://www.google.com/search?q=%s`のように指定します
-
-Web検索URLは「Web検索先を設定…」から変更できます
+Web検索URLは`websearch.js`へ`https://www.google.com/search?q=%s`のように指定します
 
 Wikipedia、Apple Translation、Web検索は初期状態で無効です
 
@@ -360,7 +361,7 @@ ikiru
 - 誤入力補完
 - 次入力候補
 - macOS辞書パネルと外部情報パネル
-- Web検索と検索先URL
+- Web検索
 
 設定変更は現在の入力から反映し、myimの再起動後も維持します
 

@@ -100,13 +100,10 @@ enum SettingsWindowBuilder {
         let toggleNextInputPrediction: Selector
         let toggleFuzzySuggestions: Selector
         let toggleDateTimeCandidates: Selector
-        let configureDateTimeFormats: Selector
-        let configureWebSearch: Selector
         let clearNextInputHistory: Selector
         let toggleExternalInformationPanel: Selector
         let toggleSystemDictionaryPreview: Selector
         let toggleWebSearch: Selector
-        let configureExternalInformationPanel: Selector
         let updateBasicDictionary: Selector
         let configureCosenseProject: Selector
         let configureCosenseAuthentication: Selector
@@ -152,8 +149,6 @@ enum SettingsWindowBuilder {
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)
         addButtons([
-            ("日時候補の書式を設定…", actions.configureDateTimeFormats),
-            ("Web検索先を設定…", actions.configureWebSearch),
             ("次入力履歴を削除", actions.clearNextInputHistory)
         ], target: target, to: stack)
 
@@ -163,10 +158,6 @@ enum SettingsWindowBuilder {
             ("macOS辞書パネルを使用", actions.toggleSystemDictionaryPreview, states.systemDictionaryPreview),
             ("Command＋ReturnでWeb検索", actions.toggleWebSearch, states.webSearch)
         ], target: target, to: stack)
-        addButtons([
-            ("外部情報パネルの検索先を設定…", actions.configureExternalInformationPanel)
-        ], target: target, to: stack)
-
         addSection("辞書管理", to: stack)
         addButtons([
             ("TKGJE基本辞書を更新", actions.updateBasicDictionary),

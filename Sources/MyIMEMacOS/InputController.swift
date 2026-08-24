@@ -544,13 +544,10 @@ final class InputController: IMKInputController {
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
-            configureDateTimeFormats: #selector(configureDateTimeCandidateFormats(_:)),
-            configureWebSearch: #selector(configureWebSearch(_:)),
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
             toggleExternalInformationPanel: #selector(toggleExternalInformationPanel(_:)),
             toggleSystemDictionaryPreview: #selector(toggleSystemDictionaryPreview(_:)),
             toggleWebSearch: #selector(toggleWebSearch(_:)),
-            configureExternalInformationPanel: #selector(configureExternalInformationPanel(_:)),
             updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:)),
             configureCosenseProject: #selector(configureCosenseProject(_:)),
             configureCosenseAuthentication: #selector(configureCosenseAuthentication(_:)),
@@ -2256,23 +2253,11 @@ final class InputController: IMKInputController {
             updateJavaScriptExtensionCandidatesIfNeeded(for: suggestionInput)
         }
 
-        let normalizedReading = RomajiCanonicalizer.canonicalInput(
-            from: conversionReading
-        )
         let lookupReadings =
             RomajiCanonicalizer.dictionaryLookupInputs(
                 from: conversionReading
             )
-        let dateTimeCandidates = isDateTimeCandidatesEnabled
-            ? DateTimeCandidateGenerator().candidates(
-                for: normalizedReading,
-                formats: DateTimeCandidateGenerator.Formats(
-                    date: dateCandidateFormats,
-                    time: timeCandidateFormats,
-                    dateTime: dateTimeCandidateFormats
-                )
-            )
-            : []
+        let dateTimeCandidates: [String] = []
         let userCandidates = mergedCandidateGroups(
             lookup: { userConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
@@ -2621,22 +2606,11 @@ final class InputController: IMKInputController {
             .javaScriptExtensions,
             query: input
         )
-        let dateFormats = isDateTimeCandidatesEnabled
-            ? dateCandidateFormats
-            : []
-        let timeFormats = isDateTimeCandidatesEnabled
-            ? timeCandidateFormats
-            : []
-        let dateTimeFormats = isDateTimeCandidatesEnabled
-            ? dateTimeCandidateFormats
-            : []
         let task = Task { @MainActor [weak self] in
             guard let self else { return }
             let candidates = await Self.javaScriptExtensionClient.candidates(
                 for: input,
-                dateFormats: dateFormats,
-                timeFormats: timeFormats,
-                dateTimeFormats: dateTimeFormats
+                dateTimeCandidatesEnabled: isDateTimeCandidatesEnabled
             )
             guard !Task.isCancelled,
                   suggestionSearchSession.isCurrent(token),
@@ -3574,24 +3548,13 @@ final class InputController: IMKInputController {
     }
 
     private var externalInformationURLTemplate: String {
-        UserDefaults.standard.string(
-            forKey: Self.externalInformationURLTemplateDefaultsKey
+        JavaScriptExtensionConfiguration.externalInformationURL(
+            project: dictionarySource.project
         ) ?? defaultExternalInformationURLTemplate
     }
 
     private var externalInformationDisplayDelay: TimeInterval {
-        let defaults = UserDefaults.standard
-        guard defaults.object(
-            forKey: Self.externalInformationDisplayDelayDefaultsKey
-        ) != nil else {
-            return 1
-        }
-        return max(
-            0,
-            defaults.double(
-                forKey: Self.externalInformationDisplayDelayDefaultsKey
-            )
-        )
+        JavaScriptExtensionConfiguration.externalInformationDelay() ?? 1
     }
 
     private var defaultExternalInformationURLTemplate: String {
@@ -3652,8 +3615,7 @@ final class InputController: IMKInputController {
     }
 
     private var webSearchTemplate: String {
-        UserDefaults.standard.string(forKey: Self.webSearchTemplateDefaultsKey)
-            ?? SearchURLTemplate.defaultValue
+        JavaScriptExtensionConfiguration.webSearchURL()
     }
 
     private var isSystemDictionaryPreviewEnabled: Bool {

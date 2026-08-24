@@ -69,4 +69,27 @@ struct DefaultExtensionInstallerTests {
 
         #expect(try String(contentsOf: existing, encoding: .utf8) == "user version")
     }
+
+    @Test
+    func upgradesAnUnmodifiedPreviousDefault() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let destination = root.appendingPathComponent("destination", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try Data("new default".utf8).write(
+            to: source.appendingPathComponent("datetime.js")
+        )
+        try Data("old default".utf8).write(
+            to: source.appendingPathComponent("datetime.js.previous")
+        )
+        let installed = destination.appendingPathComponent("datetime.js")
+        try Data("old default".utf8).write(to: installed)
+
+        try DefaultExtensionInstaller.installIfNeeded(from: source, into: destination)
+
+        #expect(try String(contentsOf: installed, encoding: .utf8) == "new default")
+    }
 }

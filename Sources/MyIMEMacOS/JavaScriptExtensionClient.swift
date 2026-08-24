@@ -109,17 +109,21 @@ actor JavaScriptExtensionClient {
 
     func candidates(
         for input: String,
-        dateFormats: [String],
-        timeFormats: [String],
-        dateTimeFormats: [String]
+        dateTimeCandidatesEnabled: Bool
     ) async -> [String] {
         await candidates(
             for: input,
             timestamp: Date(),
             settings: [
-                "dateFormats": dateFormats,
-                "timeFormats": timeFormats,
-                "dateTimeFormats": dateTimeFormats
+                "dateTimeCandidatesEnabled": [
+                    dateTimeCandidatesEnabled ? "true" : "false"
+                ],
+                "dateFormats": dateTimeCandidatesEnabled
+                    ? DateTimeCandidateGenerator.Formats.default.date : [],
+                "timeFormats": dateTimeCandidatesEnabled
+                    ? DateTimeCandidateGenerator.Formats.default.time : [],
+                "dateTimeFormats": dateTimeCandidatesEnabled
+                    ? DateTimeCandidateGenerator.Formats.default.dateTime : []
             ]
         )
     }
