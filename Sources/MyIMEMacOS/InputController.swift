@@ -318,8 +318,7 @@ final class InputController: IMKInputController {
         }
 
         if isTabDictionaryRegistrationShortcut(event),
-           !inputBuffer.isEmpty,
-           selectedCandidateIndex == nil {
+           !inputBuffer.isEmpty {
             return beginTabDictionaryRegistration(client: sender)
         }
 
@@ -1460,10 +1459,13 @@ final class InputController: IMKInputController {
     }
 
     private func beginTabDictionaryRegistration(client sender: Any) -> Bool {
-        tabDictionaryRegistration = TabDictionaryRegistration(
+        let selectedCandidate = selectedCandidateValue
+        var registration = TabDictionaryRegistration(
             originalInput: inputBuffer,
             reading: conversionReading.lowercased()
         )
+        registration.confirmedCandidate = selectedCandidate
+        tabDictionaryRegistration = registration
         inputBuffer = ""
         inputCursor = 0
         currentCandidates = []
