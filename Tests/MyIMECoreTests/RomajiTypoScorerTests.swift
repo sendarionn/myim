@@ -46,4 +46,9 @@ struct RomajiTypoScorerTests {
 
         #expect(addedVoicing > ordinaryTypo)
     }
+
+    @Test
+    func penalizesRemovingVoicingFromVoicedInput() {
+        #expect(RomajiTypoScorer.cost(from: "zumi", to: "sumi") >= 1.4)
+    }
 }

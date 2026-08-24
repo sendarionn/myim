@@ -34,10 +34,7 @@ public enum RomajiKeyboardTypoGenerator {
                 Double
             )? in
                 guard source != target,
-                      !RomajiPhoneticRelation.addsVoicing(
-                          from: source,
-                          to: target
-                      ),
+                      !RomajiPhoneticRelation.differsByVoicing(source, target),
                       let distance = distance(from: source, to: target),
                       distance <= 1.25 else {
                     return nil

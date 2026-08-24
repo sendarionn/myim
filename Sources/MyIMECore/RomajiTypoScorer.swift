@@ -69,7 +69,7 @@ struct RomajiTypoScorer {
         guard source != target else {
             return 0
         }
-        if RomajiPhoneticRelation.addsVoicing(from: source, to: target) {
+        if RomajiPhoneticRelation.differsByVoicing(source, target) {
             return 1.4
         }
         if let distance = RomajiKeyboardTypoGenerator.distance(
@@ -97,5 +97,13 @@ enum RomajiPhoneticRelation {
     ) -> Bool {
         unvoicedConsonants.contains(source)
             && voicedConsonants.contains(target)
+    }
+
+    static func differsByVoicing(
+        _ source: Character,
+        _ target: Character
+    ) -> Bool {
+        addsVoicing(from: source, to: target)
+            || addsVoicing(from: target, to: source)
     }
 }

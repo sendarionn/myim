@@ -195,13 +195,7 @@ public enum RomajiCanonicalizer {
     public static func dictionaryLookupInputs(
         from input: String
     ) -> [String] {
-        var inputs = exactLookupInputs(from: input)
-        let canonical = inputs.last ?? input.lowercased()
-        if let unvoiced = unvoicedInitialInput(canonical),
-           !inputs.contains(unvoiced) {
-            inputs.append(unvoiced)
-        }
-        return inputs
+        exactLookupInputs(from: input)
     }
 
     public static func exactLookupInputs(from input: String) -> [String] {
@@ -290,27 +284,4 @@ public enum RomajiCanonicalizer {
             && !"aeiou".contains(character)
     }
 
-    private static func unvoicedInitialInput(
-        _ input: String
-    ) -> String? {
-        let replacements = [
-            ("gya", "kya"), ("gyu", "kyu"), ("gyo", "kyo"),
-            ("ja", "sha"), ("ju", "shu"), ("jo", "sho"),
-            ("ga", "ka"), ("gi", "ki"), ("gu", "ku"),
-            ("ge", "ke"), ("go", "ko"),
-            ("za", "sa"), ("ji", "shi"), ("zu", "su"),
-            ("ze", "se"), ("zo", "so"),
-            ("da", "ta"), ("de", "te"), ("do", "to"),
-            ("ba", "ha"), ("bi", "hi"), ("bu", "fu"),
-            ("be", "he"), ("bo", "ho"),
-            ("pa", "ha"), ("pi", "hi"), ("pu", "fu"),
-            ("pe", "he"), ("po", "ho")
-        ]
-        guard let replacement = replacements.first(where: {
-            input.hasPrefix($0.0)
-        }) else {
-            return nil
-        }
-        return replacement.1 + input.dropFirst(replacement.0.count)
-    }
 }
