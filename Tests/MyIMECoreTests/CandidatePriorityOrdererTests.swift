@@ -66,7 +66,7 @@ struct CandidatePriorityOrdererTests {
     }
 
     @Test
-    func prioritizesCandidateUsedAfterPreviousInput() {
+    func prioritizesMostRecentSelectionBeforeCandidateUsedAfterPreviousInput() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["けいかく", "ケイカク"],
             direct: ["計画", "軽核"],
@@ -76,7 +76,7 @@ struct CandidatePriorityOrdererTests {
             prioritizeKana: false
         )
 
-        #expect(result == ["計画", "軽核", "けいかく", "ケイカク", "計画的"])
+        #expect(result == ["軽核", "計画", "けいかく", "ケイカク", "計画的"])
     }
 
     @Test
@@ -91,5 +91,18 @@ struct CandidatePriorityOrdererTests {
         )
 
         #expect(result == ["き", "キ", "気", "木"])
+    }
+
+    @Test
+    func prioritizesOnlyTheMostRecentCandidateBeforeCloserMatches() {
+        let result = CandidatePriorityOrderer.ordered(
+            kana: ["さい", "サイ"],
+            direct: ["再", "際", "歳"],
+            others: ["最愛", "再利用"],
+            recencyRanks: ["最愛": 8, "再利用": 12],
+            prioritizeKana: false
+        )
+
+        #expect(result == ["再利用", "再", "際", "歳", "さい", "サイ", "最愛"])
     }
 }
