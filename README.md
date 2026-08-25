@@ -186,7 +186,7 @@ function candidates(context) {
 
 メニューバーの入力ソースメニューにある「JavaScript拡張フォルダを開く…」から設定ファイルをFinderで表示できます
 Web検索先は`websearch.js`の`@myim-url`で指定します
-外部情報パネルは`external-information.js`の`@myim-url`と`@myim-delay`で指定します
+外部情報パネルの検索先は`external-information.js`の`@myim-url`で指定します
 
 JavaScriptはネットワーク、ファイル、シェルへ接続するAPIを持たない補助プロセスで実行します
 応答しない拡張は100ミリ秒で補助プロセスごと停止し、myim本体での入力を継続します

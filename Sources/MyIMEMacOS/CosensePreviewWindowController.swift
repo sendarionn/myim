@@ -7,7 +7,6 @@ final class ExternalInformationWindowController: NSObject {
         let panelTitle: String
         let definitions: [SystemDictionaryDefinition]
         let showExternalInformation: Bool
-        let displayDelay: TimeInterval
         let candidateFrame: NSRect
     }
 
@@ -30,6 +29,7 @@ final class ExternalInformationWindowController: NSObject {
     var onInteractionBegan: (() -> Void)?
     var onInteractionEnded: (() -> Void)?
     private static let navigationDebounce: TimeInterval = 0.2
+    private static let displayDelay: TimeInterval = 0.5
 
     override init() {
         definitionTextView = NSTextView(frame: .zero)
@@ -63,7 +63,6 @@ final class ExternalInformationWindowController: NSObject {
         panelTitle: String,
         definitions: [SystemDictionaryDefinition],
         showExternalInformation: Bool,
-        displayDelay: TimeInterval,
         beside candidateFrame: NSRect
     ) {
         if isInteractionActive {
@@ -72,7 +71,6 @@ final class ExternalInformationWindowController: NSObject {
                 panelTitle: panelTitle,
                 definitions: definitions,
                 showExternalInformation: showExternalInformation,
-                displayDelay: displayDelay,
                 candidateFrame: candidateFrame
             )
             return
@@ -83,7 +81,6 @@ final class ExternalInformationWindowController: NSObject {
             panelTitle: panelTitle,
             definitions: definitions,
             showExternalInformation: showExternalInformation,
-            displayDelay: displayDelay,
             beside: candidateFrame
         )
     }
@@ -93,7 +90,6 @@ final class ExternalInformationWindowController: NSObject {
         panelTitle: String,
         definitions: [SystemDictionaryDefinition],
         showExternalInformation: Bool,
-        displayDelay: TimeInterval,
         beside candidateFrame: NSRect
     ) {
         displayTask?.cancel()
@@ -102,25 +98,18 @@ final class ExternalInformationWindowController: NSObject {
         requestID = currentRequestID
         externalBrowser.hide()
 
-        if definitions.isEmpty {
-            definitionPanel.orderOut(nil)
-        } else {
+        definitionPanel.orderOut(nil)
+        if !definitions.isEmpty {
             definitionTextView.textStorage?.setAttributedString(
                 attributedDefinitions(definitions)
             )
             definitionTextView.scrollToBeginningOfDocument(nil)
-            positionDefinitionPanel(near: candidateFrame)
-            definitionPanel.orderFrontRegardless()
         }
 
-        guard showExternalInformation, let url else {
-            return
-        }
-
-        if displayedURL != url {
+        if showExternalInformation, let url, displayedURL != url {
             let navigationDelay = min(
                 Self.navigationDebounce,
-                displayDelay
+                Self.displayDelay
             )
             navigationTask = Task { @MainActor [weak self] in
                 if navigationDelay > 0 {
@@ -146,11 +135,7 @@ final class ExternalInformationWindowController: NSObject {
         }
 
         displayTask = Task { @MainActor [weak self] in
-            if displayDelay > 0 {
-                try? await Task.sleep(
-                    for: .milliseconds(Int(displayDelay * 1_000))
-                )
-            }
+            try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else {
                 return
             }
@@ -161,6 +146,13 @@ final class ExternalInformationWindowController: NSObject {
                 return
             }
 
+            if !definitions.isEmpty {
+                positionDefinitionPanel(near: candidateFrame)
+                definitionPanel.orderFrontRegardless()
+            }
+            guard showExternalInformation, let url else {
+                return
+            }
             positionInformationPanel(near: candidateFrame)
             externalBrowser.send(browserCommand(
                 url: url,
@@ -238,7 +230,6 @@ final class ExternalInformationWindowController: NSObject {
             panelTitle: pendingPresentation.panelTitle,
             definitions: pendingPresentation.definitions,
             showExternalInformation: pendingPresentation.showExternalInformation,
-            displayDelay: pendingPresentation.displayDelay,
             beside: pendingPresentation.candidateFrame
         )
     }

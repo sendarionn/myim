@@ -57,10 +57,6 @@ final class InputController: IMKInputController {
         "ExternalInformationPanelEnabled"
     private static let legacyCosensePreviewEnabledDefaultsKey =
         "CosensePreviewEnabled"
-    private static let externalInformationURLTemplateDefaultsKey =
-        "ExternalInformationURLTemplate"
-    private static let externalInformationDisplayDelayDefaultsKey =
-        "ExternalInformationDisplayDelay"
     private static let systemDictionaryPreviewEnabledDefaultsKey =
         "SystemDictionaryPreviewEnabled"
     private static let fuzzySuggestionsEnabledDefaultsKey =
@@ -1007,25 +1003,6 @@ final class InputController: IMKInputController {
         UserDefaults.standard.set(
             !isExternalInformationPanelEnabled,
             forKey: Self.externalInformationPanelEnabledDefaultsKey
-        )
-        refreshExperimentalPreview()
-    }
-
-    @objc
-    private func configureExternalInformationPanel(_ sender: Any?) {
-        guard let settings = settingsDialogController.externalInformation(
-            urlTemplate: externalInformationURLTemplate,
-            displayDelay: externalInformationDisplayDelay
-        ) else {
-            return
-        }
-        UserDefaults.standard.set(
-            settings.urlTemplate,
-            forKey: Self.externalInformationURLTemplateDefaultsKey
-        )
-        UserDefaults.standard.set(
-            settings.displayDelay,
-            forKey: Self.externalInformationDisplayDelayDefaultsKey
         )
         refreshExperimentalPreview()
     }
@@ -3418,7 +3395,6 @@ final class InputController: IMKInputController {
                 ? definitionProvider.definitions(for: candidate)
                 : [],
             showExternalInformation: isExternalInformationPanelEnabled,
-            displayDelay: externalInformationDisplayDelay,
             beside: anchorFrame
         )
     }
@@ -3553,10 +3529,6 @@ final class InputController: IMKInputController {
         JavaScriptExtensionConfiguration.externalInformationURL(
             project: dictionarySource.project
         ) ?? defaultExternalInformationURLTemplate
-    }
-
-    private var externalInformationDisplayDelay: TimeInterval {
-        JavaScriptExtensionConfiguration.externalInformationDelay() ?? 1
     }
 
     private var defaultExternalInformationURLTemplate: String {

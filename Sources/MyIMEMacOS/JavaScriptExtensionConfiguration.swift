@@ -12,12 +12,6 @@ enum JavaScriptExtensionConfiguration {
             .replacingOccurrences(of: "{project}", with: encoded(project))
     }
 
-    static func externalInformationDelay() -> TimeInterval? {
-        metadata("myim-delay", in: "external-information.js")
-            .flatMap(TimeInterval.init)
-            .map { max(0, $0) }
-    }
-
     private static func metadata(_ name: String, in fileName: String) -> String? {
         guard let directory = JavaScriptExtensionClient
             .prepareUserExtensionDirectory(),
