@@ -18,6 +18,11 @@ struct FuzzySuggestion: Equatable {
 
 final class FuzzySuggestionWindowController {
     private static let spacing: CGFloat = 6
+    private static let itemHeight: CGFloat = 30
+    private static let minimumItemWidth: CGFloat = 52
+    private static let maximumItemWidth: CGFloat = 240
+    private static let maximumPanelWidth: CGFloat = 560
+    private static let itemSpacing: CGFloat = 2
     private let panel: NSPanel
     private let stackView: NSStackView
 
@@ -52,6 +57,10 @@ final class FuzzySuggestionWindowController {
         selectedIndex: Int?,
         near anchorFrame: NSRect
     ) {
+        let screen = NSScreen.screens.first {
+            $0.frame.intersects(anchorFrame)
+        } ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame ?? anchorFrame
         stackView.arrangedSubviews.forEach {
             stackView.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -78,45 +87,49 @@ final class FuzzySuggestionWindowController {
         header.spacing = 2
         stackView.addArrangedSubview(header)
 
+        let itemWidths = suggestions.map(itemWidth)
+        let availableWidth = min(
+            Self.maximumPanelWidth - stackView.edgeInsets.left
+                - stackView.edgeInsets.right,
+            visibleFrame.width
+        )
+        let targetWidth = packedTargetWidth(
+            itemWidths: itemWidths,
+            availableWidth: availableWidth
+        )
+        var currentRow: NSStackView?
+        var currentRowWidth: CGFloat = 0
         for (index, suggestion) in suggestions.enumerated() {
-            let row = NSView()
-            row.wantsLayer = true
-            row.layer?.cornerRadius = 5
-            row.layer?.backgroundColor = index == selectedIndex
-                ? NSColor.controlAccentColor.cgColor
-                : NSColor.clear.cgColor
-            let label = NSTextField(
-                labelWithString: "\(suggestion.candidate)  [\(suggestion.reading)]"
-            )
-            label.font = .systemFont(ofSize: 13)
-            label.textColor = index == selectedIndex
-                ? .alternateSelectedControlTextColor
-                : .labelColor
-            label.translatesAutoresizingMaskIntoConstraints = false
-            row.addSubview(label)
-            NSLayoutConstraint.activate([
-                label.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 6),
-                label.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -6),
-                label.topAnchor.constraint(equalTo: row.topAnchor, constant: 4),
-                label.bottomAnchor.constraint(equalTo: row.bottomAnchor, constant: -4)
-            ])
-            stackView.addArrangedSubview(row)
-            row.widthAnchor.constraint(
-                greaterThanOrEqualToConstant: 164
-            ).isActive = true
+            let width = itemWidths[index]
+            let nextWidth = currentRowWidth == 0
+                ? width
+                : currentRowWidth + Self.itemSpacing + width
+            if currentRow == nil || nextWidth > targetWidth {
+                let row = NSStackView()
+                row.orientation = .horizontal
+                row.alignment = .centerY
+                row.spacing = Self.itemSpacing
+                stackView.addArrangedSubview(row)
+                currentRow = row
+                currentRowWidth = 0
+            }
+            currentRow?.addArrangedSubview(suggestionView(
+                suggestion,
+                width: width,
+                isSelected: index == selectedIndex
+            ))
+            currentRowWidth = currentRowWidth == 0
+                ? width
+                : currentRowWidth + Self.itemSpacing + width
         }
 
         stackView.layoutSubtreeIfNeeded()
         let fittingSize = stackView.fittingSize
         panel.setContentSize(NSSize(
-            width: min(max(fittingSize.width, 180), 420),
+            width: min(max(fittingSize.width, 180), Self.maximumPanelWidth),
             height: fittingSize.height
         ))
 
-        let screen = NSScreen.screens.first {
-            $0.frame.intersects(anchorFrame)
-        } ?? NSScreen.main
-        let visibleFrame = screen?.visibleFrame ?? anchorFrame
         let belowY = anchorFrame.minY - panel.frame.height - Self.spacing
         let aboveY = anchorFrame.maxY + Self.spacing
         let y = belowY >= visibleFrame.minY ? belowY : aboveY
@@ -129,6 +142,64 @@ final class FuzzySuggestionWindowController {
             y: min(max(y, visibleFrame.minY), visibleFrame.maxY - panel.frame.height)
         ))
         panel.orderFrontRegardless()
+    }
+
+    private func itemWidth(for suggestion: FuzzySuggestion) -> CGFloat {
+        let text = "\(suggestion.candidate)  [\(suggestion.reading)]"
+        let textWidth = ceil((text as NSString).size(
+            withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
+        ).width)
+        return min(
+            max(textWidth + 12, Self.minimumItemWidth),
+            Self.maximumItemWidth
+        )
+    }
+
+    private func packedTargetWidth(
+        itemWidths: [CGFloat],
+        availableWidth: CGFloat
+    ) -> CGFloat {
+        guard !itemWidths.isEmpty else { return Self.minimumItemWidth }
+        let totalWidth = itemWidths.reduce(0, +)
+            + CGFloat(max(itemWidths.count - 1, 0)) * Self.itemSpacing
+        let balancedWidth = ceil(sqrt(
+            totalWidth * (Self.itemHeight + Self.itemSpacing) * 2
+        ))
+        return min(
+            availableWidth,
+            max(itemWidths.max() ?? Self.minimumItemWidth, balancedWidth)
+        )
+    }
+
+    private func suggestionView(
+        _ suggestion: FuzzySuggestion,
+        width: CGFloat,
+        isSelected: Bool
+    ) -> NSView {
+        let item = NSView()
+        item.wantsLayer = true
+        item.layer?.cornerRadius = 5
+        item.layer?.backgroundColor = isSelected
+            ? NSColor.controlAccentColor.cgColor
+            : NSColor.clear.cgColor
+        let label = NSTextField(
+            labelWithString: "\(suggestion.candidate)  [\(suggestion.reading)]"
+        )
+        label.font = .systemFont(ofSize: 13)
+        label.lineBreakMode = .byTruncatingTail
+        label.textColor = isSelected
+            ? .alternateSelectedControlTextColor
+            : .labelColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        item.addSubview(label)
+        NSLayoutConstraint.activate([
+            item.widthAnchor.constraint(equalToConstant: width),
+            item.heightAnchor.constraint(equalToConstant: Self.itemHeight),
+            label.leadingAnchor.constraint(equalTo: item.leadingAnchor, constant: 6),
+            label.trailingAnchor.constraint(equalTo: item.trailingAnchor, constant: -6),
+            label.centerYAnchor.constraint(equalTo: item.centerYAnchor)
+        ])
+        return item
     }
 
     func hide() {

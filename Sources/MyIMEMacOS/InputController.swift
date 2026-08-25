@@ -70,6 +70,7 @@ final class InputController: IMKInputController {
     private static let dateTimeCandidateFormatsDefaultsKey =
         "DateTimeCandidateFormats"
     private static let maximumCandidateCount = 7
+    private static let initialFuzzySuggestionCount = 3
     private static let maximumMozcDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
     private static let sharedBasicEntries = loadBasicEntries()
@@ -2361,7 +2362,7 @@ final class InputController: IMKInputController {
                     var seenReadings = Set<String>()
                     let fuzzyMatches = Self.fuzzyEngineRepository.matches(
                         for: query,
-                        limit: 6
+                        limit: .max
                     )
                     let combined = (keyboardMatches
                         + fuzzyMatches).filter {
@@ -2406,16 +2407,16 @@ final class InputController: IMKInputController {
             spellingSuggestions.map(\.candidate),
             ranks: candidateSelectionHistory.ranks
         )
-        fuzzySuggestions = Array(orderedIndices
-            .prefix(3)
-            .map { spellingSuggestions[$0] })
+        fuzzySuggestions = orderedIndices.map { spellingSuggestions[$0] }
         selectedFuzzySuggestionIndex = nil
         guard !fuzzySuggestions.isEmpty else {
             fuzzySuggestionWindow.hide()
             return
         }
         fuzzySuggestionWindow.show(
-            suggestions: fuzzySuggestions,
+            suggestions: Array(fuzzySuggestions.prefix(
+                Self.initialFuzzySuggestionCount
+            )),
             selectedIndex: nil,
             near: anchorFrame
         )
@@ -2457,7 +2458,9 @@ final class InputController: IMKInputController {
             updateMarkedText(in: sender)
             showCandidateWindow(client: sender)
             fuzzySuggestionWindow.show(
-                suggestions: fuzzySuggestions,
+                suggestions: Array(fuzzySuggestions.prefix(
+                    Self.initialFuzzySuggestionCount
+                )),
                 selectedIndex: nil,
                 near: candidateAndInputFrame(for: sender)
             )
@@ -2493,13 +2496,27 @@ final class InputController: IMKInputController {
         candidateWindow.clearSelection()
         let suggestion = fuzzySuggestions[index]
         setMarkedText(suggestion.candidate + conversionSuffix, in: sender)
-        fuzzySuggestionWindow.show(
-            suggestions: fuzzySuggestions,
-            selectedIndex: index,
-            near: candidateAndInputFrame(for: sender)
-        )
+        showFuzzySuggestionPage(selectedIndex: index, client: sender)
         showPreview(for: suggestion.candidate)
         return true
+    }
+
+    private func showFuzzySuggestionPage(
+        selectedIndex: Int,
+        client sender: Any
+    ) {
+        let pageStart = selectedIndex
+            / Self.maximumCandidateCount
+            * Self.maximumCandidateCount
+        let pageEnd = min(
+            pageStart + Self.maximumCandidateCount,
+            fuzzySuggestions.count
+        )
+        fuzzySuggestionWindow.show(
+            suggestions: Array(fuzzySuggestions[pageStart..<pageEnd]),
+            selectedIndex: selectedIndex - pageStart,
+            near: candidateAndInputFrame(for: sender)
+        )
     }
 
     private func englishCompletions(for input: String) -> [String] {
