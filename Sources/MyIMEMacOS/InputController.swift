@@ -2303,6 +2303,10 @@ final class InputController: IMKInputController {
             + inflectionCandidates
         let otherCandidates = userCandidates.prefix
             + extensionCandidates.prefix
+            + candidateSelectionHistory.completions(
+                for: conversionReading,
+                limit: Self.maximumCandidateCount * 2
+            )
             + remoteCandidates
             + imeCandidates.prefix
             + basicCandidates.prefix

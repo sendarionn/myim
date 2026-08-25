@@ -57,6 +57,36 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
+    func doesNotApplyLearningFromAnotherReading() {
+        var history = CandidateSelectionHistory()
+        history.record("そのまま", reading: "sonomama")
+
+        #expect(history.ranks(for: "sono").isEmpty)
+        #expect(history.ranks(for: "sonomama")["そのまま"] != nil)
+    }
+
+    @Test
+    func suggestsFrequentlyUsedLongerReadingsAsCompletions() {
+        var history = CandidateSelectionHistory()
+        history.record("そのため", reading: "sonotame")
+        history.record("そのまま", reading: "sonomama")
+        history.record("そのまま", reading: "sonomama")
+
+        let completions = history.completions(for: "sono")
+        #expect(completions.first == "そのまま")
+        #expect(completions.contains("そのため"))
+        #expect(history.completions(for: "sonomama").isEmpty)
+    }
+
+    @Test
+    func doesNotSuggestCompletionsForOneCharacterInput() {
+        var history = CandidateSelectionHistory()
+        history.record("そのまま", reading: "sonomama")
+
+        #expect(history.completions(for: "s").isEmpty)
+    }
+
+    @Test
     func keepsAllEntriesByDefault() {
         var history = CandidateSelectionHistory()
         for index in 0..<4_200 {

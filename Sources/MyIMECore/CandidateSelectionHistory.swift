@@ -1,3 +1,5 @@
+import Foundation
+
 public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
     public struct Stat: Equatable, Codable, Sendable {
         public var count: Int
@@ -49,7 +51,7 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
               let mostRecent = stats.max(by: {
                   $0.value.lastUsed < $1.value.lastUsed
               }) else {
-            return ranks
+            return [:]
         }
         let ordered = [mostRecent] + stats
             .filter { $0.key != mostRecent.key }
@@ -65,6 +67,27 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         return Dictionary(uniqueKeysWithValues: ordered.enumerated().map {
             ($0.element.key, ordered.count - $0.offset)
         })
+    }
+
+    public func completions(for readingPrefix: String, limit: Int = 14) -> [String] {
+        let prefix = readingPrefix.lowercased()
+        guard prefix.count >= 2, limit > 0 else { return [] }
+        var bestScores: [String: Double] = [:]
+        for (reading, candidates) in statsByReading
+        where reading != prefix && reading.hasPrefix(prefix) {
+            let remainingLength = reading.count - prefix.count
+            for (candidate, stat) in candidates {
+                let age = max(nextRank - stat.lastUsed, 1)
+                let score = log1p(Double(stat.count)) * 4
+                    + 2 / log2(Double(age) + 2)
+                    - Double(remainingLength) * 0.6
+                bestScores[candidate] = max(bestScores[candidate] ?? -.infinity, score)
+            }
+        }
+        return bestScores.sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return $0.key < $1.key
+        }.prefix(limit).map(\.key)
     }
 
     private static func compacted(

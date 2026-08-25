@@ -95,4 +95,20 @@ struct CandidatePipelineTests {
             "高度", "コード", "こーど", "code", "coder", "行動"
         ])
     }
+
+    @Test
+    func keepsExactCandidateAheadOfLearnedCompletion() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["その", "ソノ"],
+                direct: ["その"],
+                other: ["そのまま"],
+                recencyRanks: [:],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates.first == "その")
+        #expect(candidates.contains("そのまま"))
+    }
 }
