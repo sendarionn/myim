@@ -3560,12 +3560,7 @@ final class InputController: IMKInputController {
     }
 
     private var defaultExternalInformationURLTemplate: String {
-        var allowed = CharacterSet.urlPathAllowed
-        allowed.remove(charactersIn: "/")
-        let project = dictionarySource.project.addingPercentEncoding(
-            withAllowedCharacters: allowed
-        ) ?? dictionarySource.project
-        return "https://scrapbox.io/\(project)/%s"
+        "https://ja.wikipedia.org/w/index.php?search=%s"
     }
 
     private var isExtensionDictionaryEnabled: Bool {
