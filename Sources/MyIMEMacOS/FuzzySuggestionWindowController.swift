@@ -22,6 +22,7 @@ final class FuzzySuggestionWindowController {
     private static let minimumItemWidth: CGFloat = 52
     private static let maximumItemWidth: CGFloat = 240
     private static let maximumPanelWidth: CGFloat = 560
+    private static let minimumPanelWidth: CGFloat = 180
     private static let itemSpacing: CGFloat = 2
     private let panel: NSPanel
     private let stackView: NSStackView
@@ -69,18 +70,18 @@ final class FuzzySuggestionWindowController {
         let title = NSTextField(labelWithString: "もしかして？")
         title.font = .systemFont(ofSize: 12, weight: .semibold)
         title.textColor = .secondaryLabelColor
-        let guide = NSTextField(wrappingLabelWithString: selectedIndex == nil
+        let guideText = selectedIndex == nil
             ? "⇧Tab 選択"
-            : "矢印 移動　Return 確定　Esc 戻る")
+            : "矢印 移動　Return 確定　Esc 戻る"
+        let guide = NSTextField(labelWithString: guideText)
         guide.font = PanelShortcutGuideStyle.font
         guide.textColor = PanelShortcutGuideStyle.color
-        guide.maximumNumberOfLines = 0
-        guide.lineBreakMode = .byCharWrapping
-        guide.cell?.usesSingleLineMode = false
-        guide.cell?.wraps = true
+        guide.maximumNumberOfLines = 1
+        guide.lineBreakMode = .byClipping
+        guide.cell?.usesSingleLineMode = true
+        guide.cell?.wraps = false
         guide.cell?.isScrollable = false
         guide.cell?.truncatesLastVisibleLine = false
-        guide.preferredMaxLayoutWidth = 404
         let header = NSStackView(views: [title, guide])
         header.orientation = .vertical
         header.alignment = .leading
@@ -93,9 +94,21 @@ final class FuzzySuggestionWindowController {
                 - stackView.edgeInsets.right,
             visibleFrame.width
         )
-        let targetWidth = packedTargetWidth(
-            itemWidths: itemWidths,
-            availableWidth: availableWidth
+        let targetWidth = min(
+            max(
+                max(
+                    packedTargetWidth(
+                        itemWidths: itemWidths,
+                        availableWidth: availableWidth
+                    ),
+                    ceil((guideText as NSString).size(
+                        withAttributes: [.font: PanelShortcutGuideStyle.font]
+                    ).width)
+                ),
+                Self.minimumPanelWidth - stackView.edgeInsets.left
+                    - stackView.edgeInsets.right
+            ),
+            availableWidth
         )
         var currentRow: NSStackView?
         var currentRowWidth: CGFloat = 0
@@ -126,7 +139,10 @@ final class FuzzySuggestionWindowController {
         stackView.layoutSubtreeIfNeeded()
         let fittingSize = stackView.fittingSize
         panel.setContentSize(NSSize(
-            width: min(max(fittingSize.width, 180), Self.maximumPanelWidth),
+            width: min(
+                max(fittingSize.width, Self.minimumPanelWidth),
+                Self.maximumPanelWidth
+            ),
             height: fittingSize.height
         ))
 
@@ -145,7 +161,7 @@ final class FuzzySuggestionWindowController {
     }
 
     private func itemWidth(for suggestion: FuzzySuggestion) -> CGFloat {
-        let text = "\(suggestion.candidate)  [\(suggestion.reading)]"
+        let text = suggestion.candidate
         let textWidth = ceil((text as NSString).size(
             withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
         ).width)
@@ -183,7 +199,7 @@ final class FuzzySuggestionWindowController {
             ? NSColor.controlAccentColor.cgColor
             : NSColor.clear.cgColor
         let label = NSTextField(
-            labelWithString: "\(suggestion.candidate)  [\(suggestion.reading)]"
+            labelWithString: suggestion.candidate
         )
         label.font = .systemFont(ofSize: 13)
         label.lineBreakMode = .byTruncatingTail
