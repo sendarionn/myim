@@ -368,6 +368,10 @@ final class InputController: IMKInputController {
                 ? false
                 : moveCandidate(.up, client: sender)
         case 36, 76:
+            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+                dismissNextInputSuggestions(clearMarkedTextIn: sender)
+                return true
+            }
             if unfilteredCandidates != nil, currentCandidates.isEmpty {
                 return true
             }
@@ -3268,7 +3272,7 @@ final class InputController: IMKInputController {
             candidates: nextInputCandidates,
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "Tab 選択　Esc 閉じる\n選択後はTab / 矢印 移動　↩ 確定"
+            guide: "Tab 選択　Return / Esc 閉じる\n選択後はTab / 矢印 移動"
         )
         scheduleNextInputDismissal()
     }
