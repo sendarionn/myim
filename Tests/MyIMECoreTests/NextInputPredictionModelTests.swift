@@ -69,6 +69,24 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
+    func retainsAllContextsAndFollowers() {
+        var model = NextInputPredictionModel()
+        for index in 0..<300 {
+            model.record("文脈\(index)")
+            model.record("候補\(index)")
+            model.breakSequence()
+        }
+        for index in 0..<20 {
+            model.record("共通")
+            model.record("候補\(index)")
+            model.breakSequence()
+        }
+
+        #expect(model.contextCount == 301)
+        #expect(model.candidates(after: "共通", limit: 30).count == 20)
+    }
+
+    @Test
     func clearsLearnedData() {
         var model = NextInputPredictionModel()
         model.record("A")

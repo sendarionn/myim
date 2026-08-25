@@ -129,7 +129,7 @@ final class InputController: IMKInputController {
     private var cosenseCredential: CosenseCredential?
     private var candidateSelectionHistory: CandidateSelectionHistory
     private let candidateSelectionHistoryWriter:
-        DeferredJSONFileWriter<[String: Int]>
+        DeferredJSONFileWriter<CandidateSelectionHistory>
     private var nextInputPredictionModel: NextInputPredictionModel
     private let nextInputPredictionWriter:
         DeferredJSONFileWriter<NextInputPredictionModel>
@@ -2087,7 +2087,7 @@ final class InputController: IMKInputController {
             kana: kanaCandidates,
             direct: directCandidates,
             others: [],
-            recencyRanks: candidateSelectionHistory.ranks,
+            recencyRanks: candidateSelectionHistory.ranks(for: input),
             prioritizeKana: kanaCandidates.first?.count == 1
         )
         let values = [input] + orderedCandidates
@@ -2317,7 +2317,9 @@ final class InputController: IMKInputController {
                 direct: directCandidates,
                 other: otherCandidates,
                 english: englishCandidates,
-                recencyRanks: candidateSelectionHistory.ranks,
+                recencyRanks: candidateSelectionHistory.ranks(
+                    for: conversionReading
+                ),
                 contextualCandidates: contextualCandidates,
                 prioritizeKana: kanaCandidates.first?.count == 1
             )
@@ -2405,7 +2407,7 @@ final class InputController: IMKInputController {
         }
         let orderedIndices = CandidateRecencyOrderer.orderedIndices(
             spellingSuggestions.map(\.candidate),
-            ranks: candidateSelectionHistory.ranks
+            ranks: candidateSelectionHistory.ranks(for: conversionReading)
         )
         fuzzySuggestions = orderedIndices.map { spellingSuggestions[$0] }
         selectedFuzzySuggestionIndex = nil
@@ -2948,10 +2950,17 @@ final class InputController: IMKInputController {
         recordCandidateSelection(currentCandidates[selectedCandidateIndex])
     }
 
-    private func recordCandidateSelection(_ candidate: String) {
-        candidateSelectionHistory.record(candidate)
+    private func recordCandidateSelection(
+        _ candidate: String,
+        reading: String? = nil
+    ) {
+        let learnedReading = reading ?? conversionReading
+        candidateSelectionHistory.record(
+            candidate,
+            reading: learnedReading
+        )
         candidateSelectionHistoryWriter.schedule(
-            candidateSelectionHistory.ranks
+            candidateSelectionHistory
         )
     }
 
@@ -2960,7 +2969,7 @@ final class InputController: IMKInputController {
     ) -> [String] {
         CandidateRecencyOrderer.ordered(
             candidates,
-            ranks: candidateSelectionHistory.ranks
+            ranks: candidateSelectionHistory.ranks(for: conversionReading)
         )
     }
 
@@ -3878,14 +3887,23 @@ final class InputController: IMKInputController {
         -> CandidateSelectionHistory {
         guard
             let data = try? Data(contentsOf: candidateSelectionHistoryURL()),
-            let ranks = try? JSONDecoder().decode(
-                [String: Int].self,
-                from: data
-            )
+            !data.isEmpty
         else {
             return CandidateSelectionHistory()
         }
-        return CandidateSelectionHistory(ranks: ranks)
+        if let history = try? JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: data
+        ) {
+            return history
+        }
+        if let legacyRanks = try? JSONDecoder().decode(
+            [String: Int].self,
+            from: data
+        ) {
+            return CandidateSelectionHistory(ranks: legacyRanks)
+        }
+        return CandidateSelectionHistory()
     }
 
     private static func candidateSelectionHistoryURL() -> URL {

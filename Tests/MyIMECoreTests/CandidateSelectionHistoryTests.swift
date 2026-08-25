@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import MyIMECore
 
@@ -36,5 +37,45 @@ struct CandidateSelectionHistoryTests {
         #expect(history.ranks.count == 2)
         #expect(history.ranks["古い"] == nil)
         #expect(history.ranks["新しい"]! > history.ranks["中間"]!)
+    }
+
+    @Test
+    func learnsRecencyAndFrequencyForEachReading() {
+        var history = CandidateSelectionHistory()
+        history.record("際", reading: "sai")
+        history.record("歳", reading: "sai")
+        history.record("際", reading: "sai")
+        history.record("再", reading: "sai")
+        history.record("差異", reading: "sai")
+        history.record("歳", reading: "toshi")
+
+        let saiRanks = history.ranks(for: "sai")
+        #expect(saiRanks["差異"]! > saiRanks["際"]!)
+        #expect(saiRanks["際"]! > saiRanks["再"]!)
+        #expect(saiRanks["歳"] != nil)
+        #expect(Set(history.ranks(for: "toshi").keys) == ["歳"])
+    }
+
+    @Test
+    func keepsAllEntriesByDefault() {
+        var history = CandidateSelectionHistory()
+        for index in 0..<4_200 {
+            history.record("候補\(index)", reading: "よみ\(index)")
+        }
+
+        #expect(history.ranks.count == 4_200)
+    }
+
+    @Test
+    func persistsDetailedLearning() throws {
+        var history = CandidateSelectionHistory()
+        history.record("再", reading: "sai")
+        let data = try JSONEncoder().encode(history)
+        let restored = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: data
+        )
+
+        #expect(restored.ranks(for: "sai")["再"] != nil)
     }
 }
