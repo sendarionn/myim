@@ -1459,16 +1459,15 @@ final class InputController: IMKInputController {
     }
 
     private func beginTabDictionaryRegistration(client sender: Any) -> Bool {
-        let selectedCandidate = selectedCandidateValue
-        var registration = TabDictionaryRegistration(
+        let registration = TabDictionaryRegistration(
             originalInput: inputBuffer,
             reading: conversionReading.lowercased()
         )
-        registration.confirmedCandidate = selectedCandidate
         tabDictionaryRegistration = registration
         inputBuffer = ""
         inputCursor = 0
         currentCandidates = []
+        selectedCandidateIndex = nil
         previewWindow.hide()
         setMarkedText("", in: sender)
         showTabDictionaryRegistration(client: sender)
