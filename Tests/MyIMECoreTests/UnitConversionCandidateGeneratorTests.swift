@@ -99,6 +99,26 @@ struct UnitConversionCandidateGeneratorTests {
     }
 
     @Test
+    func convertsJapaneseTimeUnitInputs() {
+        #expect(
+            UnitConversionCandidateGenerator.candidates(for: "60byou")
+                == ["1分", "60秒", "60000ミリ秒", "60,000ミリ秒"]
+        )
+        #expect(
+            UnitConversionCandidateGenerator.candidates(for: "60秒")
+                == ["1分", "60000ミリ秒", "60,000ミリ秒"]
+        )
+        #expect(
+            UnitConversionCandidateGenerator.candidates(for: "1byou")
+                == ["1秒", "1000ミリ秒", "1,000ミリ秒"]
+        )
+        #expect(
+            UnitConversionCandidateGenerator.candidates(for: "1jikan")
+                .contains("60分")
+        )
+    }
+
+    @Test
     func convertsTemperature() {
         #expect(
             UnitConversionCandidateGenerator.candidates(for: "0C")

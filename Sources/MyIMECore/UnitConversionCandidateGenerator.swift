@@ -5,6 +5,7 @@ public enum UnitConversionCandidateGenerator {
         let symbol: String
         let aliases: Set<String>
         let factor: Decimal
+        let normalizesInput: Bool
     }
 
     private static let linearFamilies: [[Unit]] = [
@@ -31,6 +32,38 @@ public enum UnitConversionCandidateGenerator {
             unit("ms", "0.001"), unit("s", "1"),
             unit("min", "60"), unit("h", "3600"),
             unit("d", "86400")
+        ],
+        [
+            unit(
+                "ミリ秒",
+                "0.001",
+                aliases: ["miribyou", "ミリ秒"],
+                normalizesInput: true
+            ),
+            unit(
+                "秒",
+                "1",
+                aliases: ["byou", "秒"],
+                normalizesInput: true
+            ),
+            unit(
+                "分",
+                "60",
+                aliases: ["fun", "hun", "分"],
+                normalizesInput: true
+            ),
+            unit(
+                "時間",
+                "3600",
+                aliases: ["jikan", "時間"],
+                normalizesInput: true
+            ),
+            unit(
+                "日",
+                "86400",
+                aliases: ["nichi", "日"],
+                normalizesInput: true
+            )
         ],
         [
             unit("m/s", "1"),
@@ -62,17 +95,23 @@ public enum UnitConversionCandidateGenerator {
                 continue
             }
             let baseValue = value * source.factor
-            let conversions = family.compactMap { target -> (Unit, Decimal)? in
+            var conversions = family.compactMap { target -> (Unit, Decimal)? in
                 guard target.symbol != source.symbol else { return nil }
                 let converted = baseValue / target.factor
                 let magnitude = abs(
                     NSDecimalNumber(decimal: converted).doubleValue
                 )
-                guard magnitude == 0 || magnitude >= 0.01 else {
+                let minimumMagnitude = source.normalizesInput ? 1.0 : 0.01
+                guard magnitude == 0 || magnitude >= minimumMagnitude else {
                     return nil
                 }
                 return (target, converted)
-            }.sorted {
+            }
+            if source.normalizesInput,
+               matchedAlias.lowercased() != source.symbol.lowercased() {
+                conversions.append((source, value))
+            }
+            conversions.sort {
                 abs(NSDecimalNumber(decimal: $0.1).doubleValue)
                     < abs(NSDecimalNumber(decimal: $1.1).doubleValue)
             }
@@ -150,12 +189,14 @@ public enum UnitConversionCandidateGenerator {
     private static func unit(
         _ symbol: String,
         _ factor: String,
-        aliases: Set<String>? = nil
+        aliases: Set<String>? = nil,
+        normalizesInput: Bool = false
     ) -> Unit {
         Unit(
             symbol: symbol,
             aliases: aliases ?? [symbol.lowercased()],
-            factor: Decimal(string: factor)!
+            factor: Decimal(string: factor)!,
+            normalizesInput: normalizesInput
         )
     }
 
