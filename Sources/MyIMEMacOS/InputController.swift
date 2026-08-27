@@ -369,6 +369,11 @@ final class InputController: IMKInputController {
                 : moveCandidate(.up, client: sender)
         case 36, 76:
             if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+                if let selectedNextInputIndex,
+                   nextInputCandidates.indices.contains(selectedNextInputIndex) {
+                    commit(nextInputCandidates[selectedNextInputIndex], to: sender)
+                    return true
+                }
                 dismissNextInputSuggestions(clearMarkedTextIn: sender)
                 return true
             }
@@ -3247,7 +3252,8 @@ final class InputController: IMKInputController {
         candidateWindow.select(index: index)
         setMarkedText(nextInputCandidates[index], in: sender)
         showPreview(for: nextInputCandidates[index])
-        scheduleNextInputDismissal()
+        nextInputDismissTimer?.invalidate()
+        nextInputDismissTimer = nil
         return true
     }
 
@@ -3282,7 +3288,7 @@ final class InputController: IMKInputController {
             candidates: nextInputCandidates,
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "Tab 選択　Return / Esc 閉じる\n選択後はTab / 矢印 移動"
+            guide: "Tab 選択　Return / Esc 閉じる\n選択後はTab / 矢印 移動　Return 確定"
         )
         scheduleNextInputDismissal()
     }
