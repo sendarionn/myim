@@ -1518,6 +1518,10 @@ final class InputController: IMKInputController {
                 NSSound.beep()
                 return true
             }
+            if registration.pastedCandidate == nil,
+               selectedCandidateValue != nil {
+                recordSelectedCandidate()
+            }
             registration.confirmedCandidate =
                 (registration.confirmedCandidate ?? "") + currentCandidate
             registration.pastedCandidate = nil
@@ -1541,6 +1545,10 @@ final class InputController: IMKInputController {
             let currentCandidate = registration.pastedCandidate
                 ?? selectedCandidateValue
                 ?? inputBuffer
+            if registration.pastedCandidate == nil,
+               selectedCandidateValue != nil {
+                recordSelectedCandidate()
+            }
             registration.confirmedCandidate =
                 (registration.confirmedCandidate ?? "")
                 + currentCandidate
@@ -1638,6 +1646,7 @@ final class InputController: IMKInputController {
             return true
         }
         if let selectedValue = selectedCandidateValue {
+            recordSelectedCandidate()
             registration.confirmedCandidate =
                 (registration.confirmedCandidate ?? "") + selectedValue
             inputBuffer = ""
@@ -2223,6 +2232,13 @@ final class InputController: IMKInputController {
         )
         if !calculatorCandidates.isEmpty {
             currentCandidates = calculatorCandidates
+            showCandidateWindow(client: sender)
+            return
+        }
+        let unitConversionCandidates = UnitConversionCandidateGenerator
+            .candidates(for: inputBuffer)
+        if !unitConversionCandidates.isEmpty {
+            currentCandidates = unitConversionCandidates
             showCandidateWindow(client: sender)
             return
         }
@@ -3558,6 +3574,9 @@ final class InputController: IMKInputController {
 
     private var conversionSuffix: String {
         if !CalculatorCandidateGenerator.candidates(for: inputBuffer).isEmpty
+            || !UnitConversionCandidateGenerator.candidates(
+                for: inputBuffer
+            ).isEmpty
             || !NumberGroupingCandidateGenerator.candidates(
                 for: inputBuffer
             ).isEmpty
