@@ -47,6 +47,8 @@ final class InputController: IMKInputController {
         "EnglishCompletionEnabled"
     private static let wikipediaSuggestionsEnabledDefaultsKey =
         "WikipediaSuggestionsEnabled"
+    private static let googleJapaneseInputEnabledDefaultsKey =
+        "GoogleJapaneseInputEnabled"
     private static let appleTranslationEnabledDefaultsKey =
         "AppleTranslationEnabled"
     private static let translationModeEnabledDefaultsKey =
@@ -536,6 +538,7 @@ final class InputController: IMKInputController {
             extensionDictionary: isExtensionDictionaryEnabled,
             englishCompletion: isEnglishCompletionEnabled,
             wikipediaSuggestions: isWikipediaSuggestionsEnabled,
+            googleJapaneseInput: isGoogleJapaneseInputEnabled,
             appleTranslation: isAppleTranslationEnabled,
             nextInputPrediction: isNextInputPredictionEnabled,
             fuzzySuggestions: isFuzzySuggestionsEnabled,
@@ -551,6 +554,7 @@ final class InputController: IMKInputController {
             toggleExtensionDictionary: #selector(toggleExtensionDictionary(_:)),
             toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
             toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
+            toggleGoogleJapaneseInput: #selector(toggleGoogleJapaneseInput(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
@@ -927,6 +931,17 @@ final class InputController: IMKInputController {
         }
         selectedCandidateIndex = nil
         updateMarkedText(in: inputClient)
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func toggleGoogleJapaneseInput(_ sender: Any?) {
+        UserDefaults.standard.set(
+            !isGoogleJapaneseInputEnabled,
+            forKey: Self.googleJapaneseInputEnabledDefaultsKey
+        )
+        resetOfficialCandidates()
+        guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
     }
 
@@ -2599,7 +2614,9 @@ final class InputController: IMKInputController {
     }
 
     private func updateOfficialCandidatesIfNeeded(for input: String) {
-        guard isWikipediaSuggestionsEnabled || isAppleTranslationEnabled,
+        guard isWikipediaSuggestionsEnabled
+                || isGoogleJapaneseInputEnabled
+                || isAppleTranslationEnabled,
               input.count >= 2,
               suggestionSearchSession.query(for: .official) != input else {
             return
@@ -2614,14 +2631,19 @@ final class InputController: IMKInputController {
                 async let wikipedia: [String] = isWikipediaSuggestionsEnabled
                     ? (try? await WikipediaSuggestionClient().suggestions(for: japaneseInput)) ?? []
                     : []
+                async let google: [String] = isGoogleJapaneseInputEnabled
+                    ? (try? await GoogleJapaneseInputClient().candidates(for: japaneseInput)) ?? []
+                    : []
                 let apple = await appleTranslationCandidate(
                     for: japaneseInput,
                     sentenceMode: false
                 )
-                let suggestions = await wikipedia + apple
+                let suggestions = await wikipedia + google + apple
                 try Task.checkCancellation()
                 guard suggestionSearchSession.isCurrent(token),
-                      isWikipediaSuggestionsEnabled || isAppleTranslationEnabled,
+                      isWikipediaSuggestionsEnabled
+                        || isGoogleJapaneseInputEnabled
+                        || isAppleTranslationEnabled,
                       conversionReading == input else {
                     return
                 }
@@ -3674,6 +3696,12 @@ final class InputController: IMKInputController {
         }
         return UserDefaults.standard.bool(
             forKey: Self.wikipediaSuggestionsEnabledDefaultsKey
+        )
+    }
+
+    private var isGoogleJapaneseInputEnabled: Bool {
+        UserDefaults.standard.bool(
+            forKey: Self.googleJapaneseInputEnabledDefaultsKey
         )
     }
 

@@ -290,12 +290,16 @@ macOS標準辞書の利用範囲は`docs/MACOS_DICTIONARY.md`を参照してく�
 必要な機能だけを設定から有効にできます
 
 - Wikipediaを辞書として利用
+- Google CGI API for Japanese Inputから変換候補を取得
 - Apple Translationによる日本語から英語への候補
 - Command＋Returnで選択候補を確定してWeb検索
 
 Web検索URLは`websearch.js`へ`https://www.google.com/search?q=%s`のように指定します
 
-Wikipedia、Apple Translation、Web検索は初期状態で無効です
+Wikipedia、Google CGI API、Apple Translation、Web検索は初期状態で無効です
+
+Google CGI APIを有効にすると、入力中の読みをGoogleへ送信します
+APIキーは不要で、通信失敗時はローカル候補だけで変換を継続します
 
 TKGJE基本辞書の自動更新確認はプロセス全体で共有し、6時間に1回実行します
 「TKGJE基本辞書を更新」では待機時間に関係なく手動確認できます

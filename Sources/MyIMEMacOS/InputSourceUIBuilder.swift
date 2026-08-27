@@ -83,6 +83,7 @@ enum SettingsWindowBuilder {
         let extensionDictionary: Bool
         let englishCompletion: Bool
         let wikipediaSuggestions: Bool
+        let googleJapaneseInput: Bool
         let appleTranslation: Bool
         let nextInputPrediction: Bool
         let fuzzySuggestions: Bool
@@ -96,6 +97,7 @@ enum SettingsWindowBuilder {
         let toggleExtensionDictionary: Selector
         let toggleEnglishCompletion: Selector
         let toggleWikipediaSuggestions: Selector
+        let toggleGoogleJapaneseInput: Selector
         let toggleAppleTranslation: Selector
         let toggleNextInputPrediction: Selector
         let toggleFuzzySuggestions: Selector
@@ -143,6 +145,7 @@ enum SettingsWindowBuilder {
             ("Cosense拡張辞書を使用", actions.toggleExtensionDictionary, states.extensionDictionary),
             ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
             ("Wikipediaを辞書として利用", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
+            ("Google CGI APIの変換候補を使用（入力内容をGoogleへ送信）", actions.toggleGoogleJapaneseInput, states.googleJapaneseInput),
             ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
