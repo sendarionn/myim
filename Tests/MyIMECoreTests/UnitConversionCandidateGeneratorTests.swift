@@ -88,7 +88,7 @@ struct UnitConversionCandidateGeneratorTests {
         #expect(
             UnitConversionCandidateGenerator.candidates(for: "1h")
                 == [
-                    "0.041666666667d", "60min", "3600s", "3,600s",
+                    "約0.04d", "60min", "3600s", "3,600s",
                     "3600000ms", "3,600,000ms"
                 ]
         )
@@ -122,15 +122,27 @@ struct UnitConversionCandidateGeneratorTests {
     func convertsTemperature() {
         #expect(
             UnitConversionCandidateGenerator.candidates(for: "0C")
-                == ["32°F", "273.15K"]
+                == ["32°F", "約273.2K"]
         )
         #expect(
             UnitConversionCandidateGenerator.candidates(for: "32F")
-                == ["0°C", "273.15K"]
+                == ["0°C", "約273.2K"]
         )
         #expect(
             UnitConversionCandidateGenerator.candidates(for: "273.15K")
                 == ["0°C", "32°F"]
+        )
+        #expect(
+            UnitConversionCandidateGenerator.candidates(for: "1C")
+                .contains("約33.8°F") == false
+        )
+        #expect(
+            UnitConversionCandidateGenerator.candidates(for: "1C")
+                .contains("33.8°F")
+        )
+        #expect(
+            UnitConversionCandidateGenerator.candidates(for: "1C")
+                .contains("約274.2K")
         )
     }
 }

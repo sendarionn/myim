@@ -167,9 +167,35 @@ public enum UnitConversionCandidateGenerator {
         _ value: Decimal,
         symbol: String
     ) -> [String] {
-        let number = format(value)
+        let formatted = displayNumber(value)
+        let number = formatted.number
+        let prefix = formatted.isApproximate ? "約" : ""
         return ([number] + NumberGroupingCandidateGenerator.candidates(for: number))
-            .map { $0 + symbol }
+            .map { prefix + $0 + symbol }
+    }
+
+    private static func displayNumber(
+        _ value: Decimal
+    ) -> (number: String, isApproximate: Bool) {
+        let precise = format(value)
+        let fraction = precise.split(
+            separator: ".",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        ).dropFirst().first ?? ""
+        guard let firstNonzeroIndex = fraction.firstIndex(where: { $0 != "0" })
+        else {
+            return (precise, false)
+        }
+        let decimalPlaces = fraction.distance(
+            from: fraction.startIndex,
+            to: firstNonzeroIndex
+        ) + 1
+        guard fraction.count > decimalPlaces else { return (precise, false) }
+        var value = value
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &value, decimalPlaces, .plain)
+        return (format(rounded), true)
     }
 
     private static func parsedNumber(_ text: String) -> Decimal? {
