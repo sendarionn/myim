@@ -139,6 +139,8 @@ final class InputController: IMKInputController {
     private let suggestionSearchSession = SuggestionSearchSession()
     private var officialCandidates: [String] = []
     private var javaScriptExtensionCandidates: [String] = []
+    private var postalAddressCandidates: [String] = []
+    private var postalAddressCache: [String: [String]] = [:]
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
@@ -2215,6 +2217,7 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.hide()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
+        updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
         let calculatorCandidates = CalculatorCandidateGenerator.candidates(
             for: inputBuffer
         )
@@ -2228,6 +2231,9 @@ final class InputController: IMKInputController {
             + JapaneseNumericUnitCandidateGenerator.candidates(
                 for: inputBuffer
             )
+            + (suggestionSearchSession.query(for: .postalAddress) == inputBuffer
+                ? postalAddressCandidates
+                : [])
         if !numericFormatCandidates.isEmpty {
             currentCandidates = numericFormatCandidates
             showCandidateWindow(client: sender)
@@ -2643,6 +2649,39 @@ final class InputController: IMKInputController {
                 return
             }
             javaScriptExtensionCandidates = candidates
+            if let inputClient = client() {
+                refreshCandidates(client: inputClient)
+            }
+        }
+        suggestionSearchSession.attach(task, to: token)
+    }
+
+    private func updatePostalAddressCandidatesIfNeeded(for input: String) {
+        guard let postalCode = PostalCodeNormalizer.normalize(input) else {
+            suggestionSearchSession.cancel(.postalAddress)
+            postalAddressCandidates = []
+            return
+        }
+        guard suggestionSearchSession.query(for: .postalAddress) != input else {
+            return
+        }
+        let token = suggestionSearchSession.begin(.postalAddress, query: input)
+        if let cached = postalAddressCache[postalCode] {
+            postalAddressCandidates = cached
+            return
+        }
+        postalAddressCandidates = []
+        let task = Task { @MainActor [weak self] in
+            let candidates = (try? await PostalAddressCandidateClient()
+                .candidates(for: postalCode)) ?? []
+            guard !Task.isCancelled,
+                  let self,
+                  suggestionSearchSession.isCurrent(token),
+                  inputBuffer == input else {
+                return
+            }
+            postalAddressCache[postalCode] = candidates
+            postalAddressCandidates = candidates
             if let inputClient = client() {
                 refreshCandidates(client: inputClient)
             }
@@ -3525,6 +3564,7 @@ final class InputController: IMKInputController {
             || !JapaneseNumericUnitCandidateGenerator.candidates(
                 for: inputBuffer
             ).isEmpty
+            || PostalCodeNormalizer.normalize(inputBuffer) != nil
             || !JapaneseNumberConverter.candidates(for: inputBuffer).isEmpty
             || !JapaneseSymbolConverter.candidates(for: inputBuffer).isEmpty {
             return ""

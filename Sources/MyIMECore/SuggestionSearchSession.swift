@@ -4,6 +4,7 @@ public enum SuggestionSearchKind: Hashable, Sendable {
     case official
     case fuzzy
     case javaScriptExtensions
+    case postalAddress
 }
 
 public final class SuggestionSearchSession: @unchecked Sendable {
