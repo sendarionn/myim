@@ -32401,6 +32401,7 @@ guranpuri
 
 opushon
  オプション
+ ⌥
 
 orijinaru
  オリジナル
@@ -32500,6 +32501,7 @@ kontakuto
 
 kontorooru
  コントロール
+ ⌃
 
 konpakuto
  コンパクト
@@ -32703,6 +32705,7 @@ saakuru
 
 shifuto
  シフト
+ ⇧
 
 sauna
  サウナ
@@ -33034,6 +33037,7 @@ supiido
 
 supeesu
  スペース
+ ␣
 
 seerusu
  セールス
@@ -83674,6 +83678,8 @@ kurafan
 
 ritaan
  リターン
+ ↩
+ ⏎
 
 buresuto
  ブレスト
@@ -85148,3 +85154,94 @@ marunoko
 
 anzensaku
  安全柵
+
+komando
+ コマンド
+ ⌘
+
+kyappusurokku
+ キャップスロック
+ ⇪
+
+esukeepu
+ エスケープ
+ ⎋
+
+entaa
+ エンター
+ ⌤
+
+tabu
+ タブ
+ ⇥
+
+deriito
+ デリート
+ ⌫
+
+fowaadoderiito
+ フォワードデリート
+ ⌦
+
+bakkusupeesu
+ バックスペース
+ ⌫
+
+ijekuto
+ イジェクト
+ ⏏
+
+command
+ ⌘
+
+cmd
+ ⌘
+
+option
+ ⌥
+
+alt
+ ⌥
+
+shift
+ ⇧
+
+control
+ ⌃
+
+ctrl
+ ⌃
+
+capslock
+ ⇪
+
+escape
+ ⎋
+
+esc
+ ⎋
+
+return
+ ↩
+ ⏎
+
+enter
+ ⌤
+
+tab
+ ⇥
+
+delete
+ ⌫
+
+forwarddelete
+ ⌦
+
+backspace
+ ⌫
+
+space
+ ␣
+
+eject
+ ⏏

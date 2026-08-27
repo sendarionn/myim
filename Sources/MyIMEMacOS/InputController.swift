@@ -1084,7 +1084,9 @@ final class InputController: IMKInputController {
                     snapshot.generatedAt > $0
                 }) ?? true else {
                     if let self, basicEntries.isEmpty {
-                        basicEntries = snapshot.entries
+                        basicEntries = Self.addingBundledKeyboardSymbols(
+                            to: snapshot.entries
+                        )
                         rebuildConversionEngine(basicDictionaryChanged: true)
                     }
                     self?.basicDictionaryStatus =
@@ -1105,7 +1107,9 @@ final class InputController: IMKInputController {
                 guard let self else {
                     return
                 }
-                basicEntries = snapshot.entries
+                basicEntries = Self.addingBundledKeyboardSymbols(
+                    to: snapshot.entries
+                )
                 rebuildConversionEngine(basicDictionaryChanged: true)
                 basicDictionaryStatus = "更新完了（\(snapshot.entries.count)読み）"
 
@@ -3720,11 +3724,6 @@ final class InputController: IMKInputController {
     }
 
     private static func loadBasicEntries() -> [DictionaryEntry] {
-        if let cache = try? basicDictionaryCache(),
-           let entries = loadEntries(from: cache) {
-            return entries
-        }
-
         guard
             let dictionaryURL = inputMethodResourceURL(
                 forResource: "basic-dictionary",
@@ -3738,8 +3737,37 @@ final class InputController: IMKInputController {
         else {
             return []
         }
-
+        if let cache = try? basicDictionaryCache(),
+           let cachedEntries = loadEntries(from: cache) {
+            return addingBundledKeyboardSymbols(
+                to: cachedEntries,
+                bundledEntries: entries
+            )
+        }
         return entries
+    }
+
+    private static func addingBundledKeyboardSymbols(
+        to entries: [DictionaryEntry],
+        bundledEntries: [DictionaryEntry]? = nil
+    ) -> [DictionaryEntry] {
+        let bundled = bundledEntries ?? {
+            guard let text = loadBundledText(resource: "basic-dictionary"),
+                  let parsed = try? DictionaryParser().parse(text) else {
+                return []
+            }
+            return parsed
+        }()
+        let readings: Set<String> = [
+            "opushon", "kontorooru", "shifuto", "supeesu", "ritaan",
+            "komando", "kyappusurokku", "esukeepu", "entaa", "tabu",
+            "deriito", "fowaadoderiito", "bakkusupeesu", "ijekuto",
+            "command", "cmd", "option", "alt", "shift", "control",
+            "ctrl", "capslock", "escape", "esc", "return", "enter",
+            "tab", "delete", "forwarddelete", "backspace", "space",
+            "eject"
+        ]
+        return entries + bundled.filter { readings.contains($0.input) }
     }
 
     private static func loadBundledText(resource: String) -> String? {
