@@ -2335,6 +2335,9 @@ final class InputController: IMKInputController {
         ) == conversionReading
             ? javaScriptExtensionCandidates
             : []
+        let numericPrefixCandidates = numericPrefixCandidates(
+            for: conversionReading
+        )
         let inflectionCandidates = mergedCandidates(
             lookup: {
                 verbInflectionGenerator.candidates(for: $0)
@@ -2357,6 +2360,7 @@ final class InputController: IMKInputController {
         let directCandidates = userCandidates.exact
             + extensionCandidates.exact
             + dateTimeCandidates
+            + numericPrefixCandidates
             + scriptCandidates
             + imeCandidates.exact
             + basicCandidates.exact
@@ -3087,6 +3091,52 @@ final class InputController: IMKInputController {
         }
     }
 
+    private func numericPrefixCandidates(for input: String) -> [String] {
+        guard let parts = NumericPrefixCandidateComposer.parts(of: input) else {
+            return []
+        }
+        let readings = RomajiCanonicalizer.dictionaryLookupInputs(
+            from: parts.reading
+        )
+        let user = mergedCandidateGroups(
+            lookup: { userConversionEngine.candidateGroups(matching: $0) },
+            readings: readings
+        ).exact
+        let extensions = isExtensionDictionaryEnabled
+            ? mergedCandidateGroups(
+                lookup: {
+                    extensionConversionEngine.candidateGroups(matching: $0)
+                },
+                readings: readings
+            ).exact
+            : []
+        let ime = mergedCandidateGroups(
+            lookup: {
+                mozcConversionEngine.candidateGroups(
+                    matching: $0,
+                    limit: Self.maximumMozcDictionaryPrefixCandidates
+                )
+            },
+            readings: readings
+        ).exact
+        let basic = mergedCandidateGroups(
+            lookup: { basicConversionEngine.candidateGroups(matching: $0) },
+            readings: readings
+        ).exact
+        let kana = [
+            romajiConverter.hiragana(from: parts.reading),
+            romajiConverter.katakana(from: parts.reading)
+        ].compactMap { $0 }
+        let converted = CandidateRecencyOrderer.ordered(
+            user + extensions + ime + basic + kana,
+            ranks: candidateSelectionHistory.ranks(for: parts.reading)
+        )
+        return NumericPrefixCandidateComposer.candidates(
+            for: input,
+            convertedReadings: converted
+        )
+    }
+
     private func mergedCandidateGroups(
         lookup: (String) -> DictionaryCandidateGroups,
         readings: [String]
@@ -3576,7 +3626,10 @@ final class InputController: IMKInputController {
     }
 
     private var conversionReading: String {
-        String(
+        if NumericPrefixCandidateComposer.parts(of: inputBuffer) != nil {
+            return inputBuffer
+        }
+        return String(
             inputBuffer.prefix {
                 $0.isASCII
                     && ($0.isLetter || $0 == "-" || $0 == "'")
