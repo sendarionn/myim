@@ -2214,6 +2214,16 @@ final class InputController: IMKInputController {
             showCandidateWindow(client: sender)
             return
         }
+        let numericFormatCandidates = NumberGroupingCandidateGenerator
+            .candidates(for: inputBuffer)
+            + JapaneseNumericUnitCandidateGenerator.candidates(
+                for: inputBuffer
+            )
+        if !numericFormatCandidates.isEmpty {
+            currentCandidates = numericFormatCandidates
+            showCandidateWindow(client: sender)
+            return
+        }
         let numberCandidates = JapaneseNumberConverter.candidates(
             for: inputBuffer
         )
@@ -3499,6 +3509,12 @@ final class InputController: IMKInputController {
 
     private var conversionSuffix: String {
         if !CalculatorCandidateGenerator.candidates(for: inputBuffer).isEmpty
+            || !NumberGroupingCandidateGenerator.candidates(
+                for: inputBuffer
+            ).isEmpty
+            || !JapaneseNumericUnitCandidateGenerator.candidates(
+                for: inputBuffer
+            ).isEmpty
             || !JapaneseNumberConverter.candidates(for: inputBuffer).isEmpty
             || !JapaneseSymbolConverter.candidates(for: inputBuffer).isEmpty {
             return ""
