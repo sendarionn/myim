@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import MyIMECore
 
 private final class CalendarPanel: NSPanel {
     var cancelAction: (() -> Void)?
@@ -11,9 +12,106 @@ private final class CalendarPanel: NSPanel {
     }
 }
 
-private final class CalendarDatePicker: NSDatePicker {
+private final class CalendarGridView: NSView {
     var confirmAction: (() -> Void)?
     var cancelAction: (() -> Void)?
+    private(set) var selectedDate = Date()
+    private var displayedMonth = Date()
+    private var calendar: Calendar = {
+        var value = Calendar.current
+        value.firstWeekday = 1
+        return value
+    }()
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let previousYearButton = NSButton(title: "«", target: nil, action: nil)
+    private let previousButton = NSButton(title: "‹", target: nil, action: nil)
+    private let nextButton = NSButton(title: "›", target: nil, action: nil)
+    private let nextYearButton = NSButton(title: "»", target: nil, action: nil)
+    private var weekdayLabels: [NSTextField] = []
+    private var dayButtons: [NSButton] = []
+    private var dates: [Date] = []
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        titleLabel.alignment = .center
+        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        addSubview(titleLabel)
+        for button in [previousYearButton, previousButton, nextButton, nextYearButton] {
+            button.bezelStyle = .inline
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 17)
+            addSubview(button)
+        }
+        previousYearButton.target = self
+        previousYearButton.action = #selector(showPreviousYear)
+        previousButton.target = self
+        previousButton.action = #selector(showPreviousMonth)
+        nextButton.target = self
+        nextButton.action = #selector(showNextMonth)
+        nextYearButton.target = self
+        nextYearButton.action = #selector(showNextYear)
+
+        for name in ["日", "月", "火", "水", "木", "金", "土"] {
+            let label = NSTextField(labelWithString: name)
+            label.alignment = .center
+            label.font = .systemFont(ofSize: 11, weight: .medium)
+            weekdayLabels.append(label)
+            addSubview(label)
+        }
+        for index in 0..<42 {
+            let button = NSButton(title: "", target: self, action: #selector(selectDay(_:)))
+            button.tag = index
+            button.bezelStyle = .rounded
+            button.isBordered = false
+            button.font = .systemFont(ofSize: 13)
+            button.focusRingType = .none
+            dayButtons.append(button)
+            addSubview(button)
+        }
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func setDate(_ date: Date) {
+        selectedDate = date
+        displayedMonth = CalendarGridNavigator.monthStart(
+            containing: date,
+            calendar: calendar
+        ) ?? date
+        reload()
+    }
+
+    override func layout() {
+        super.layout()
+        let padding: CGFloat = 9
+        let headerHeight: CGFloat = 28
+        let weekdayHeight: CGFloat = 18
+        let gridTop = bounds.height - padding - headerHeight - weekdayHeight
+        let cellWidth = (bounds.width - padding * 2) / 7
+        let cellHeight = (gridTop - padding) / 6
+        let buttonWidth: CGFloat = 24
+        let headerY = bounds.height - padding - headerHeight
+        previousYearButton.frame = NSRect(x: padding, y: headerY, width: buttonWidth, height: headerHeight)
+        previousButton.frame = NSRect(x: padding + buttonWidth, y: headerY, width: buttonWidth, height: headerHeight)
+        nextYearButton.frame = NSRect(x: bounds.width - padding - buttonWidth, y: headerY, width: buttonWidth, height: headerHeight)
+        nextButton.frame = NSRect(x: bounds.width - padding - buttonWidth * 2, y: headerY, width: buttonWidth, height: headerHeight)
+        titleLabel.frame = NSRect(x: padding + buttonWidth * 2, y: headerY, width: bounds.width - padding * 2 - buttonWidth * 4, height: headerHeight)
+        for column in 0..<7 {
+            weekdayLabels[column].frame = NSRect(x: padding + CGFloat(column) * cellWidth, y: gridTop, width: cellWidth, height: weekdayHeight)
+        }
+        for index in 0..<42 {
+            let row = index / 7
+            let column = index % 7
+            dayButtons[index].frame = NSRect(
+                x: padding + CGFloat(column) * cellWidth,
+                y: gridTop - CGFloat(row + 1) * cellHeight,
+                width: cellWidth,
+                height: cellHeight
+            )
+        }
+    }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
@@ -21,9 +119,93 @@ private final class CalendarDatePicker: NSDatePicker {
             confirmAction?()
         case 53:
             cancelAction?()
+        case 123, 124:
+            let direction = event.keyCode == 123 ? -1 : 1
+            if event.modifierFlags.contains(.option) {
+                change(component: .month, by: direction)
+                return
+            }
+            if let move = CalendarGridNavigator.horizontalMove(
+                from: selectedDate,
+                displayedMonth: displayedMonth,
+                direction: direction,
+                calendar: calendar
+            ) {
+                selectedDate = move.date
+                displayedMonth = move.displayedMonth
+                reload()
+            }
+        case 125, 126:
+            if event.modifierFlags.contains(.option) {
+                change(component: .year, by: event.keyCode == 125 ? 1 : -1)
+                return
+            }
+            let days = event.keyCode == 125 ? 7 : -7
+            if let date = calendar.date(byAdding: .day, value: days, to: selectedDate) {
+                selectedDate = date
+                if !calendar.isDate(date, equalTo: displayedMonth, toGranularity: .month) {
+                    displayedMonth = CalendarGridNavigator.monthStart(containing: date, calendar: calendar) ?? date
+                }
+                reload()
+            }
         default:
-            super.keyDown(with: event)
+            break
         }
+    }
+
+    private func reload() {
+        dates = CalendarGridNavigator.gridDates(displayedMonth: displayedMonth, calendar: calendar)
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.dateFormat = "yyyy年M月"
+        titleLabel.stringValue = formatter.string(from: displayedMonth)
+        for (index, button) in dayButtons.enumerated() where index < dates.count {
+            let date = dates[index]
+            button.title = String(calendar.component(.day, from: date))
+            let inMonth = calendar.isDate(date, equalTo: displayedMonth, toGranularity: .month)
+            let isToday = calendar.isDateInToday(date)
+            button.contentTintColor = isToday
+                ? .controlAccentColor
+                : (inMonth ? .labelColor : .tertiaryLabelColor)
+            button.font = .systemFont(ofSize: 13, weight: isToday ? .bold : .regular)
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 5
+            button.layer?.borderWidth = isToday ? 1.5 : 0
+            button.layer?.borderColor = isToday ? NSColor.controlAccentColor.cgColor : nil
+            button.isBordered = calendar.isDate(date, inSameDayAs: selectedDate)
+            button.bezelColor = button.isBordered ? .controlAccentColor : nil
+        }
+        needsDisplay = true
+    }
+
+    @objc private func selectDay(_ sender: NSButton) {
+        guard dates.indices.contains(sender.tag) else { return }
+        selectedDate = dates[sender.tag]
+        reload()
+        confirmAction?()
+    }
+
+    @objc private func showPreviousMonth() { changeMonth(by: -1) }
+    @objc private func showNextMonth() { changeMonth(by: 1) }
+    @objc private func showPreviousYear() { change(component: .year, by: -1) }
+    @objc private func showNextYear() { change(component: .year, by: 1) }
+
+    private func changeMonth(by offset: Int) {
+        change(component: .month, by: offset)
+    }
+
+    private func change(component: Calendar.Component, by offset: Int) {
+        guard let move = CalendarGridNavigator.shiftedSelection(
+            date: selectedDate,
+            displayedMonth: displayedMonth,
+            component: component,
+            value: offset,
+            calendar: calendar
+        ) else { return }
+        displayedMonth = move.displayedMonth
+        selectedDate = move.date
+        reload()
     }
 }
 
@@ -63,30 +245,18 @@ private final class CalendarFormatKeyPanel: NSPanel {
 }
 
 final class CalendarWindowController: NSObject {
-    private static let calendarScale: CGFloat = 1.2
-
     private let panel: CalendarPanel
     private let formatKeyPanel: CalendarFormatKeyPanel
-    private let datePicker: NSDatePicker
+    private let calendarView: CalendarGridView
     private var selectedDate: Date?
 
     override init() {
-        let calendarDatePicker = CalendarDatePicker(frame: .zero)
-        calendarDatePicker.datePickerStyle = .clockAndCalendar
-        calendarDatePicker.datePickerElements = [.yearMonthDay]
-        calendarDatePicker.isBordered = false
-        calendarDatePicker.focusRingType = .none
-        calendarDatePicker.sizeToFit()
-        let unscaledSize = calendarDatePicker.frame.size
-        calendarDatePicker.setFrameSize(NSSize(
-            width: unscaledSize.width * Self.calendarScale,
-            height: unscaledSize.height * Self.calendarScale
-        ))
-        calendarDatePicker.bounds = NSRect(origin: .zero, size: unscaledSize)
-        datePicker = calendarDatePicker
+        let gridSize = NSSize(width: 240, height: 234)
+        let calendarGrid = CalendarGridView(frame: NSRect(origin: .zero, size: gridSize))
+        calendarView = calendarGrid
 
         panel = CalendarPanel(
-            contentRect: NSRect(origin: .zero, size: calendarDatePicker.frame.size),
+            contentRect: NSRect(origin: .zero, size: gridSize),
             styleMask: [.titled, .utilityWindow],
             backing: .buffered,
             defer: true
@@ -104,21 +274,18 @@ final class CalendarWindowController: NSObject {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        datePicker.frame = panel.contentView?.bounds ?? datePicker.frame
-        panel.contentView?.addSubview(datePicker)
+        calendarView.frame = panel.contentView?.bounds ?? calendarView.frame
+        calendarView.autoresizingMask = [.width, .height]
+        panel.contentView?.addSubview(calendarView)
         panel.cancelAction = { [weak self] in
             self?.cancelSelection()
         }
-        if let calendarDatePicker = datePicker as? CalendarDatePicker {
-            calendarDatePicker.confirmAction = { [weak self] in
-                self?.confirmSelection()
-            }
-            calendarDatePicker.cancelAction = { [weak self] in
-                self?.cancelSelection()
-            }
+        calendarView.confirmAction = { [weak self] in
+            self?.confirmSelection()
         }
-        datePicker.target = self
-        datePicker.action = #selector(selectDate(_:))
+        calendarView.cancelAction = { [weak self] in
+            self?.cancelSelection()
+        }
         formatKeyPanel.level = .popUpMenu
         formatKeyPanel.alphaValue = 0.01
         formatKeyPanel.isOpaque = false
@@ -139,7 +306,7 @@ final class CalendarWindowController: NSObject {
         initialDate: Date = Date()
     ) -> Date? {
         selectedDate = nil
-        datePicker.dateValue = initialDate
+        calendarView.setDate(initialDate)
         position(near: anchorFrame)
 
         let previousPolicy = NSApp.activationPolicy()
@@ -151,7 +318,7 @@ final class CalendarWindowController: NSObject {
         )
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(datePicker)
+        panel.makeFirstResponder(calendarView)
 
         let response = NSApp.runModal(for: panel)
         panel.orderOut(nil)
@@ -256,12 +423,8 @@ final class CalendarWindowController: NSObject {
         return pow(point.x - x, 2) + pow(point.y - y, 2)
     }
 
-    @objc private func selectDate(_ sender: NSDatePicker) {
-        confirmSelection()
-    }
-
     private func confirmSelection() {
-        selectedDate = datePicker.dateValue
+        selectedDate = calendarView.selectedDate
         NSApp.stopModal(withCode: .OK)
     }
 
