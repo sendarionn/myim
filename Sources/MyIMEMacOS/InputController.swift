@@ -1486,8 +1486,7 @@ final class InputController: IMKInputController {
         let flags = event.modifierFlags.intersection(
             [.command, .control, .option, .shift]
         )
-        return (event.keyCode == 36 || event.keyCode == 76)
-            && flags == [.option]
+        return event.keyCode == 2 && flags == [.option]
     }
 
     private func handleTabDictionaryRegistration(
@@ -2978,8 +2977,8 @@ final class InputController: IMKInputController {
                 : "Tab / 矢印 移動　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
         } else {
             guide = selectedCandidateIndex == nil
-                ? "Tab 選択　⌥↩ 辞書登録\nF6–F10 文字種変換　⌘O 外部ページ"
-                : "Tab / 矢印 移動　↩ 確定　Esc 解除\n⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
+                ? "Tab 選択　⌥D 辞書登録\nF6–F10 文字種変換　⌘O 外部ページ"
+                : "Tab / 矢印 移動　↩ 確定　Esc 解除\n⌥D 辞書登録　⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
         }
 
         if !candidateFilterConditions.isEmpty {
