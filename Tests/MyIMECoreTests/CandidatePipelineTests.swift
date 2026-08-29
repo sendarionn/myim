@@ -97,6 +97,22 @@ struct CandidatePipelineTests {
     }
 
     @Test
+    func keepsTrailingCandidateAfterLowercaseAndKana() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["まいむ", "マイム"],
+                direct: ["myim"],
+                other: [],
+                trailing: ["MYIM"],
+                recencyRanks: ["MYIM": 100],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates == ["myim", "まいむ", "マイム", "MYIM"])
+    }
+
+    @Test
     func keepsExactCandidateAheadOfLearnedCompletion() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(

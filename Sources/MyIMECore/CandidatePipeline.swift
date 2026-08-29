@@ -4,6 +4,7 @@ public struct CandidatePipeline: Sendable {
         public let direct: [String]
         public let other: [String]
         public let english: [String]
+        public let trailing: [String]
         public let recencyRanks: [String: Int]
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
@@ -13,6 +14,7 @@ public struct CandidatePipeline: Sendable {
             direct: [String],
             other: [String],
             english: [String] = [],
+            trailing: [String] = [],
             recencyRanks: [String: Int],
             contextualCandidates: [String] = [],
             prioritizeKana: Bool
@@ -21,6 +23,7 @@ public struct CandidatePipeline: Sendable {
             self.direct = direct
             self.other = other
             self.english = english
+            self.trailing = trailing
             self.recencyRanks = recencyRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
@@ -42,10 +45,13 @@ public struct CandidatePipeline: Sendable {
             contextualCandidates: input.contextualCandidates,
             prioritizeKana: input.prioritizeKana
         )
-        return candidates.movingEnglishCandidatesAfterCloseJapaneseCandidates(
+        let prioritized = candidates.movingEnglishCandidatesAfterCloseJapaneseCandidates(
             english: input.english,
             closeJapanese: kana + input.direct
         )
+        let trailing = input.trailing.removingDuplicates()
+        let trailingSet = Set(trailing)
+        return prioritized.filter { !trailingSet.contains($0) } + trailing
     }
 
     private func orderedKanaCandidates(
@@ -66,6 +72,11 @@ public struct CandidatePipeline: Sendable {
 }
 
 private extension Array where Element == String {
+    func removingDuplicates() -> [String] {
+        var seen = Set<String>()
+        return filter { seen.insert($0).inserted }
+    }
+
     func movingEnglishCandidatesAfterCloseJapaneseCandidates(
         english: [String],
         closeJapanese: [String]

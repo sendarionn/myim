@@ -2337,6 +2337,11 @@ final class InputController: IMKInputController {
         let numericPrefixCandidates = numericPrefixCandidates(
             for: conversionReading
         )
+        let uppercaseCandidates = inputBuffer == conversionReading
+            ? EnglishCandidateCaseRestorer.uppercaseCandidate(
+                for: conversionReading
+            ).map { [$0] } ?? []
+            : []
         let inflectionCandidates = mergedCandidates(
             lookup: {
                 verbInflectionGenerator.candidates(for: $0)
@@ -2384,6 +2389,7 @@ final class InputController: IMKInputController {
                 direct: directCandidates,
                 other: otherCandidates,
                 english: englishCandidates,
+                trailing: uppercaseCandidates,
                 recencyRanks: candidateSelectionHistory.ranks(
                     for: conversionReading
                 ),
