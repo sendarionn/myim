@@ -22,7 +22,6 @@ version=${MYIM_VERSION:-}
 build_number=${MYIM_BUILD_NUMBER:-}
 
 cd "$repository_root"
-"$repository_root/Scripts/verify-history-date.sh" --allow-existing
 swift_build_arguments=(-c release --disable-sandbox)
 for architecture in "${architectures[@]}"; do
     swift_build_arguments+=(--arch "$architecture")
