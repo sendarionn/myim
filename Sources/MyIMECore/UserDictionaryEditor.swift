@@ -55,7 +55,9 @@ public enum UserDictionaryEditor {
             guard normalizedReadings.contains(normalizedReading) else {
                 return entry
             }
-            let candidates = entry.candidates.filter { $0 != candidate }
+            let candidates = entry.candidates.filter {
+                !matches(stored: $0, candidate: candidate)
+            }
             guard !candidates.isEmpty else {
                 return nil
             }
@@ -73,12 +75,20 @@ public enum UserDictionaryEditor {
         guard !candidate.isEmpty else { return entries }
 
         return entries.compactMap { entry in
-            let candidates = entry.candidates.filter { $0 != candidate }
+            let candidates = entry.candidates.filter {
+                !matches(stored: $0, candidate: candidate)
+            }
             guard !candidates.isEmpty else { return nil }
             return DictionaryEntry(
                 input: entry.input,
                 candidates: candidates
             )
         }
+    }
+
+    private static func matches(stored: String, candidate: String) -> Bool {
+        stored == candidate
+            || DictionaryCandidateRepresentation.display(from: stored) == candidate
+            || DictionaryCandidateRepresentation.value(from: stored) == candidate
     }
 }

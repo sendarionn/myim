@@ -2926,18 +2926,33 @@ final class InputController: IMKInputController {
             return
         }
         let candidate = currentCandidates[selectedCandidateIndex]
+        let historyCandidates: Set<String> = [
+            candidate,
+            candidateDisplayValue(candidate),
+            candidateValueForCommit(candidate)
+        ]
         let updatedEntries = UserDictionaryEditor.removing(
             candidate: candidate,
             from: userEntries
         )
-        guard updatedEntries != userEntries else {
+        let removesDictionaryEntry = updatedEntries != userEntries
+        let removesHistory = historyCandidates.contains {
+            candidateSelectionHistory.ranks[$0] != nil
+        }
+        guard removesDictionaryEntry || removesHistory else {
             NSSound.beep()
             return
         }
 
         do {
-            userEntries = updatedEntries
-            try persistUserDictionary()
+            if removesDictionaryEntry {
+                userEntries = updatedEntries
+                try persistUserDictionary()
+            }
+            candidateSelectionHistory.remove(historyCandidates)
+            candidateSelectionHistoryWriter.schedule(
+                candidateSelectionHistory
+            )
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(

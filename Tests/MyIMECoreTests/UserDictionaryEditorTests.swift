@@ -140,4 +140,20 @@ struct UserDictionaryEditorTests {
             DictionaryEntry(reading: "read", candidates: ["読む"])
         ])
     }
+
+    @Test
+    func removesDisplayCandidateByInsertedValue() throws {
+        let stored = try #require(DictionaryCandidateRepresentation.encoded(
+            display: "ミルミル",
+            value: "みるみる"
+        ))
+        let entries = [
+            DictionaryEntry(reading: "miru", candidates: [stored])
+        ]
+
+        #expect(UserDictionaryEditor.removing(
+            candidate: "みるみる",
+            from: entries
+        ).isEmpty)
+    }
 }

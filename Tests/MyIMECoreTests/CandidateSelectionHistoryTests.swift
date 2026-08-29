@@ -108,4 +108,15 @@ struct CandidateSelectionHistoryTests {
 
         #expect(restored.ranks(for: "sai")["再"] != nil)
     }
+
+    @Test
+    func removesCandidateFromRanksAndCompletions() {
+        var history = CandidateSelectionHistory()
+        history.record("みるみる", reading: "mirumiru")
+        history.remove(["みるみる"])
+
+        #expect(history.ranks["みるみる"] == nil)
+        #expect(history.ranks(for: "mirumiru")["みるみる"] == nil)
+        #expect(!history.completions(for: "miru").contains("みるみる"))
+    }
 }
