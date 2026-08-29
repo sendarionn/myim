@@ -61,6 +61,20 @@ struct DictionaryParserTests {
     }
 
     @Test
+    func preservesCandidateWithSeparateDisplayAndValue() throws {
+        let encoded = try #require(DictionaryCandidateRepresentation.encoded(
+            display: "トマトの画像",
+            value: "https://example.com/tomato.jpg"
+        ))
+        let entries = try DictionaryParser().parse(
+            "tomato\n \(encoded)\n"
+        )
+        #expect(entries == [
+            DictionaryEntry(reading: "tomato", candidates: [encoded])
+        ])
+    }
+
+    @Test
     func rejectsCandidateWithoutReading() {
         #expect(throws: DictionaryParserError.candidateWithoutReading(line: 1)) {
             try DictionaryParser().parse(" 見る")

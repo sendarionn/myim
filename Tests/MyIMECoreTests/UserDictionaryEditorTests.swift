@@ -47,6 +47,19 @@ struct UserDictionaryEditorTests {
     }
 
     @Test
+    func addsCandidateWithSeparateDisplayName() throws {
+        let result = UserDictionaryEditor.adding(
+            reading: "tomato",
+            candidate: "https://example.com/tomato.jpg",
+            display: "トマトの画像",
+            to: []
+        )
+        let candidate = try #require(result.first?.candidates.first)
+        #expect(DictionaryCandidateRepresentation.display(from: candidate) == "トマトの画像")
+        #expect(DictionaryCandidateRepresentation.value(from: candidate) == "https://example.com/tomato.jpg")
+    }
+
+    @Test
     func removesCandidateFromMatchingReading() {
         let entries = [
             DictionaryEntry(

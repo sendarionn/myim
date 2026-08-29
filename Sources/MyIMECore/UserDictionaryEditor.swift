@@ -2,6 +2,7 @@ public enum UserDictionaryEditor {
     public static func adding(
         reading: String,
         candidate: String,
+        display: String? = nil,
         to entries: [DictionaryEntry]
     ) -> [DictionaryEntry] {
         let normalizedReading =
@@ -9,6 +10,9 @@ public enum UserDictionaryEditor {
         guard !normalizedReading.isEmpty, !candidate.isEmpty else {
             return entries
         }
+        let storedCandidate = display.flatMap {
+            DictionaryCandidateRepresentation.encoded(display: $0, value: candidate)
+        } ?? candidate
 
         var result = entries
         if let index = result.firstIndex(where: {
@@ -16,8 +20,8 @@ public enum UserDictionaryEditor {
                 == normalizedReading
         }) {
             var candidates = result[index].candidates
-            if !candidates.contains(candidate) {
-                candidates.append(candidate)
+            if !candidates.contains(storedCandidate) {
+                candidates.append(storedCandidate)
             }
             result[index] = DictionaryEntry(
                 reading: result[index].reading,
@@ -25,7 +29,7 @@ public enum UserDictionaryEditor {
             )
         } else {
             result.append(
-                DictionaryEntry(reading: reading, candidates: [candidate])
+                DictionaryEntry(reading: reading, candidates: [storedCandidate])
             )
         }
         return result

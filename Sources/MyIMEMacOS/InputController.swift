@@ -9,6 +9,11 @@ final class InputController: IMKInputController {
         let reading: String
         var pastedCandidate: String?
         var confirmedCandidate: String?
+        var outputCandidate: String?
+
+        var isEnteringDisplayName: Bool {
+            outputCandidate != nil
+        }
     }
 
     private struct CandidateFilterDraft {
@@ -645,8 +650,12 @@ final class InputController: IMKInputController {
             return
         }
 
-        selectedCandidateIndex = currentCandidates.firstIndex(of: candidate)
-        showPreview(for: candidate)
+        selectedCandidateIndex = currentCandidates.firstIndex {
+            candidateDisplayValue($0) == candidate
+        }
+        if let selectedCandidateIndex {
+            showPreview(for: currentCandidates[selectedCandidateIndex])
+        }
     }
 
     override func candidateSelected(_ candidateString: NSAttributedString!) {
@@ -654,9 +663,14 @@ final class InputController: IMKInputController {
             return
         }
 
-        recordCandidateSelection(candidate)
+        let storedCandidate = currentCandidates.first {
+            candidateDisplayValue($0) == candidate
+        } ?? candidate
+        recordCandidateSelection(storedCandidate)
         if isTranslationModeEnabled {
-            selectedCandidateIndex = currentCandidates.firstIndex(of: candidate)
+            selectedCandidateIndex = currentCandidates.firstIndex(
+                of: storedCandidate
+            )
             appendCurrentInputToTranslationDraft(
                 suffix: "",
                 client: client() as Any
@@ -664,7 +678,7 @@ final class InputController: IMKInputController {
             return
         }
         commit(
-            candidateValueForCommit(candidate) + conversionSuffix,
+            candidateValueForCommit(storedCandidate) + conversionSuffix,
             to: client() as Any
         )
     }
@@ -1505,6 +1519,13 @@ final class InputController: IMKInputController {
             return false
         }
 
+        if isTabDictionaryRegistrationShortcut(event) {
+            return beginDisplayNameRegistration(
+                registration: &registration,
+                client: sender
+            )
+        }
+
         if handleInputFormFunctionKey(event, client: sender) {
             return true
         }
@@ -1517,13 +1538,19 @@ final class InputController: IMKInputController {
             if currentCandidate == nil,
                let confirmedCandidate = registration.confirmedCandidate {
                 do {
+                    let output = registration.outputCandidate
+                        ?? confirmedCandidate
+                    let display = registration.outputCandidate == nil
+                        ? nil
+                        : confirmedCandidate
                     try saveUserDictionaryEntry(
                         reading: registration.reading,
-                        candidate: confirmedCandidate
+                        candidate: output,
+                        display: display
                     )
                     tabDictionaryRegistration = nil
                     commit(
-                        confirmedCandidate,
+                        output,
                         to: sender,
                         replacingMarkedText: true
                     )
@@ -1690,6 +1717,36 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func beginDisplayNameRegistration(
+        registration: inout TabDictionaryRegistration,
+        client sender: Any
+    ) -> Bool {
+        guard !registration.isEnteringDisplayName else {
+            NSSound.beep()
+            return true
+        }
+        let currentCandidate = registration.pastedCandidate
+            ?? selectedCandidateValue
+            ?? inputBuffer.nilIfEmpty
+        let output = (registration.confirmedCandidate ?? "")
+            + (currentCandidate ?? "")
+        guard !output.isEmpty else {
+            NSSound.beep()
+            return true
+        }
+        registration.outputCandidate = output
+        registration.confirmedCandidate = nil
+        registration.pastedCandidate = nil
+        tabDictionaryRegistration = registration
+        inputBuffer = ""
+        inputCursor = 0
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        setMarkedText("", in: sender)
+        showTabDictionaryRegistration(client: sender)
+        return true
+    }
+
     private func showTabDictionaryRegistration(client sender: Any) {
         guard let registration = tabDictionaryRegistration else {
             return
@@ -1700,12 +1757,19 @@ final class InputController: IMKInputController {
             candidateWindow.show(
                 candidates: [
                     "読み: \(registration.reading)",
-                    "登録: \(confirmedCandidate)"
-                ],
+                    registration.isEnteringDisplayName
+                        ? "表示: \(confirmedCandidate)"
+                        : "登録: \(confirmedCandidate)",
+                    registration.outputCandidate.map { "出力: \($0)" }
+                ].compactMap { $0 },
                 selectedIndex: nil,
                 near: inputLocation(for: sender),
-                guide: "↩ 登録を確定　Esc 中止",
-                modeTitle: "登録したい文字列を入力"
+                guide: registration.isEnteringDisplayName
+                    ? "↩ 登録を確定　Esc 中止"
+                    : "↩ 登録を確定　⌥D 表示名も登録\nEsc 中止",
+                modeTitle: registration.isEnteringDisplayName
+                    ? "候補パネルの表示名を入力"
+                    : "登録したい文字列を入力"
             )
             return
         }
@@ -1716,12 +1780,19 @@ final class InputController: IMKInputController {
         candidateWindow.show(
             candidates: [
                 "読み: \(registration.reading)",
+                registration.outputCandidate.map { "出力: \($0)" },
                 candidateDisplay
-            ],
+            ].compactMap { $0 },
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "↩ 入力を追加　⌘V 貼付　Esc 中止",
-            modeTitle: "登録したい文字列を入力"
+            guide: registration.isEnteringDisplayName
+                ? "↩ 表示名を確定　⌘V 貼付　Esc 中止"
+                : (candidate == nil
+                    ? "↩ 入力を追加　⌘V 貼付　Esc 中止"
+                    : "↩ 入力を追加　⌥D 表示名も登録\n⌘V 貼付　Esc 中止"),
+            modeTitle: registration.isEnteringDisplayName
+                ? "候補パネルの表示名を入力"
+                : "登録したい文字列を入力"
         )
     }
 
@@ -1800,7 +1871,9 @@ final class InputController: IMKInputController {
         let registrationPrefix = tabDictionaryRegistration?
             .confirmedCandidate ?? translationDraft ?? ""
         setMarkedText(
-            registrationPrefix + currentCandidates[index] + conversionSuffix,
+            registrationPrefix
+                + candidateDisplayValue(currentCandidates[index])
+                + conversionSuffix,
             in: sender
         )
         showPreview(for: currentCandidates[index])
@@ -2824,11 +2897,13 @@ final class InputController: IMKInputController {
 
     private func saveUserDictionaryEntry(
         reading: String,
-        candidate: String
+        candidate: String,
+        display: String? = nil
     ) throws {
         userEntries = UserDictionaryEditor.adding(
             reading: reading,
             candidate: candidate,
+            display: display,
             to: userEntries
         )
         let cache = try Self.userDictionaryCache()
@@ -2865,7 +2940,10 @@ final class InputController: IMKInputController {
             try persistUserDictionary()
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
-            pasteboard.setString(candidate, forType: .string)
+            pasteboard.setString(
+                candidateValueForCommit(candidate),
+                forType: .string
+            )
             self.selectedCandidateIndex = nil
             updateMarkedText(in: sender)
             refreshCandidates(client: sender)
@@ -3019,7 +3097,7 @@ final class InputController: IMKInputController {
             : candidateFilterConditions.map { "[\($0.label)]" }.joined(separator: " ")
         candidateWindow.show(
             candidates: currentCandidates[pageStart..<pageEnd].map {
-                candidateValueForCommit($0)
+                candidateDisplayValue($0)
             },
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
@@ -3575,7 +3653,7 @@ final class InputController: IMKInputController {
             )
         }
         showPreview(
-            for: candidate,
+            for: candidateDisplayValue(candidate),
             beside: anchorFrame,
             includeDefinitions: true
         )
@@ -3872,7 +3950,11 @@ final class InputController: IMKInputController {
     }
 
     private func candidateValueForCommit(_ candidate: String) -> String {
-        CandidateCommitNormalizer.value(from: candidate)
+        DictionaryCandidateRepresentation.value(from: candidate)
+    }
+
+    private func candidateDisplayValue(_ candidate: String) -> String {
+        DictionaryCandidateRepresentation.display(from: candidate)
     }
 
     private static func loadDictionarySource() -> CosenseDictionarySource {
