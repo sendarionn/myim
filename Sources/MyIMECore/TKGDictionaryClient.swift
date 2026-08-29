@@ -91,11 +91,7 @@ public struct TKGDictionaryClient: Sendable {
                 ? nil
                 : DictionaryEntry(reading: reading, candidates: candidates)
         }
-        let dictionaryText = entries.map { entry in
-            ([entry.input] + entry.candidates.map { " \($0)" })
-                .joined(separator: "\n")
-        }
-        .joined(separator: "\n\n") + "\n"
+        let dictionaryText = DictionarySerializer.text(from: entries)
 
         return TKGDictionarySnapshot(
             generatedAt: index.metadata.generated,

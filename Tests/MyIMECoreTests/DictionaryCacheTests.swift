@@ -30,4 +30,29 @@ struct DictionaryCacheTests {
         )
         #expect(try cache.loadMetadata() == metadata)
     }
+
+    @Test
+    func migratesLegacyFilenameWhenSaving() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let cache = DictionaryCache(directoryURL: directory)
+        try "miru\n 見る\n".write(
+            to: cache.legacyDictionaryURL,
+            atomically: true,
+            encoding: .utf8
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        #expect(cache.readableDictionaryURL() == cache.legacyDictionaryURL)
+        try cache.save(
+            dictionaryText: "miru\t見る\n",
+            metadata: DictionaryCacheMetadata(syncedAt: Date(), entryCount: 1)
+        )
+        #expect(cache.readableDictionaryURL() == cache.dictionaryURL)
+        #expect(!FileManager.default.fileExists(atPath: cache.legacyDictionaryURL.path))
+    }
 }

@@ -8,7 +8,7 @@ struct DictionarySerializerTests {
         #expect(
             DictionarySerializer.text(from: [
                 DictionaryEntry(reading: "hiduke", candidates: ["日付"])
-            ]) == "hiduke\n 日付\n"
+            ]) == "hiduke\t日付\n"
         )
     }
 
@@ -22,6 +22,7 @@ struct DictionarySerializerTests {
             DictionaryEntry(reading: "tomato", candidates: [encoded])
         ]
         let text = DictionarySerializer.text(from: entries)
+        #expect(text == "tomato\tトマトの画像\thttps://example.com/tomato.jpg\n")
         #expect(try DictionaryParser().parse(text) == entries)
     }
 }

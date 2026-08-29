@@ -2,10 +2,17 @@ import Foundation
 
 public enum DictionarySerializer {
     public static func text(from entries: [DictionaryEntry]) -> String {
-        entries.map { entry in
-            ([entry.input] + entry.candidates.map { " \($0)" })
-                .joined(separator: "\n")
+        let lines = entries.flatMap { entry in
+            entry.candidates.map { candidate in
+                if let parts = DictionaryCandidateRepresentation.parts(
+                    from: candidate
+                ) {
+                    return "\(entry.input)\t\(parts.display)\t\(parts.value)"
+                }
+                return "\(entry.input)\t\(candidate)"
+            }
         }
-        .joined(separator: "\n\n") + (entries.isEmpty ? "" : "\n")
+        return lines.joined(separator: "\n")
+            + (lines.isEmpty ? "" : "\n")
     }
 }

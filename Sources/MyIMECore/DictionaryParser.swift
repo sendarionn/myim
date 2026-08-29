@@ -61,6 +61,49 @@ public struct DictionaryParser: Sendable {
                 continue
             }
 
+            if rawLine.first?.isWhitespace != true,
+               rawLine.contains("\t") {
+                if let entry = try makeEntry() {
+                    entries.append(entry)
+                }
+                currentReading = nil
+                currentCandidates = []
+                let columns = rawLine.split(
+                    separator: "\t",
+                    maxSplits: 2,
+                    omittingEmptySubsequences: false
+                ).map(String.init)
+                let reading = columns[0].trimmingCharacters(in: .whitespaces)
+                let candidate: String
+                if columns.count == 2 {
+                    candidate = columns[1]
+                } else if columns.count == 3,
+                          let encoded = DictionaryCandidateRepresentation.encoded(
+                              display: columns[1],
+                              value: columns[2]
+                          ) {
+                    candidate = encoded
+                } else {
+                    throw DictionaryParserError.readingWithoutCandidates(
+                        reading: reading,
+                        line: lineNumber
+                    )
+                }
+                let normalized = DictionaryCandidateRepresentation
+                    .normalizedForStorage(candidate)
+                guard !reading.isEmpty, !normalized.isEmpty else {
+                    throw DictionaryParserError.readingWithoutCandidates(
+                        reading: reading,
+                        line: lineNumber
+                    )
+                }
+                entries.append(DictionaryEntry(
+                    reading: reading,
+                    candidates: [normalized]
+                ))
+                continue
+            }
+
             let isCandidate = rawLine.first?.isWhitespace == true
             if isCandidate {
                 guard currentReading != nil else {

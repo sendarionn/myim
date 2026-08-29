@@ -3,6 +3,19 @@ import Testing
 
 struct DictionaryParserTests {
     @Test
+    func parsesTSVEntriesAndCandidates() throws {
+        let entries = try DictionaryParser().parse(
+            "miru\t見る\nmiru\t観る\nmiru\t診る\n"
+        )
+        #expect(entries == [
+            DictionaryEntry(
+                reading: "miru",
+                candidates: ["見る", "観る", "診る"]
+            )
+        ])
+    }
+
+    @Test
     func parsesEntriesAndCandidates() throws {
         let text = """
         miru

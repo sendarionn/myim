@@ -46,7 +46,23 @@ public struct DictionaryCache: Sendable {
     }
 
     public var dictionaryURL: URL {
+        directoryURL.appendingPathComponent("dictionary.tsv")
+    }
+
+    public var legacyDictionaryURL: URL {
         directoryURL.appendingPathComponent("dictionary.txt")
+    }
+
+    public func readableDictionaryURL(
+        fileManager: FileManager = .default
+    ) -> URL? {
+        if fileManager.fileExists(atPath: dictionaryURL.path) {
+            return dictionaryURL
+        }
+        if fileManager.fileExists(atPath: legacyDictionaryURL.path) {
+            return legacyDictionaryURL
+        }
+        return nil
     }
 
     public var metadataURL: URL {
@@ -54,7 +70,7 @@ public struct DictionaryCache: Sendable {
     }
 
     public func containsDictionary(fileManager: FileManager = .default) -> Bool {
-        fileManager.fileExists(atPath: dictionaryURL.path)
+        readableDictionaryURL(fileManager: fileManager) != nil
     }
 
     public func save(
@@ -71,6 +87,9 @@ public struct DictionaryCache: Sendable {
             atomically: true,
             encoding: .utf8
         )
+        if fileManager.fileExists(atPath: legacyDictionaryURL.path) {
+            try fileManager.removeItem(at: legacyDictionaryURL)
+        }
 
         let metadataData = try JSONEncoder().encode(metadata)
         try metadataData.write(to: metadataURL, options: .atomic)

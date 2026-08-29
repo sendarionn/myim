@@ -29,7 +29,7 @@ class ConvertTKGJEDictionaryTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "entries_index.json"
-            output = Path(directory) / "dictionary.txt"
+            output = Path(directory) / "dictionary.tsv"
             source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
             reading_count, candidate_count = MODULE.convert(
                 source,

@@ -240,6 +240,20 @@ Option＋左右矢印で前月と翌月、Option＋上下矢印で前年と翌�
 
 入力中のローマ字を読みとして、任意の文字列を登録できます
 
+辞書は1行1候補のTSVで保存します
+
+```text
+miru	見る
+miru	観る
+miru	診る
+```
+
+表示名付き候補は`読み、表示名、挿入文字列`の3列です
+
+```text
+tomato	トマトの画像	https://example.com/tomato.jpg
+```
+
 1. myimで読みを入力
 2. Option＋Dで辞書登録モードへ移る
 3. 登録したい文字列を入力するかCommand＋Vで貼り付ける
@@ -272,7 +286,7 @@ Option＋左右矢印で前月と翌月、Option＋上下矢印で前年と翌�
 保存先
 
 ```text
-~/Library/Application Support/myim/user/dictionary.txt
+~/Library/Application Support/myim/user/dictionary.tsv
 ```
 
 ### 次の入力候補
@@ -367,14 +381,13 @@ https://scrapbox.io/project-name
 ページの記述形式
 
 ```text
-miru
- 見る
- 診る
-
-ikiru
- 生きる
- 活きる
+miru	見る
+miru	診る
+ikiru	生きる
+ikiru	活きる
 ```
+
+従来のインデント形式も読み込めますが、ローカルキャッシュとユーザー辞書はTSVで保存します
 
 - 入力ソースメニューの「Cosenseプロジェクトを設定…」からURLを指定
 - 設定直後に同期し、プロジェクト別にローカルへキャッシュ

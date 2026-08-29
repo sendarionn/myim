@@ -821,7 +821,7 @@ final class InputController: IMKInputController {
 
                 let cache = try Self.extensionCache(for: source)
                 try cache.save(
-                    dictionaryText: dictionaryText,
+                    dictionaryText: DictionarySerializer.text(from: entries),
                     metadata: DictionaryCacheMetadata(
                         syncedAt: Date(),
                         entryCount: entries.count
@@ -3992,7 +3992,7 @@ final class InputController: IMKInputController {
         guard
             let dictionaryURL = inputMethodResourceURL(
                 forResource: "basic-dictionary",
-                withExtension: "txt"
+                withExtension: "tsv"
             ),
             let dictionaryText = try? String(
                 contentsOf: dictionaryURL,
@@ -4038,7 +4038,7 @@ final class InputController: IMKInputController {
     private static func loadBundledText(resource: String) -> String? {
         guard let url = inputMethodResourceURL(
             forResource: resource,
-            withExtension: "txt"
+            withExtension: "tsv"
         ) else {
             return nil
         }
@@ -4055,7 +4055,7 @@ final class InputController: IMKInputController {
         guard
             let dictionaryURL = inputMethodResourceURL(
                 forResource: "mozc-dictionary",
-                withExtension: "txt"
+                withExtension: "tsv"
             ),
             let engine = try? IndexedDictionaryEngine(contentsOf: dictionaryURL)
         else {
@@ -4168,15 +4168,30 @@ final class InputController: IMKInputController {
     ) -> [DictionaryEntry]? {
         guard
             cache.containsDictionary(),
+            let readableURL = cache.readableDictionaryURL(),
             let dictionaryText = try? String(
-                contentsOf: cache.dictionaryURL,
+                contentsOf: readableURL,
                 encoding: .utf8
             )
         else {
             return nil
         }
 
-        return try? DictionaryParser().parse(dictionaryText)
+        guard let entries = try? DictionaryParser().parse(dictionaryText) else {
+            return nil
+        }
+        let tsv = DictionarySerializer.text(from: entries)
+        if readableURL != cache.dictionaryURL || dictionaryText != tsv {
+            let metadata = (try? cache.loadMetadata()) ?? nil
+            try? cache.save(
+                dictionaryText: tsv,
+                metadata: metadata ?? DictionaryCacheMetadata(
+                    syncedAt: Date(),
+                    entryCount: entries.count
+                )
+            )
+        }
+        return entries
     }
 
     private static func extensionCache(

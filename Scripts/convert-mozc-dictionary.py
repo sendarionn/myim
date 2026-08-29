@@ -100,7 +100,7 @@ def parse_arguments() -> argparse.Namespace:
         description="Mozc OSS辞書をmyimのかな漢字変換辞書へ変換"
     )
     parser.add_argument("source", type=Path, help="Mozc dictionary_ossディレクトリ")
-    parser.add_argument("output", type=Path, help="出力するmozc-dictionary.txt")
+    parser.add_argument("output", type=Path, help="出力するmozc-dictionary.tsv")
     parser.add_argument("--metadata", type=Path, help="生成情報JSONの出力先")
     parser.add_argument("--source-revision", default="unknown")
     parser.add_argument("--maximum-candidates", type=int, default=32)
@@ -176,12 +176,10 @@ def write_dictionary(entries: dict[str, list[str]], output: Path) -> int:
     for reading, candidates in entries.items():
         if not candidates:
             continue
-        lines.append(reading)
-        lines.extend(f" {candidate}" for candidate in candidates)
-        lines.append("")
+        lines.extend(f"{reading}\t{candidate}" for candidate in candidates)
         candidate_count += len(candidates)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines), encoding="utf-8")
+    output.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
     return candidate_count
 
 

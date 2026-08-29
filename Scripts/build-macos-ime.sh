@@ -97,8 +97,8 @@ if [[ -n "$build_number" ]]; then
 fi
 cp "macOS/InfoPlist.strings" "$resources_directory/InfoPlist.strings"
 cp \
-    "Sources/MyIMEMacOS/Resources/basic-dictionary.txt" \
-    "$resources_directory/basic-dictionary.txt"
+    "Sources/MyIMEMacOS/Resources/basic-dictionary.tsv" \
+    "$resources_directory/basic-dictionary.tsv"
 cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary-LICENSE.txt" \
     "$resources_directory/basic-dictionary-LICENSE.txt"
@@ -106,8 +106,8 @@ cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary-source.json" \
     "$resources_directory/basic-dictionary-source.json"
 cp \
-    "Sources/MyIMEMacOS/Resources/mozc-dictionary.txt" \
-    "$resources_directory/mozc-dictionary.txt"
+    "Sources/MyIMEMacOS/Resources/mozc-dictionary.tsv" \
+    "$resources_directory/mozc-dictionary.tsv"
 cp \
     "Sources/MyIMEMacOS/Resources/mozc-dictionary-source.json" \
     "$resources_directory/mozc-dictionary-source.json"
@@ -121,11 +121,11 @@ cp \
     "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
     "$resources_directory/mozc-LICENSE.txt"
 cp \
-    "Sources/MyIMEMacOS/Resources/candidate-filter-aliases.txt" \
-    "$resources_directory/candidate-filter-aliases.txt"
+    "Sources/MyIMEMacOS/Resources/candidate-filter-aliases.tsv" \
+    "$resources_directory/candidate-filter-aliases.tsv"
 cp \
-    "Sources/MyIMEMacOS/Resources/kanji-filter-data.txt" \
-    "$resources_directory/kanji-filter-data.txt"
+    "Sources/MyIMEMacOS/Resources/kanji-filter-data.tsv" \
+    "$resources_directory/kanji-filter-data.tsv"
 cp \
     "Sources/MyIMEMacOS/Resources/UNICODE-LICENSE.txt" \
     "$resources_directory/UNICODE-LICENSE.txt"

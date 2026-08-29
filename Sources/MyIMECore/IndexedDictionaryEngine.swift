@@ -54,19 +54,16 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
     }
 
     private func containsCandidate(_ target: Data, at index: Int) -> Bool {
-        var position = lineEnd(startingAt: readingOffsets[index])
+        let expectedReading = reading(at: index)
+        var position = readingOffsets[index]
         while position < data.count {
             let start = position
             let end = lineEnd(startingAt: start)
             position = end < data.count ? end + 1 : end
             guard start < end else { continue }
-            let first = data[start]
-            guard first == 0x20 || first == 0x09 else { break }
-            var valueStart = start
-            while valueStart < end,
-                  data[valueStart] == 0x20 || data[valueStart] == 0x09 {
-                valueStart += 1
-            }
+            guard let tab = data[start..<end].firstIndex(of: 0x09),
+                  data[start..<tab].elementsEqual(expectedReading) else { break }
+            let valueStart = tab + 1
             var valueEnd = end
             while valueEnd > valueStart,
                   data[valueEnd - 1] == 0x0D || data[valueEnd - 1] == 0x20 {
@@ -120,15 +117,18 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
     private static func makeReadingOffsets(in data: Data) -> [Int] {
         var offsets: [Int] = []
         var lineStart = 0
+        var previousReading = Data()
         while lineStart < data.count {
             var lineEnd = lineStart
             while lineEnd < data.count, data[lineEnd] != 0x0A {
                 lineEnd += 1
             }
-            if lineStart < lineEnd {
-                let first = data[lineStart]
-                if first != 0x20, first != 0x09, first != 0x0D {
+            if lineStart < lineEnd,
+               let tab = data[lineStart..<lineEnd].firstIndex(of: 0x09) {
+                let reading = Data(data[lineStart..<tab])
+                if reading != previousReading {
                     offsets.append(lineStart)
+                    previousReading = reading
                 }
             }
             lineStart = lineEnd + 1
@@ -170,7 +170,7 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
     private func reading(at index: Int) -> Data.SubSequence {
         let start = readingOffsets[index]
         var end = start
-        while end < data.count, data[end] != 0x0A, data[end] != 0x0D {
+        while end < data.count, data[end] != 0x09, data[end] != 0x0A {
             end += 1
         }
         return data[start..<end]
@@ -180,7 +180,8 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
         guard limit > 0 else {
             return []
         }
-        var position = lineEnd(startingAt: readingOffsets[index])
+        let expectedReading = reading(at: index)
+        var position = readingOffsets[index]
         var seen = Set<String>()
         var result: [String] = []
 
@@ -191,15 +192,11 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
             guard start < end else {
                 continue
             }
-            let first = data[start]
-            guard first == 0x20 || first == 0x09 else {
+            guard let tab = data[start..<end].firstIndex(of: 0x09),
+                  data[start..<tab].elementsEqual(expectedReading) else {
                 break
             }
-            var valueStart = start
-            while valueStart < end,
-                  data[valueStart] == 0x20 || data[valueStart] == 0x09 {
-                valueStart += 1
-            }
+            let valueStart = tab + 1
             var valueEnd = end
             while valueEnd > valueStart,
                   data[valueEnd - 1] == 0x0D || data[valueEnd - 1] == 0x20 {

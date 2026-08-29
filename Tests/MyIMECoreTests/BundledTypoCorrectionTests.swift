@@ -11,7 +11,7 @@ struct BundledTypoCorrectionTests {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent(
-                "Sources/MyIMEMacOS/Resources/basic-dictionary.txt"
+                "Sources/MyIMEMacOS/Resources/basic-dictionary.tsv"
             )
         let dictionaryText = try String(
             contentsOf: dictionaryURL,
@@ -33,7 +33,7 @@ struct BundledTypoCorrectionTests {
         })
         let imeDictionaryURL = dictionaryURL
             .deletingLastPathComponent()
-            .appendingPathComponent("mozc-dictionary.txt")
+            .appendingPathComponent("mozc-dictionary.tsv")
         let imeDictionary = try IndexedDictionaryEngine(
             contentsOf: imeDictionaryURL
         )
@@ -48,7 +48,7 @@ struct BundledTypoCorrectionTests {
     @Test
     func findsKeyboardTypoInIMEDictionary() {
         let dictionary = IndexedDictionaryEngine(
-            data: Data("baiyou\n 培養\ngaiyou\n 概要\n".utf8)
+            data: Data("baiyou\t培養\ngaiyou\t概要\n".utf8)
         )
         let matches = RomajiKeyboardTypoGenerator.dictionaryMatches(
             for: "vaiyou",

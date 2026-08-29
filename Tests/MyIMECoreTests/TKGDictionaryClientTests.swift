@@ -36,6 +36,7 @@ struct TKGDictionaryClientTests {
 
         #expect(result.generatedAt == "2026-07-28T09:38:39Z")
         #expect(result.sourceEntryCount == 3)
+        #expect(result.dictionaryText == "miru\t見る\nmiru\t観る\niku\t行く\n")
         #expect(
             result.entries == [
                 DictionaryEntry(reading: "miru", candidates: ["見る", "観る"]),

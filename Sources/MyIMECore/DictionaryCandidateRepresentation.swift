@@ -25,6 +25,12 @@ public enum DictionaryCandidateRepresentation {
             : candidate
     }
 
+    public static func parts(
+        from candidate: String
+    ) -> (display: String, value: String)? {
+        split(candidate)
+    }
+
     private static func split(_ candidate: String) -> (display: String, value: String)? {
         guard let separatorIndex = candidate.firstIndex(of: "\t") else { return nil }
         let display = String(candidate[..<separatorIndex])

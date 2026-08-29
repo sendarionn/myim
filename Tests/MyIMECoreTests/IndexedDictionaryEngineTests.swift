@@ -7,16 +7,11 @@ struct IndexedDictionaryEngineTests {
     private let engine = IndexedDictionaryEngine(
         data: Data(
             """
-            あ
-             亜
-             あ
-
-            あい
-             愛
-             藍
-
-            い
-             胃
+            あ\t亜
+            あ\tあ
+            あい\t愛
+            あい\t藍
+            い\t胃
             """.utf8
         )
     )

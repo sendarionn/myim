@@ -31,7 +31,7 @@ def parse_arguments() -> argparse.Namespace:
         description="TKGJEのentries_index.jsonをmyim辞書形式へ変換"
     )
     parser.add_argument("source", type=Path, help="entries_index.json")
-    parser.add_argument("output", type=Path, help="出力するdictionary.txt")
+    parser.add_argument("output", type=Path, help="出力するdictionary.tsv")
     parser.add_argument(
         "--tiers",
         nargs="+",

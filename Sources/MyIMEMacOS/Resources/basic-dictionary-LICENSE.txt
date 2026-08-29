@@ -5,4 +5,4 @@ Creative Commons Zero v1.0 Universal
 https://creativecommons.org/publicdomain/zero/1.0/
 
 The source dictionary and its files are released under CC0 1.0 Universal
-The bundled basic-dictionary.txt was generated from entries_index.json
+The bundled basic-dictionary.tsv was generated from entries_index.json

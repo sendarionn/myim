@@ -64,7 +64,7 @@ myim形式へ変換します
 ```shell
 ./Scripts/convert-tkgje-dictionary.py \
   /tmp/tkgje-entries-index.json \
-  /tmp/tkgje-dictionary.txt
+  /tmp/tkgje-dictionary.tsv
 ```
 
 BasicとCoreだけを取り込む場合は語彙階層を指定します
@@ -72,7 +72,7 @@ BasicとCoreだけを取り込む場合は語彙階層を指定します
 ```shell
 ./Scripts/convert-tkgje-dictionary.py \
   /tmp/tkgje-entries-index.json \
-  /tmp/tkgje-dictionary.txt \
+  /tmp/tkgje-dictionary.tsv \
   --tiers basic core
 ```
 
