@@ -62,6 +62,17 @@ struct CalendarGridNavigatorTests {
         #expect(components(year.date) == [2025, 2, 28])
     }
 
+    @Test func selectsEnteredYearAndMonth() throws {
+        let move = try #require(CalendarGridNavigator.selection(
+            date: date(2024, 2, 29),
+            year: 2025,
+            month: 2,
+            calendar: calendar
+        ))
+        #expect(components(move.date) == [2025, 2, 28])
+        #expect(components(move.displayedMonth) == [2025, 2, 1])
+    }
+
     private func moved(
         _ source: (Int, Int, Int),
         month: (Int, Int, Int),

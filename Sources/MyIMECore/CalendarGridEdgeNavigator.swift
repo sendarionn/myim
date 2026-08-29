@@ -103,6 +103,24 @@ public enum CalendarGridNavigator {
         return CalendarGridMove(date: targetDate, displayedMonth: targetMonth)
     }
 
+    public static func selection(
+        date: Date,
+        year: Int,
+        month: Int,
+        calendar: Calendar = .current
+    ) -> CalendarGridMove? {
+        guard (1...9999).contains(year), (1...12).contains(month),
+              let targetMonth = calendar.date(
+                  from: DateComponents(year: year, month: month, day: 1)
+              ),
+              let days = calendar.range(of: .day, in: .month, for: targetMonth)
+        else { return nil }
+        var parts = DateComponents(year: year, month: month)
+        parts.day = min(calendar.component(.day, from: date), days.upperBound - 1)
+        guard let targetDate = calendar.date(from: parts) else { return nil }
+        return CalendarGridMove(date: targetDate, displayedMonth: targetMonth)
+    }
+
     private static func leadingDayCount(for month: Date, calendar: Calendar) -> Int {
         let weekday = calendar.component(.weekday, from: month)
         return (weekday - calendar.firstWeekday + 7) % 7

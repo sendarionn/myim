@@ -10,6 +10,15 @@ private final class CalendarPanel: NSPanel {
     override func cancelOperation(_ sender: Any?) {
         cancelAction?()
     }
+
+    override func resignKey() {
+        super.resignKey()
+        guard NSApp.modalWindow === self else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, NSApp.modalWindow === self else { return }
+            self.cancelAction?()
+        }
+    }
 }
 
 private final class CalendarGridView: NSView {
@@ -22,11 +31,17 @@ private final class CalendarGridView: NSView {
         value.firstWeekday = 1
         return value
     }()
-    private let titleLabel = NSTextField(labelWithString: "")
+    private let titleLabel = NSButton(title: "", target: nil, action: nil)
+    private let yearField = NSTextField()
+    private let monthField = NSTextField()
+    private let applyDateButton = NSButton(title: "移動", target: nil, action: nil)
     private let previousYearButton = NSButton(title: "«", target: nil, action: nil)
     private let previousButton = NSButton(title: "‹", target: nil, action: nil)
     private let nextButton = NSButton(title: "›", target: nil, action: nil)
     private let nextYearButton = NSButton(title: "»", target: nil, action: nil)
+    private let shortcutLabel = NSTextField(
+        labelWithString: "矢印 移動　⌥←→ 月　⌥↑↓ 年\nReturn 確定　Esc 閉じる"
+    )
     private var weekdayLabels: [NSTextField] = []
     private var dayButtons: [NSButton] = []
     private var dates: [Date] = []
@@ -37,7 +52,31 @@ private final class CalendarGridView: NSView {
         super.init(frame: frameRect)
         titleLabel.alignment = .center
         titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.isBordered = false
+        titleLabel.bezelStyle = .inline
+        titleLabel.target = self
+        titleLabel.action = #selector(showYearMonthMenu)
+        titleLabel.toolTip = "年と月を選択"
         addSubview(titleLabel)
+        for field in [yearField, monthField] {
+            field.alignment = .center
+            field.font = .systemFont(ofSize: 12)
+            field.focusRingType = .none
+            field.isHidden = true
+            field.target = self
+            field.action = #selector(applyEnteredYearMonth)
+            addSubview(field)
+        }
+        yearField.placeholderString = "年"
+        monthField.placeholderString = "月"
+        yearField.nextKeyView = monthField
+        monthField.nextKeyView = yearField
+        applyDateButton.font = .systemFont(ofSize: 11)
+        applyDateButton.bezelStyle = .rounded
+        applyDateButton.isHidden = true
+        applyDateButton.target = self
+        applyDateButton.action = #selector(applyEnteredYearMonth)
+        addSubview(applyDateButton)
         for button in [previousYearButton, previousButton, nextButton, nextYearButton] {
             button.bezelStyle = .inline
             button.isBordered = false
@@ -52,6 +91,12 @@ private final class CalendarGridView: NSView {
         nextButton.action = #selector(showNextMonth)
         nextYearButton.target = self
         nextYearButton.action = #selector(showNextYear)
+        shortcutLabel.alignment = .center
+        shortcutLabel.font = .systemFont(ofSize: 9)
+        shortcutLabel.textColor = .secondaryLabelColor
+        shortcutLabel.maximumNumberOfLines = 2
+        shortcutLabel.lineBreakMode = .byWordWrapping
+        addSubview(shortcutLabel)
 
         for name in ["日", "月", "火", "水", "木", "金", "土"] {
             let label = NSTextField(labelWithString: name)
@@ -88,9 +133,10 @@ private final class CalendarGridView: NSView {
         let padding: CGFloat = 9
         let headerHeight: CGFloat = 28
         let weekdayHeight: CGFloat = 18
+        let footerHeight: CGFloat = 28
         let gridTop = bounds.height - padding - headerHeight - weekdayHeight
         let cellWidth = (bounds.width - padding * 2) / 7
-        let cellHeight = (gridTop - padding) / 6
+        let cellHeight = (gridTop - padding - footerHeight) / 6
         let buttonWidth: CGFloat = 24
         let headerY = bounds.height - padding - headerHeight
         previousYearButton.frame = NSRect(x: padding, y: headerY, width: buttonWidth, height: headerHeight)
@@ -98,6 +144,11 @@ private final class CalendarGridView: NSView {
         nextYearButton.frame = NSRect(x: bounds.width - padding - buttonWidth, y: headerY, width: buttonWidth, height: headerHeight)
         nextButton.frame = NSRect(x: bounds.width - padding - buttonWidth * 2, y: headerY, width: buttonWidth, height: headerHeight)
         titleLabel.frame = NSRect(x: padding + buttonWidth * 2, y: headerY, width: bounds.width - padding * 2 - buttonWidth * 4, height: headerHeight)
+        let inputX = padding + buttonWidth * 2
+        yearField.frame = NSRect(x: inputX, y: headerY + 3, width: 50, height: headerHeight - 6)
+        monthField.frame = NSRect(x: inputX + 53, y: headerY + 3, width: 32, height: headerHeight - 6)
+        applyDateButton.frame = NSRect(x: inputX + 88, y: headerY + 1, width: 38, height: headerHeight - 2)
+        shortcutLabel.frame = NSRect(x: padding, y: 2, width: bounds.width - padding * 2, height: footerHeight)
         for column in 0..<7 {
             weekdayLabels[column].frame = NSRect(x: padding + CGFloat(column) * cellWidth, y: gridTop, width: cellWidth, height: weekdayHeight)
         }
@@ -159,7 +210,7 @@ private final class CalendarGridView: NSView {
         formatter.calendar = calendar
         formatter.locale = Locale(identifier: "ja_JP")
         formatter.dateFormat = "yyyy年M月"
-        titleLabel.stringValue = formatter.string(from: displayedMonth)
+        titleLabel.title = formatter.string(from: displayedMonth)
         for (index, button) in dayButtons.enumerated() where index < dates.count {
             let date = dates[index]
             button.title = String(calendar.component(.day, from: date))
@@ -190,6 +241,37 @@ private final class CalendarGridView: NSView {
     @objc private func showNextMonth() { changeMonth(by: 1) }
     @objc private func showPreviousYear() { change(component: .year, by: -1) }
     @objc private func showNextYear() { change(component: .year, by: 1) }
+
+    @objc private func showYearMonthMenu() {
+        yearField.stringValue = String(calendar.component(.year, from: displayedMonth))
+        monthField.stringValue = String(calendar.component(.month, from: displayedMonth))
+        titleLabel.isHidden = true
+        yearField.isHidden = false
+        monthField.isHidden = false
+        applyDateButton.isHidden = false
+        window?.makeFirstResponder(yearField)
+        yearField.selectText(nil)
+    }
+
+    @objc private func applyEnteredYearMonth() {
+        guard let year = Int(yearField.stringValue),
+              let month = Int(monthField.stringValue),
+              let move = CalendarGridNavigator.selection(
+                  date: selectedDate,
+                  year: year,
+                  month: month,
+                  calendar: calendar
+              )
+        else { return }
+        selectedDate = move.date
+        displayedMonth = move.displayedMonth
+        titleLabel.isHidden = false
+        yearField.isHidden = true
+        monthField.isHidden = true
+        applyDateButton.isHidden = true
+        window?.makeFirstResponder(self)
+        reload()
+    }
 
     private func changeMonth(by offset: Int) {
         change(component: .month, by: offset)
@@ -249,6 +331,10 @@ final class CalendarWindowController: NSObject {
     private let formatKeyPanel: CalendarFormatKeyPanel
     private let calendarView: CalendarGridView
     private var selectedDate: Date?
+    private var outsideLocalMonitor: Any?
+    private var outsideGlobalMonitor: Any?
+    private var resignActiveObserver: NSObjectProtocol?
+    private var outsideClickTimer: Timer?
 
     override init() {
         let gridSize = NSSize(width: 240, height: 234)
@@ -319,8 +405,10 @@ final class CalendarWindowController: NSObject {
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(calendarView)
+        startOutsideClickMonitoring()
 
         let response = NSApp.runModal(for: panel)
+        stopOutsideClickMonitoring()
         panel.orderOut(nil)
         if NSApp.activationPolicy() != previousPolicy {
             _ = NSApp.setActivationPolicy(previousPolicy)
@@ -332,6 +420,7 @@ final class CalendarWindowController: NSObject {
     }
 
     func hide() {
+        stopOutsideClickMonitoring()
         if NSApp.modalWindow === panel {
             NSApp.abortModal()
         }
@@ -423,12 +512,74 @@ final class CalendarWindowController: NSObject {
         return pow(point.x - x, 2) + pow(point.y - y, 2)
     }
 
+    private func startOutsideClickMonitoring() {
+        stopOutsideClickMonitoring()
+        outsideLocalMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            self?.cancelIfClickIsOutsideCalendar()
+            return event
+        }
+        outsideGlobalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.cancelIfClickIsOutsideCalendar()
+            }
+        }
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: NSApp,
+            queue: .main
+        ) { [weak self] _ in
+            self?.cancelSelectionIfCalendarIsRunning()
+        }
+        outsideClickTimer = Timer.scheduledTimer(
+            withTimeInterval: 0.02,
+            repeats: true
+        ) { [weak self] _ in
+            guard NSEvent.pressedMouseButtons & 0b11 != 0 else { return }
+            self?.cancelIfClickIsOutsideCalendar()
+        }
+    }
+
+    private func stopOutsideClickMonitoring() {
+        if let monitor = outsideLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideLocalMonitor = nil
+        }
+        if let monitor = outsideGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideGlobalMonitor = nil
+        }
+        if let observer = resignActiveObserver {
+            NotificationCenter.default.removeObserver(observer)
+            resignActiveObserver = nil
+        }
+        outsideClickTimer?.invalidate()
+        outsideClickTimer = nil
+    }
+
+    private func cancelIfClickIsOutsideCalendar() {
+        guard panel.isVisible,
+              NSApp.modalWindow === panel,
+              !panel.frame.contains(NSEvent.mouseLocation)
+        else { return }
+        cancelSelection()
+    }
+
+    private func cancelSelectionIfCalendarIsRunning() {
+        guard panel.isVisible, NSApp.modalWindow === panel else { return }
+        cancelSelection()
+    }
+
     private func confirmSelection() {
         selectedDate = calendarView.selectedDate
         NSApp.stopModal(withCode: .OK)
     }
 
     private func cancelSelection() {
+        stopOutsideClickMonitoring()
         selectedDate = nil
         NSApp.stopModal(withCode: .cancel)
     }
