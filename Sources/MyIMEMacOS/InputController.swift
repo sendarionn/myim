@@ -110,6 +110,8 @@ final class InputController: IMKInputController {
     private var selectedCalendarFormatIndex: Int?
     private var calendarFormatTask: Task<Void, Never>?
     private var calendarSessionActive = false
+    private var calendarAnchorFrame: NSRect?
+    private var calendarReturnApplication: NSRunningApplication?
     private var fuzzySuggestions: [FuzzySuggestion] = []
     private var selectedFuzzySuggestionIndex: Int?
     private var dictionarySource: CosenseDictionarySource
@@ -264,8 +266,14 @@ final class InputController: IMKInputController {
         }
 
         if isCalendarShortcut(event) {
+            let anchorFrame = inputLocation(for: sender)
+            let returnApplication = NSWorkspace.shared.frontmostApplication
             DispatchQueue.main.async { [weak self] in
-                _ = self?.beginCalendarSelection(client: sender)
+                _ = self?.beginCalendarSelection(
+                    client: sender,
+                    anchorFrame: anchorFrame,
+                    returnApplication: returnApplication
+                )
             }
             return true
         }
@@ -1817,7 +1825,11 @@ final class InputController: IMKInputController {
                 || event.charactersIgnoringModifiers?.lowercased() == "c")
     }
 
-    private func beginCalendarSelection(client sender: Any) -> Bool {
+    private func beginCalendarSelection(
+        client sender: Any,
+        anchorFrame: NSRect,
+        returnApplication: NSRunningApplication?
+    ) -> Bool {
         guard inputBuffer.isEmpty,
               translationDraft == nil,
               tabDictionaryRegistration == nil else {
@@ -1830,8 +1842,11 @@ final class InputController: IMKInputController {
         calendarFormatCandidates = nil
         selectedCalendarFormatIndex = nil
         calendarSessionActive = true
+        calendarAnchorFrame = anchorFrame == .zero ? nil : anchorFrame
+        calendarReturnApplication = returnApplication
         guard let date = calendarWindow.runSelection(
-            near: inputLocation(for: sender)
+            near: calendarAnchorFrame ?? anchorFrame,
+            returnTo: calendarReturnApplication
         ) else {
             clearCalendarSelection()
             candidateWindow.hide()
@@ -1848,7 +1863,7 @@ final class InputController: IMKInputController {
         candidateWindow.show(
             candidates: ["書式を読み込み中"],
             selectedIndex: nil,
-            near: inputLocation(for: sender),
+            near: calendarInputLocation(for: sender),
             guide: "Esc 中止",
             modeTitle: "日付の書式を選択"
         )
@@ -1868,6 +1883,8 @@ final class InputController: IMKInputController {
             }
             guard let selectedIndex = self.calendarWindow.runFormatSelection(
                 candidateCount: orderedCandidates.count,
+                near: self.calendarInputLocation(for: sender),
+                returnTo: self.calendarReturnApplication,
                 selectionChanged: { [weak self] index in
                     guard let self else { return }
                     self.selectedCalendarFormatIndex = index
@@ -1927,7 +1944,7 @@ final class InputController: IMKInputController {
             candidateWindow.show(
                 candidates: ["書式候補なし"],
                 selectedIndex: nil,
-                near: inputLocation(for: sender),
+                near: calendarInputLocation(for: sender),
                 guide: "calendar.jsを確認　Esc 中止",
                 modeTitle: "日付の書式を選択"
             )
@@ -1940,7 +1957,7 @@ final class InputController: IMKInputController {
         candidateWindow.show(
             candidates: Array(candidates[pageStart..<pageEnd]),
             selectedIndex: selectedCalendarFormatIndex.map { $0 - pageStart },
-            near: inputLocation(for: sender),
+            near: calendarInputLocation(for: sender),
             guide: "Tab / 矢印 選択　↩ 入力　Esc 中止",
             modeTitle: "日付の書式を選択"
         )
@@ -1952,7 +1969,13 @@ final class InputController: IMKInputController {
         calendarFormatCandidates = nil
         selectedCalendarFormatIndex = nil
         calendarSessionActive = false
+        calendarAnchorFrame = nil
+        calendarReturnApplication = nil
         calendarWindow.hide()
+    }
+
+    private func calendarInputLocation(for sender: Any) -> NSRect {
+        calendarAnchorFrame ?? inputLocation(for: sender)
     }
 
     private func beginCandidateFilterInput(client sender: Any) -> Bool {

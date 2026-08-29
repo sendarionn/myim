@@ -124,6 +124,9 @@ final class CalendarWindowController: NSObject {
         formatKeyPanel.isOpaque = false
         formatKeyPanel.backgroundColor = .clear
         formatKeyPanel.isReleasedWhenClosed = false
+        formatKeyPanel.collectionBehavior = [
+            .canJoinAllSpaces, .fullScreenAuxiliary
+        ]
     }
 
     var isVisible: Bool {
@@ -132,19 +135,19 @@ final class CalendarWindowController: NSObject {
 
     func runSelection(
         near anchorFrame: NSRect,
+        returnTo previousApplication: NSRunningApplication?,
         initialDate: Date = Date()
     ) -> Date? {
         selectedDate = nil
         datePicker.dateValue = initialDate
         position(near: anchorFrame)
 
-        let previousApplication = NSWorkspace.shared.frontmostApplication
         let previousPolicy = NSApp.activationPolicy()
         if previousPolicy == .prohibited {
             _ = NSApp.setActivationPolicy(.accessory)
         }
         NSRunningApplication.current.activate(
-            options: [.activateIgnoringOtherApps, .activateAllWindows]
+            options: [.activateIgnoringOtherApps]
         )
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
@@ -171,6 +174,8 @@ final class CalendarWindowController: NSObject {
 
     func runFormatSelection(
         candidateCount: Int,
+        near anchorFrame: NSRect,
+        returnTo previousApplication: NSRunningApplication?,
         selectionChanged: @escaping (Int?) -> Void
     ) -> Int? {
         guard candidateCount > 0 else { return nil }
@@ -178,14 +183,13 @@ final class CalendarWindowController: NSObject {
         formatKeyPanel.selectedIndex = nil
         formatKeyPanel.selectionChanged = selectionChanged
 
-        let previousApplication = NSWorkspace.shared.frontmostApplication
         let previousPolicy = NSApp.activationPolicy()
         if previousPolicy == .prohibited {
             _ = NSApp.setActivationPolicy(.accessory)
         }
-        formatKeyPanel.setFrameOrigin(NSPoint(x: -10, y: -10))
+        formatKeyPanel.setFrameOrigin(anchorFrame.origin)
         NSRunningApplication.current.activate(
-            options: [.activateIgnoringOtherApps, .activateAllWindows]
+            options: [.activateIgnoringOtherApps]
         )
         NSApp.activate(ignoringOtherApps: true)
         formatKeyPanel.makeKeyAndOrderFront(nil)
@@ -204,21 +208,52 @@ final class CalendarWindowController: NSObject {
     }
 
     private func position(near anchorFrame: NSRect) {
-        let screen = NSScreen.screens.first {
-            $0.frame.intersects(anchorFrame)
-        } ?? NSScreen.main
+        let resolvedAnchor = anchorFrame == .zero
+            ? NSRect(origin: NSEvent.mouseLocation, size: NSSize(width: 1, height: 1))
+            : anchorFrame
+        let screens = NSScreen.screens
+        let screen = screens.max { lhs, rhs in
+            intersectionArea(lhs.frame, resolvedAnchor)
+                < intersectionArea(rhs.frame, resolvedAnchor)
+        }.flatMap {
+            intersectionArea($0.frame, resolvedAnchor) > 0 ? $0 : nil
+        } ?? nearestScreen(
+            to: NSPoint(x: resolvedAnchor.midX, y: resolvedAnchor.midY),
+            screens: screens
+        ) ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let size = panel.frame.size
         let x = min(
-            max(anchorFrame.minX, visibleFrame.minX),
+            max(resolvedAnchor.minX, visibleFrame.minX),
             visibleFrame.maxX - size.width
         )
-        var y = anchorFrame.minY - size.height - 6
+        var y = resolvedAnchor.minY - size.height - 6
         if y < visibleFrame.minY {
-            y = min(anchorFrame.maxY + 6, visibleFrame.maxY - size.height)
+            y = min(resolvedAnchor.maxY + 6, visibleFrame.maxY - size.height)
         }
         panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func intersectionArea(_ lhs: NSRect, _ rhs: NSRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        return intersection.isNull ? 0 : intersection.width * intersection.height
+    }
+
+    private func nearestScreen(
+        to point: NSPoint,
+        screens: [NSScreen]
+    ) -> NSScreen? {
+        screens.min { lhs, rhs in
+            squaredDistance(from: point, to: lhs.frame)
+                < squaredDistance(from: point, to: rhs.frame)
+        }
+    }
+
+    private func squaredDistance(from point: NSPoint, to rect: NSRect) -> CGFloat {
+        let x = min(max(point.x, rect.minX), rect.maxX)
+        let y = min(max(point.y, rect.minY), rect.maxY)
+        return pow(point.x - x, 2) + pow(point.y - y, 2)
     }
 
     @objc private func selectDate(_ sender: NSDatePicker) {
