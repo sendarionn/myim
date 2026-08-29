@@ -11,7 +11,6 @@ enum InputSourceMenuBuilder {
         let manageJavaScriptExtensions: Selector
         let toggleTranslationMode: Selector
         let translationModeEnabled: Bool
-        let syncCosenseDictionary: Selector
         let showStatus: Selector
     }
 
@@ -45,13 +44,6 @@ enum InputSourceMenuBuilder {
         menu.addItem(translationMode)
         menu.addItem(.separator())
         addAction(
-            title: "Cosense辞書を更新",
-            selector: actions.syncCosenseDictionary,
-            keyEquivalent: "r",
-            modifierMask: [.command, .option, .control],
-            to: menu
-        )
-        addAction(
             title: "状態を確認…",
             selector: actions.showStatus,
             to: menu
@@ -80,7 +72,6 @@ enum InputSourceMenuBuilder {
 
 enum SettingsWindowBuilder {
     struct FeatureStates {
-        let extensionDictionary: Bool
         let englishCompletion: Bool
         let wikipediaSuggestions: Bool
         let googleJapaneseInput: Bool
@@ -94,7 +85,6 @@ enum SettingsWindowBuilder {
     }
 
     struct Actions {
-        let toggleExtensionDictionary: Selector
         let toggleEnglishCompletion: Selector
         let toggleWikipediaSuggestions: Selector
         let toggleGoogleJapaneseInput: Selector
@@ -105,11 +95,9 @@ enum SettingsWindowBuilder {
         let clearNextInputHistory: Selector
         let toggleExternalInformationPanel: Selector
         let toggleSystemDictionaryPreview: Selector
+        let configureSystemDictionaries: Selector
         let toggleWebSearch: Selector
         let updateBasicDictionary: Selector
-        let configureCosenseProject: Selector
-        let configureCosenseAuthentication: Selector
-        let syncCosenseDictionary: Selector
     }
 
     static func make(
@@ -142,7 +130,6 @@ enum SettingsWindowBuilder {
 
         addSection("変換候補", to: stack)
         addCheckboxes([
-            ("Cosense拡張辞書を使用", actions.toggleExtensionDictionary, states.extensionDictionary),
             ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
             ("Wikipediaを辞書として利用", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
             ("Google CGI APIの変換候補を使用（入力内容をGoogleへ送信）", actions.toggleGoogleJapaneseInput, states.googleJapaneseInput),
@@ -163,10 +150,8 @@ enum SettingsWindowBuilder {
         ], target: target, to: stack)
         addSection("辞書管理", to: stack)
         addButtons([
-            ("TKGJE基本辞書を更新", actions.updateBasicDictionary),
-            ("Cosenseプロジェクトを設定…", actions.configureCosenseProject),
-            ("Cosense認証を設定…", actions.configureCosenseAuthentication),
-            ("Cosense辞書を更新", actions.syncCosenseDictionary)
+            ("表示するmacOS辞書…", actions.configureSystemDictionaries),
+            ("TKGJE基本辞書を更新", actions.updateBasicDictionary)
         ], target: target, to: stack)
 
         let scrollView = NSScrollView()

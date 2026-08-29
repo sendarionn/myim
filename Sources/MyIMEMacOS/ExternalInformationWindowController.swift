@@ -3,6 +3,7 @@ import MyIMECore
 
 final class ExternalInformationWindowController: NSObject {
     private struct PendingPresentation {
+        let requestID: UUID
         let url: URL?
         let panelTitle: String
         let definitions: [SystemDictionaryDefinition]
@@ -12,14 +13,13 @@ final class ExternalInformationWindowController: NSObject {
 
     private static let spacing: CGFloat = 8
     private static let informationPanelSize = NSSize(width: 420, height: 420)
+    private static let navigationDebounce: TimeInterval = 0.2
+    private static let displayDelay: TimeInterval = 0.5
 
     private let definitionPanel: NSPanel
     private let definitionTextView: NSTextView
     private let externalBrowser = ExternalBrowserBridge()
-    private var informationPanelFrame = NSRect(
-        origin: .zero,
-        size: informationPanelSize
-    )
+    private var informationPanelFrame = NSRect(origin: .zero, size: informationPanelSize)
     private var displayedURL: URL?
     private var requestID = UUID()
     private var displayTask: Task<Void, Never>?
@@ -28,8 +28,6 @@ final class ExternalInformationWindowController: NSObject {
     private(set) var isInteractionActive = false
     var onInteractionBegan: (() -> Void)?
     var onInteractionEnded: (() -> Void)?
-    private static let navigationDebounce: TimeInterval = 0.2
-    private static let displayDelay: TimeInterval = 0.5
 
     override init() {
         definitionTextView = NSTextView(frame: .zero)
@@ -37,10 +35,7 @@ final class ExternalInformationWindowController: NSObject {
             title: "macOS辞書",
             size: NSSize(width: 420, height: 220)
         )
-
         super.init()
-
-        Self.removeLegacyCookieFile()
         externalBrowser.onInteractionBegan = { [weak self] in
             self?.beginInteraction()
         }
@@ -49,13 +44,12 @@ final class ExternalInformationWindowController: NSObject {
         definitionTextView.drawsBackground = false
         definitionTextView.font = .systemFont(ofSize: 13)
         definitionTextView.textContainerInset = NSSize(width: 8, height: 7)
-
-        let definitionScrollView = NSScrollView()
-        definitionScrollView.documentView = definitionTextView
-        definitionScrollView.hasVerticalScroller = true
-        definitionScrollView.autohidesScrollers = true
-        definitionScrollView.drawsBackground = false
-        definitionPanel.contentView = definitionScrollView
+        let scrollView = NSScrollView()
+        scrollView.documentView = definitionTextView
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        definitionPanel.contentView = scrollView
     }
 
     func show(
@@ -64,28 +58,33 @@ final class ExternalInformationWindowController: NSObject {
         definitions: [SystemDictionaryDefinition],
         showExternalInformation: Bool,
         beside candidateFrame: NSRect
-    ) {
+    ) -> UUID {
+        let currentRequestID = UUID()
+        requestID = currentRequestID
         if isInteractionActive {
             pendingPresentation = PendingPresentation(
+                requestID: currentRequestID,
                 url: url,
                 panelTitle: panelTitle,
                 definitions: definitions,
                 showExternalInformation: showExternalInformation,
                 candidateFrame: candidateFrame
             )
-            return
+            return currentRequestID
         }
-
         present(
+            requestID: currentRequestID,
             url: url,
             panelTitle: panelTitle,
             definitions: definitions,
             showExternalInformation: showExternalInformation,
             beside: candidateFrame
         )
+        return currentRequestID
     }
 
     private func present(
+        requestID currentRequestID: UUID,
         url: URL?,
         panelTitle: String,
         definitions: [SystemDictionaryDefinition],
@@ -94,10 +93,8 @@ final class ExternalInformationWindowController: NSObject {
     ) {
         displayTask?.cancel()
         navigationTask?.cancel()
-        let currentRequestID = UUID()
         requestID = currentRequestID
         externalBrowser.hide()
-
         definitionPanel.orderOut(nil)
         if !definitions.isEmpty {
             definitionTextView.textStorage?.setAttributedString(
@@ -105,68 +102,34 @@ final class ExternalInformationWindowController: NSObject {
             )
             definitionTextView.scrollToBeginningOfDocument(nil)
         }
-
         if showExternalInformation, let url, displayedURL != url {
-            let navigationDelay = min(
-                Self.navigationDebounce,
-                Self.displayDelay
-            )
+            let delay = min(Self.navigationDebounce, Self.displayDelay)
             navigationTask = Task { @MainActor [weak self] in
-                if navigationDelay > 0 {
-                    try? await Task.sleep(
-                        for: .milliseconds(Int(navigationDelay * 1_000))
-                    )
+                if delay > 0 {
+                    try? await Task.sleep(for: .milliseconds(Int(delay * 1_000)))
                 }
-                guard
-                    !Task.isCancelled,
-                    let self,
-                    requestID == currentRequestID
-                else {
-                    return
-                }
+                guard !Task.isCancelled, let self,
+                      requestID == currentRequestID else { return }
                 positionInformationPanel(near: candidateFrame)
-                externalBrowser.send(browserCommand(
-                    url: url,
-                    title: panelTitle,
-                    isVisible: false
-                ))
+                externalBrowser.send(browserCommand(url: url, title: panelTitle, isVisible: false))
                 displayedURL = url
             }
         }
-
         displayTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else {
-                return
-            }
-            guard
-                let self,
-                requestID == currentRequestID
-            else {
-                return
-            }
-
+            guard !Task.isCancelled, let self,
+                  requestID == currentRequestID else { return }
             if !definitions.isEmpty {
                 positionDefinitionPanel(near: candidateFrame)
                 definitionPanel.orderFrontRegardless()
             }
-            guard showExternalInformation, let url else {
-                return
-            }
+            guard showExternalInformation, let url else { return }
             positionInformationPanel(near: candidateFrame)
-            externalBrowser.send(browserCommand(
-                url: url,
-                title: panelTitle,
-                isVisible: true
-            ))
+            externalBrowser.send(browserCommand(url: url, title: panelTitle, isVisible: true))
         }
     }
 
-    private func browserCommand(
-        url: URL,
-        title: String,
-        isVisible: Bool
-    ) -> ExternalBrowserCommand {
+    private func browserCommand(url: URL, title: String, isVisible: Bool) -> ExternalBrowserCommand {
         let frame = informationPanelFrame
         return ExternalBrowserCommand(
             url: url,
@@ -177,19 +140,6 @@ final class ExternalInformationWindowController: NSObject {
             frameHeight: frame.height,
             isVisible: isVisible
         )
-    }
-
-    private static func removeLegacyCookieFile() {
-        guard let applicationSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first else {
-            return
-        }
-        let file = applicationSupport
-            .appendingPathComponent("myim/web-session", isDirectory: true)
-            .appendingPathComponent("cosense-web-cookies.json")
-        try? FileManager.default.removeItem(at: file)
     }
 
     func hide() {
@@ -204,10 +154,26 @@ final class ExternalInformationWindowController: NSObject {
         externalBrowser.hide()
     }
 
-    private func beginInteraction() {
-        guard !isInteractionActive else {
+    func showDefinitions(
+        _ definitions: [SystemDictionaryDefinition],
+        beside candidateFrame: NSRect,
+        requestID currentRequestID: UUID
+    ) {
+        guard requestID == currentRequestID else { return }
+        guard !definitions.isEmpty else {
+            definitionPanel.orderOut(nil)
             return
         }
+        definitionTextView.textStorage?.setAttributedString(
+            attributedDefinitions(definitions)
+        )
+        definitionTextView.scrollToBeginningOfDocument(nil)
+        positionDefinitionPanel(near: candidateFrame)
+        definitionPanel.orderFrontRegardless()
+    }
+
+    private func beginInteraction() {
+        guard !isInteractionActive else { return }
         isInteractionActive = true
         displayTask?.cancel()
         navigationTask?.cancel()
@@ -215,17 +181,13 @@ final class ExternalInformationWindowController: NSObject {
     }
 
     private func endInteraction() {
-        guard isInteractionActive else {
-            return
-        }
+        guard isInteractionActive else { return }
         isInteractionActive = false
         onInteractionEnded?()
-
-        guard let pendingPresentation else {
-            return
-        }
+        guard let pendingPresentation else { return }
         self.pendingPresentation = nil
         present(
+            requestID: pendingPresentation.requestID,
             url: pendingPresentation.url,
             panelTitle: pendingPresentation.panelTitle,
             definitions: pendingPresentation.definitions,
@@ -250,16 +212,11 @@ final class ExternalInformationWindowController: NSObject {
     func openDisplayedPageInDefaultBrowser() -> Bool {
         guard let url = displayedURL,
               let scheme = url.scheme?.lowercased(),
-              scheme == "http" || scheme == "https" else {
-            return false
-        }
+              scheme == "http" || scheme == "https" else { return false }
         return NSWorkspace.shared.open(url)
     }
 
-    private static func makePanel(
-        title: String,
-        size: NSSize
-    ) -> NSPanel {
+    private static func makePanel(title: String, size: NSSize) -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.titled, .nonactivatingPanel],
@@ -278,20 +235,11 @@ final class ExternalInformationWindowController: NSObject {
         let panelSize = definitionPanel.frame.size
         let aboveY = candidateFrame.maxY + Self.spacing
         let belowY = candidateFrame.minY - panelSize.height - Self.spacing
-        let preferredY = aboveY + panelSize.height <= visibleFrame.maxY
-            ? aboveY
-            : belowY
-        let x = clamped(
-            candidateFrame.minX,
-            minimum: visibleFrame.minX,
-            maximum: visibleFrame.maxX - panelSize.width
-        )
-        let y = clamped(
-            preferredY,
-            minimum: visibleFrame.minY,
-            maximum: visibleFrame.maxY - panelSize.height
-        )
-        definitionPanel.setFrameOrigin(NSPoint(x: x, y: y))
+        let preferredY = aboveY + panelSize.height <= visibleFrame.maxY ? aboveY : belowY
+        definitionPanel.setFrameOrigin(NSPoint(
+            x: clamped(candidateFrame.minX, minimum: visibleFrame.minX, maximum: visibleFrame.maxX - panelSize.width),
+            y: clamped(preferredY, minimum: visibleFrame.minY, maximum: visibleFrame.maxY - panelSize.height)
+        ))
     }
 
     private func positionInformationPanel(near candidateFrame: NSRect) {
@@ -305,37 +253,22 @@ final class ExternalInformationWindowController: NSObject {
             : candidateFrame
         let rightX = occupiedFrame.maxX + Self.spacing
         let leftX = occupiedFrame.minX - panelSize.width - Self.spacing
-        let preferredX = rightX + panelSize.width <= visibleFrame.maxX
-            ? rightX
-            : leftX
-        let x = clamped(
-            preferredX,
-            minimum: visibleFrame.minX,
-            maximum: visibleFrame.maxX - panelSize.width
-        )
-        let y = clamped(
-            candidateFrame.maxY - panelSize.height,
-            minimum: visibleFrame.minY,
-            maximum: visibleFrame.maxY - panelSize.height
-        )
+        let preferredX = rightX + panelSize.width <= visibleFrame.maxX ? rightX : leftX
         informationPanelFrame = NSRect(
-            origin: NSPoint(x: x, y: y),
+            origin: NSPoint(
+                x: clamped(preferredX, minimum: visibleFrame.minX, maximum: visibleFrame.maxX - panelSize.width),
+                y: clamped(candidateFrame.maxY - panelSize.height, minimum: visibleFrame.minY, maximum: visibleFrame.maxY - panelSize.height)
+            ),
             size: panelSize
         )
     }
 
     private func visibleFrame(near candidateFrame: NSRect) -> NSRect {
-        let screen = NSScreen.screens.first {
-            $0.frame.intersects(candidateFrame)
-        } ?? NSScreen.main
+        let screen = NSScreen.screens.first { $0.frame.intersects(candidateFrame) } ?? NSScreen.main
         return screen?.visibleFrame ?? candidateFrame
     }
 
-    private func clamped(
-        _ value: CGFloat,
-        minimum: CGFloat,
-        maximum: CGFloat
-    ) -> CGFloat {
+    private func clamped(_ value: CGFloat, minimum: CGFloat, maximum: CGFloat) -> CGFloat {
         min(max(value, minimum), max(minimum, maximum))
     }
 
@@ -345,34 +278,25 @@ final class ExternalInformationWindowController: NSObject {
         let result = NSMutableAttributedString()
         for (index, definition) in definitions.enumerated() {
             if index > 0 {
-                result.append(
-                    NSAttributedString(
-                        string: "\n\n",
-                        attributes: [.font: NSFont.systemFont(ofSize: 13)]
-                    )
-                )
+                result.append(NSAttributedString(
+                    string: "\n\n",
+                    attributes: [.font: NSFont.systemFont(ofSize: 13)]
+                ))
             }
-            result.append(
-                NSAttributedString(
-                    string: definition.dictionaryName + "\n",
-                    attributes: [
-                        .font: NSFont.systemFont(
-                            ofSize: 13,
-                            weight: .semibold
-                        ),
-                        .foregroundColor: NSColor.labelColor
-                    ]
-                )
-            )
-            result.append(
-                NSAttributedString(
-                    string: definition.text,
-                    attributes: [
-                        .font: NSFont.systemFont(ofSize: 13),
-                        .foregroundColor: NSColor.textColor
-                    ]
-                )
-            )
+            result.append(NSAttributedString(
+                string: definition.dictionaryName + "\n",
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                    .foregroundColor: NSColor.labelColor
+                ]
+            ))
+            result.append(NSAttributedString(
+                string: definition.text,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 13),
+                    .foregroundColor: NSColor.textColor
+                ]
+            ))
         }
         return result
     }

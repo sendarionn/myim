@@ -2,6 +2,10 @@
 @preconcurrency import InputMethodKit
 import MyIMECore
 
+private final class DictionarySelectionStackView: NSStackView {
+    override var isFlipped: Bool { true }
+}
+
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
     private struct TabDictionaryRegistration {
@@ -40,14 +44,7 @@ final class InputController: IMKInputController {
         }
     }
 
-    private static let defaultDictionarySource = CosenseDictionarySource(
-        project: "sendarionn-public",
-        pageTitle: "dictionary"
-    )
-    private static let projectDefaultsKey = "CosenseExtensionProject"
     private static let nextInputEnabledDefaultsKey = "NextInputPredictionEnabled"
-    private static let extensionDictionaryEnabledDefaultsKey =
-        "ExtensionDictionaryEnabled"
     private static let englishCompletionEnabledDefaultsKey =
         "EnglishCompletionEnabled"
     private static let wikipediaSuggestionsEnabledDefaultsKey =
@@ -62,10 +59,10 @@ final class InputController: IMKInputController {
     private static let webSearchTemplateDefaultsKey = "WebSearchTemplate"
     private static let externalInformationPanelEnabledDefaultsKey =
         "ExternalInformationPanelEnabled"
-    private static let legacyCosensePreviewEnabledDefaultsKey =
-        "CosensePreviewEnabled"
     private static let systemDictionaryPreviewEnabledDefaultsKey =
         "SystemDictionaryPreviewEnabled"
+    private static let systemDictionaryNamesDefaultsKey =
+        "SystemDictionaryNames"
     private static let fuzzySuggestionsEnabledDefaultsKey =
         "FuzzySuggestionsEnabled"
     private static let dateTimeCandidatesEnabledDefaultsKey =
@@ -119,23 +116,18 @@ final class InputController: IMKInputController {
     private var calendarReturnApplication: NSRunningApplication?
     private var fuzzySuggestions: [FuzzySuggestion] = []
     private var selectedFuzzySuggestionIndex: Int?
-    private var dictionarySource: CosenseDictionarySource
     private var userEntries: [DictionaryEntry]
     private var basicEntries: [DictionaryEntry]
-    private var extensionEntries: [DictionaryEntry]
     private var userConversionEngine: ConversionEngine
-    private var extensionConversionEngine: ConversionEngine
     private var basicConversionEngine: ConversionEngine
     private let mozcConversionEngine: IndexedDictionaryEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var fuzzyEngineBuildTask: Task<Void, Never>?
-    private let cosenseSettingsController: CosenseSettingsController
     private let settingsDialogController = SettingsDialogController()
     private lazy var javaScriptExtensionSettingsController =
         JavaScriptExtensionSettingsController(
             client: Self.javaScriptExtensionClient
         )
-    private var cosenseCredential: CosenseCredential?
     private var candidateSelectionHistory: CandidateSelectionHistory
     private let candidateSelectionHistoryWriter:
         DeferredJSONFileWriter<CandidateSelectionHistory>
@@ -151,7 +143,6 @@ final class InputController: IMKInputController {
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
     private var tabDictionaryRegistration: TabDictionaryRegistration?
-    private var cosenseSyncStatus = "未実行"
     private var basicDictionaryStatus = "未確認"
     private let candidateWindow = CandidateWindowController()
     private let calendarWindow = CalendarWindowController()
@@ -159,27 +150,19 @@ final class InputController: IMKInputController {
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
+    private var dictionaryDefinitionTask: Task<Void, Never>?
     private let romajiConverter = RomajiConverter()
     private var settingsWindow: NSWindow?
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
-        let source = Self.loadDictionarySource()
-        let cosenseSettingsController = CosenseSettingsController()
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.sharedBasicEntries
         let indexedMozcEngine = Self.sharedMozcConversionEngine
-        let cachedExtensionEntries = Self.loadExtensionEntries(for: source)
         let selectionHistory = Self.loadCandidateSelectionHistory()
         let nextInputModel = Self.loadNextInputPredictionModel()
 
-        dictionarySource = source
-        self.cosenseSettingsController = cosenseSettingsController
-        cosenseCredential = cosenseSettingsController.credential(
-            for: source.project
-        )
         userEntries = cachedUserEntries
         basicEntries = bundledEntries
-        extensionEntries = cachedExtensionEntries
         candidateSelectionHistory = selectionHistory
         candidateSelectionHistoryWriter = DeferredJSONFileWriter(
             fileURL: Self.candidateSelectionHistoryURL(),
@@ -203,9 +186,6 @@ final class InputController: IMKInputController {
             }
         )
         userConversionEngine = ConversionEngine(entries: cachedUserEntries)
-        extensionConversionEngine = ConversionEngine(
-            entries: cachedExtensionEntries
-        )
         basicConversionEngine = Self.sharedBasicConversionEngine
         mozcConversionEngine = indexedMozcEngine
         verbInflectionGenerator = Self.sharedVerbInflectionGenerator
@@ -311,7 +291,6 @@ final class InputController: IMKInputController {
 
         if event.keyCode == 15,
            event.modifierFlags.contains([.command, .option, .control]) {
-            syncCosenseDictionary(nil)
             return true
         }
 
@@ -510,7 +489,6 @@ final class InputController: IMKInputController {
                 ),
                 toggleTranslationMode: #selector(toggleTranslationMode(_:)),
                 translationModeEnabled: isTranslationModeEnabled,
-                syncCosenseDictionary: #selector(syncCosenseDictionary(_:)),
                 showStatus: #selector(showStatus(_:))
             )
         )
@@ -548,7 +526,6 @@ final class InputController: IMKInputController {
 
     private var settingsFeatureStates: SettingsWindowBuilder.FeatureStates {
         SettingsWindowBuilder.FeatureStates(
-            extensionDictionary: isExtensionDictionaryEnabled,
             englishCompletion: isEnglishCompletionEnabled,
             wikipediaSuggestions: isWikipediaSuggestionsEnabled,
             googleJapaneseInput: isGoogleJapaneseInputEnabled,
@@ -564,7 +541,6 @@ final class InputController: IMKInputController {
 
     private var settingsActions: SettingsWindowBuilder.Actions {
         SettingsWindowBuilder.Actions(
-            toggleExtensionDictionary: #selector(toggleExtensionDictionary(_:)),
             toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
             toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
             toggleGoogleJapaneseInput: #selector(toggleGoogleJapaneseInput(_:)),
@@ -575,11 +551,9 @@ final class InputController: IMKInputController {
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
             toggleExternalInformationPanel: #selector(toggleExternalInformationPanel(_:)),
             toggleSystemDictionaryPreview: #selector(toggleSystemDictionaryPreview(_:)),
+            configureSystemDictionaries: #selector(configureSystemDictionaries(_:)),
             toggleWebSearch: #selector(toggleWebSearch(_:)),
-            updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:)),
-            configureCosenseProject: #selector(configureCosenseProject(_:)),
-            configureCosenseAuthentication: #selector(configureCosenseAuthentication(_:)),
-            syncCosenseDictionary: #selector(syncCosenseDictionary(_:))
+            updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:))
         )
     }
 
@@ -632,9 +606,6 @@ final class InputController: IMKInputController {
         alert.messageText = "myimの状態"
         alert.informativeText = [
             "ユーザー辞書: \(userEntries.count)読み",
-            "拡張辞書: \(dictionarySource.projectURLDescription)",
-            "Cosense認証: \(cosenseAuthenticationStatus)",
-            "Cosense更新: \(cosenseSyncStatus)",
             "TKGJE更新: \(basicDictionaryStatus)",
             "保護入力: \(secureInputStatusDescription)"
         ].joined(separator: "\n")
@@ -756,107 +727,6 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func configureCosenseProject(_ sender: Any?) {
-        guard let configuration = cosenseSettingsController.chooseProject(
-            currentURLDescription: dictionarySource.projectURLDescription
-        ) else {
-            return
-        }
-
-        dictionarySource = configuration.dictionarySource
-        cosenseCredential = cosenseSettingsController.credential(
-            for: configuration.project
-        )
-        UserDefaults.standard.set(
-            configuration.project,
-            forKey: Self.projectDefaultsKey
-        )
-        extensionEntries = Self.loadExtensionEntries(for: dictionarySource)
-        rebuildConversionEngine()
-        cosenseSyncStatus = "未実行"
-
-        if !inputBuffer.isEmpty, let inputClient = client() {
-            selectedCandidateIndex = nil
-            previewWindow.hide()
-            refreshCandidates(client: inputClient)
-        }
-
-        syncCosenseDictionary(nil)
-    }
-
-    @objc
-    private func configureCosenseAuthentication(_ sender: Any?) {
-        switch cosenseSettingsController.updateCredential(
-            current: cosenseCredential,
-            project: dictionarySource.project
-        ) {
-        case .cancelled:
-            return
-        case .updated(let credential):
-            cosenseCredential = credential
-            cosenseSyncStatus = "未実行"
-            syncCosenseDictionary(nil)
-        }
-    }
-
-    @objc
-    private func syncCosenseDictionary(_ sender: Any?) {
-        guard cosenseSyncStatus != "更新中" else {
-            return
-        }
-
-        cosenseSyncStatus = "更新中"
-        let source = dictionarySource
-
-        Task { @MainActor [weak self] in
-            do {
-                let dictionaryText = try await CosenseDictionaryClient().fetch(
-                    from: source,
-                    credential: self?.cosenseCredential
-                )
-                let entries = try DictionaryParser().parse(dictionaryText)
-                guard !entries.isEmpty else {
-                    throw CosenseDictionaryError.emptyDictionary
-                }
-
-                let cache = try Self.extensionCache(for: source)
-                try cache.save(
-                    dictionaryText: DictionarySerializer.text(from: entries),
-                    metadata: DictionaryCacheMetadata(
-                        syncedAt: Date(),
-                        entryCount: entries.count
-                    )
-                )
-
-                guard let self else {
-                    return
-                }
-                guard dictionarySource == source else {
-                    return
-                }
-                extensionEntries = entries
-                rebuildConversionEngine()
-                cosenseSyncStatus = "完了（\(entries.count)読み）"
-
-                if !inputBuffer.isEmpty, let inputClient = client() {
-                    selectedCandidateIndex = nil
-                    previewWindow.hide()
-                    refreshCandidates(client: inputClient)
-                }
-            } catch {
-                if case CosenseDictionaryError.HTTPStatus(401) = error {
-                    self?.cosenseSyncStatus = "認証が必要"
-                } else if case CosenseDictionaryError.HTTPStatus(403) = error {
-                    self?.cosenseSyncStatus = "権限なし"
-                } else {
-                    self?.cosenseSyncStatus = "失敗"
-                }
-                NSLog("Cosense辞書の更新に失敗: %@", error.localizedDescription)
-            }
-        }
-    }
-
-    @objc
     private func toggleNextInputPrediction(_ sender: Any?) {
         let enabled = !isNextInputPredictionEnabled
         UserDefaults.standard.set(
@@ -922,14 +792,6 @@ final class InputController: IMKInputController {
             return
         }
         refreshCandidates(client: inputClient)
-    }
-
-    @objc
-    private func toggleExtensionDictionary(_ sender: Any?) {
-        toggleCandidateSource(
-            defaultsKey: Self.extensionDictionaryEnabledDefaultsKey,
-            currentlyEnabled: isExtensionDictionaryEnabled
-        )
     }
 
     @objc
@@ -1062,6 +924,73 @@ final class InputController: IMKInputController {
             !isSystemDictionaryPreviewEnabled,
             forKey: Self.systemDictionaryPreviewEnabledDefaultsKey
         )
+        refreshExperimentalPreview()
+    }
+
+    @objc
+    private func configureSystemDictionaries(_ sender: Any?) {
+        let availableNames = definitionProvider.availableDictionaryNames()
+        let alert = NSAlert()
+        alert.messageText = "表示するmacOS辞書"
+        alert.addButton(withTitle: "保存")
+        alert.addButton(withTitle: "キャンセル")
+        guard !availableNames.isEmpty else {
+            alert.informativeText = "利用可能な辞書がありません"
+            alert.buttons[0].title = "閉じる"
+            alert.buttons[1].isHidden = true
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+            return
+        }
+
+        let selectedNames = Set(systemDictionaryNames)
+        let stack = DictionarySelectionStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        let checkboxes = availableNames.map { name in
+            let checkbox = NSButton(
+                checkboxWithTitle: "\(name)（\(SystemDictionaryDefinitionProvider.contentDescription(for: name))）",
+                target: nil,
+                action: nil
+            )
+            checkbox.state = selectedNames.contains(name) ? .on : .off
+            stack.addArrangedSubview(checkbox)
+            return checkbox
+        }
+        let contentHeight = CGFloat(availableNames.count) * 26
+        stack.frame = NSRect(
+            x: 0,
+            y: 0,
+            width: 420,
+            height: contentHeight
+        )
+        let scrollView = NSScrollView(
+            frame: NSRect(
+                x: 0,
+                y: 0,
+                width: 440,
+                height: min(contentHeight, 320)
+            )
+        )
+        scrollView.documentView = stack
+        scrollView.hasVerticalScroller = contentHeight > 320
+        scrollView.autohidesScrollers = true
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        alert.accessoryView = scrollView
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let names = zip(availableNames, checkboxes).compactMap { name, checkbox in
+            checkbox.state == .on ? name : nil
+        }
+        UserDefaults.standard.set(
+            names,
+            forKey: Self.systemDictionaryNamesDefaultsKey
+        )
+        dictionaryDefinitionTask?.cancel()
+        definitionProvider.clearCache()
         refreshExperimentalPreview()
     }
 
@@ -1464,9 +1393,6 @@ final class InputController: IMKInputController {
             }
         }
         append(userConversionEngine.readings(for: candidate))
-        if isExtensionDictionaryEnabled {
-            append(extensionConversionEngine.readings(for: candidate))
-        }
         append(basicConversionEngine.readings(for: candidate))
         append(mozcConversionEngine.readings(for: candidate))
         return result
@@ -2213,7 +2139,6 @@ final class InputController: IMKInputController {
         var directCandidates: [String] = []
         for reading in RomajiCanonicalizer.dictionaryLookupInputs(from: input) {
             directCandidates.append(contentsOf: userConversionEngine.candidates(for: reading))
-            directCandidates.append(contentsOf: extensionConversionEngine.candidates(for: reading))
             directCandidates.append(contentsOf: mozcConversionEngine.candidates(for: reading))
             directCandidates.append(contentsOf: basicConversionEngine.candidates(for: reading))
         }
@@ -2303,7 +2228,8 @@ final class InputController: IMKInputController {
                     query: query,
                     candidate: candidate,
                     definitions: self.definitionProvider.definitions(
-                        for: candidate
+                        for: candidate,
+                        dictionaryNames: self.systemDictionaryNames
                     ).map(\.text)
                 )
             }
@@ -2397,14 +2323,6 @@ final class InputController: IMKInputController {
             lookup: { userConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
         )
-        let extensionCandidates = isExtensionDictionaryEnabled
-            ? mergedCandidateGroups(
-                lookup: {
-                    extensionConversionEngine.candidateGroups(matching: $0)
-                },
-                readings: lookupReadings
-            )
-            : DictionaryCandidateGroups()
         let basicCandidates = mergedCandidateGroups(
             lookup: { basicConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
@@ -2458,7 +2376,6 @@ final class InputController: IMKInputController {
                 .compactMap { $0 }
         }
         let directCandidates = userCandidates.exact
-            + extensionCandidates.exact
             + dateTimeCandidates
             + numericPrefixCandidates
             + scriptCandidates
@@ -2466,7 +2383,6 @@ final class InputController: IMKInputController {
             + basicCandidates.exact
             + inflectionCandidates
         let otherCandidates = userCandidates.prefix
-            + extensionCandidates.prefix
             + candidateSelectionHistory.completions(
                 for: conversionReading,
                 limit: Self.maximumCandidateCount * 2
@@ -3223,14 +3139,6 @@ final class InputController: IMKInputController {
             lookup: { userConversionEngine.candidateGroups(matching: $0) },
             readings: readings
         ).exact
-        let extensions = isExtensionDictionaryEnabled
-            ? mergedCandidateGroups(
-                lookup: {
-                    extensionConversionEngine.candidateGroups(matching: $0)
-                },
-                readings: readings
-            ).exact
-            : []
         let ime = mergedCandidateGroups(
             lookup: {
                 mozcConversionEngine.candidateGroups(
@@ -3249,7 +3157,7 @@ final class InputController: IMKInputController {
             romajiConverter.katakana(from: parts.reading)
         ].compactMap { $0 }
         let converted = CandidateRecencyOrderer.ordered(
-            user + extensions + ime + basic + kana,
+            user + ime + basic + kana,
             ranks: candidateSelectionHistory.ranks(for: parts.reading)
         )
         return NumericPrefixCandidateComposer.candidates(
@@ -3422,6 +3330,8 @@ final class InputController: IMKInputController {
     }
 
     private func resetTransientInteractionState() {
+        dictionaryDefinitionTask?.cancel()
+        dictionaryDefinitionTask = nil
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
@@ -3646,6 +3556,7 @@ final class InputController: IMKInputController {
             input: conversionReading,
             selectedCandidate: nil
         ) else {
+            dictionaryDefinitionTask?.cancel()
             previewWindow.hide()
             return
         }
@@ -3682,6 +3593,7 @@ final class InputController: IMKInputController {
         guard isExternalInformationPanelEnabled
             || isSystemDictionaryPreviewEnabled
         else {
+            dictionaryDefinitionTask?.cancel()
             previewWindow.hide()
             return
         }
@@ -3690,24 +3602,41 @@ final class InputController: IMKInputController {
                 .url(for: candidate)
             : nil
 
-        previewWindow.show(
+        dictionaryDefinitionTask?.cancel()
+        let previewRequestID = previewWindow.show(
             url: url,
             panelTitle: url?.host ?? "外部情報",
-            definitions: includeDefinitions && isSystemDictionaryPreviewEnabled
-                ? definitionProvider.definitions(for: candidate)
-                : [],
+            definitions: [],
             showExternalInformation: isExternalInformationPanelEnabled,
             beside: anchorFrame
         )
+        guard includeDefinitions, isSystemDictionaryPreviewEnabled else {
+            return
+        }
+        let provider = definitionProvider
+        let dictionaryNames = systemDictionaryNames
+        dictionaryDefinitionTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            let definitions = await Task.detached(priority: .utility) {
+                provider.definitions(
+                    for: candidate,
+                    dictionaryNames: dictionaryNames
+                )
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            previewWindow.showDefinitions(
+                definitions,
+                beside: anchorFrame,
+                requestID: previewRequestID
+            )
+        }
     }
 
     private func rebuildConversionEngine(
         basicDictionaryChanged: Bool = false
     ) {
         userConversionEngine = ConversionEngine(entries: userEntries)
-        extensionConversionEngine = ConversionEngine(
-            entries: extensionEntries
-        )
         if basicDictionaryChanged {
             basicConversionEngine = ConversionEngine(entries: basicEntries)
             verbInflectionGenerator = VerbInflectionCandidateGenerator(
@@ -3721,14 +3650,10 @@ final class InputController: IMKInputController {
         cancelFuzzySuggestionSearch()
         fuzzyEngineBuildTask?.cancel()
         let userEntries = userEntries
-        let extensionEntries = isExtensionDictionaryEnabled
-            ? extensionEntries
-            : []
         let basicEntries = basicEntries
         fuzzyEngineBuildTask = Task { @MainActor [weak self] in
             await Task.detached(priority: .utility) {
                 let entries = userEntries
-                    + extensionEntries
                     + basicEntries
                     + VerbInflectionCandidateGenerator.typoSearchEntries(
                         from: basicEntries
@@ -3799,17 +3724,6 @@ final class InputController: IMKInputController {
             }
     }
 
-    private var cosenseAuthenticationStatus: String {
-        switch cosenseCredential?.kind {
-        case .personalAccessToken:
-            return "Personal Access Token"
-        case .serviceAccount:
-            return "Service Account"
-        case nil:
-            return "なし"
-        }
-    }
-
     private var isNextInputPredictionEnabled: Bool {
         if UserDefaults.standard.object(
             forKey: Self.nextInputEnabledDefaultsKey
@@ -3830,30 +3744,17 @@ final class InputController: IMKInputController {
                 forKey: Self.externalInformationPanelEnabledDefaultsKey
             )
         }
-        if defaults.object(
-            forKey: Self.legacyCosensePreviewEnabledDefaultsKey
-        ) != nil {
-            return defaults.bool(
-                forKey: Self.legacyCosensePreviewEnabledDefaultsKey
-            )
-        }
         return true
     }
 
     private var externalInformationURLTemplate: String {
         JavaScriptExtensionConfiguration.externalInformationURL(
-            project: dictionarySource.project
+            project: ""
         ) ?? defaultExternalInformationURLTemplate
     }
 
     private var defaultExternalInformationURLTemplate: String {
         "https://ja.wikipedia.org/w/index.php?search=%s"
-    }
-
-    private var isExtensionDictionaryEnabled: Bool {
-        experimentalFeatureIsEnabled(
-            defaultsKey: Self.extensionDictionaryEnabledDefaultsKey
-        )
     }
 
     private var isEnglishCompletionEnabled: Bool {
@@ -3914,6 +3815,19 @@ final class InputController: IMKInputController {
         )
     }
 
+    private var systemDictionaryNames: [String] {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Self.systemDictionaryNamesDefaultsKey) != nil {
+            return defaults.stringArray(
+                forKey: Self.systemDictionaryNamesDefaultsKey
+            ) ?? []
+        }
+        let available = Set(definitionProvider.availableDictionaryNames())
+        return SystemDictionaryDefinitionProvider.defaultDictionaryNames.filter {
+            available.contains($0)
+        }
+    }
+
     private var isFuzzySuggestionsEnabled: Bool {
         UserDefaults.standard.bool(
             forKey: Self.fuzzySuggestionsEnabledDefaultsKey
@@ -3970,22 +3884,6 @@ final class InputController: IMKInputController {
 
     private func candidateDisplayValue(_ candidate: String) -> String {
         DictionaryCandidateRepresentation.display(from: candidate)
-    }
-
-    private static func loadDictionarySource() -> CosenseDictionarySource {
-        guard
-            let project = UserDefaults.standard.string(
-                forKey: projectDefaultsKey
-            ),
-            !project.isEmpty
-        else {
-            return defaultDictionarySource
-        }
-
-        return CosenseDictionarySource(
-            project: project,
-            pageTitle: "dictionary"
-        )
     }
 
     private static func loadBasicEntries() -> [DictionaryEntry] {
@@ -4139,30 +4037,6 @@ final class InputController: IMKInputController {
         return nil
     }
 
-    private static func loadExtensionEntries(
-        for source: CosenseDictionarySource
-    ) -> [DictionaryEntry] {
-        if let cache = try? extensionCache(for: source),
-           let entries = loadEntries(from: cache) {
-            return entries
-        }
-
-        if let legacyCache = try? legacyExtensionCache(for: source),
-           let entries = loadEntries(from: legacyCache) {
-            return entries
-        }
-
-        if source == defaultDictionarySource,
-           let legacyCache = try? DictionaryCache.applicationSupport(
-                applicationName: "my-ime"
-           ),
-           let entries = loadEntries(from: legacyCache) {
-            return entries
-        }
-
-        return []
-    }
-
     private static func loadEntries(
         from cache: DictionaryCache
     ) -> [DictionaryEntry]? {
@@ -4192,17 +4066,6 @@ final class InputController: IMKInputController {
             )
         }
         return entries
-    }
-
-    private static func extensionCache(
-        for source: CosenseDictionarySource
-    ) throws -> DictionaryCache {
-        let applicationCache = try DictionaryCache.applicationSupport()
-        return DictionaryCache(
-            directoryURL: applicationCache.directoryURL
-                .appendingPathComponent("extensions", isDirectory: true)
-                .appendingPathComponent(source.project, isDirectory: true)
-        )
     }
 
     private static func basicDictionaryCache() throws -> DictionaryCache {
@@ -4276,18 +4139,6 @@ final class InputController: IMKInputController {
             .appendingPathComponent(fileName)
     }
 
-    private static func legacyExtensionCache(
-        for source: CosenseDictionarySource
-    ) throws -> DictionaryCache {
-        let applicationCache = try DictionaryCache.applicationSupport(
-            applicationName: "my-ime"
-        )
-        return DictionaryCache(
-            directoryURL: applicationCache.directoryURL
-                .appendingPathComponent("extensions", isDirectory: true)
-                .appendingPathComponent(source.project, isDirectory: true)
-        )
-    }
 }
 
 private struct BundledBasicDictionaryMetadata: Decodable {
@@ -4297,11 +4148,5 @@ private struct BundledBasicDictionaryMetadata: Decodable {
 private extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
-    }
-}
-
-private extension CosenseDictionarySource {
-    var projectURLDescription: String {
-        "https://scrapbox.io/\(project)"
     }
 }
