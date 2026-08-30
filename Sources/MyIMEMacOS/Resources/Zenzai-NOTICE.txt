@@ -1,0 +1,14 @@
+Zenzai integration
+
+AzooKeyKanaKanjiConverter
+Copyright (c) 2023 Miwa / Ensan
+Licensed under the MIT License
+https://github.com/azooKey/AzooKeyKanaKanjiConverter
+
+zenz-v3.2-small-gguf
+Copyright Miwa Keita
+Licensed under the Apache License 2.0
+https://huggingface.co/Miwa-Keita/zenz-v3.2-small-gguf
+The full Apache License 2.0 text is included as mozc-LICENSE.txt
+
+The model is downloaded separately and stored in the user's Application Support directory

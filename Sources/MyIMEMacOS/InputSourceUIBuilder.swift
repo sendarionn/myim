@@ -77,6 +77,7 @@ enum SettingsWindowBuilder {
         let googleJapaneseInput: Bool
         let appleTranslation: Bool
         let nextInputPrediction: Bool
+        let neuralContext: Bool
         let fuzzySuggestions: Bool
         let dateTimeCandidates: Bool
         let externalInformationPanel: Bool
@@ -90,6 +91,7 @@ enum SettingsWindowBuilder {
         let toggleGoogleJapaneseInput: Selector
         let toggleAppleTranslation: Selector
         let toggleNextInputPrediction: Selector
+        let toggleNeuralContext: Selector
         let toggleFuzzySuggestions: Selector
         let toggleDateTimeCandidates: Selector
         let clearNextInputHistory: Selector
@@ -135,6 +137,7 @@ enum SettingsWindowBuilder {
             ("Google CGI APIの変換候補を使用（入力内容をGoogleへ送信）", actions.toggleGoogleJapaneseInput, states.googleJapaneseInput),
             ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
+            ("直前の文章を考慮して候補順を調整", actions.toggleNeuralContext, states.neuralContext),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)

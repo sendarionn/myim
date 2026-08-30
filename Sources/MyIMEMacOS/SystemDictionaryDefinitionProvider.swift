@@ -95,7 +95,7 @@ final class SystemDictionaryDefinitionProvider: @unchecked Sendable {
         guard let data = try? Data(contentsOf: catalogURL),
               let plist = try? PropertyListSerialization.propertyList(
                 from: data,
-                options: [],
+                options: 0,
                 format: nil
               ) as? [String: Any],
               let assets = plist["Assets"] as? [[String: Any]]
@@ -120,7 +120,7 @@ final class SystemDictionaryDefinitionProvider: @unchecked Sendable {
         guard let data = try? Data(contentsOf: infoURL),
               let plist = try? PropertyListSerialization.propertyList(
                 from: data,
-                options: [],
+                options: 0,
                 format: nil
               ) as? [String: Any],
               let name = plist["CFBundleDisplayName"] as? String

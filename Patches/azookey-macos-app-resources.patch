@@ -1,0 +1,40 @@
+diff --git a/Sources/EfficientNGram/Tokenizer.swift b/Sources/EfficientNGram/Tokenizer.swift
+--- a/Sources/EfficientNGram/Tokenizer.swift
++++ b/Sources/EfficientNGram/Tokenizer.swift
+@@ -34,7 +34,15 @@ public struct ZenzTokenizer {
+     private let fastPathState: FastTokenizerPathState
+ 
+     public init(enableFastTokenizerPath: Bool = true) {
+-        let modelFolder = Bundle.module.resourceURL!.appendingPathComponent("tokenizer", isDirectory: true)
++        let packagedResourceURL = Bundle.main.resourceURL?
++            .appendingPathComponent(
++                "AzooKeyKanaKanjiConverter_EfficientNGram.bundle",
++                isDirectory: true
++            )
++        let resourceURL = packagedResourceURL.flatMap {
++            FileManager.default.fileExists(atPath: $0.path) ? $0 : nil
++        } ?? Bundle.module.resourceURL!
++        let modelFolder = resourceURL.appendingPathComponent("tokenizer", isDirectory: true)
+         let hubApi = HubApi.shared
+         let tokenizerConfig = try! hubApi.configuration(fileURL: modelFolder.appending(path: "tokenizer_config.json"))
+         let tokenizerData = try! hubApi.configuration(fileURL: modelFolder.appending(path: "tokenizer.json"))
+diff --git a/Sources/KanaKanjiConverterModuleWithDefaultDictionary/KanaKanjiConverterModuleWithDefaultDictionary.swift b/Sources/KanaKanjiConverterModuleWithDefaultDictionary/KanaKanjiConverterModuleWithDefaultDictionary.swift
+--- a/Sources/KanaKanjiConverterModuleWithDefaultDictionary/KanaKanjiConverterModuleWithDefaultDictionary.swift
++++ b/Sources/KanaKanjiConverterModuleWithDefaultDictionary/KanaKanjiConverterModuleWithDefaultDictionary.swift
+@@ -6,7 +6,15 @@ public extension DicdataStore {
+         #if os(iOS) || os(watchOS) || os(tvOS) || os(visionOS)
+         let dictionaryDirectory = Bundle.module.bundleURL.appendingPathComponent("Dictionary", isDirectory: true)
+         #elseif os(macOS)
+-        let dictionaryDirectory = Bundle.module.resourceURL!.appendingPathComponent("Dictionary", isDirectory: true)
++        let packagedResourceURL = Bundle.main.resourceURL?
++            .appendingPathComponent(
++                "AzooKeyKanaKanjiConverter_KanaKanjiConverterModuleWithDefaultDictionary.bundle",
++                isDirectory: true
++            )
++        let resourceURL = packagedResourceURL.flatMap {
++            FileManager.default.fileExists(atPath: $0.path) ? $0 : nil
++        } ?? Bundle.module.resourceURL!
++        let dictionaryDirectory = resourceURL.appendingPathComponent("Dictionary", isDirectory: true)
+         #else
+         let dictionaryDirectory = Bundle.module.resourceURL!.appendingPathComponent("Dictionary", isDirectory: true)
+         #endif

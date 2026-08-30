@@ -7,6 +7,7 @@ application_bundle="$repository_root/.build/myim.app"
 contents_directory="$application_bundle/Contents"
 executable_directory="$contents_directory/MacOS"
 resources_directory="$contents_directory/Resources"
+frameworks_directory="$contents_directory/Frameworks"
 helpers_directory="$contents_directory/Helpers"
 browser_bundle="$helpers_directory/myim-external-browser.app"
 browser_contents="$browser_bundle/Contents"
@@ -22,6 +23,7 @@ version=${MYIM_VERSION:-}
 build_number=${MYIM_BUILD_NUMBER:-}
 
 cd "$repository_root"
+"$repository_root/Scripts/prepare-azookey-checkout.sh"
 swift_build_arguments=(-c release --disable-sandbox)
 for architecture in "${architectures[@]}"; do
     swift_build_arguments+=(--arch "$architecture")
@@ -36,12 +38,34 @@ rm -rf "$application_bundle" "$iconset_directory" "$menu_assets_directory"
 mkdir -p \
     "$executable_directory" \
     "$resources_directory" \
+    "$frameworks_directory" \
     "$browser_executable_directory"
 mkdir -p "$iconset_directory"
 mkdir -p "$menu_assets_directory"
 cp "$products_directory/myim-macos" "$ime_executable"
 cp "$products_directory/myim-external-browser" "$browser_executable"
 cp "$products_directory/myim-extension-host" "$extension_host"
+for resource_bundle_name in \
+    AzooKeyKanaKanjiConverter_EfficientNGram.bundle \
+    AzooKeyKanaKanjiConverter_KanaKanjiConverterModuleWithDefaultDictionary.bundle; do
+    resource_bundle="$products_directory/$resource_bundle_name"
+    if [[ ! -d "$resource_bundle" ]]; then
+        echo "$resource_bundle_nameが見つかりません" >&2
+        exit 1
+    fi
+    ditto "$resource_bundle" "$resources_directory/$resource_bundle_name"
+    chmod -R u+w "$resources_directory/$resource_bundle_name"
+done
+llama_framework=$(find "$repository_root/.build/artifacts" \
+    -type d -path '*/macos-*/llama.framework' -print -quit)
+if [[ -z "$llama_framework" ]]; then
+    echo "llama.frameworkが見つかりません" >&2
+    exit 1
+fi
+ditto "$llama_framework" "$frameworks_directory/llama.framework"
+install_name_tool -add_rpath \
+    "@executable_path/../Frameworks" \
+    "$ime_executable" 2>/dev/null || true
 cp "macOS/ExternalBrowser-Info.plist" "$browser_contents/Info.plist"
 
 developer_rpaths=("${(@f)$(otool -l "$ime_executable" | awk '
@@ -130,6 +154,12 @@ cp \
     "Sources/MyIMEMacOS/Resources/UNICODE-LICENSE.txt" \
     "$resources_directory/UNICODE-LICENSE.txt"
 cp \
+    "Sources/MyIMEMacOS/Resources/Zenzai-NOTICE.txt" \
+    "$resources_directory/Zenzai-NOTICE.txt"
+cp \
+    "Sources/MyIMEMacOS/Resources/AzooKeyKanaKanjiConverter-LICENSE.txt" \
+    "$resources_directory/AzooKeyKanaKanjiConverter-LICENSE.txt"
+cp \
     "Sources/MyIMEMacOS/Resources/kanji-filter-data-source.json" \
     "$resources_directory/kanji-filter-data-source.json"
 xcrun swift "Scripts/generate-ime-icon.swift" \
@@ -183,6 +213,7 @@ xattr -cr "$application_bundle"
 plutil -lint "$contents_directory/Info.plist"
 plutil -lint "$browser_contents/Info.plist"
 if [[ "$code_sign_identity" == "-" ]]; then
+    codesign --force --sign - "$frameworks_directory/llama.framework"
     codesign --force --sign - "$extension_host"
     codesign --force --sign - "$browser_bundle"
     codesign \
@@ -191,6 +222,12 @@ if [[ "$code_sign_identity" == "-" ]]; then
         --entitlements "macOS/myim.entitlements" \
         "$application_bundle"
 else
+    codesign \
+        --force \
+        --sign "$code_sign_identity" \
+        --options runtime \
+        --timestamp \
+        "$frameworks_directory/llama.framework"
     codesign \
         --force \
         --sign "$code_sign_identity" \

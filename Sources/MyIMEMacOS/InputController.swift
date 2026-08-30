@@ -4,6 +4,12 @@ import MyIMECore
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
+    private struct NeuralContextQuery: Equatable {
+        let input: String
+        let reading: String
+        let context: String
+    }
+
     private struct TabDictionaryRegistration {
         let originalInput: String
         let reading: String
@@ -63,6 +69,8 @@ final class InputController: IMKInputController {
         "FuzzySuggestionsEnabled"
     private static let dateTimeCandidatesEnabledDefaultsKey =
         "DateTimeCandidatesEnabled"
+    private static let neuralContextEnabledDefaultsKey =
+        "NeuralContextEnabled"
     private static let dateCandidateFormatsDefaultsKey =
         "DateCandidateFormats"
     private static let timeCandidateFormatsDefaultsKey =
@@ -97,6 +105,12 @@ final class InputController: IMKInputController {
     private var reconversionOriginal: String?
     private var translationDraft: String?
     private var translationTask: Task<Void, Never>?
+    private var neuralContextTask: Task<Void, Never>?
+    private let neuralContextProvider = NeuralContextCandidateProvider()
+    private var neuralContextQuery: NeuralContextQuery?
+    private var cachedNeuralContextQuery: NeuralContextQuery?
+    private var cachedNeuralCandidates: [String] = []
+    private var recentCommittedContext = ""
     private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
     private var currentCandidates: [String] = []
@@ -527,6 +541,7 @@ final class InputController: IMKInputController {
             googleJapaneseInput: isGoogleJapaneseInputEnabled,
             appleTranslation: isAppleTranslationEnabled,
             nextInputPrediction: isNextInputPredictionEnabled,
+            neuralContext: isNeuralContextEnabled,
             fuzzySuggestions: isFuzzySuggestionsEnabled,
             dateTimeCandidates: isDateTimeCandidatesEnabled,
             externalInformationPanel: isExternalInformationPanelEnabled,
@@ -542,6 +557,7 @@ final class InputController: IMKInputController {
             toggleGoogleJapaneseInput: #selector(toggleGoogleJapaneseInput(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
+            toggleNeuralContext: #selector(toggleNeuralContext(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
@@ -733,6 +749,74 @@ final class InputController: IMKInputController {
             dismissNextInputSuggestions(clearMarkedTextIn: client())
             nextInputPredictionModel.breakSequence()
         }
+    }
+
+    @objc
+    private func toggleNeuralContext(_ sender: Any?) {
+        let enabled = !isNeuralContextEnabled
+        if enabled, !neuralContextModelIsInstalled {
+            offerNeuralContextModelDownload()
+            return
+        }
+        UserDefaults.standard.set(
+            enabled,
+            forKey: Self.neuralContextEnabledDefaultsKey
+        )
+        if !enabled {
+            resetNeuralContextRanking()
+        }
+        if !inputBuffer.isEmpty, let inputClient = client() {
+            refreshCandidates(client: inputClient)
+        }
+    }
+
+    private func offerNeuralContextModelDownload() {
+        let alert = NSAlert()
+        alert.messageText = "Zenzaiモデルをダウンロード"
+        alert.informativeText = "ニューラル文脈変換に約74MBのモデルが必要です"
+        alert.addButton(withTitle: "ダウンロード")
+        alert.addButton(withTitle: "キャンセル")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Task { @MainActor [weak self] in
+            do {
+                try await self?.downloadNeuralContextModel()
+                UserDefaults.standard.set(
+                    true,
+                    forKey: Self.neuralContextEnabledDefaultsKey
+                )
+                self?.settingsWindow?.close()
+                self?.settingsWindow = nil
+            } catch {
+                let failure = NSAlert()
+                failure.messageText = "Zenzaiモデルをダウンロードできません"
+                failure.informativeText = error.localizedDescription
+                failure.addButton(withTitle: "閉じる")
+                failure.runModal()
+            }
+        }
+    }
+
+    private func downloadNeuralContextModel() async throws {
+        guard let destination = NeuralContextCandidateProvider.modelURL() else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let directory = destination.deletingLastPathComponent()
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let (temporaryURL, response) = try await URLSession.shared.download(
+            from: NeuralContextCandidateProvider.modelDownloadURL
+        )
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.moveItem(at: temporaryURL, to: destination)
     }
 
     @objc
@@ -2366,6 +2450,11 @@ final class InputController: IMKInputController {
             )
         )
 
+        updateNeuralContextCandidates(
+            reading: kanaCandidates.first ?? conversionReading,
+            client: sender
+        )
+
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
             candidateWindow.hide()
@@ -2377,6 +2466,102 @@ final class InputController: IMKInputController {
         let auxiliaryAnchorFrame = candidateAndInputFrame(for: sender)
         updateFuzzySuggestionsIfNeeded(near: auxiliaryAnchorFrame)
         showInputPreview(client: sender)
+    }
+
+    private func updateNeuralContextCandidates(
+        reading: String,
+        client sender: Any
+    ) {
+        guard isNeuralContextEnabled,
+              !secureInputPassthroughActive,
+              let modelURL = NeuralContextCandidateProvider.modelURL(),
+              FileManager.default.fileExists(atPath: modelURL.path),
+              !reading.isEmpty,
+              !currentCandidates.isEmpty else {
+            resetNeuralContextRanking()
+            return
+        }
+        let context = leftSideContext(from: sender)
+        guard !context.isEmpty else {
+            resetNeuralContextRanking()
+            return
+        }
+        let query = NeuralContextQuery(
+            input: conversionReading,
+            reading: reading,
+            context: context
+        )
+        if cachedNeuralContextQuery == query {
+            currentCandidates = NeuralCandidateRanker.ordered(
+                currentCandidates,
+                neuralCandidates: cachedNeuralCandidates
+            )
+            return
+        }
+        if neuralContextQuery == query, neuralContextTask != nil {
+            return
+        }
+        neuralContextTask?.cancel()
+        neuralContextQuery = query
+        cachedNeuralContextQuery = nil
+        cachedNeuralCandidates = []
+        let provider = neuralContextProvider
+        neuralContextTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(80))
+            guard !Task.isCancelled else { return }
+            let neuralCandidates = await provider.candidates(
+                for: reading,
+                context: context,
+                modelURL: modelURL,
+                limit: Self.maximumCandidateCount * 3
+            )
+            guard let self, !Task.isCancelled,
+                  self.neuralContextQuery == query,
+                  self.conversionReading == query.input,
+                  !self.inputBuffer.isEmpty else { return }
+            self.neuralContextTask = nil
+            self.cachedNeuralContextQuery = query
+            self.cachedNeuralCandidates = neuralCandidates
+            let selected = self.selectedCandidateValue
+            self.currentCandidates = NeuralCandidateRanker.ordered(
+                self.currentCandidates,
+                neuralCandidates: neuralCandidates
+            )
+            if let selected {
+                self.selectedCandidateIndex = self.currentCandidates.firstIndex {
+                    self.candidateValueForCommit($0) + self.conversionSuffix == selected
+                }
+            }
+            self.showCandidateWindow(client: sender)
+        }
+    }
+
+    private func resetNeuralContextRanking() {
+        neuralContextTask?.cancel()
+        neuralContextTask = nil
+        neuralContextQuery = nil
+        cachedNeuralContextQuery = nil
+        cachedNeuralCandidates = []
+    }
+
+    private func leftSideContext(from sender: Any) -> String {
+        guard let textClient = sender as? IMKTextInput else {
+            return recentCommittedContext
+        }
+        let markedRange = textClient.markedRange()
+        let selectedRange = textClient.selectedRange()
+        let end = markedRange.location != NSNotFound
+            ? markedRange.location
+            : selectedRange.location
+        if end != NSNotFound, end > 0 {
+            let length = min(end, 256)
+            let range = NSRange(location: end - length, length: length)
+            if let context = textClient.attributedSubstring(from: range)?.string,
+               !context.isEmpty {
+                return context
+            }
+        }
+        return recentCommittedContext
     }
 
     private func updateFuzzySuggestionsIfNeeded(near anchorFrame: NSRect) {
@@ -3264,6 +3449,10 @@ final class InputController: IMKInputController {
             value,
             replacementRange: replacementRange
         )
+        recentCommittedContext = String(
+            (recentCommittedContext + value).suffix(256)
+        )
+        resetNeuralContextRanking()
         suggestionSearchSession.cancelAll()
         inputBuffer = ""
         inputCursor = 0
@@ -3689,6 +3878,19 @@ final class InputController: IMKInputController {
         return UserDefaults.standard.bool(
             forKey: Self.nextInputEnabledDefaultsKey
         )
+    }
+
+    private var isNeuralContextEnabled: Bool {
+        UserDefaults.standard.bool(
+            forKey: Self.neuralContextEnabledDefaultsKey
+        )
+    }
+
+    private var neuralContextModelIsInstalled: Bool {
+        guard let url = NeuralContextCandidateProvider.modelURL() else {
+            return false
+        }
+        return FileManager.default.fileExists(atPath: url.path)
     }
 
     private var isExternalInformationPanelEnabled: Bool {
