@@ -147,6 +147,7 @@ final class InputController: IMKInputController {
     private let candidateWindow = CandidateWindowController()
     private let calendarWindow = CalendarWindowController()
     private let modeStatusWindow = ModeStatusWindowController()
+    private let generationWindow = GenerationWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
@@ -236,6 +237,11 @@ final class InputController: IMKInputController {
             if !inputBuffer.isEmpty {
                 refreshCandidates(client: sender)
             }
+            return true
+        }
+
+        if isGenerationModeShortcut(event) {
+            openGenerationMode(nil)
             return true
         }
 
@@ -487,6 +493,7 @@ final class InputController: IMKInputController {
                 manageJavaScriptExtensions: #selector(
                     manageJavaScriptExtensions(_:)
                 ),
+                openGenerationMode: #selector(openGenerationMode(_:)),
                 toggleTranslationMode: #selector(toggleTranslationMode(_:)),
                 translationModeEnabled: isTranslationModeEnabled,
                 showStatus: #selector(showStatus(_:))
@@ -838,6 +845,23 @@ final class InputController: IMKInputController {
         resetOfficialCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func openGenerationMode(_ sender: Any?) {
+        guard let inputClient = client() else {
+            NSSound.beep()
+            return
+        }
+        if !inputBuffer.isEmpty {
+            commit(inputBuffer, to: inputClient)
+        }
+        let returnApplication = NSWorkspace.shared.frontmostApplication
+        generationWindow.show { [weak self] text in
+            guard let self else { return }
+            returnApplication?.activate(options: [.activateIgnoringOtherApps])
+            commit(text, to: inputClient)
+        }
     }
 
     @objc
@@ -2987,6 +3011,15 @@ final class InputController: IMKInputController {
         return flags == [.option]
             && (event.keyCode == 17
                 || event.charactersIgnoringModifiers?.lowercased() == "t")
+    }
+
+    private func isGenerationModeShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
+        return flags == [.option]
+            && (event.keyCode == 5
+                || event.charactersIgnoringModifiers?.lowercased() == "g")
     }
 
     private func showCandidateWindow(client sender: Any) {

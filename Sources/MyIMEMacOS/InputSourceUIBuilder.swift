@@ -9,6 +9,7 @@ enum InputSourceMenuBuilder {
         let openSettings: Selector
         let openJavaScriptExtensionDirectory: Selector
         let manageJavaScriptExtensions: Selector
+        let openGenerationMode: Selector
         let toggleTranslationMode: Selector
         let translationModeEnabled: Bool
         let showStatus: Selector
@@ -30,6 +31,13 @@ enum InputSourceMenuBuilder {
         addAction(
             title: "JavaScript拡張を管理…",
             selector: actions.manageJavaScriptExtensions,
+            to: menu
+        )
+        addAction(
+            title: "生成モード…",
+            selector: actions.openGenerationMode,
+            keyEquivalent: "g",
+            modifierMask: [.option],
             to: menu
         )
         let translationMode = NSMenuItem(
