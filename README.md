@@ -8,6 +8,8 @@ POBox、Gyaim、SKKにインスピレーションを受けて制作しました
 
 myimは、日本語入力と英語入力を別のモードへ分けず、ローマ字から必要な表記を選ぶInput Methodです
 
+macOS専用として開発し、他OSとの互換性よりInputMethodKit、AppKit、Dictionary Services、Natural Language、Translation、JavaScriptCoreとの統合を優先します
+
 - 変換前はローマ字を保ち、候補を選んだ時だけ日本語や別の表記へ変換
 - 辞書の基本単位を`input → candidates`の単純な組にし、日本語変換、略語、英語、固有名詞を同じ形式で扱う
 - 基本辞書とユーザー辞書を重ね、一般語彙と個人の語彙を両立
@@ -452,7 +454,7 @@ ls -lt ~/Library/Logs/DiagnosticReports/myim*.ips
 
 - 辞書登録と外部情報パネルのInputMethodKit実機テストを拡充
 - カーソル位置の入力モードインジケータをライト・ダーク両モードで安定化
-- 変換エンジンをmacOS固有実装から分離してWindowsへ対応
+- InputMethodKitの実機挙動に合わせて確定、再変換、候補パネル、フォーカス復帰を安定化
 - 権限と表示領域を定義した拡張フォルダ形式
 
 ### リファクタリング
@@ -465,7 +467,7 @@ ls -lt ~/Library/Logs/DiagnosticReports/myim*.ips
 - `InputController`に残る候補選択と確定を`MyIMECore`へ移動
 - 外部候補、誤入力補完、次入力予測、外部情報表示を拡張機能として分離
 - 通常候補だけでなく拡張機能の候補も`CandidatePipeline`で順位付け
-- JavaScript実行エンジンを抽象化し、Windows版では交換可能にする
+- JavaScriptCore補助プロセスの起動、監視、タイムアウト処理をmacOS向けに安定化
 - 必要性と安全性を確認した機能だけ、将来XPCなどの外部プラグイン方式を検討
 
 ## 関連資料

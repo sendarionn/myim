@@ -1880,3 +1880,10 @@
 
 - `kinyou`をMozc辞書の`kin'you`へも照合し、「金曜」が候補に出ない問題を修正
 - 曜日、月、週、相対日付の基本語を辞書間で照合し、同じ撥音＋Y表記の不一致を検索時にまとめて補完
+
+### macOS専用方針への統一
+
+- Windows Text Services Frameworkへの対応計画を撤回
+- Windows版を想定した変換エンジンとJavaScript実行環境の抽象化計画を削除
+- InputMethodKit、AppKit、Dictionary Services、Natural Language、Translation、JavaScriptCoreとの直接統合を優先
+- `MyIMECore`は他OS互換層ではなく、入力処理の分離と単体テストのための内部層として維持
