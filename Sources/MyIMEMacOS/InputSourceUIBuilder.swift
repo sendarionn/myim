@@ -134,10 +134,10 @@ enum SettingsWindowBuilder {
         addCheckboxes([
             ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
             ("Wikipediaを辞書として利用", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
-            ("Google CGI APIの変換候補を使用（入力内容をGoogleへ送信）", actions.toggleGoogleJapaneseInput, states.googleJapaneseInput),
+            ("Google CGI APIの変換候補を使用", actions.toggleGoogleJapaneseInput, states.googleJapaneseInput),
             ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
-            ("直前の文章を考慮して候補順を調整", actions.toggleNeuralContext, states.neuralContext),
+            ("直前の文章を考慮して候補順を調整（zenz-v3.2-small Q5_K_M）", actions.toggleNeuralContext, states.neuralContext),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)
