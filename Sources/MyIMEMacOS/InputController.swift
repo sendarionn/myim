@@ -2318,11 +2318,16 @@ final class InputController: IMKInputController {
             showCandidateWindow(client: sender)
             return
         }
-        let numericFormatCandidates = NumberGroupingCandidateGenerator
+        let groupedNumberCandidates = NumberGroupingCandidateGenerator
             .candidates(for: inputBuffer)
-            + JapaneseNumericUnitCandidateGenerator.candidates(
-                for: inputBuffer
-            )
+        let numericUnitCandidates = JapaneseNumericUnitCandidateGenerator
+            .candidates(for: inputBuffer)
+        let numericFormatCandidates = groupedNumberCandidates.isEmpty
+                && numericUnitCandidates.isEmpty
+            ? []
+            : groupedNumberCandidates
+                + JapaneseNumberConverter.kanjiCandidates(for: inputBuffer)
+                + numericUnitCandidates
             + (suggestionSearchSession.query(for: .postalAddress) == inputBuffer
                 ? postalAddressCandidates
                 : [])

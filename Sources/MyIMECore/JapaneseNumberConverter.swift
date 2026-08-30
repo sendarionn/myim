@@ -5,19 +5,34 @@ public enum JapaneseNumberConverter {
         guard !input.isEmpty,
               input.allSatisfy(\.isNumber),
               input.allSatisfy({ $0.isASCII }),
-              let value = Int(input),
-              (0...20).contains(value),
+              let value = UInt64(input),
               String(value) == input else {
             return []
         }
 
         var candidates = [input]
-        if let circled = circledNumber(value) {
+        if let circled = Int(exactly: value).flatMap(circledNumber) {
             candidates.append(circled)
         }
         candidates.append(fullWidthNumber(input))
-        candidates.append(contentsOf: kanjiNumbers[value] ?? [])
+        if let smallValue = Int(exactly: value),
+           let smallCandidates = kanjiNumbers[smallValue] {
+            candidates.append(contentsOf: smallCandidates)
+        } else if let kanji = kanjiNumber(value) {
+            candidates.append(kanji)
+        }
         return candidates
+    }
+
+    public static func kanjiCandidates(for input: String) -> [String] {
+        guard !input.isEmpty,
+              input.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let value = UInt64(input),
+              String(value) == input,
+              let kanji = kanjiNumber(value) else {
+            return []
+        }
+        return [kanji]
     }
 
     private static func circledNumber(_ value: Int) -> String? {
@@ -39,6 +54,40 @@ public enum JapaneseNumberConverter {
             }
             return Character(scalar)
         })
+    }
+
+    private static func kanjiNumber(_ value: UInt64) -> String? {
+        if value == 0 {
+            return "零"
+        }
+        let largeUnits = ["", "万", "億", "兆", "京"]
+        var remaining = value
+        var groupIndex = 0
+        var result = ""
+        while remaining > 0 {
+            guard groupIndex < largeUnits.count else { return nil }
+            let group = Int(remaining % 10_000)
+            if group > 0 {
+                result = kanjiGroup(group) + largeUnits[groupIndex] + result
+            }
+            remaining /= 10_000
+            groupIndex += 1
+        }
+        return result
+    }
+
+    private static func kanjiGroup(_ value: Int) -> String {
+        let digits = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+        let units = ["千", "百", "十", ""]
+        let divisors = [1_000, 100, 10, 1]
+        return zip(divisors, units).reduce(into: "") { result, pair in
+            let digit = value / pair.0 % 10
+            guard digit > 0 else { return }
+            if digit != 1 || pair.0 == 1 {
+                result += digits[digit]
+            }
+            result += pair.1
+        }
     }
 
     private static let kanjiNumbers: [Int: [String]] = [
