@@ -201,7 +201,33 @@ public enum RomajiCanonicalizer {
     public static func exactLookupInputs(from input: String) -> [String] {
         let raw = input.lowercased()
         let canonical = canonicalInput(from: raw)
-        return raw == canonical ? [raw] : [raw, canonical]
+        var inputs = raw == canonical ? [raw] : [raw, canonical]
+        for value in inputs {
+            let moraicN = moraicNBeforeYInput(from: value)
+            if moraicN != value, !inputs.contains(moraicN) {
+                inputs.append(moraicN)
+            }
+        }
+        return inputs
+    }
+
+    private static func moraicNBeforeYInput(from input: String) -> String {
+        let characters = Array(input)
+        guard characters.count >= 3 else { return input }
+        var result = ""
+        for index in characters.indices {
+            let character = characters[index]
+            if character == "n",
+               index > characters.startIndex,
+               index + 1 < characters.endIndex,
+               characters[index + 1] == "y",
+               "aeiou".contains(characters[index - 1]) {
+                result.append("n'")
+            } else {
+                result.append(character)
+            }
+        }
+        return result
     }
 
     public static func canonicalInput(from input: String) -> String {

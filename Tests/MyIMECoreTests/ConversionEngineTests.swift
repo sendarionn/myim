@@ -122,6 +122,17 @@ struct ConversionEngineTests {
         #expect(engine.candidates(matching: "hidu") == ["日付"])
     }
 
+    @Test
+    func findsMoraicNReadingBeforeYWithoutApostropheInput() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "kin'you", candidates: ["金曜"]),
+            DictionaryEntry(reading: "shin'you", candidates: ["信用"])
+        ])
+
+        #expect(engine.candidates(for: "kinyou") == ["金曜"])
+        #expect(engine.candidates(for: "sinyou") == ["信用"])
+    }
+
 
     @Test
     func prioritizesRawInputBeforeCanonicalRomajiInput() {

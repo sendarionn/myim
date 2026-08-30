@@ -37,6 +37,10 @@ struct BundledTypoCorrectionTests {
         let imeDictionary = try IndexedDictionaryEngine(
             contentsOf: imeDictionaryURL
         )
+        let fridayCandidates = RomajiCanonicalizer
+            .dictionaryLookupInputs(from: "kinyou")
+            .flatMap { imeDictionary.candidates(for: $0) }
+        #expect(fridayCandidates.contains("金曜"))
         #expect(RomajiKeyboardTypoGenerator.dictionaryMatches(
             for: "vaiyou",
             dictionary: imeDictionary

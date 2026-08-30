@@ -96,6 +96,22 @@ struct RomajiConverterTests {
     }
 
     @Test
+    func addsMoraicNVariantBeforeYForDictionarySearch() {
+        #expect(
+            RomajiCanonicalizer.dictionaryLookupInputs(from: "kinyou")
+                .contains("kin'you")
+        )
+        #expect(
+            RomajiCanonicalizer.dictionaryLookupInputs(from: "nyuugaku")
+                == ["nyuugaku"]
+        )
+        #expect(
+            RomajiCanonicalizer.dictionaryLookupInputs(from: "konnyaku")
+                == ["konnyaku"]
+        )
+    }
+
+    @Test
     func canonicalizesOnlyCompleteJapaneseRomajiInput() {
         #expect(RomajiCanonicalizer.canonicalInput(from: "siru") == "shiru")
         #expect(RomajiCanonicalizer.canonicalInput(from: "syuusei") == "shuusei")
