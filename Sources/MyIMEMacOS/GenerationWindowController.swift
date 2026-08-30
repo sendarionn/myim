@@ -37,6 +37,7 @@ final class GenerationWindowController: NSObject, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.delegate = self
 
         let content = NSView(frame: panel.contentView?.bounds ?? .zero)
@@ -69,14 +70,17 @@ final class GenerationWindowController: NSObject, NSWindowDelegate {
         purposeView.nextKeyView = requirementsView
     }
 
-    func show(completion: @escaping (String) -> Void) {
+    func show(
+        near anchorFrame: NSRect,
+        completion: @escaping (String) -> Void
+    ) {
         self.completion = completion
         statusLabel.stringValue = ""
         generateButton.isEnabled = true
         requirementsView.string = ""
         purposeView.string = ""
+        position(near: anchorFrame)
         NSApp.activate(ignoringOtherApps: true)
-        panel.center()
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(requirementsView)
     }
@@ -125,6 +129,57 @@ final class GenerationWindowController: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         cancel(nil)
+    }
+
+    private func position(near anchorFrame: NSRect) {
+        let resolvedAnchor = anchorFrame == .zero
+            ? NSRect(
+                origin: NSEvent.mouseLocation,
+                size: NSSize(width: 1, height: 1)
+            )
+            : anchorFrame
+        let screens = NSScreen.screens
+        let screen = screens.max { lhs, rhs in
+            intersectionArea(lhs.frame, resolvedAnchor)
+                < intersectionArea(rhs.frame, resolvedAnchor)
+        }.flatMap {
+            intersectionArea($0.frame, resolvedAnchor) > 0 ? $0 : nil
+        } ?? nearestScreen(
+            to: NSPoint(x: resolvedAnchor.midX, y: resolvedAnchor.midY),
+            screens: screens
+        ) ?? NSScreen.main
+        let visibleFrame = screen?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        let size = panel.frame.size
+        let x = min(
+            max(resolvedAnchor.minX, visibleFrame.minX),
+            visibleFrame.maxX - size.width
+        )
+        var y = resolvedAnchor.minY - size.height - 8
+        if y < visibleFrame.minY {
+            y = min(resolvedAnchor.maxY + 8, visibleFrame.maxY - size.height)
+        }
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func intersectionArea(_ lhs: NSRect, _ rhs: NSRect) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        return intersection.isNull ? 0 : intersection.width * intersection.height
+    }
+
+    private func nearestScreen(to point: NSPoint, screens: [NSScreen]) -> NSScreen? {
+        screens.min { lhs, rhs in
+            squaredDistance(from: point, to: lhs.frame)
+                < squaredDistance(from: point, to: rhs.frame)
+        }
+    }
+
+    private func squaredDistance(from point: NSPoint, to rect: NSRect) -> CGFloat {
+        let x = min(max(point.x, rect.minX), rect.maxX)
+        let y = min(max(point.y, rect.minY), rect.maxY)
+        let dx = point.x - x
+        let dy = point.y - y
+        return dx * dx + dy * dy
     }
 
     private func addLabel(_ text: String, frame: NSRect, to content: NSView) {

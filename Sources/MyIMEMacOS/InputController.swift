@@ -853,11 +853,12 @@ final class InputController: IMKInputController {
             NSSound.beep()
             return
         }
+        let anchorFrame = inputLocation(for: inputClient)
         if !inputBuffer.isEmpty {
             commit(inputBuffer, to: inputClient)
         }
         let returnApplication = NSWorkspace.shared.frontmostApplication
-        generationWindow.show { [weak self] text in
+        generationWindow.show(near: anchorFrame) { [weak self] text in
             guard let self else { return }
             returnApplication?.activate(options: [.activateIgnoringOtherApps])
             commit(text, to: inputClient)
