@@ -1887,3 +1887,13 @@
 - Windows版を想定した変換エンジンとJavaScript実行環境の抽象化計画を削除
 - InputMethodKit、AppKit、Dictionary Services、Natural Language、Translation、JavaScriptCoreとの直接統合を優先
 - `MyIMECore`は他OS互換層ではなく、入力処理の分離と単体テストのための内部層として維持
+
+### macOS辞書の表示順と種別表記
+
+- 表示するmacOS辞書の選択画面を表形式へ変更し、上下ボタンで辞書パネル内の表示順を変更可能にした
+- 保存済みの辞書順を次回の設定画面でも維持
+- 辞書説明を独自の矢印表記から、macOS辞書メタデータと同じ`日本語 - 英語`形式へ変更
+- 辞書名から種別を推測する処理を補助扱いにし、辞書バンドルの`CFBundleName`と`DCSDictionaryLanguages`を一覧表示時に読み取るよう変更
+- 実メタデータを取得できる辞書へ「言語情報なし」と表示される問題を修正
+- 未ダウンロードの辞書を含むAppleのMobileAssetカタログから`IndexLanguages`を取得し、Dictionary Servicesが返す全辞書の言語を表示
+- 長い辞書名が見切れないよう、辞書選択一覧を横方向へスクロール可能に変更

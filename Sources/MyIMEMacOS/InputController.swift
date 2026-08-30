@@ -2,10 +2,6 @@
 @preconcurrency import InputMethodKit
 import MyIMECore
 
-private final class DictionarySelectionStackView: NSStackView {
-    override var isFlipped: Bool { true }
-}
-
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
     private struct TabDictionaryRegistration {
@@ -930,61 +926,21 @@ final class InputController: IMKInputController {
     @objc
     private func configureSystemDictionaries(_ sender: Any?) {
         let availableNames = definitionProvider.availableDictionaryNames()
-        let alert = NSAlert()
-        alert.messageText = "表示するmacOS辞書"
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "キャンセル")
         guard !availableNames.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "表示するmacOS辞書"
             alert.informativeText = "利用可能な辞書がありません"
-            alert.buttons[0].title = "閉じる"
-            alert.buttons[1].isHidden = true
+            alert.addButton(withTitle: "閉じる")
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
             return
         }
-
-        let selectedNames = Set(systemDictionaryNames)
-        let stack = DictionarySelectionStackView()
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        let checkboxes = availableNames.map { name in
-            let checkbox = NSButton(
-                checkboxWithTitle: "\(name)（\(SystemDictionaryDefinitionProvider.contentDescription(for: name))）",
-                target: nil,
-                action: nil
-            )
-            checkbox.state = selectedNames.contains(name) ? .on : .off
-            stack.addArrangedSubview(checkbox)
-            return checkbox
-        }
-        let contentHeight = CGFloat(availableNames.count) * 26
-        stack.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: 420,
-            height: contentHeight
-        )
-        let scrollView = NSScrollView(
-            frame: NSRect(
-                x: 0,
-                y: 0,
-                width: 440,
-                height: min(contentHeight, 320)
-            )
-        )
-        scrollView.documentView = stack
-        scrollView.hasVerticalScroller = contentHeight > 320
-        scrollView.autohidesScrollers = true
-        scrollView.contentView.scroll(to: .zero)
-        scrollView.reflectScrolledClipView(scrollView.contentView)
-        alert.accessoryView = scrollView
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
-        let names = zip(availableNames, checkboxes).compactMap { name, checkbox in
-            checkbox.state == .on ? name : nil
-        }
+        let selectionController = SystemDictionarySelectionController()
+        guard let names = selectionController.run(
+            availableNames: availableNames,
+            selectedNames: systemDictionaryNames,
+            descriptions: definitionProvider.contentDescriptions()
+        ) else { return }
         UserDefaults.standard.set(
             names,
             forKey: Self.systemDictionaryNamesDefaultsKey
