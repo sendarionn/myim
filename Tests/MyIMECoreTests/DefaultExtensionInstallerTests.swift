@@ -5,6 +5,39 @@ import Testing
 @Suite("DefaultExtensionInstallerTests")
 struct DefaultExtensionInstallerTests {
     @Test
+    func removesDeprecatedDateTimeReadingsWithoutChangingOtherFormats() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let destination = root.appendingPathComponent("destination", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try Data("function candidates() { return [] }\n".utf8).write(
+            to: source.appendingPathComponent("datetime.js")
+        )
+        let installed = destination.appendingPathComponent("datetime.js")
+        let customized = """
+          const dateFormats = ["YYYYMMDD"]
+          const dateTimeFormats = [
+            "YYYY-MM-DD-THHmmss"
+          ]
+          const dateTimeReadings = ["nichiji", "genzainichiji"]
+          if (dateTimeReadings.indexOf(input) >= 0) {
+            return format(now, dateTimeFormats)
+          }
+        """ + "\n"
+        try Data(customized.utf8).write(to: installed)
+
+        try DefaultExtensionInstaller.installIfNeeded(from: source, into: destination)
+
+        let migrated = try String(contentsOf: installed, encoding: .utf8)
+        #expect(migrated.contains("dateFormats"))
+        #expect(!migrated.contains("dateTimeFormats"))
+        #expect(!migrated.contains("dateTimeReadings"))
+    }
+
+    @Test
     func installsDefaultsOnlyOnceWithoutOverwritingUserChanges() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

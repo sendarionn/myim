@@ -7,12 +7,6 @@ function candidates(context) {
   }
   const dateFormats = ["YYYYMMDD", "M/DD"]
   const timeFormats = ["H:m", "H時m分"]
-  const dateTimeFormats = [
-    "YYYY年M月D日 HH:mm",
-    "YYYY-MM-DD HH:mm",
-    "YYYY/MM/DD HH:mm",
-    "YYYYMMDDHHmmss"
-  ]
   const dayOffsets = {
     ototoi: -2,
     kinou: -1,
@@ -21,7 +15,6 @@ function candidates(context) {
     asatte: 2
   }
   const timeReadings = ["ima", "jikoku", "genzaijikoku"]
-  const dateTimeReadings = ["nichiji", "genzainichiji"]
   const input = context.input.toLowerCase()
   const now = new Date(context.timestamp)
 
@@ -31,9 +24,6 @@ function candidates(context) {
   }
   if (timeReadings.indexOf(input) >= 0) {
     return format(now, timeFormats)
-  }
-  if (dateTimeReadings.indexOf(input) >= 0) {
-    return format(now, dateTimeFormats)
   }
   return []
 }
