@@ -2497,6 +2497,7 @@ final class InputController: IMKInputController {
             context: context
         )
         if cachedNeuralContextQuery == query {
+            guard selectedCandidateIndex == nil else { return }
             currentCandidates = NeuralCandidateRanker.ordered(
                 currentCandidates,
                 neuralCandidates: cachedNeuralCandidates
@@ -2527,16 +2528,11 @@ final class InputController: IMKInputController {
             self.neuralContextTask = nil
             self.cachedNeuralContextQuery = query
             self.cachedNeuralCandidates = neuralCandidates
-            let selected = self.selectedCandidateValue
+            guard self.selectedCandidateIndex == nil else { return }
             self.currentCandidates = NeuralCandidateRanker.ordered(
                 self.currentCandidates,
                 neuralCandidates: neuralCandidates
             )
-            if let selected {
-                self.selectedCandidateIndex = self.currentCandidates.firstIndex {
-                    self.candidateValueForCommit($0) + self.conversionSuffix == selected
-                }
-            }
             self.showCandidateWindow(client: sender)
         }
     }
