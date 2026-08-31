@@ -295,19 +295,25 @@ private final class CalendarFormatKeyPanel: NSPanel {
     var candidateCount = 0
     var selectedIndex: Int?
     var selectionChanged: ((Int?) -> Void)?
+    var directionalSelection: ((Int?, CandidateNavigationDirection) -> Int?)?
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 48, 124, 125:
+        case 48:
             guard candidateCount > 0 else { return }
-            let direction = event.keyCode == 48
-                && event.modifierFlags.contains(.shift) ? -1 : 1
+            let direction = event.modifierFlags.contains(.shift) ? -1 : 1
             moveSelection(by: direction)
-        case 123, 126:
-            moveSelection(by: -1)
+        case 123:
+            moveSelection(.left)
+        case 124:
+            moveSelection(.right)
+        case 125:
+            moveSelection(.down)
+        case 126:
+            moveSelection(.up)
         case 36, 76:
             guard selectedIndex != nil else { return }
             NSApp.stopModal(withCode: .OK)
@@ -322,6 +328,16 @@ private final class CalendarFormatKeyPanel: NSPanel {
         guard candidateCount > 0 else { return }
         let current = selectedIndex ?? (offset > 0 ? -1 : 0)
         selectedIndex = (current + offset + candidateCount) % candidateCount
+        selectionChanged?(selectedIndex)
+    }
+
+    private func moveSelection(_ direction: CandidateNavigationDirection) {
+        guard candidateCount > 0 else { return }
+        if selectedIndex == nil {
+            selectedIndex = 0
+        } else if let directionalSelection {
+            selectedIndex = directionalSelection(selectedIndex, direction)
+        }
         selectionChanged?(selectedIndex)
     }
 }
@@ -432,11 +448,16 @@ final class CalendarWindowController: NSObject {
         candidateCount: Int,
         near anchorFrame: NSRect,
         returnTo previousApplication: NSRunningApplication?,
+        directionalSelection: @escaping (
+            Int?,
+            CandidateNavigationDirection
+        ) -> Int?,
         selectionChanged: @escaping (Int?) -> Void
     ) -> Int? {
         guard candidateCount > 0 else { return nil }
         formatKeyPanel.candidateCount = candidateCount
         formatKeyPanel.selectedIndex = nil
+        formatKeyPanel.directionalSelection = directionalSelection
         formatKeyPanel.selectionChanged = selectionChanged
 
         let previousPolicy = NSApp.activationPolicy()
@@ -454,6 +475,7 @@ final class CalendarWindowController: NSObject {
         let response = NSApp.runModal(for: formatKeyPanel)
         let selectedIndex = formatKeyPanel.selectedIndex
         formatKeyPanel.orderOut(nil)
+        formatKeyPanel.directionalSelection = nil
         formatKeyPanel.selectionChanged = nil
         if NSApp.activationPolicy() != previousPolicy {
             _ = NSApp.setActivationPolicy(previousPolicy)

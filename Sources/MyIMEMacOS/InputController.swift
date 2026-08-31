@@ -1924,6 +1924,13 @@ final class InputController: IMKInputController {
                 candidateCount: orderedCandidates.count,
                 near: self.calendarInputLocation(for: sender),
                 returnTo: self.calendarReturnApplication,
+                directionalSelection: { [weak self] index, direction in
+                    self?.calendarFormatSelectionIndex(
+                        from: index,
+                        direction: direction,
+                        candidateCount: orderedCandidates.count
+                    )
+                },
                 selectionChanged: { [weak self] index in
                     guard let self else { return }
                     self.selectedCalendarFormatIndex = index
@@ -1947,17 +1954,28 @@ final class InputController: IMKInputController {
     ) -> Bool {
         guard let candidates = calendarFormatCandidates else { return false }
         switch event.keyCode {
-        case 48, 124, 125:
+        case 48:
             guard !candidates.isEmpty else { return true }
+            let offset = event.modifierFlags.contains(.shift) ? -1 : 1
             selectedCalendarFormatIndex = (
-                (selectedCalendarFormatIndex ?? -1) + 1
+                (selectedCalendarFormatIndex ?? (offset > 0 ? -1 : 0))
+                    + offset
+                    + candidates.count
             ) % candidates.count
             showCalendarFormatCandidates(client: sender)
-        case 123, 126:
+        case 123, 124, 125, 126:
             guard !candidates.isEmpty else { return true }
-            selectedCalendarFormatIndex = (
-                (selectedCalendarFormatIndex ?? 0) - 1 + candidates.count
-            ) % candidates.count
+            let direction: CandidateNavigationDirection = switch event.keyCode {
+            case 123: .left
+            case 124: .right
+            case 125: .down
+            default: .up
+            }
+            selectedCalendarFormatIndex = calendarFormatSelectionIndex(
+                from: selectedCalendarFormatIndex,
+                direction: direction,
+                candidateCount: candidates.count
+            )
             showCalendarFormatCandidates(client: sender)
         case 36, 76:
             guard let index = selectedCalendarFormatIndex,
@@ -1975,6 +1993,34 @@ final class InputController: IMKInputController {
             break
         }
         return true
+    }
+
+    private func calendarFormatSelectionIndex(
+        from selectedIndex: Int?,
+        direction: CandidateNavigationDirection,
+        candidateCount: Int
+    ) -> Int? {
+        guard candidateCount > 0 else { return nil }
+        guard let selectedIndex else { return 0 }
+        let pageStart = selectedIndex
+            / Self.maximumCandidateCount
+            * Self.maximumCandidateCount
+        let localIndex = selectedIndex - pageStart
+        if let localNextIndex = candidateWindow.adjacentIndex(
+            from: localIndex,
+            direction: direction
+        ) {
+            return pageStart + localNextIndex
+        }
+        let offset: Int = switch direction {
+        case .left: -1
+        case .right: 1
+        case .up: -Self.maximumCandidateCount
+        case .down: Self.maximumCandidateCount
+        }
+        return (
+            (selectedIndex + offset) % candidateCount + candidateCount
+        ) % candidateCount
     }
 
     private func showCalendarFormatCandidates(client sender: Any) {
