@@ -134,6 +134,7 @@ final class InputController: IMKInputController {
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let settingsDialogController = SettingsDialogController()
+    private let shortcutSettingsController = ShortcutSettingsController()
     private lazy var javaScriptExtensionSettingsController =
         JavaScriptExtensionSettingsController(
             client: Self.javaScriptExtensionClient
@@ -579,8 +580,14 @@ final class InputController: IMKInputController {
             toggleSystemDictionaryPreview: #selector(toggleSystemDictionaryPreview(_:)),
             configureSystemDictionaries: #selector(configureSystemDictionaries(_:)),
             toggleWebSearch: #selector(toggleWebSearch(_:)),
+            configureShortcuts: #selector(configureShortcuts(_:)),
             updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:))
         )
+    }
+
+    @objc
+    private func configureShortcuts(_ sender: Any?) {
+        shortcutSettingsController.show()
     }
 
     @objc
@@ -1233,7 +1240,7 @@ final class InputController: IMKInputController {
             candidates: [translationDraft],
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            guide: "↩ 翻訳して確定　Esc 日本語で確定\n⌥T 翻訳モード終了",
+            guide: "↩ 翻訳して確定　Esc 日本語で確定\n\(MyIMFeatureShortcut.translationMode.shortcut.displayName) 翻訳モード終了",
             modeTitle: "翻訳する日本語"
         )
     }
@@ -1485,10 +1492,7 @@ final class InputController: IMKInputController {
     }
 
     private func isTabDictionaryRegistrationShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(
-            [.command, .control, .option, .shift]
-        )
-        return event.keyCode == 2 && flags == [.option]
+        MyIMFeatureShortcut.dictionaryRegistration.shortcut.matches(event)
     }
 
     private func handleTabDictionaryRegistration(
@@ -1746,7 +1750,7 @@ final class InputController: IMKInputController {
                 near: inputLocation(for: sender),
                 guide: registration.isEnteringDisplayName
                     ? "↩ 登録を確定　Esc 中止"
-                    : "↩ 登録を確定　⌥D 表示名も登録\nEsc 中止",
+                    : "↩ 登録を確定　\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 表示名も登録\nEsc 中止",
                 modeTitle: registration.isEnteringDisplayName
                     ? "候補パネルの表示名を入力"
                     : "登録したい文字列を入力"
@@ -1769,7 +1773,7 @@ final class InputController: IMKInputController {
                 ? "↩ 表示名を確定　⌘V 貼付　Esc 中止"
                 : (candidate == nil
                     ? "↩ 入力を追加　⌘V 貼付　Esc 中止"
-                    : "↩ 入力を追加　⌥D 表示名も登録\n⌘V 貼付　Esc 中止"),
+                    : "↩ 入力を追加　\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 表示名も登録\n⌘V 貼付　Esc 中止"),
             modeTitle: registration.isEnteringDisplayName
                 ? "候補パネルの表示名を入力"
                 : "登録したい文字列を入力"
@@ -1861,21 +1865,11 @@ final class InputController: IMKInputController {
     }
 
     private func isCandidateFilterShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
-        return flags == [.option]
-            && (event.keyCode == 3
-                || event.charactersIgnoringModifiers?.lowercased() == "f")
+        MyIMFeatureShortcut.candidateFilter.shortcut.matches(event)
     }
 
     private func isCalendarShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
-        return flags == [.option]
-            && (event.keyCode == 8
-                || event.charactersIgnoringModifiers?.lowercased() == "c")
+        MyIMFeatureShortcut.calendar.shortcut.matches(event)
     }
 
     private func beginCalendarSelection(
@@ -2992,22 +2986,13 @@ final class InputController: IMKInputController {
     }
 
     private func isWebSearchShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
-        return flags == [.command]
-            && (event.keyCode == 36 || event.keyCode == 76)
+        MyIMFeatureShortcut.webSearch.shortcut.matches(event)
     }
 
     private func isOpenExternalInformationShortcut(
         _ event: NSEvent
     ) -> Bool {
-        let flags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
-        return flags == [.command]
-            && (event.keyCode == 31
-                || event.charactersIgnoringModifiers?.lowercased() == "o")
+        MyIMFeatureShortcut.externalInformation.shortcut.matches(event)
     }
 
     private func openSelectedWebSearch(client sender: Any) -> Bool {
@@ -3197,12 +3182,7 @@ final class InputController: IMKInputController {
     }
 
     private func isTranslationModeShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
-        return flags == [.option]
-            && (event.keyCode == 17
-                || event.charactersIgnoringModifiers?.lowercased() == "t")
+        MyIMFeatureShortcut.translationMode.shortcut.matches(event)
     }
 
     private func showCandidateWindow(client sender: Any) {
@@ -3227,12 +3207,12 @@ final class InputController: IMKInputController {
                 : "Tab / 矢印 移動\n↩ 入力を追加　Esc 登録中止"
         } else if isTranslationInput {
             guide = selectedCandidateIndex == nil
-                ? "Tab 候補選択　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
-                : "Tab / 矢印 移動　↩ 日本語を追加\nEsc 日本語で確定　⌥T 翻訳モード終了"
+                ? "Tab 候補選択　↩ 日本語を追加\nEsc 日本語で確定　\(MyIMFeatureShortcut.translationMode.shortcut.displayName) 翻訳モード終了"
+                : "Tab / 矢印 移動　↩ 日本語を追加\nEsc 日本語で確定　\(MyIMFeatureShortcut.translationMode.shortcut.displayName) 翻訳モード終了"
         } else {
             guide = selectedCandidateIndex == nil
-                ? "Tab 選択　⌥D 辞書登録\nF6–F10 文字種変換　⌘O 外部ページ"
-                : "Tab / 矢印 移動　↩ 確定　Esc 解除\n⌥D 辞書登録　⌘X 削除　⌘↩ Web検索　⌘O 外部ページ"
+                ? "Tab 選択　\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 辞書登録\nF6–F10 文字種変換　\(MyIMFeatureShortcut.externalInformation.shortcut.displayName) 外部ページ"
+                : "Tab / 矢印 移動　↩ 確定　Esc 解除\n\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 辞書登録　⌘X 削除　\(MyIMFeatureShortcut.webSearch.shortcut.displayName) Web検索　\(MyIMFeatureShortcut.externalInformation.shortcut.displayName) 外部ページ"
         }
 
         if !candidateFilterConditions.isEmpty {

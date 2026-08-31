@@ -99,6 +99,7 @@ enum SettingsWindowBuilder {
         let toggleSystemDictionaryPreview: Selector
         let configureSystemDictionaries: Selector
         let toggleWebSearch: Selector
+        let configureShortcuts: Selector
         let updateBasicDictionary: Selector
     }
 
@@ -149,12 +150,16 @@ enum SettingsWindowBuilder {
         addCheckboxes([
             ("外部情報パネルを使用", actions.toggleExternalInformationPanel, states.externalInformationPanel),
             ("macOS辞書パネルを使用", actions.toggleSystemDictionaryPreview, states.systemDictionaryPreview),
-            ("Command＋ReturnでWeb検索", actions.toggleWebSearch, states.webSearch)
+            ("Web検索を使用", actions.toggleWebSearch, states.webSearch)
         ], target: target, to: stack)
         addSection("辞書管理", to: stack)
         addButtons([
             ("表示するmacOS辞書…", actions.configureSystemDictionaries),
             ("TKGJE基本辞書を更新", actions.updateBasicDictionary)
+        ], target: target, to: stack)
+        addSection("操作", to: stack)
+        addButtons([
+            ("ショートカット…", actions.configureShortcuts)
         ], target: target, to: stack)
 
         let scrollView = NSScrollView()
