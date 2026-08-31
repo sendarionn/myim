@@ -383,6 +383,13 @@ final class InputController: IMKInputController {
                 dismissNextInputSuggestions(clearMarkedTextIn: sender)
                 return true
             }
+            if inputBuffer.isEmpty {
+                nextInputPredictionModel.breakSequence()
+                recentCommittedContext = String(
+                    (recentCommittedContext + "\n").suffix(256)
+                )
+                return false
+            }
             if unfilteredCandidates != nil, currentCandidates.isEmpty {
                 return true
             }
@@ -457,6 +464,13 @@ final class InputController: IMKInputController {
         by aSelector: Selector!,
         command infoDictionary: [AnyHashable: Any]!
     ) {
+        if let aSelector,
+           inputBuffer.isEmpty,
+           nextInputCandidates.isEmpty,
+           ["insertNewline:", "insertNewlineIgnoringFieldEditor:"]
+            .contains(NSStringFromSelector(aSelector)) {
+            nextInputPredictionModel.breakSequence()
+        }
         if let aSelector,
            candidateFilterDraft != nil || unfilteredCandidates != nil,
            let inputClient = client() {
@@ -3501,6 +3515,10 @@ final class InputController: IMKInputController {
         }
 
         let markedRange = textClient.markedRange()
+        let beginsAfterLineBreak = inputBeginsAfterLineBreak(
+            textClient,
+            markedRange: markedRange
+        )
         let replacementRange = replacingMarkedText
             && markedRange.location != NSNotFound
             && markedRange.length > 0
@@ -3531,7 +3549,34 @@ final class InputController: IMKInputController {
         recordCommittedInput(
             historyValue ?? value,
             preferredCandidates: preferredNextInputCandidates,
+            breakPreviousSequence: beginsAfterLineBreak,
             client: sender
+        )
+    }
+
+    private func inputBeginsAfterLineBreak(
+        _ textClient: IMKTextInput,
+        markedRange: NSRange
+    ) -> Bool {
+        let selectedRange = textClient.selectedRange()
+        let inputStart = markedRange.location != NSNotFound
+            ? markedRange.location
+            : selectedRange.location
+        if inputStart != NSNotFound, inputStart > 0 {
+            let length = min(inputStart, 2)
+            let range = NSRange(
+                location: inputStart - length,
+                length: length
+            )
+            if let precedingText = textClient.attributedSubstring(
+                from: range
+            )?.string,
+               InputSequenceBoundary.endsWithLineBreak(precedingText) {
+                return true
+            }
+        }
+        return InputSequenceBoundary.endsWithLineBreak(
+            recentCommittedContext
         )
     }
 
@@ -3628,10 +3673,14 @@ final class InputController: IMKInputController {
     private func recordCommittedInput(
         _ value: String,
         preferredCandidates: [String] = [],
+        breakPreviousSequence: Bool = false,
         client sender: Any
     ) {
         var learnedCandidates: [String] = []
         if isNextInputPredictionEnabled {
+            if breakPreviousSequence {
+                nextInputPredictionModel.breakSequence()
+            }
             nextInputPredictionModel.record(value)
             nextInputPredictionWriter.schedule(nextInputPredictionModel)
 

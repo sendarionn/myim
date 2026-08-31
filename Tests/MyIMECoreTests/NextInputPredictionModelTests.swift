@@ -118,4 +118,15 @@ struct NextInputPredictionModelTests {
         #expect(model.candidates(after: "A") == ["B"])
         #expect(model.candidates(after: "B").isEmpty)
     }
+
+    @Test
+    func doesNotLearnFirstInputAfterLineBreakAsFollower() {
+        var model = NextInputPredictionModel()
+        model.record("改行前")
+        model.breakSequence()
+        model.record("次の行")
+
+        #expect(model.candidates(after: "改行前").isEmpty)
+        #expect(model.lastInput == "次の行")
+    }
 }
