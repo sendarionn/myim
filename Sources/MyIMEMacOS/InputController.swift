@@ -2307,14 +2307,14 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !calculatorCandidates.isEmpty {
-            currentCandidates = calculatorCandidates
+            replaceCurrentCandidates(with: calculatorCandidates)
             showCandidateWindow(client: sender)
             return
         }
         let unitConversionCandidates = UnitConversionCandidateGenerator
             .candidates(for: inputBuffer)
         if !unitConversionCandidates.isEmpty {
-            currentCandidates = unitConversionCandidates
+            replaceCurrentCandidates(with: unitConversionCandidates)
             showCandidateWindow(client: sender)
             return
         }
@@ -2332,7 +2332,7 @@ final class InputController: IMKInputController {
                 ? postalAddressCandidates
                 : [])
         if !numericFormatCandidates.isEmpty {
-            currentCandidates = numericFormatCandidates
+            replaceCurrentCandidates(with: numericFormatCandidates)
             showCandidateWindow(client: sender)
             return
         }
@@ -2340,7 +2340,7 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !numberCandidates.isEmpty {
-            currentCandidates = numberCandidates
+            replaceCurrentCandidates(with: numberCandidates)
             showCandidateWindow(client: sender)
             return
         }
@@ -2348,7 +2348,7 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !symbolCandidates.isEmpty {
-            currentCandidates = symbolCandidates
+            replaceCurrentCandidates(with: symbolCandidates)
             showCandidateWindow(client: sender)
             return
         }
@@ -2440,7 +2440,7 @@ final class InputController: IMKInputController {
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
             : []
-        currentCandidates = CandidatePipeline().candidates(
+        replaceCurrentCandidates(with: CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
                 kana: kanaCandidates,
                 direct: directCandidates,
@@ -2453,7 +2453,7 @@ final class InputController: IMKInputController {
                 contextualCandidates: contextualCandidates,
                 prioritizeKana: kanaCandidates.first?.count == 1
             )
-        )
+        ))
 
         updateNeuralContextCandidates(
             reading: kanaCandidates.first ?? conversionReading,
@@ -2497,11 +2497,10 @@ final class InputController: IMKInputController {
             context: context
         )
         if cachedNeuralContextQuery == query {
-            guard selectedCandidateIndex == nil else { return }
-            currentCandidates = NeuralCandidateRanker.ordered(
+            replaceCurrentCandidates(with: NeuralCandidateRanker.ordered(
                 currentCandidates,
                 neuralCandidates: cachedNeuralCandidates
-            )
+            ))
             return
         }
         if neuralContextQuery == query, neuralContextTask != nil {
@@ -2528,12 +2527,27 @@ final class InputController: IMKInputController {
             self.neuralContextTask = nil
             self.cachedNeuralContextQuery = query
             self.cachedNeuralCandidates = neuralCandidates
-            guard self.selectedCandidateIndex == nil else { return }
-            self.currentCandidates = NeuralCandidateRanker.ordered(
+            self.replaceCurrentCandidates(with: NeuralCandidateRanker.ordered(
                 self.currentCandidates,
                 neuralCandidates: neuralCandidates
-            )
+            ))
             self.showCandidateWindow(client: sender)
+        }
+    }
+
+    private func replaceCurrentCandidates(with candidates: [String]) {
+        let selectedCandidate = selectedCandidateIndex.flatMap { index in
+            currentCandidates.indices.contains(index)
+                ? currentCandidates[index]
+                : nil
+        }
+        currentCandidates = candidates
+        if let selectedCandidate {
+            selectedCandidateIndex = currentCandidates.firstIndex(
+                of: selectedCandidate
+            )
+        } else if selectedCandidateIndex != nil {
+            selectedCandidateIndex = nil
         }
     }
 
