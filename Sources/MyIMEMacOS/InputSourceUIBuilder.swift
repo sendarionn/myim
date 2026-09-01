@@ -100,6 +100,7 @@ enum SettingsWindowBuilder {
         let configureSystemDictionaries: Selector
         let toggleWebSearch: Selector
         let configureShortcuts: Selector
+        let configureTranslationLanguage: Selector
         let updateBasicDictionary: Selector
     }
 
@@ -141,6 +142,9 @@ enum SettingsWindowBuilder {
             ("直前の文章を考慮して候補順を調整（zenz-v3.2-small Q5_K_M）", actions.toggleNeuralContext, states.neuralContext),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
+        ], target: target, to: stack)
+        addButtons([
+            ("翻訳先の言語…", actions.configureTranslationLanguage)
         ], target: target, to: stack)
         addButtons([
             ("次入力履歴を削除", actions.clearNextInputHistory)

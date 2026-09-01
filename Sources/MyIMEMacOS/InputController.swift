@@ -135,6 +135,8 @@ final class InputController: IMKInputController {
     private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let settingsDialogController = SettingsDialogController()
     private let shortcutSettingsController = ShortcutSettingsController()
+    private let translationLanguageSettingsController =
+        TranslationLanguageSettingsController()
     private lazy var javaScriptExtensionSettingsController =
         JavaScriptExtensionSettingsController(
             client: Self.javaScriptExtensionClient
@@ -375,6 +377,10 @@ final class InputController: IMKInputController {
                 ? false
                 : moveCandidate(.up, client: sender)
         case 36, 76:
+            if isTranslationModeEnabled,
+               translationDraft != nil || !inputBuffer.isEmpty {
+                return handleTranslationReturn(client: sender)
+            }
             if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
                 if let selectedNextInputIndex,
                    nextInputCandidates.indices.contains(selectedNextInputIndex) {
@@ -394,9 +400,7 @@ final class InputController: IMKInputController {
             if unfilteredCandidates != nil, currentCandidates.isEmpty {
                 return true
             }
-            return isTranslationModeEnabled
-                ? handleTranslationReturn(client: sender)
-                : commitFirstCandidateOrInput(to: sender)
+            return commitFirstCandidateOrInput(to: sender)
         case 51:
             return deleteBackward(
                 from: sender,
@@ -581,6 +585,7 @@ final class InputController: IMKInputController {
             configureSystemDictionaries: #selector(configureSystemDictionaries(_:)),
             toggleWebSearch: #selector(toggleWebSearch(_:)),
             configureShortcuts: #selector(configureShortcuts(_:)),
+            configureTranslationLanguage: #selector(configureTranslationLanguage(_:)),
             updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:))
         )
     }
@@ -588,6 +593,11 @@ final class InputController: IMKInputController {
     @objc
     private func configureShortcuts(_ sender: Any?) {
         shortcutSettingsController.show()
+    }
+
+    @objc
+    private func configureTranslationLanguage(_ sender: Any?) {
+        translationLanguageSettingsController.show()
     }
 
     @objc
@@ -1236,12 +1246,13 @@ final class InputController: IMKInputController {
 
     private func showTranslationDraft(client sender: Any) {
         guard let translationDraft else { return }
+        let target = TranslationTargetLanguage.current
         candidateWindow.show(
             candidates: [translationDraft],
             selectedIndex: nil,
             near: inputLocation(for: sender),
             guide: "↩ 翻訳して確定　Esc 日本語で確定\n\(MyIMFeatureShortcut.translationMode.shortcut.displayName) 翻訳モード終了",
-            modeTitle: "翻訳する日本語"
+            modeTitle: "\(target.name)へ翻訳"
         )
     }
 
@@ -1256,14 +1267,18 @@ final class InputController: IMKInputController {
             selectedIndex: nil,
             near: inputLocation(for: sender),
             guide: "翻訳中…",
-            modeTitle: "翻訳する日本語"
+            modeTitle: "\(TranslationTargetLanguage.current.name)へ翻訳"
         )
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
 #if canImport(Translation)
             if #available(macOS 15.0, *) {
                 let provider = AppleTranslationCandidateProvider()
-                let translated = await provider.translateJapaneseToEnglish(source)
+                let target = TranslationTargetLanguage.current
+                let translated = await provider.translateJapanese(
+                    source,
+                    targetIdentifier: target.identifier
+                )
                 guard !Task.isCancelled,
                       self.translationDraft == source else {
                     self.translationTask = nil
