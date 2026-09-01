@@ -142,6 +142,7 @@ final class CandidateWindowController: NSObject {
         modeSeparator.isHidden = true
 
         let contentView = NSView()
+        contentView.wantsLayer = true
         contentView.addSubview(scrollView)
         contentView.addSubview(separator)
         contentView.addSubview(guideLabel)
@@ -165,8 +166,13 @@ final class CandidateWindowController: NSObject {
         selectedIndex: Int?,
         near anchorFrame: NSRect,
         guide: String? = nil,
-        modeTitle: String? = nil
+        modeTitle: String? = nil,
+        isAccented: Bool = false
     ) {
+        panel.contentView?.layer?.borderWidth = isAccented ? 2 : 0
+        panel.contentView?.layer?.borderColor = isAccented
+            ? NSColor.controlAccentColor.cgColor
+            : NSColor.clear.cgColor
         self.candidates = candidates
         itemSizes = candidates.map { itemSize(for: $0) }
 
@@ -309,11 +315,15 @@ final class CandidateWindowController: NSObject {
             width: max(panelWidth - 20, 0),
             height: max(modeHeaderHeight - 1, 0)
         )
-        panel.contentView?.wantsLayer = hasModeHeader
-        panel.contentView?.layer?.borderWidth = hasModeHeader ? 1 : 0
-        panel.contentView?.layer?.borderColor = hasModeHeader
-            ? NSColor.controlAccentColor.withAlphaComponent(0.75).cgColor
-            : NSColor.clear.cgColor
+        panel.contentView?.wantsLayer = isAccented || hasModeHeader
+        panel.contentView?.layer?.borderWidth = isAccented
+            ? 2
+            : (hasModeHeader ? 1 : 0)
+        panel.contentView?.layer?.borderColor = isAccented
+            ? NSColor.controlAccentColor.cgColor
+            : (hasModeHeader
+                ? NSColor.controlAccentColor.withAlphaComponent(0.75).cgColor
+                : NSColor.clear.cgColor)
         panel.setFrameOrigin(
             panelOrigin(
                 panelSize: panel.frame.size,

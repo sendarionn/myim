@@ -35,6 +35,7 @@ final class FuzzySuggestionWindowController {
             defer: true
         )
         stackView = NSStackView()
+        stackView.wantsLayer = true
         stackView.orientation = .vertical
         stackView.alignment = .leading
         stackView.spacing = 3
@@ -56,8 +57,13 @@ final class FuzzySuggestionWindowController {
     func show(
         suggestions: [FuzzySuggestion],
         selectedIndex: Int?,
-        near anchorFrame: NSRect
+        near anchorFrame: NSRect,
+        isAccented: Bool = false
     ) {
+        stackView.layer?.borderWidth = isAccented ? 2 : 0
+        stackView.layer?.borderColor = isAccented
+            ? NSColor.controlAccentColor.cgColor
+            : NSColor.clear.cgColor
         let screen = NSScreen.screens.first {
             $0.frame.intersects(anchorFrame)
         } ?? NSScreen.main
