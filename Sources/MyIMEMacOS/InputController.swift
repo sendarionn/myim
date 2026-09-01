@@ -133,6 +133,8 @@ final class InputController: IMKInputController {
     private var basicConversionEngine: ConversionEngine
     private let mozcConversionEngine: IndexedDictionaryEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
+    private var compoundDictionaryCandidateGenerator:
+        CompoundDictionaryCandidateGenerator
     private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let settingsDialogController = SettingsDialogController()
     private let shortcutSettingsController = ShortcutSettingsController()
@@ -203,6 +205,10 @@ final class InputController: IMKInputController {
         basicConversionEngine = Self.sharedBasicConversionEngine
         mozcConversionEngine = indexedMozcEngine
         verbInflectionGenerator = Self.sharedVerbInflectionGenerator
+        compoundDictionaryCandidateGenerator =
+            CompoundDictionaryCandidateGenerator(
+                layers: [cachedUserEntries, bundledEntries]
+            )
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
 
@@ -2561,7 +2567,9 @@ final class InputController: IMKInputController {
 
         showCandidateWindow(client: sender)
         let auxiliaryAnchorFrame = candidateAndInputFrame(for: sender)
-        updateFuzzySuggestionsIfNeeded(near: auxiliaryAnchorFrame)
+        updateFuzzySuggestionsIfNeeded(
+            near: auxiliaryAnchorFrame
+        )
         showInputPreview(client: sender)
     }
 
@@ -2671,7 +2679,9 @@ final class InputController: IMKInputController {
         return recentCommittedContext
     }
 
-    private func updateFuzzySuggestionsIfNeeded(near anchorFrame: NSRect) {
+    private func updateFuzzySuggestionsIfNeeded(
+        near anchorFrame: NSRect
+    ) {
         suggestionSearchSession.cancel(.fuzzy)
         guard isFuzzySuggestionsEnabled,
               conversionReading.count >= 2 else {
@@ -2683,6 +2693,7 @@ final class InputController: IMKInputController {
 
         let query = conversionReading
         let mozcDictionary = mozcConversionEngine
+        let compoundGenerator = compoundDictionaryCandidateGenerator
         let visibleCandidates = Set(currentCandidates)
         let token = suggestionSearchSession.begin(.fuzzy, query: query)
         let task = Task { @MainActor [weak self] in
@@ -2703,10 +2714,23 @@ final class InputController: IMKInputController {
                         + fuzzyMatches).filter {
                             seenReadings.insert($0.reading).inserted
                         }
-                    return Array(FuzzyConversionMatchFilter.filtered(
+                    let filtered = Array(FuzzyConversionMatchFilter.filtered(
                         combined,
                         excluding: visibleCandidates
                     ))
+                    let compoundMatches = compoundGenerator
+                        .candidates(for: query) {
+                            mozcDictionary.candidates(for: $0)
+                        }
+                        .filter { !visibleCandidates.contains($0) }
+                        .map {
+                            FuzzyConversionMatch(
+                                reading: query,
+                                candidates: [$0],
+                                distance: 0
+                            )
+                        }
+                    return compoundMatches + filtered
                 }.value
                 try Task.checkCancellation()
                 guard let self,
@@ -4012,6 +4036,10 @@ final class InputController: IMKInputController {
                 entries: basicEntries
             )
         }
+        compoundDictionaryCandidateGenerator =
+            CompoundDictionaryCandidateGenerator(
+                layers: [userEntries, basicEntries]
+            )
         rebuildFuzzyConversionEngine()
     }
 
