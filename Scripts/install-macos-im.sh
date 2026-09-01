@@ -4,81 +4,111 @@ set -euo pipefail
 
 repository_root=${0:A:h:h}
 app_source="$repository_root/.build/myim.app"
-app_destination="$HOME/Library/Input Methods/myim.app"
-legacy_destination="$HOME/Library/Input Methods/my-ime.app"
+input_methods_directory="$HOME/Library/Input Methods"
+app_destination="$input_methods_directory/myim.app"
+staged_destination="$input_methods_directory/.myim.installing.app"
+previous_destination="$input_methods_directory/.myim.previous.app"
+legacy_destination="$input_methods_directory/my-ime.app"
 
-"$repository_root/Scripts/build-macos-ime.sh"
+status_value() {
+    local executable=$1
+    local key=$2
+    "$executable" --input-source-status 2>/dev/null \
+        | awk -F= -v key="$key" '$1 == key { print $2 }'
+}
 
-mkdir -p "$HOME/Library/Input Methods"
-
-pkill -x myim 2>/dev/null || true
-pkill -x my-ime 2>/dev/null || true
-pkill -x myim-external-browser 2>/dev/null || true
-for process_name in myim my-ime myim-external-browser; do
-    for attempt in {1..20}; do
-        if ! pgrep -x "$process_name" >/dev/null 2>&1; then
-            break
+wait_for_status() {
+    local executable=$1
+    local key=$2
+    local expected=$3
+    local attempt
+    for attempt in {1..30}; do
+        if [[ "$(status_value "$executable" "$key")" == "$expected" ]]; then
+            return 0
         fi
         sleep 0.1
     done
-done
-if [[ -d "$app_destination" ]]; then
-    rm -rf "$app_destination"
+    return 1
+}
+
+stop_process() {
+    local process_name=$1
+    local attempt
+    pkill -x "$process_name" 2>/dev/null || true
+    for attempt in {1..30}; do
+        if ! pgrep -x "$process_name" >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    echo "$process_name を終了できませんでした" >&2
+    return 1
+}
+
+cleanup_staging() {
+    [[ ! -e "$staged_destination" ]] || rm -rf "$staged_destination"
+}
+
+restore_previous_application() {
+    [[ -e "$previous_destination" ]] || return 0
+    mkdir -p "$app_destination"
+    /usr/bin/rsync -aE --delete \
+        "$previous_destination/" \
+        "$app_destination/"
+}
+
+"$repository_root/Scripts/build-macos-ime.sh"
+
+source_executable="$app_source/Contents/MacOS/myim"
+was_registered=$(status_value "$source_executable" registered)
+was_selected=$(status_value "$source_executable" selected)
+
+if [[ "$was_selected" == "1" ]]; then
+    "$source_executable" --select-fallback-input-source
+    wait_for_status "$source_executable" fallback-selected 1
 fi
-if [[ -d "$legacy_destination" ]]; then
-    rm -rf "$legacy_destination"
+
+stop_process myim
+stop_process my-ime
+stop_process myim-external-browser
+
+mkdir -p "$input_methods_directory"
+cleanup_staging
+trap cleanup_staging EXIT
+ditto "$app_source" "$staged_destination"
+codesign --verify --deep --strict "$staged_destination"
+
+[[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
+if [[ -e "$app_destination" ]]; then
+    ditto "$app_destination" "$previous_destination"
+    /usr/bin/rsync -aE --delete \
+        "$staged_destination/" \
+        "$app_destination/"
+else
+    mkdir -p "$app_destination"
+    /usr/bin/rsync -aE \
+        "$staged_destination/" \
+        "$app_destination/"
 fi
-ditto "$app_source" "$app_destination"
+if ! codesign --verify --deep --strict "$app_destination"; then
+    restore_previous_application
+    echo "myim.app の検証に失敗したため旧版へ戻しました" >&2
+    exit 1
+fi
+cleanup_staging
+[[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
+[[ ! -e "$legacy_destination" ]] || rm -rf "$legacy_destination"
 
-/usr/bin/swift -e '
-import Carbon
-import Foundation
+installed_executable="$app_destination/Contents/MacOS/myim"
+"$installed_executable" --register-input-source
+"$installed_executable" --enable-input-source
+wait_for_status "$installed_executable" registered 1
+wait_for_status "$installed_executable" enabled 1
 
-let targetIdentifier = "io.github.sendarionn.inputmethod.myime.Japanese"
-func findTargetSource() -> TISInputSource? {
-    let sources = TISCreateInputSourceList(nil, true).takeRetainedValue()
-        as! [TISInputSource]
-    for source in sources {
-        guard let pointer = TISGetInputSourceProperty(
-            source,
-            kTISPropertyInputSourceID
-        ) else {
-            continue
-        }
-        let identifier = Unmanaged<CFString>
-            .fromOpaque(pointer)
-            .takeUnretainedValue() as String
-        if identifier == targetIdentifier {
-            return source
-        }
-    }
-    return nil
-}
+if [[ "$was_selected" == "1" || "$was_registered" != "1" ]]; then
+    "$installed_executable" --select-input-source
+    wait_for_status "$installed_executable" selected 1
+fi
 
-var targetSource = findTargetSource()
-let isFirstRegistration = targetSource == nil
-if isFirstRegistration {
-    let appURL = URL(fileURLWithPath: NSHomeDirectory())
-        .appendingPathComponent("Library/Input Methods/myim.app") as CFURL
-    let status = TISRegisterInputSource(appURL)
-    guard status == noErr else {
-        fatalError("入力ソースの登録に失敗しました: \(status)")
-    }
-    targetSource = findTargetSource()
-}
-guard let targetSource else {
-    fatalError("登録後のmyim入力ソースが見つかりません")
-}
-if isFirstRegistration {
-    let enableStatus = TISEnableInputSource(targetSource)
-    guard enableStatus == noErr else {
-        fatalError("入力ソースの有効化に失敗しました: \(enableStatus)")
-    }
-    let selectionStatus = TISSelectInputSource(targetSource)
-    guard selectionStatus == noErr else {
-        fatalError("入力ソースの選択に失敗しました: \(selectionStatus)")
-    }
-}
-'
-
+trap - EXIT
 echo "インストールしました: $app_destination"

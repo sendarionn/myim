@@ -740,25 +740,11 @@ final class InputController: IMKInputController {
             super.deactivateServer(sender)
             return
         }
-        if !inputBuffer.isEmpty {
-            if reconversionOriginal != nil {
-                restoreReconversionOriginal(client: sender as Any)
-            } else if translationDraft != nil {
-                finishTranslationDraftAsJapanese(client: sender as Any)
-            } else {
-                commit(inputBuffer, to: sender as Any)
-            }
-        } else if translationDraft != nil {
-            finishTranslationDraftAsJapanese(client: sender as Any)
-        }
-        resetTransientInteractionState()
-        modeStatusWindow.hide()
-        translationTask?.cancel()
-        translationTask = nil
-        translationDraft = nil
-        translationDraftCursor = 0
-        nextInputPredictionModel.breakSequence()
-        flushPendingHistoryWrites()
+        finishControllerSession(
+            client: sender,
+            commitsComposition: true,
+            closesController: false
+        )
         super.deactivateServer(sender)
     }
 
@@ -767,15 +753,40 @@ final class InputController: IMKInputController {
             super.inputControllerWillClose()
             return
         }
+        finishControllerSession(
+            client: client(),
+            commitsComposition: false,
+            closesController: true
+        )
+        super.inputControllerWillClose()
+    }
+
+    private func finishControllerSession(
+        client sender: Any!,
+        commitsComposition: Bool,
+        closesController: Bool
+    ) {
+        if commitsComposition, !inputBuffer.isEmpty {
+            if reconversionOriginal != nil {
+                restoreReconversionOriginal(client: sender as Any)
+            } else if translationDraft != nil {
+                finishTranslationDraftAsJapanese(client: sender as Any)
+            } else {
+                commit(inputBuffer, to: sender as Any)
+            }
+        } else if commitsComposition, translationDraft != nil {
+            finishTranslationDraftAsJapanese(client: sender as Any)
+        }
         resetTransientInteractionState()
         modeStatusWindow.hide()
-        translationTask?.cancel()
-        translationTask = nil
         translationDraft = nil
         translationDraftCursor = 0
-        fuzzyEngineBuildTask?.cancel()
+        nextInputPredictionModel.breakSequence()
+        if closesController {
+            fuzzyEngineBuildTask?.cancel()
+            fuzzyEngineBuildTask = nil
+        }
         flushPendingHistoryWrites()
-        super.inputControllerWillClose()
     }
 
     @objc
@@ -3680,6 +3691,11 @@ final class InputController: IMKInputController {
     }
 
     private func resetTransientInteractionState() {
+        translationTask?.cancel()
+        translationTask = nil
+        resetNeuralContextRanking()
+        calendarFormatTask?.cancel()
+        calendarFormatTask = nil
         dictionaryDefinitionTask?.cancel()
         dictionaryDefinitionTask = nil
         candidateWindow.hide()

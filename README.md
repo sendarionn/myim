@@ -398,17 +398,6 @@ Apple Translationは翻訳スタイルを指定できないため、通常候補
 
 ## ビルドとインストール
 
-### GitHub Releaseからインストール
-
-1. GitHub Releaseから最新版の`myim-バージョン.pkg`をダウンロード
-2. PKGを開いてインストール
-3. 「システム設定」→「キーボード」→「テキスト入力」→「編集」を開く
-4. `myim`を追加
-
-PKGは`/Library/Input Methods/myim.app`へインストールします
-
-### ソースからインストール
-
 Swift 6以降が必要です
 
 ```shell
