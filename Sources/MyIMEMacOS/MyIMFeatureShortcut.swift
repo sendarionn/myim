@@ -3,6 +3,7 @@ import AppKit
 enum MyIMFeatureShortcut: String, CaseIterable {
     case candidateFilter
     case calendar
+    case emoji
     case dictionaryRegistration
     case translationMode
     case webSearch
@@ -12,6 +13,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         switch self {
         case .candidateFilter: "候補フィルター"
         case .calendar: "カレンダー"
+        case .emoji: "絵文字パネル"
         case .dictionaryRegistration: "辞書登録"
         case .translationMode: "翻訳モード"
         case .webSearch: "Web検索"
@@ -23,6 +25,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         switch self {
         case .candidateFilter: MyIMShortcut(modifiers: [.option], key: "f")
         case .calendar: MyIMShortcut(modifiers: [.option], key: "c")
+        case .emoji: MyIMShortcut(modifiers: [.option], key: "e")
         case .dictionaryRegistration: MyIMShortcut(modifiers: [.option], key: "d")
         case .translationMode: MyIMShortcut(modifiers: [.option], key: "t")
         case .webSearch: MyIMShortcut(modifiers: [.command], key: "return")
@@ -127,6 +130,15 @@ struct MyIMShortcut {
             100: "f8", 101: "f9", 109: "f10", 103: "f11", 111: "f12"
         ]
         if let special = specialKeys[event.keyCode] { return special }
+        let ansiKeys: [UInt16: String] = [
+            0: "a", 1: "s", 2: "d", 3: "f", 4: "h", 5: "g",
+            6: "z", 7: "x", 8: "c", 9: "v", 11: "b", 12: "q",
+            13: "w", 14: "e", 15: "r", 16: "y", 17: "t", 18: "1",
+            19: "2", 20: "3", 21: "4", 22: "6", 23: "5", 25: "9",
+            26: "7", 28: "8", 29: "0", 31: "o", 32: "u", 34: "i",
+            35: "p", 37: "l", 38: "j", 40: "k", 45: "n", 46: "m"
+        ]
+        if let ansiKey = ansiKeys[event.keyCode] { return ansiKey }
         guard let characters = event.charactersIgnoringModifiers?.lowercased(),
               characters.count == 1 else {
             return nil

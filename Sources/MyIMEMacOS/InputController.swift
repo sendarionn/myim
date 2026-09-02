@@ -4,6 +4,7 @@ import MyIMECore
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
+    private static weak var activeController: InputController?
     private struct NeuralContextQuery: Equatable {
         let input: String
         let reading: String
@@ -162,6 +163,7 @@ final class InputController: IMKInputController {
     private var basicDictionaryStatus = "未確認"
     private let candidateWindow = CandidateWindowController()
     private let calendarWindow = CalendarWindowController()
+    private let emojiWindow = EmojiWindowController()
     private let modeStatusWindow = ModeStatusWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
@@ -169,6 +171,21 @@ final class InputController: IMKInputController {
     private var dictionaryDefinitionTask: Task<Void, Never>?
     private let romajiConverter = RomajiConverter()
     private var settingsWindow: NSWindow?
+    private var activeInputClient: Any?
+
+    static func handleGlobalEmojiShortcut() {
+        guard let controller = activeController,
+              let client = controller.activeInputClient else {
+            EmojiDiagnostics.logger.error(
+                "global hot key has no active input controller"
+            )
+            return
+        }
+        EmojiDiagnostics.logger.notice(
+            "global hot key routed to active controller"
+        )
+        controller.toggleEmojiWindow(client: client)
+    }
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let cachedUserEntries = Self.loadUserEntries()
@@ -228,6 +245,14 @@ final class InputController: IMKInputController {
             return false
         }
 
+        if event.keyCode == 14 {
+            let modifiers = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask).rawValue
+            EmojiDiagnostics.logger.notice(
+                "E key reached handle modifiers=\(modifiers, privacy: .public)"
+            )
+        }
+
         if SecureInputDetector.isEnabled {
             beginSecureInputPassthroughIfNeeded(client: sender)
             return false
@@ -235,6 +260,35 @@ final class InputController: IMKInputController {
         secureInputPassthroughActive = false
 
         if FunctionKeyEventPolicy.shouldIgnore(keyCode: event.keyCode) {
+            return true
+        }
+
+        if isEmojiShortcut(event) {
+            toggleEmojiWindow(client: sender)
+            return true
+        }
+
+        if emojiWindow.isVisible {
+            switch event.keyCode {
+            case 48:
+                emojiWindow.moveSelection(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+            case 123:
+                emojiWindow.moveSelection(by: -1)
+            case 124:
+                emojiWindow.moveSelection(by: 1)
+            case 125:
+                emojiWindow.moveSelection(by: EmojiWindowController.columnCount)
+            case 126:
+                emojiWindow.moveSelection(by: -EmojiWindowController.columnCount)
+            case 36, 76:
+                guard let emoji = emojiWindow.selectedEmoji else { return true }
+                emojiWindow.hide()
+                commit(emoji, to: sender)
+            case 53:
+                emojiWindow.hide()
+            default:
+                return true
+            }
             return true
         }
 
@@ -738,11 +792,19 @@ final class InputController: IMKInputController {
 
     override func activateServer(_ sender: Any!) {
         activatedAt = ProcessInfo.processInfo.systemUptime
+        activeInputClient = sender
+        Self.activeController = self
+        EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
         updateTranslationModeStatus(client: sender as Any)
     }
 
     override func deactivateServer(_ sender: Any!) {
+        EmojiGlobalHotKey.shared.deactivate()
+        if Self.activeController === self {
+            Self.activeController = nil
+        }
+        activeInputClient = nil
         if previewWindow.shouldPreserveForExternalInteraction() {
             super.deactivateServer(sender)
             return
@@ -1424,6 +1486,7 @@ final class InputController: IMKInputController {
         cancelAuxiliarySuggestionSearches()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
+        emojiWindow.hide()
         previewWindow.hide()
         setMarkedText(
             compositionPrefix + candidate,
@@ -1941,6 +2004,31 @@ final class InputController: IMKInputController {
         MyIMFeatureShortcut.calendar.shortcut.matches(event)
     }
 
+    private func isEmojiShortcut(_ event: NSEvent) -> Bool {
+        if UserDefaults.standard.object(
+            forKey: MyIMFeatureShortcut.emoji.defaultsKey
+        ) == nil {
+            let modifiers = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .subtracting([.capsLock, .numericPad])
+            return event.keyCode == 14 && modifiers == [.option]
+        }
+        return MyIMFeatureShortcut.emoji.shortcut.matches(event)
+    }
+
+    private func toggleEmojiWindow(client sender: Any) {
+        if emojiWindow.isVisible {
+            EmojiDiagnostics.logger.notice("hiding emoji panel")
+            emojiWindow.hide()
+            return
+        }
+        EmojiDiagnostics.logger.notice("showing emoji panel")
+        dismissNextInputSuggestions(clearMarkedTextIn: sender)
+        candidateWindow.hide()
+        previewWindow.hide()
+        emojiWindow.show(near: inputLocation(for: sender))
+    }
+
     private func beginCalendarSelection(
         client sender: Any,
         anchorFrame: NSRect,
@@ -1953,6 +2041,7 @@ final class InputController: IMKInputController {
         }
         dismissNextInputSuggestions(clearMarkedTextIn: sender)
         candidateWindow.hide()
+        emojiWindow.hide()
         previewWindow.hide()
         calendarFormatTask?.cancel()
         calendarFormatCandidates = nil
@@ -3745,6 +3834,7 @@ final class InputController: IMKInputController {
         selectedFuzzySuggestionIndex = nil
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
+        emojiWindow.hide()
         previewWindow.hide()
         clearCalendarSelection()
         resetCandidateFilters()
@@ -3795,6 +3885,7 @@ final class InputController: IMKInputController {
         dictionaryDefinitionTask = nil
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
+        emojiWindow.hide()
         previewWindow.hide()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
