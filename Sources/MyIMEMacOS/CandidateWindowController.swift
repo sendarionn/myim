@@ -18,7 +18,7 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
     override func loadView() {
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.cornerRadius = 5
+        container.layer?.cornerRadius = 0
 
         label.translatesAutoresizingMaskIntoConstraints = false
         label.lineBreakMode = .byTruncatingTail

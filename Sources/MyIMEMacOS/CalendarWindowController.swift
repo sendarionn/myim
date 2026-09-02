@@ -72,7 +72,7 @@ private final class CalendarGridView: NSView {
         yearField.nextKeyView = monthField
         monthField.nextKeyView = yearField
         applyDateButton.font = .systemFont(ofSize: 11)
-        applyDateButton.bezelStyle = .rounded
+        applyDateButton.bezelStyle = .regularSquare
         applyDateButton.isHidden = true
         applyDateButton.target = self
         applyDateButton.action = #selector(applyEnteredYearMonth)
@@ -108,7 +108,7 @@ private final class CalendarGridView: NSView {
         for index in 0..<42 {
             let button = NSButton(title: "", target: self, action: #selector(selectDay(_:)))
             button.tag = index
-            button.bezelStyle = .rounded
+            button.bezelStyle = .regularSquare
             button.isBordered = false
             button.font = .systemFont(ofSize: 13)
             button.focusRingType = .none
@@ -221,7 +221,7 @@ private final class CalendarGridView: NSView {
                 : (inMonth ? .labelColor : .tertiaryLabelColor)
             button.font = .systemFont(ofSize: 13, weight: isToday ? .bold : .regular)
             button.wantsLayer = true
-            button.layer?.cornerRadius = 5
+            button.layer?.cornerRadius = 0
             button.layer?.borderWidth = isToday ? 1.5 : 0
             button.layer?.borderColor = isToday ? NSColor.controlAccentColor.cgColor : nil
             button.isBordered = calendar.isDate(date, inSameDayAs: selectedDate)
@@ -359,7 +359,7 @@ final class CalendarWindowController: NSObject {
 
         panel = CalendarPanel(
             contentRect: NSRect(origin: .zero, size: gridSize),
-            styleMask: [.titled, .utilityWindow],
+            styleMask: [.borderless],
             backing: .buffered,
             defer: true
         )
@@ -371,7 +371,7 @@ final class CalendarWindowController: NSObject {
         )
         super.init()
 
-        panel.title = "日付を選択"
+        panel.isMovableByWindowBackground = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false

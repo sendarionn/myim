@@ -99,6 +99,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
     )
     private var panel: BrowserPanel!
     private var webView: WKWebView!
+    private var titleLabel: NSTextField!
     private var displayedURL: URL?
     private var idleTerminationTask: Task<Void, Never>?
 
@@ -111,28 +112,47 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
 
         panel = BrowserPanel(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 420),
-            styleMask: [.titled, .closable, .resizable, .nonactivatingPanel],
+            styleMask: [.borderless, .resizable, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.title = "外部情報"
-        panel.contentView = webView
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = true
-        panel.isReleasedWhenClosed = false
-        panel.delegate = self
-
+        titleLabel = NSTextField(labelWithString: "外部情報")
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.lineBreakMode = .byTruncatingTail
         let button = NSButton(
             title: "ブラウザで開く  ⌘O",
             target: self,
             action: #selector(openInDefaultBrowser(_:))
         )
         button.bezelStyle = .inline
-        let accessory = NSTitlebarAccessoryViewController()
-        accessory.layoutAttribute = .right
-        accessory.view = button
-        panel.addTitlebarAccessoryViewController(accessory)
+        let header = NSStackView(views: [titleLabel, button])
+        header.orientation = .horizontal
+        header.alignment = .centerY
+        header.spacing = 8
+        header.edgeInsets = NSEdgeInsets(top: 4, left: 8, bottom: 4, right: 8)
+        header.translatesAutoresizingMaskIntoConstraints = false
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        let root = NSView()
+        root.addSubview(header)
+        root.addSubview(webView)
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: root.topAnchor),
+            header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: 30),
+            webView.topAnchor.constraint(equalTo: header.bottomAnchor),
+            webView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        ])
+        panel.contentView = root
+        panel.title = "外部情報"
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.delegate = self
 
         DistributedNotificationCenter.default().addObserver(
             self,
@@ -166,6 +186,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             return
         }
         panel.title = command.title
+        titleLabel.stringValue = command.title
         panel.setFrame(
             NSRect(
                 x: command.frameX,

@@ -8,7 +8,7 @@ private final class ShortcutRecorderButton: NSButton {
         self.feature = feature
         super.init(frame: .zero)
         title = feature.shortcut.displayName
-        bezelStyle = .rounded
+        bezelStyle = .regularSquare
         setButtonType(.momentaryPushIn)
     }
 

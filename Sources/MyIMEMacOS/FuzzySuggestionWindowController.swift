@@ -200,7 +200,7 @@ final class FuzzySuggestionWindowController {
     ) -> NSView {
         let item = NSView()
         item.wantsLayer = true
-        item.layer?.cornerRadius = 5
+        item.layer?.cornerRadius = 0
         item.layer?.backgroundColor = isSelected
             ? NSColor.controlAccentColor.cgColor
             : NSColor.clear.cgColor

@@ -49,7 +49,10 @@ final class ExternalInformationWindowController: NSObject {
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
-        definitionPanel.contentView = scrollView
+        definitionPanel.contentView = Self.panelContent(
+            title: "macOS辞書",
+            body: scrollView
+        )
     }
 
     func show(
@@ -219,15 +222,37 @@ final class ExternalInformationWindowController: NSObject {
     private static func makePanel(title: String, size: NSSize) -> NSPanel {
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )
         panel.title = title
+        panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
         panel.level = .floating
         panel.isReleasedWhenClosed = false
         return panel
+    }
+
+    private static func panelContent(title: String, body: NSView) -> NSView {
+        let root = NSView()
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        body.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(titleLabel)
+        root.addSubview(body)
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: root.topAnchor, constant: 7),
+            titleLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 9),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: root.trailingAnchor, constant: -9),
+            titleLabel.heightAnchor.constraint(equalToConstant: 18),
+            body.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 5),
+            body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            body.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        ])
+        return root
     }
 
     private func positionDefinitionPanel(near candidateFrame: NSRect) {

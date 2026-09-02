@@ -25,7 +25,7 @@ final class ModeStatusWindowController: NSObject {
 
         let contentView = NSView()
         contentView.wantsLayer = true
-        contentView.layer?.cornerRadius = 8
+        contentView.layer?.cornerRadius = 0
         contentView.layer?.masksToBounds = true
         contentView.addSubview(label)
         panel.contentView = contentView
