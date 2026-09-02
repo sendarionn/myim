@@ -117,6 +117,30 @@ struct CompoundDictionaryCandidateGeneratorTests {
         #expect(candidates == ["慶應大学"])
     }
 
+    @Test func exposesCorrectedReadingForTypoCompound() throws {
+        let generator = makeGenerator([
+            ("keiou", "慶應"),
+            ("daigaku", "大学")
+        ])
+        let matches = generator.matches(
+            for: "keioudaigku",
+            typoMatches: { input in
+                input == "daigku"
+                    ? [FuzzyConversionMatch(
+                        reading: "daigaku",
+                        candidates: ["大学"],
+                        distance: 1
+                    )]
+                    : []
+            }
+        )
+
+        let match = try #require(matches.first)
+        #expect(match.text == "慶應大学")
+        #expect(match.reading == "keioudaigaku")
+        #expect(match.typoDistance == 1)
+    }
+
     @Test func prefersAnExactCompoundPathOverATypoPath() {
         let generator = makeGenerator([
             ("keiou", "慶應"),

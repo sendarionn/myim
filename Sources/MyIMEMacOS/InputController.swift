@@ -320,7 +320,13 @@ final class InputController: IMKInputController {
 
         if isUserDictionaryDeletionShortcut(event),
            !inputBuffer.isEmpty {
-            removeSelectedUserDictionaryCandidate(client: sender)
+            if interactionState == .selectingFuzzySuggestion {
+                removeSelectedFuzzySuggestionFromUserDictionary(
+                    client: sender
+                )
+            } else {
+                removeSelectedUserDictionaryCandidate(client: sender)
+            }
             return true
         }
 
@@ -2734,7 +2740,7 @@ final class InputController: IMKInputController {
                         excluding: visibleCandidates
                     ))
                     let compoundMatches = compoundGenerator
-                        .candidates(for: query) {
+                        .matches(for: query) {
                             mozcDictionary.candidates(for: $0)
                         } typoMatches: { segment in
                             var seenReadings = Set<String>()
@@ -2753,12 +2759,12 @@ final class InputController: IMKInputController {
                                 seenReadings.insert($0.reading).inserted
                             }
                         }
-                        .filter { !visibleCandidates.contains($0) }
+                        .filter { !visibleCandidates.contains($0.text) }
                         .map {
                             FuzzyConversionMatch(
-                                reading: query,
-                                candidates: [$0],
-                                distance: 0
+                                reading: $0.reading,
+                                candidates: [$0.text],
+                                distance: $0.typoDistance
                             )
                         }
                     return [filtered, compoundMatches]
@@ -2835,15 +2841,15 @@ final class InputController: IMKInputController {
         }
         switch event.keyCode {
         case 36, 76:
-            let candidate = fuzzySuggestions[selectedFuzzySuggestionIndex].candidate
-            return acceptFuzzySuggestion(candidate, suffix: "", client: sender)
+            let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
+            return acceptFuzzySuggestion(suggestion, suffix: "", client: sender)
         case 48, 125, 124:
             let next = (selectedFuzzySuggestionIndex + 1)
                 % fuzzySuggestions.count
             return selectFuzzySuggestion(index: next, client: sender)
         case 49:
-            let candidate = fuzzySuggestions[selectedFuzzySuggestionIndex].candidate
-            return acceptFuzzySuggestion(candidate, suffix: " ", client: sender)
+            let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
+            return acceptFuzzySuggestion(suggestion, suffix: " ", client: sender)
         case 126, 123:
             let next = (
                 selectedFuzzySuggestionIndex
@@ -2873,19 +2879,33 @@ final class InputController: IMKInputController {
                   !characters.isEmpty else {
                 return false
             }
-            let candidate = fuzzySuggestions[selectedFuzzySuggestionIndex].candidate
-            _ = acceptFuzzySuggestion(candidate, suffix: "", client: sender)
+            let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
+            _ = acceptFuzzySuggestion(suggestion, suffix: "", client: sender)
             return nil
         }
     }
 
     private func acceptFuzzySuggestion(
-        _ candidate: String,
+        _ suggestion: FuzzySuggestion,
         suffix: String,
         client sender: Any
     ) -> Bool {
-        recordCandidateSelection(candidate)
-        let value = candidate + conversionSuffix
+        do {
+            try saveUserDictionaryEntry(
+                reading: suggestion.reading,
+                candidate: suggestion.candidate
+            )
+        } catch {
+            NSLog(
+                "もしかして候補のユーザー辞書登録に失敗: %@",
+                error.localizedDescription
+            )
+        }
+        recordCandidateSelection(
+            suggestion.candidate,
+            reading: suggestion.reading
+        )
+        let value = suggestion.candidate + conversionSuffix
         guard isTranslationModeEnabled else {
             commit(value + suffix, to: sender)
             return true
@@ -2902,6 +2922,43 @@ final class InputController: IMKInputController {
         showTranslationDraft(client: sender)
         recordTranslationSourceInput(value, client: sender)
         return true
+    }
+
+    private func removeSelectedFuzzySuggestionFromUserDictionary(
+        client sender: Any
+    ) {
+        guard let selectedFuzzySuggestionIndex,
+              fuzzySuggestions.indices.contains(selectedFuzzySuggestionIndex) else {
+            NSSound.beep()
+            return
+        }
+        let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
+        let updatedEntries = UserDictionaryEditor.removing(
+            candidate: suggestion.candidate,
+            matchingReadings: [suggestion.reading],
+            from: userEntries
+        )
+        guard updatedEntries != userEntries else {
+            NSSound.beep()
+            return
+        }
+        do {
+            userEntries = updatedEntries
+            try persistUserDictionary()
+            candidateSelectionHistory.remove([suggestion.candidate])
+            candidateSelectionHistoryWriter.schedule(candidateSelectionHistory)
+            self.selectedFuzzySuggestionIndex = nil
+            updateMarkedText(in: sender)
+            refreshCandidates(client: sender)
+        } catch {
+            NSLog(
+                "もしかして候補のユーザー辞書削除に失敗: %@",
+                error.localizedDescription
+            )
+            userEntries = Self.loadUserEntries()
+            rebuildConversionEngine()
+            NSSound.beep()
+        }
     }
 
     private func isFuzzySuggestionEntryShortcut(_ event: NSEvent) -> Bool {

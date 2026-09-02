@@ -1,3 +1,15 @@
+public struct CompoundDictionaryCandidate: Equatable, Sendable {
+    public let text: String
+    public let reading: String
+    public let typoDistance: Int
+
+    public init(text: String, reading: String, typoDistance: Int) {
+        self.text = text
+        self.reading = reading
+        self.typoDistance = typoDistance
+    }
+}
+
 public struct CompoundDictionaryCandidateGenerator: Sendable {
     private struct Segment: Sendable {
         let reading: String
@@ -59,6 +71,20 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
         additionalCandidates: @Sendable (String) -> [String] = { _ in [] },
         typoMatches: @Sendable (String) -> [FuzzyConversionMatch] = { _ in [] }
     ) -> [String] {
+        matches(
+            for: input,
+            limit: limit,
+            additionalCandidates: additionalCandidates,
+            typoMatches: typoMatches
+        ).map(\.text)
+    }
+
+    public func matches(
+        for input: String,
+        limit: Int = 8,
+        additionalCandidates: @Sendable (String) -> [String] = { _ in [] },
+        typoMatches: @Sendable (String) -> [FuzzyConversionMatch] = { _ in [] }
+    ) -> [CompoundDictionaryCandidate] {
         let input = input.lowercased()
         let directCandidates = Set(mergedCandidates(
             for: input,
@@ -98,11 +124,18 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
                 return $0.text < $1.text
             }.prefix(limit + directCandidates.count))
         }
+        let correctedReading = path.readings.joined()
         return results.map(\.text)
             .removingDuplicateStrings()
             .filter { !directCandidates.contains($0) }
             .prefix(limit)
-            .map { $0 }
+            .map {
+                CompoundDictionaryCandidate(
+                    text: $0,
+                    reading: correctedReading,
+                    typoDistance: path.typoDistance
+                )
+            }
     }
 
     private func bestPath(
