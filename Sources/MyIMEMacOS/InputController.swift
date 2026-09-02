@@ -4071,9 +4071,14 @@ final class InputController: IMKInputController {
     }
 
     private func showInputPreview(client sender: Any) {
+        let selectedCandidate = selectedCandidateIndex.flatMap { index in
+            currentCandidates.indices.contains(index)
+                ? candidateDisplayValue(currentCandidates[index])
+                : nil
+        }
         guard let pageTitle = PreviewPageTitleResolver.pageTitle(
             input: conversionReading,
-            selectedCandidate: nil
+            selectedCandidate: selectedCandidate
         ) else {
             dictionaryDefinitionTask?.cancel()
             previewWindow.hide()
