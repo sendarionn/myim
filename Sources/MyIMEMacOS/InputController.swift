@@ -234,6 +234,10 @@ final class InputController: IMKInputController {
         }
         secureInputPassthroughActive = false
 
+        if FunctionKeyEventPolicy.shouldIgnore(keyCode: event.keyCode) {
+            return true
+        }
+
         if previewWindow.isInteractionActive {
             previewWindow.finishInteraction()
             if event.keyCode == 53 {
