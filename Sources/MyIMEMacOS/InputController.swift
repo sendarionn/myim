@@ -739,6 +739,7 @@ final class InputController: IMKInputController {
     override func activateServer(_ sender: Any!) {
         activatedAt = ProcessInfo.processInfo.systemUptime
         super.activateServer(sender)
+        updateTranslationModeStatus(client: sender as Any)
     }
 
     override func deactivateServer(_ sender: Any!) {
@@ -1003,9 +1004,11 @@ final class InputController: IMKInputController {
             translationTask?.cancel()
             translationTask = nil
         }
-        if let inputClient = client() {
+        if enabled, let inputClient = client() {
+            updateTranslationModeStatus(client: inputClient)
+        } else if let inputClient = client() {
             modeStatusWindow.show(
-                enabled: enabled,
+                enabled: false,
                 near: inputLocation(for: inputClient)
             )
         }
@@ -1296,6 +1299,7 @@ final class InputController: IMKInputController {
 
     private func showTranslationDraft(client sender: Any) {
         guard translationDraft != nil else { return }
+        updateTranslationModeStatus(client: sender)
         updateMarkedText(in: sender)
         if nextInputCandidates.isEmpty && inputBuffer.isEmpty {
             candidateWindow.hide()
@@ -2417,6 +2421,7 @@ final class InputController: IMKInputController {
     }
 
     private func refreshCandidates(client sender: Any) {
+        updateTranslationModeStatus(client: sender)
         cancelFuzzySuggestionSearch()
         fuzzySuggestionWindow.hide()
         fuzzySuggestions = []
@@ -3669,6 +3674,7 @@ final class InputController: IMKInputController {
         } else {
             showTranslationDraft(client: sender)
         }
+        updateTranslationModeStatus(client: sender)
         return true
     }
 
@@ -3750,6 +3756,7 @@ final class InputController: IMKInputController {
                 client: sender
             )
         }
+        updateTranslationModeStatus(client: sender)
     }
 
     private func inputBeginsAfterLineBreak(
@@ -4008,6 +4015,7 @@ final class InputController: IMKInputController {
     }
 
     private func insertIntoInputBuffer(_ text: String) {
+        modeStatusWindow.hide()
         resetCandidateFilters()
         var editor = InputBufferEditor(
             value: inputBuffer,
@@ -4016,6 +4024,20 @@ final class InputController: IMKInputController {
         editor.insert(text)
         inputBuffer = editor.value
         inputCursor = editor.cursor
+    }
+
+    private func updateTranslationModeStatus(client sender: Any) {
+        guard isTranslationModeEnabled,
+              inputBuffer.isEmpty,
+              translationDraft == nil else {
+            modeStatusWindow.hide()
+            return
+        }
+        modeStatusWindow.show(
+            enabled: true,
+            near: inputLocation(for: sender),
+            dismissesAutomatically: false
+        )
     }
 
     private func moveInputCursor(by offset: Int, client sender: Any) -> Bool {

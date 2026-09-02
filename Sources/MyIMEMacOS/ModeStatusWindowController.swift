@@ -38,10 +38,15 @@ final class ModeStatusWindowController: NSObject {
         panel.level = .popUpMenu
     }
 
-    func show(enabled: Bool, near anchorFrame: NSRect) {
+    func show(
+        enabled: Bool,
+        near anchorFrame: NSRect,
+        dismissesAutomatically: Bool = true
+    ) {
         dismissWorkItem?.cancel()
+        dismissWorkItem = nil
 
-        label.stringValue = enabled ? "翻訳モード  ON" : "翻訳モード  OFF"
+        label.stringValue = enabled ? "翻訳モードON" : "翻訳モードOFF"
         label.textColor = enabled ? .alternateSelectedControlTextColor : .labelColor
         panel.contentView?.layer?.backgroundColor = (
             enabled ? NSColor.controlAccentColor : NSColor.windowBackgroundColor
@@ -81,11 +86,16 @@ final class ModeStatusWindowController: NSObject {
         ))
         panel.orderFrontRegardless()
 
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.panel.orderOut(nil)
+        if dismissesAutomatically {
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.panel.orderOut(nil)
+            }
+            dismissWorkItem = workItem
+            DispatchQueue.main.asyncAfter(
+                deadline: .now() + 1.4,
+                execute: workItem
+            )
         }
-        dismissWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: workItem)
     }
 
     func hide() {
