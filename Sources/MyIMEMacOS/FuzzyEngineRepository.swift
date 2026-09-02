@@ -28,11 +28,16 @@ final class FuzzyEngineRepository: @unchecked Sendable {
 
     func matches(
         for input: String,
+        maximumDistance: Int? = nil,
         limit: Int
     ) -> [FuzzyConversionMatch] {
         lock.lock()
         let engine = cachedEngine
         lock.unlock()
-        return engine.matches(for: input, limit: limit)
+        return engine.matches(
+            for: input,
+            maximumDistance: maximumDistance,
+            limit: limit
+        )
     }
 }

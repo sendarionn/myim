@@ -2714,7 +2714,7 @@ final class InputController: IMKInputController {
         let task = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(80))
-                let matches = await Task.detached(priority: .userInitiated) {
+                let matchTiers = await Task.detached(priority: .userInitiated) {
                     let keyboardMatches =
                         RomajiKeyboardTypoGenerator.dictionaryMatches(
                             for: query,
@@ -2736,6 +2736,22 @@ final class InputController: IMKInputController {
                     let compoundMatches = compoundGenerator
                         .candidates(for: query) {
                             mozcDictionary.candidates(for: $0)
+                        } typoMatches: { segment in
+                            var seenReadings = Set<String>()
+                            let keyboardMatches =
+                                RomajiKeyboardTypoGenerator.dictionaryMatches(
+                                    for: segment,
+                                    dictionary: mozcDictionary
+                                )
+                            let fuzzyMatches = Self.fuzzyEngineRepository
+                                .matches(
+                                    for: segment,
+                                    maximumDistance: 1,
+                                    limit: 4
+                                )
+                            return (keyboardMatches + fuzzyMatches).filter {
+                                seenReadings.insert($0.reading).inserted
+                            }
                         }
                         .filter { !visibleCandidates.contains($0) }
                         .map {
@@ -2745,7 +2761,7 @@ final class InputController: IMKInputController {
                                 distance: 0
                             )
                         }
-                    return compoundMatches + filtered
+                    return [filtered, compoundMatches]
                 }.value
                 try Task.checkCancellation()
                 guard let self,
@@ -2754,7 +2770,7 @@ final class InputController: IMKInputController {
                       isFuzzySuggestionsEnabled else {
                     return
                 }
-                applySpellingSuggestions(matches, near: anchorFrame)
+                applySpellingSuggestions(matchTiers, near: anchorFrame)
             } catch is CancellationError {
                 return
             } catch {
@@ -2765,23 +2781,34 @@ final class InputController: IMKInputController {
     }
 
     private func applySpellingSuggestions(
-        _ matches: [FuzzyConversionMatch],
+        _ matchTiers: [[FuzzyConversionMatch]],
         near anchorFrame: NSRect
     ) {
-        let spellingSuggestions = matches.compactMap { match in
-            match.candidates.first.map {
-                FuzzySuggestion(
-                    candidate: $0,
-                    reading: match.reading,
-                    distance: match.distance
-                )
+        let suggestionTiers = matchTiers.map { matches in
+            matches.compactMap { match in
+                match.candidates.first.map {
+                    FuzzySuggestion(
+                        candidate: $0,
+                        reading: match.reading,
+                        distance: match.distance
+                    )
+                }
             }
         }
-        let orderedIndices = CandidateRecencyOrderer.orderedIndices(
-            spellingSuggestions.map(\.candidate),
+        let orderedTierIndices = TieredCandidateOrderer.orderedIndices(
+            for: suggestionTiers.map { $0.map(\.candidate) },
             ranks: candidateSelectionHistory.ranks(for: conversionReading)
         )
-        fuzzySuggestions = orderedIndices.map { spellingSuggestions[$0] }
+        var seenCandidates = Set<String>()
+        fuzzySuggestions = zip(suggestionTiers, orderedTierIndices).flatMap {
+            suggestions, indices in
+            indices.compactMap { index in
+                let suggestion = suggestions[index]
+                return seenCandidates.insert(suggestion.candidate).inserted
+                    ? suggestion
+                    : nil
+            }
+        }
         selectedFuzzySuggestionIndex = nil
         guard !fuzzySuggestions.isEmpty else {
             fuzzySuggestionWindow.hide()

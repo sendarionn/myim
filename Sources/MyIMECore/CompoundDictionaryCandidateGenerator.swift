@@ -1,6 +1,23 @@
 public struct CompoundDictionaryCandidateGenerator: Sendable {
+    private struct Segment: Sendable {
+        let reading: String
+        let typoDistance: Int
+    }
+
     private struct Path: Sendable {
-        let readings: [String]
+        let segments: [Segment]
+
+        var readings: [String] {
+            segments.map(\.reading)
+        }
+
+        var typoCount: Int {
+            segments.count { $0.typoDistance > 0 }
+        }
+
+        var typoDistance: Int {
+            segments.reduce(0) { $0 + $1.typoDistance }
+        }
 
         var shortSegmentCount: Int {
             readings.count { $0.count == 2 }
@@ -39,7 +56,8 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
     public func candidates(
         for input: String,
         limit: Int = 8,
-        additionalCandidates: @Sendable (String) -> [String] = { _ in [] }
+        additionalCandidates: @Sendable (String) -> [String] = { _ in [] },
+        typoMatches: @Sendable (String) -> [FuzzyConversionMatch] = { _ in [] }
     ) -> [String] {
         let input = input.lowercased()
         let directCandidates = Set(mergedCandidates(
@@ -50,7 +68,8 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
               limit > 0,
               let path = bestPath(
                 for: input,
-                additionalCandidates: additionalCandidates
+                additionalCandidates: additionalCandidates,
+                typoMatches: typoMatches
               ),
               path.readings.count >= 2 else {
             return []
@@ -88,11 +107,16 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
 
     private func bestPath(
         for input: String,
-        additionalCandidates: @Sendable (String) -> [String]
+        additionalCandidates: @Sendable (String) -> [String],
+        typoMatches: @Sendable (String) -> [FuzzyConversionMatch]
     ) -> Path? {
         let characters = Array(input)
-        var paths = Array<Path?>(repeating: nil, count: characters.count + 1)
-        paths[characters.count] = Path(readings: [])
+        var exactPaths = Array<Path?>(
+            repeating: nil,
+            count: characters.count + 1
+        )
+        var correctedPaths = exactPaths
+        exactPaths[characters.count] = Path(segments: [])
 
         for start in stride(from: characters.count - 1, through: 0, by: -1) {
             let maximumEnd = characters.count
@@ -103,15 +127,59 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
                 guard !mergedCandidates(
                     for: reading,
                     additionalCandidates: additionalCandidates
-                ).isEmpty,
-                      let suffix = paths[end] else { continue }
-                let candidate = Path(readings: [reading] + suffix.readings)
-                if paths[start].map({ isBetter(candidate, than: $0) }) ?? true {
-                    paths[start] = candidate
+                ).isEmpty else {
+                    if reading.count >= 4, let suffix = exactPaths[end] {
+                        for match in typoMatches(reading)
+                        where match.reading != reading
+                            && match.reading.count >= 2
+                            && match.distance <= 1
+                            && !mergedCandidates(
+                                for: match.reading,
+                                additionalCandidates: additionalCandidates
+                            ).isEmpty {
+                            let segment = Segment(
+                                reading: match.reading,
+                                typoDistance: max(1, match.distance)
+                            )
+                            let candidate = Path(
+                                segments: [segment] + suffix.segments
+                            )
+                            if correctedPaths[start].map({
+                                isBetter(candidate, than: $0)
+                            }) ?? true {
+                                correctedPaths[start] = candidate
+                            }
+                        }
+                    }
+                    continue
+                }
+                let segment = Segment(reading: reading, typoDistance: 0)
+                if let suffix = exactPaths[end] {
+                    let candidate = Path(
+                        segments: [segment] + suffix.segments
+                    )
+                    if exactPaths[start].map({
+                        isBetter(candidate, than: $0)
+                    }) ?? true {
+                        exactPaths[start] = candidate
+                    }
+                }
+                if let suffix = correctedPaths[end] {
+                    let candidate = Path(
+                        segments: [segment] + suffix.segments
+                    )
+                    if correctedPaths[start].map({
+                        isBetter(candidate, than: $0)
+                    }) ?? true {
+                        correctedPaths[start] = candidate
+                    }
                 }
             }
         }
-        return paths[0]
+        if let exactPath = exactPaths[0] {
+            return exactPath
+        }
+        return correctedPaths[0]
     }
 
     private func mergedCandidates(
@@ -123,6 +191,12 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
     }
 
     private func isBetter(_ lhs: Path, than rhs: Path) -> Bool {
+        if lhs.typoCount != rhs.typoCount {
+            return lhs.typoCount < rhs.typoCount
+        }
+        if lhs.typoDistance != rhs.typoDistance {
+            return lhs.typoDistance < rhs.typoDistance
+        }
         if lhs.readings.count != rhs.readings.count {
             return lhs.readings.count < rhs.readings.count
         }

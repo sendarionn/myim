@@ -77,6 +77,116 @@ struct CompoundDictionaryCandidateGeneratorTests {
         #expect(candidates == ["慶應大学"])
     }
 
+    @Test func correctsOneTypoInsideACompoundPath() {
+        let generator = makeGenerator([
+            ("keiou", "慶應"),
+            ("daigaku", "大学")
+        ])
+        let candidates = generator.candidates(
+            for: "keioudaigku",
+            typoMatches: { input in
+                input == "daigku"
+                    ? [FuzzyConversionMatch(
+                        reading: "daigaku",
+                        candidates: ["大学"],
+                        distance: 1
+                    )]
+                    : []
+            }
+        )
+        #expect(candidates == ["慶應大学"])
+    }
+
+    @Test func combinesSegmentsUsingTheActualTypoEngine() {
+        let entries = [
+            DictionaryEntry(reading: "keiou", candidates: ["慶應"]),
+            DictionaryEntry(reading: "daigaku", candidates: ["大学"])
+        ]
+        let generator = CompoundDictionaryCandidateGenerator(entries: entries)
+        let typoEngine = FuzzyConversionEngine(entries: entries)
+        let candidates = generator.candidates(
+            for: "keioudaigku",
+            typoMatches: {
+                typoEngine.matches(
+                    for: $0,
+                    maximumDistance: 1,
+                    limit: 4
+                )
+            }
+        )
+        #expect(candidates == ["慶應大学"])
+    }
+
+    @Test func prefersAnExactCompoundPathOverATypoPath() {
+        let generator = makeGenerator([
+            ("keiou", "慶應"),
+            ("daigku", "大具"),
+            ("daigaku", "大学")
+        ])
+        let candidates = generator.candidates(
+            for: "keioudaigku",
+            typoMatches: { input in
+                input == "daigku"
+                    ? [FuzzyConversionMatch(
+                        reading: "daigaku",
+                        candidates: ["大学"],
+                        distance: 1
+                    )]
+                    : []
+            }
+        )
+        #expect(candidates == ["慶應大具"])
+    }
+
+    @Test func rejectsTwoCorrectedSegments() {
+        let generator = makeGenerator([
+            ("keiou", "慶應"),
+            ("daigaku", "大学")
+        ])
+        let candidates = generator.candidates(
+            for: "keiudaigku",
+            typoMatches: { input in
+                switch input {
+                case "keiu":
+                    [FuzzyConversionMatch(
+                        reading: "keiou",
+                        candidates: ["慶應"],
+                        distance: 1
+                    )]
+                case "daigku":
+                    [FuzzyConversionMatch(
+                        reading: "daigaku",
+                        candidates: ["大学"],
+                        distance: 1
+                    )]
+                default:
+                    []
+                }
+            }
+        )
+        #expect(candidates.isEmpty)
+    }
+
+    @Test func doesNotCorrectVeryShortSegments() {
+        let generator = makeGenerator([
+            ("keiou", "慶應"),
+            ("to", "と")
+        ])
+        let candidates = generator.candidates(
+            for: "keiouta",
+            typoMatches: { input in
+                input == "ta"
+                    ? [FuzzyConversionMatch(
+                        reading: "to",
+                        candidates: ["と"],
+                        distance: 1
+                    )]
+                    : []
+            }
+        )
+        #expect(candidates.isEmpty)
+    }
+
     private func makeGenerator(
         _ pairs: [(String, String)]
     ) -> CompoundDictionaryCandidateGenerator {
