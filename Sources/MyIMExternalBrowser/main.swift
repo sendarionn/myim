@@ -40,14 +40,25 @@ private func recordBrowserInteraction() {
 }
 
 private final class BrowserPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    private var acceptsKeyboardInteraction = false
+
+    override var canBecomeKey: Bool { acceptsKeyboardInteraction }
     override var canBecomeMain: Bool { false }
+
+    func beginUserInteraction() {
+        acceptsKeyboardInteraction = true
+        makeKey()
+    }
+
+    func endUserInteraction() {
+        acceptsKeyboardInteraction = false
+    }
 
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown,
              .scrollWheel, .keyDown:
-            makeKey()
+            beginUserInteraction()
             recordBrowserInteraction()
         default:
             break
@@ -63,19 +74,19 @@ private final class BrowserWebView: WKWebView {
 
     override func mouseDown(with event: NSEvent) {
         recordBrowserInteraction()
-        window?.makeKey()
+        (window as? BrowserPanel)?.beginUserInteraction()
         super.mouseDown(with: event)
     }
 
     override func rightMouseDown(with event: NSEvent) {
         recordBrowserInteraction()
-        window?.makeKey()
+        (window as? BrowserPanel)?.beginUserInteraction()
         super.rightMouseDown(with: event)
     }
 
     override func scrollWheel(with event: NSEvent) {
         recordBrowserInteraction()
-        window?.makeKey()
+        (window as? BrowserPanel)?.beginUserInteraction()
         super.scrollWheel(with: event)
     }
 }
@@ -108,7 +119,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
         panel.contentView = webView
         panel.level = .floating
         panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = false
+        panel.becomesKeyOnlyIfNeeded = true
         panel.isReleasedWhenClosed = false
         panel.delegate = self
 
@@ -146,6 +157,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             if panel.isKeyWindow {
                 return
             }
+            panel.endUserInteraction()
             panel.orderOut(nil)
             scheduleIdleTermination()
             return
@@ -171,6 +183,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             if panel.isKeyWindow {
                 return
             }
+            panel.endUserInteraction()
             panel.orderOut(nil)
             return
         }
@@ -231,6 +244,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        panel.endUserInteraction()
         panel.orderOut(nil)
         scheduleIdleTermination()
         return false
