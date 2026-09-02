@@ -2292,8 +2292,8 @@ final class InputController: IMKInputController {
         var directCandidates: [String] = []
         for reading in RomajiCanonicalizer.dictionaryLookupInputs(from: input) {
             directCandidates.append(contentsOf: userConversionEngine.candidates(for: reading))
-            directCandidates.append(contentsOf: mozcConversionEngine.candidates(for: reading))
             directCandidates.append(contentsOf: basicConversionEngine.candidates(for: reading))
+            directCandidates.append(contentsOf: mozcConversionEngine.candidates(for: reading))
         }
         let orderedCandidates = CandidatePriorityOrderer.ordered(
             kana: kanaCandidates,
@@ -2537,8 +2537,8 @@ final class InputController: IMKInputController {
             + dateTimeCandidates
             + numericPrefixCandidates
             + scriptCandidates
-            + imeCandidates.exact
             + basicCandidates.exact
+            + imeCandidates.exact
             + inflectionCandidates
         let otherCandidates = userCandidates.prefix
             + candidateSelectionHistory.completions(

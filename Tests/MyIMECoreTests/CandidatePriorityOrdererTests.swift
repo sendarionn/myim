@@ -54,6 +54,18 @@ struct CandidatePriorityOrdererTests {
     }
 
     @Test
+    func keepsExactUnvoicedCandidatesBeforeLaterRendakuCandidates() {
+        let result = CandidatePriorityOrderer.ordered(
+            kana: ["ごく", "ゴク"],
+            direct: ["語句", "極", "国"],
+            others: [],
+            recencyRanks: [:],
+            prioritizeKana: false
+        )
+        #expect(result == ["語句", "極", "国", "ごく", "ゴク"])
+    }
+
+    @Test
     func selectedKanaCanMoveAheadOfDirectCandidateForLongInput() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["での", "デノ"],
