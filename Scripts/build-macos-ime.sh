@@ -141,6 +141,9 @@ cp \
 cp -R \
     "Sources/MyIMEMacOS/Resources/Extensions" \
     "$resources_directory/Extensions"
+cp -R \
+    "Sources/MyIMEMacOS/Resources/Emoji" \
+    "$resources_directory/Emoji"
 cp \
     "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
     "$resources_directory/mozc-LICENSE.txt"

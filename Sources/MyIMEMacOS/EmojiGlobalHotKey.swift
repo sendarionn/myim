@@ -16,6 +16,7 @@ final class EmojiGlobalHotKey {
     private static let identifier: UInt32 = 1
     private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
+    private var panelHotKeys: [EventHotKeyRef] = []
 
     private init() {
         var eventType = EventTypeSpec(
@@ -37,13 +38,19 @@ final class EmojiGlobalHotKey {
                     &identifier
                 )
                 guard status == noErr,
-                      identifier.signature == EmojiGlobalHotKey.signature,
-                      identifier.id == EmojiGlobalHotKey.identifier else {
+                      identifier.signature == EmojiGlobalHotKey.signature else {
                     return OSStatus(eventNotHandledErr)
                 }
-                EmojiDiagnostics.logger.notice("global hot key received")
-                DispatchQueue.main.async {
-                    InputController.handleGlobalEmojiShortcut()
+                if identifier.id == EmojiGlobalHotKey.identifier {
+                    EmojiDiagnostics.logger.notice("global hot key received")
+                    DispatchQueue.main.async {
+                        InputController.handleGlobalEmojiShortcut()
+                    }
+                } else {
+                    let command = identifier.id
+                    DispatchQueue.main.async {
+                        InputController.handleGlobalEmojiPanelCommand(command)
+                    }
                 }
                 return noErr
             },
@@ -83,10 +90,52 @@ final class EmojiGlobalHotKey {
     }
 
     func deactivate() {
+        endPanelCapture()
         guard let hotKey else { return }
         UnregisterEventHotKey(hotKey)
         self.hotKey = nil
         EmojiDiagnostics.logger.notice("global hot key unregistered")
+    }
+
+    func beginPanelCapture() {
+        endPanelCapture()
+        let shortcuts: [(UInt32, UInt32, UInt32)] = [
+            (2, UInt32(kVK_Tab), 0),
+            (3, UInt32(kVK_Tab), UInt32(shiftKey)),
+            (4, UInt32(kVK_LeftArrow), 0),
+            (5, UInt32(kVK_RightArrow), 0),
+            (6, UInt32(kVK_UpArrow), 0),
+            (7, UInt32(kVK_DownArrow), 0),
+            (8, UInt32(kVK_Return), 0),
+            (9, UInt32(kVK_ANSI_KeypadEnter), 0),
+            (10, UInt32(kVK_Escape), 0)
+        ]
+        for (id, keyCode, modifiers) in shortcuts {
+            var reference: EventHotKeyRef?
+            let status = RegisterEventHotKey(
+                keyCode,
+                modifiers,
+                EventHotKeyID(signature: Self.signature, id: id),
+                GetApplicationEventTarget(),
+                0,
+                &reference
+            )
+            if status == noErr, let reference {
+                panelHotKeys.append(reference)
+            } else {
+                EmojiDiagnostics.logger.error(
+                    "panel hot key registration failed id=\(id, privacy: .public) status=\(status, privacy: .public)"
+                )
+            }
+        }
+        EmojiDiagnostics.logger.notice(
+            "panel hot keys registered count=\(self.panelHotKeys.count, privacy: .public)"
+        )
+    }
+
+    func endPanelCapture() {
+        panelHotKeys.forEach { UnregisterEventHotKey($0) }
+        panelHotKeys = []
     }
 
     deinit {

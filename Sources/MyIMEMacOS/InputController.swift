@@ -163,7 +163,7 @@ final class InputController: IMKInputController {
     private var basicDictionaryStatus = "未確認"
     private let candidateWindow = CandidateWindowController()
     private let calendarWindow = CalendarWindowController()
-    private let emojiWindow = EmojiWindowController()
+    private let emojiWindow = EmojiWindowController.shared
     private let modeStatusWindow = ModeStatusWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
@@ -185,6 +185,39 @@ final class InputController: IMKInputController {
             "global hot key routed to active controller"
         )
         controller.toggleEmojiWindow(client: client)
+    }
+
+    static func handleGlobalEmojiPanelCommand(_ command: UInt32) {
+        guard let controller = activeController,
+              let client = controller.activeInputClient,
+              controller.emojiWindow.isVisible else {
+            EmojiGlobalHotKey.shared.endPanelCapture()
+            return
+        }
+        switch command {
+        case 2:
+            controller.emojiWindow.advanceSelection(backward: false)
+        case 3:
+            controller.emojiWindow.advanceSelection(backward: true)
+        case 4:
+            controller.emojiWindow.moveSelection(.left)
+        case 5:
+            controller.emojiWindow.moveSelection(.right)
+        case 6:
+            controller.emojiWindow.moveSelection(.up)
+        case 7:
+            controller.emojiWindow.moveSelection(.down)
+        case 8, 9:
+            guard let emoji = controller.emojiWindow.selectedEmoji else {
+                return
+            }
+            controller.emojiWindow.hide()
+            controller.commit(emoji, to: client)
+        case 10:
+            controller.emojiWindow.hide()
+        default:
+            break
+        }
     }
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
@@ -271,15 +304,17 @@ final class InputController: IMKInputController {
         if emojiWindow.isVisible {
             switch event.keyCode {
             case 48:
-                emojiWindow.moveSelection(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+                emojiWindow.advanceSelection(
+                    backward: event.modifierFlags.contains(.shift)
+                )
             case 123:
-                emojiWindow.moveSelection(by: -1)
+                emojiWindow.moveSelection(.left)
             case 124:
-                emojiWindow.moveSelection(by: 1)
+                emojiWindow.moveSelection(.right)
             case 125:
-                emojiWindow.moveSelection(by: EmojiWindowController.columnCount)
+                emojiWindow.moveSelection(.down)
             case 126:
-                emojiWindow.moveSelection(by: -EmojiWindowController.columnCount)
+                emojiWindow.moveSelection(.up)
             case 36, 76:
                 guard let emoji = emojiWindow.selectedEmoji else { return true }
                 emojiWindow.hide()
