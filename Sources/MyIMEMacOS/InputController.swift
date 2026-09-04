@@ -2957,6 +2957,9 @@ final class InputController: IMKInputController {
             near: anchorFrame,
             isAccented: isTranslationModeEnabled
         )
+        if let inputClient = client() {
+            showInputPreview(client: inputClient)
+        }
     }
 
     private func handleFuzzySuggestionSelection(
@@ -4211,12 +4214,12 @@ final class InputController: IMKInputController {
             return
         }
         let inputFrame = inputLocation(for: sender)
-        let anchorFrame = currentCandidates.isEmpty
+        let baseAnchorFrame = currentCandidates.isEmpty
             ? inputFrame
             : inputFrame.union(candidateWindow.frame)
         showPreview(
             for: pageTitle,
-            beside: anchorFrame,
+            beside: previewAnchorFrame(base: baseAnchorFrame),
             includeDefinitions: true
         )
     }
@@ -4230,9 +4233,16 @@ final class InputController: IMKInputController {
         }
         showPreview(
             for: candidateDisplayValue(candidate),
-            beside: anchorFrame,
+            beside: previewAnchorFrame(base: anchorFrame),
             includeDefinitions: true
         )
+    }
+
+    private func previewAnchorFrame(base anchorFrame: NSRect) -> NSRect {
+        guard let fuzzyFrame = fuzzySuggestionWindow.visibleFrame else {
+            return anchorFrame
+        }
+        return anchorFrame.union(fuzzyFrame)
     }
 
     private func showPreview(

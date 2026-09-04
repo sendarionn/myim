@@ -33,7 +33,7 @@ final class ExternalInformationWindowController: NSObject {
         definitionTextView = NSTextView(frame: .zero)
         definitionPanel = Self.makePanel(
             title: "macOS辞書",
-            size: NSSize(width: 420, height: 220)
+            size: Self.informationPanelSize
         )
         super.init()
         externalBrowser.onInteractionBegan = { [weak self] in
@@ -257,7 +257,11 @@ final class ExternalInformationWindowController: NSObject {
 
     private func positionDefinitionPanel(near candidateFrame: NSRect) {
         let visibleFrame = visibleFrame(near: candidateFrame)
-        let panelSize = definitionPanel.frame.size
+        let panelSize = NSSize(
+            width: min(Self.informationPanelSize.width, visibleFrame.width),
+            height: min(Self.informationPanelSize.height, visibleFrame.height)
+        )
+        definitionPanel.setContentSize(panelSize)
         let aboveY = candidateFrame.maxY + Self.spacing
         let belowY = candidateFrame.minY - panelSize.height - Self.spacing
         let preferredY = aboveY + panelSize.height <= visibleFrame.maxY ? aboveY : belowY

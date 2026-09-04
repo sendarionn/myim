@@ -27,6 +27,10 @@ final class FuzzySuggestionWindowController {
     private let panel: NSPanel
     private let stackView: NSStackView
 
+    var visibleFrame: NSRect? {
+        panel.isVisible ? panel.frame : nil
+    }
+
     init() {
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
