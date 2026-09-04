@@ -36,6 +36,9 @@ final class EmojiWindowController: NSObject {
 
     static let shared = EmojiWindowController()
     static let columnCount = 8
+    private static let recentColumnCount = 10
+    private static let recentCellSize: CGFloat = 26
+    private static let recentDefaultsKey = "EmojiRecentHistory"
     private static let cellSize: CGFloat = 34
     private static let spacing: CGFloat = 2
     private static let fallbackEmojis = Array(
@@ -51,6 +54,10 @@ final class EmojiWindowController: NSObject {
     private let scrollView: NSScrollView
     private let comparisonStack: NSStackView
     private var selectedIndex: Int?
+    private var selectedRecentIndex: Int?
+    private var recentHistory: RecentEmojiHistory
+    private let recentStack = NSStackView()
+    private var recentButtons: [NSButton] = []
     private let comparisonImageCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.countLimit = 120
@@ -62,6 +69,11 @@ final class EmojiWindowController: NSObject {
         layout = NSCollectionViewFlowLayout()
         scrollView = NSScrollView()
         comparisonStack = NSStackView()
+        recentHistory = RecentEmojiHistory(
+            emojis: UserDefaults.standard.stringArray(
+                forKey: Self.recentDefaultsKey
+            ) ?? []
+        )
         panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -81,12 +93,18 @@ final class EmojiWindowController: NSObject {
 
     var isVisible: Bool { panel.isVisible }
     var selectedEmoji: String? {
-        selectedIndex.map { Self.entries[$0].emoji }
+        if let selectedRecentIndex,
+           recentHistory.emojis.indices.contains(selectedRecentIndex) {
+            return recentHistory.emojis[selectedRecentIndex]
+        }
+        return selectedIndex.map { Self.entries[$0].emoji }
     }
 
     func show(near anchor: NSRect) {
         selectedIndex = nil
+        selectedRecentIndex = nil
         collectionView.selectionIndexPaths = []
+        updateRecentSelection()
         comparisonPanel.orderOut(nil)
         let size = panel.frame.size
         let resolvedAnchor = anchor == .zero
@@ -123,20 +141,57 @@ final class EmojiWindowController: NSObject {
         panel.orderOut(nil)
         comparisonPanel.orderOut(nil)
         selectedIndex = nil
+        selectedRecentIndex = nil
+    }
+
+    func recordUsage(_ emoji: String) {
+        recentHistory.record(emoji)
+        UserDefaults.standard.set(
+            recentHistory.emojis,
+            forKey: Self.recentDefaultsKey
+        )
+        rebuildRecentArea()
     }
 
     func advanceSelection(backward: Bool) {
         guard !Self.entries.isEmpty else { return }
         let offset = backward ? -1 : 1
-        let start = selectedIndex ?? (backward ? 0 : -1)
-        select(index: (start + offset + Self.entries.count) % Self.entries.count)
+        let recentCount = recentHistory.emojis.count
+        let totalCount = recentCount + Self.entries.count
+        let current = selectedRecentIndex
+            ?? selectedIndex.map { recentCount + $0 }
+            ?? (backward ? 0 : -1)
+        let next = (current + offset + totalCount) % totalCount
+        if next < recentCount {
+            selectRecent(index: next)
+        } else {
+            select(index: next - recentCount)
+        }
     }
 
     func moveSelection(_ direction: EmojiGridDirection) {
         guard !Self.entries.isEmpty else { return }
-        guard let selectedIndex else {
-            select(index: 0)
+        if let selectedRecentIndex {
+            moveRecentSelection(from: selectedRecentIndex, direction: direction)
             return
+        }
+        guard let selectedIndex else {
+            if recentHistory.emojis.isEmpty {
+                select(index: 0)
+            } else {
+                selectRecent(index: 0)
+            }
+            return
+        }
+        if case .up = direction {
+            if selectedIndex < Self.columnCount,
+               !recentHistory.emojis.isEmpty {
+                selectRecent(index: min(
+                    selectedIndex,
+                    recentHistory.emojis.count - 1
+                ))
+                return
+            }
         }
         let nextIndex = EmojiGridNavigator.nextIndex(
             from: selectedIndex,
@@ -149,6 +204,8 @@ final class EmojiWindowController: NSObject {
 
     private func select(index: Int) {
         guard Self.entries.indices.contains(index) else { return }
+        selectedRecentIndex = nil
+        updateRecentSelection()
         selectedIndex = index
         let indexPath = IndexPath(item: index, section: 0)
         collectionView.selectionIndexPaths = [indexPath]
@@ -158,6 +215,49 @@ final class EmojiWindowController: NSObject {
             scrollPosition: [.nearestHorizontalEdge, .nearestVerticalEdge]
         )
         showComparison(for: Self.entries[index])
+    }
+
+    private func selectRecent(index: Int) {
+        guard recentHistory.emojis.indices.contains(index),
+              let entry = Self.entries.first(where: {
+                  $0.emoji == recentHistory.emojis[index]
+              }) else { return }
+        selectedIndex = nil
+        collectionView.selectionIndexPaths = []
+        selectedRecentIndex = index
+        updateRecentSelection()
+        showComparison(for: entry)
+    }
+
+    private func moveRecentSelection(
+        from index: Int,
+        direction: EmojiGridDirection
+    ) {
+        let count = recentHistory.emojis.count
+        switch direction {
+        case .left:
+            selectRecent(index: max(index - 1, index / Self.recentColumnCount * Self.recentColumnCount))
+        case .right:
+            let rowEnd = min(
+                index / Self.recentColumnCount * Self.recentColumnCount
+                    + Self.recentColumnCount - 1,
+                count - 1
+            )
+            selectRecent(index: min(index + 1, rowEnd))
+        case .up:
+            selectRecent(index: max(index - Self.recentColumnCount, 0))
+        case .down:
+            let next = index + Self.recentColumnCount
+            if next < count {
+                selectRecent(index: next)
+            } else {
+                select(index: min(
+                    index % Self.recentColumnCount,
+                    Self.columnCount - 1,
+                    Self.entries.count - 1
+                ))
+            }
+        }
     }
 
     private func configurePanels() {
@@ -174,6 +274,9 @@ final class EmojiWindowController: NSObject {
         comparisonStack.spacing = 8
         comparisonStack.edgeInsets = NSEdgeInsets(top: 9, left: 9, bottom: 9, right: 9)
         comparisonPanel.contentView = comparisonStack
+        recentStack.orientation = .vertical
+        recentStack.alignment = .leading
+        recentStack.spacing = Self.spacing
     }
 
     private func buildCollection() {
@@ -198,7 +301,7 @@ final class EmojiWindowController: NSObject {
         scrollView.drawsBackground = false
         let width = Self.cellSize * CGFloat(Self.columnCount)
             + Self.spacing * CGFloat(Self.columnCount - 1) + 12
-        let height: CGFloat = 394
+        let height: CGFloat = 446
         let contentSize = NSSize(width: width, height: height)
         let root = NSView(
             frame: NSRect(origin: .zero, size: contentSize)
@@ -206,7 +309,7 @@ final class EmojiWindowController: NSObject {
         let guide = NSTextField(labelWithString: "Tab / 矢印 選択　Return 確定　Esc 閉じる")
         guide.font = PanelShortcutGuideStyle.font
         guide.textColor = PanelShortcutGuideStyle.color
-        scrollView.frame = NSRect(x: 4, y: 28, width: width - 8, height: height - 32)
+        scrollView.frame = NSRect(x: 4, y: 28, width: width - 8, height: 362)
         let rowCount = ceil(
             CGFloat(Self.entries.count) / CGFloat(Self.columnCount)
         )
@@ -221,11 +324,65 @@ final class EmojiWindowController: NSObject {
             height: documentHeight
         )
         guide.frame = NSRect(x: 8, y: 6, width: width - 16, height: 16)
+        let recentTitle = NSTextField(labelWithString: "最近使った絵文字")
+        recentTitle.font = .systemFont(ofSize: 12, weight: .semibold)
+        recentTitle.textColor = .secondaryLabelColor
+        recentTitle.frame = NSRect(x: 8, y: 422, width: width - 16, height: 16)
+        recentStack.frame = NSRect(x: 8, y: 394, width: width - 16, height: 26)
         root.addSubview(scrollView)
         root.addSubview(guide)
+        root.addSubview(recentTitle)
+        root.addSubview(recentStack)
         panel.contentView = root
         panel.setContentSize(contentSize)
         root.frame = NSRect(origin: .zero, size: contentSize)
+        rebuildRecentArea()
+    }
+
+    private func rebuildRecentArea() {
+        recentStack.arrangedSubviews.forEach {
+            recentStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        recentButtons = []
+        for rowStart in stride(
+            from: 0,
+            to: recentHistory.emojis.count,
+            by: Self.recentColumnCount
+        ) {
+            let row = NSStackView()
+            row.orientation = .horizontal
+            row.spacing = Self.spacing
+            let rowEnd = min(
+                rowStart + Self.recentColumnCount,
+                recentHistory.emojis.count
+            )
+            for index in rowStart..<rowEnd {
+                let button = NSButton(title: recentHistory.emojis[index], target: self, action: #selector(selectRecentEmoji(_:)))
+                button.tag = index
+                button.isBordered = false
+                button.font = NSFont(name: "Apple Color Emoji", size: 18)
+                button.wantsLayer = true
+                button.widthAnchor.constraint(equalToConstant: Self.recentCellSize).isActive = true
+                button.heightAnchor.constraint(equalToConstant: Self.recentCellSize).isActive = true
+                row.addArrangedSubview(button)
+                recentButtons.append(button)
+            }
+            recentStack.addArrangedSubview(row)
+        }
+        updateRecentSelection()
+    }
+
+    @objc private func selectRecentEmoji(_ sender: NSButton) {
+        selectRecent(index: sender.tag)
+    }
+
+    private func updateRecentSelection() {
+        for (index, button) in recentButtons.enumerated() {
+            button.layer?.backgroundColor = index == selectedRecentIndex
+                ? NSColor.controlAccentColor.cgColor
+                : NSColor.clear.cgColor
+        }
     }
 
     private func showComparison(for entry: Entry) {
@@ -496,6 +653,8 @@ extension EmojiWindowController: NSCollectionViewDataSource, NSCollectionViewDel
     ) {
         guard let index = indexPaths.first?.item,
               Self.entries.indices.contains(index) else { return }
+        selectedRecentIndex = nil
+        updateRecentSelection()
         selectedIndex = index
         showComparison(for: Self.entries[index])
     }

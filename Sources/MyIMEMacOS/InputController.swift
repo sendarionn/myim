@@ -211,6 +211,7 @@ final class InputController: IMKInputController {
             guard let emoji = controller.emojiWindow.selectedEmoji else {
                 return
             }
+            controller.emojiWindow.recordUsage(emoji)
             controller.emojiWindow.hide()
             controller.commit(emoji, to: client)
         case 10:
@@ -317,6 +318,7 @@ final class InputController: IMKInputController {
                 emojiWindow.moveSelection(.up)
             case 36, 76:
                 guard let emoji = emojiWindow.selectedEmoji else { return true }
+                emojiWindow.recordUsage(emoji)
                 emojiWindow.hide()
                 commit(emoji, to: sender)
             case 53:
