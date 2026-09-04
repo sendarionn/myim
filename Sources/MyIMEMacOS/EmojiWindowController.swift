@@ -28,10 +28,59 @@ private final class EmojiCollectionItem: NSCollectionViewItem {
     }
 }
 
+private final class BottomUpEmojiFlowLayout: NSCollectionViewFlowLayout {
+    var displaysBottomUp = true {
+        didSet {
+            if oldValue != displaysBottomUp { invalidateLayout() }
+        }
+    }
+
+    override func layoutAttributesForElements(
+        in rect: NSRect
+    ) -> [NSCollectionViewLayoutAttributes] {
+        guard displaysBottomUp else {
+            return super.layoutAttributesForElements(in: rect)
+        }
+        let height = layoutHeight
+        let sourceRect = NSRect(
+            x: rect.minX,
+            y: height - rect.maxY,
+            width: rect.width,
+            height: rect.height
+        )
+        return super.layoutAttributesForElements(in: sourceRect)
+            .compactMap(flipped)
+    }
+
+    override func layoutAttributesForItem(
+        at indexPath: IndexPath
+    ) -> NSCollectionViewLayoutAttributes? {
+        guard displaysBottomUp else {
+            return super.layoutAttributesForItem(at: indexPath)
+        }
+        return super.layoutAttributesForItem(at: indexPath).flatMap(flipped)
+    }
+
+    private func flipped(
+        _ attributes: NSCollectionViewLayoutAttributes
+    ) -> NSCollectionViewLayoutAttributes? {
+        guard let copy = attributes.copy() as? NSCollectionViewLayoutAttributes else {
+            return nil
+        }
+        copy.frame.origin.y = layoutHeight - copy.frame.maxY
+        return copy
+    }
+
+    private var layoutHeight: CGFloat {
+        max(collectionViewContentSize.height, collectionView?.bounds.height ?? 0)
+    }
+}
+
 final class EmojiWindowController: NSObject {
     private struct Entry {
         let code: String
         let emoji: String
+        let searchTerms: [String]
     }
 
     static let shared = EmojiWindowController()
@@ -41,6 +90,8 @@ final class EmojiWindowController: NSObject {
     private static let recentDefaultsKey = "EmojiRecentHistory"
     private static let cellSize: CGFloat = 34
     private static let spacing: CGFloat = 2
+    private static let maximumListHeight: CGFloat = 362
+    private static let panelChromeHeight: CGFloat = 84
     private static let fallbackEmojis = Array(
         "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪"
             .split(separator: " ").map(String.init)
@@ -50,7 +101,7 @@ final class EmojiWindowController: NSObject {
     private let panel: NSPanel
     private let comparisonPanel: NSPanel
     private let collectionView: NSCollectionView
-    private let layout: NSCollectionViewFlowLayout
+    private let layout: BottomUpEmojiFlowLayout
     private let scrollView: NSScrollView
     private let comparisonStack: NSStackView
     private var selectedIndex: Int?
@@ -58,6 +109,13 @@ final class EmojiWindowController: NSObject {
     private var recentHistory: RecentEmojiHistory
     private let recentStack = NSStackView()
     private var recentButtons: [NSButton] = []
+    private var visibleEntries: [Entry]
+    private var searchQuery = ""
+    private var presentationAnchor: NSRect?
+    private var presentationVisibleFrame: NSRect?
+    private var avoidedFrames: [NSRect] = []
+    private(set) var isSearchConfirmed = false
+    private let romajiConverter = RomajiConverter()
     private let comparisonImageCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
         cache.countLimit = 120
@@ -66,7 +124,7 @@ final class EmojiWindowController: NSObject {
 
     override init() {
         collectionView = NSCollectionView()
-        layout = NSCollectionViewFlowLayout()
+        layout = BottomUpEmojiFlowLayout()
         scrollView = NSScrollView()
         comparisonStack = NSStackView()
         recentHistory = RecentEmojiHistory(
@@ -74,6 +132,7 @@ final class EmojiWindowController: NSObject {
                 forKey: Self.recentDefaultsKey
             ) ?? []
         )
+        visibleEntries = Self.entries
         panel = NSPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -92,12 +151,15 @@ final class EmojiWindowController: NSObject {
     }
 
     var isVisible: Bool { panel.isVisible }
+    var visibleFrame: NSRect? { panel.isVisible ? panel.frame : nil }
+    var searchText: String { searchQuery }
+    var canSelectEmoji: Bool { isSearchConfirmed || searchQuery.isEmpty }
     var selectedEmoji: String? {
         if let selectedRecentIndex,
            recentHistory.emojis.indices.contains(selectedRecentIndex) {
             return recentHistory.emojis[selectedRecentIndex]
         }
-        return selectedIndex.map { Self.entries[$0].emoji }
+        return selectedIndex.map { visibleEntries[$0].emoji }
     }
 
     func show(near anchor: NSRect) {
@@ -105,8 +167,6 @@ final class EmojiWindowController: NSObject {
         selectedRecentIndex = nil
         collectionView.selectionIndexPaths = []
         updateRecentSelection()
-        comparisonPanel.orderOut(nil)
-        let size = panel.frame.size
         let resolvedAnchor = anchor == .zero
             ? NSRect(origin: NSEvent.mouseLocation, size: .zero)
             : anchor
@@ -115,24 +175,19 @@ final class EmojiWindowController: NSObject {
         } ?? NSScreen.main
         let visible = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let belowY = resolvedAnchor.minY - size.height - 8
-        let aboveY = resolvedAnchor.maxY + 8
-        let preferredY = belowY >= visible.minY ? belowY : aboveY
-        let origin = NSPoint(
-            x: min(
-                max(resolvedAnchor.minX, visible.minX),
-                visible.maxX - size.width
-            ),
-            y: min(
-                max(preferredY, visible.minY),
-                visible.maxY - size.height
-            )
-        )
-        panel.setFrameOrigin(origin)
+        presentationAnchor = resolvedAnchor
+        presentationVisibleFrame = visible
+        updateSearchText("")
+        comparisonPanel.orderOut(nil)
         panel.orderFrontRegardless()
+        scrollToPreferredEdge()
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.panel.isVisible else { return }
+            self.scrollToPreferredEdge()
+        }
         EmojiGlobalHotKey.shared.beginPanelCapture()
         EmojiDiagnostics.logger.notice(
-            "panel ordered size=\(String(describing: size), privacy: .public) origin=\(String(describing: origin), privacy: .public) visible=\(self.panel.isVisible, privacy: .public)"
+            "panel ordered size=\(String(describing: self.panel.frame.size), privacy: .public) origin=\(String(describing: self.panel.frame.origin), privacy: .public) visible=\(self.panel.isVisible, privacy: .public)"
         )
     }
 
@@ -142,6 +197,15 @@ final class EmojiWindowController: NSObject {
         comparisonPanel.orderOut(nil)
         selectedIndex = nil
         selectedRecentIndex = nil
+        isSearchConfirmed = false
+        avoidedFrames = []
+    }
+
+    func avoid(frames: [NSRect]) {
+        avoidedFrames = frames.filter { !$0.isEmpty }
+        guard panel.isVisible else { return }
+        updatePanelPresentation()
+        scrollToPreferredEdge()
     }
 
     func recordUsage(_ emoji: String) {
@@ -153,11 +217,27 @@ final class EmojiWindowController: NSObject {
         rebuildRecentArea()
     }
 
+    func updateSearchText(_ text: String) {
+        isSearchConfirmed = false
+        setSearchQuery(text)
+    }
+
+    func confirmSearch() {
+        isSearchConfirmed = true
+        selectedIndex = nil
+        selectedRecentIndex = nil
+        collectionView.selectionIndexPaths = []
+        updateRecentSelection()
+        comparisonPanel.orderOut(nil)
+    }
+
     func advanceSelection(backward: Bool) {
-        guard !Self.entries.isEmpty else { return }
+        guard !visibleEntries.isEmpty || !recentHistory.emojis.isEmpty else {
+            return
+        }
         let offset = backward ? -1 : 1
         let recentCount = recentHistory.emojis.count
-        let totalCount = recentCount + Self.entries.count
+        let totalCount = recentCount + visibleEntries.count
         let current = selectedRecentIndex
             ?? selectedIndex.map { recentCount + $0 }
             ?? (backward ? 0 : -1)
@@ -170,40 +250,56 @@ final class EmojiWindowController: NSObject {
     }
 
     func moveSelection(_ direction: EmojiGridDirection) {
-        guard !Self.entries.isEmpty else { return }
+        guard !visibleEntries.isEmpty || !recentHistory.emojis.isEmpty else {
+            return
+        }
         if let selectedRecentIndex {
             moveRecentSelection(from: selectedRecentIndex, direction: direction)
             return
         }
         guard let selectedIndex else {
-            if recentHistory.emojis.isEmpty {
+            if !searchQuery.isEmpty || recentHistory.emojis.isEmpty {
                 select(index: 0)
             } else {
                 selectRecent(index: 0)
             }
             return
         }
-        if case .up = direction {
-            if selectedIndex < Self.columnCount,
+        if case .down = direction {
+            let isBottomDisplayRow = layout.displaysBottomUp
+                ? selectedIndex < Self.columnCount
+                : selectedIndex / Self.columnCount
+                    == (visibleEntries.count - 1) / Self.columnCount
+            if searchQuery.isEmpty,
+               isBottomDisplayRow,
                !recentHistory.emojis.isEmpty {
                 selectRecent(index: min(
-                    selectedIndex,
+                    selectedIndex % Self.columnCount,
                     recentHistory.emojis.count - 1
                 ))
                 return
             }
         }
+        let gridDirection: EmojiGridDirection = if layout.displaysBottomUp {
+            switch direction {
+            case .up: .down
+            case .down: .up
+            default: direction
+            }
+        } else {
+            direction
+        }
         let nextIndex = EmojiGridNavigator.nextIndex(
             from: selectedIndex,
-            direction: direction,
-            itemCount: Self.entries.count,
+            direction: gridDirection,
+            itemCount: visibleEntries.count,
             columnCount: Self.columnCount
         )
         select(index: nextIndex)
     }
 
     private func select(index: Int) {
-        guard Self.entries.indices.contains(index) else { return }
+        guard visibleEntries.indices.contains(index) else { return }
         selectedRecentIndex = nil
         updateRecentSelection()
         selectedIndex = index
@@ -214,7 +310,7 @@ final class EmojiWindowController: NSObject {
             at: [indexPath],
             scrollPosition: [.nearestHorizontalEdge, .nearestVerticalEdge]
         )
-        showComparison(for: Self.entries[index])
+        showComparison(for: visibleEntries[index])
     }
 
     private func selectRecent(index: Int) {
@@ -245,17 +341,26 @@ final class EmojiWindowController: NSObject {
             )
             selectRecent(index: min(index + 1, rowEnd))
         case .up:
-            selectRecent(index: max(index - Self.recentColumnCount, 0))
+            let previous = index - Self.recentColumnCount
+            if previous >= 0 {
+                selectRecent(index: previous)
+            } else {
+                let rowStart = layout.displaysBottomUp
+                    ? 0
+                    : max(
+                        (visibleEntries.count - 1) / Self.columnCount
+                            * Self.columnCount,
+                        0
+                    )
+                select(index: min(
+                    rowStart + index % Self.recentColumnCount,
+                    visibleEntries.count - 1
+                ))
+            }
         case .down:
             let next = index + Self.recentColumnCount
             if next < count {
                 selectRecent(index: next)
-            } else {
-                select(index: min(
-                    index % Self.recentColumnCount,
-                    Self.columnCount - 1,
-                    Self.entries.count - 1
-                ))
             }
         }
     }
@@ -301,7 +406,7 @@ final class EmojiWindowController: NSObject {
         scrollView.drawsBackground = false
         let width = Self.cellSize * CGFloat(Self.columnCount)
             + Self.spacing * CGFloat(Self.columnCount - 1) + 12
-        let height: CGFloat = 446
+        let height = Self.maximumListHeight + Self.panelChromeHeight
         let contentSize = NSSize(width: width, height: height)
         let root = NSView(
             frame: NSRect(origin: .zero, size: contentSize)
@@ -309,7 +414,12 @@ final class EmojiWindowController: NSObject {
         let guide = NSTextField(labelWithString: "Tab / 矢印 選択　Return 確定　Esc 閉じる")
         guide.font = PanelShortcutGuideStyle.font
         guide.textColor = PanelShortcutGuideStyle.color
-        scrollView.frame = NSRect(x: 4, y: 28, width: width - 8, height: 362)
+        scrollView.frame = NSRect(
+            x: 4,
+            y: 76,
+            width: width - 8,
+            height: Self.maximumListHeight
+        )
         let rowCount = ceil(
             CGFloat(Self.entries.count) / CGFloat(Self.columnCount)
         )
@@ -327,8 +437,8 @@ final class EmojiWindowController: NSObject {
         let recentTitle = NSTextField(labelWithString: "最近使った絵文字")
         recentTitle.font = .systemFont(ofSize: 12, weight: .semibold)
         recentTitle.textColor = .secondaryLabelColor
-        recentTitle.frame = NSRect(x: 8, y: 422, width: width - 16, height: 16)
-        recentStack.frame = NSRect(x: 8, y: 394, width: width - 16, height: 26)
+        recentTitle.frame = NSRect(x: 8, y: 56, width: width - 16, height: 16)
+        recentStack.frame = NSRect(x: 8, y: 28, width: width - 16, height: 26)
         root.addSubview(scrollView)
         root.addSubview(guide)
         root.addSubview(recentTitle)
@@ -337,6 +447,143 @@ final class EmojiWindowController: NSObject {
         panel.setContentSize(contentSize)
         root.frame = NSRect(origin: .zero, size: contentSize)
         rebuildRecentArea()
+    }
+
+    private func setSearchQuery(_ query: String) {
+        searchQuery = query
+        var queries = [query]
+        if let hiragana = romajiConverter.hiragana(from: query) {
+            queries.append(hiragana)
+        }
+        if let katakana = romajiConverter.katakana(from: query) {
+            queries.append(katakana)
+        }
+        let matches = query.isEmpty ? Self.entries : Self.entries.filter { entry in
+            queries.contains { query in
+                EmojiSearchMatcher.matches(
+                    query: query,
+                    terms: [entry.emoji] + entry.searchTerms
+                )
+            }
+        }
+        visibleEntries = matches
+        selectedIndex = nil
+        selectedRecentIndex = nil
+        isSearchConfirmed = false
+        collectionView.selectionIndexPaths = []
+        comparisonPanel.orderOut(nil)
+        updateRecentSelection()
+        collectionView.reloadData()
+        updatePanelPresentation()
+        scrollToPreferredEdge()
+        DispatchQueue.main.async { [weak self] in
+            self?.scrollToPreferredEdge()
+        }
+        if !visibleEntries.isEmpty {
+            collectionView.scrollToItems(
+                at: [IndexPath(item: 0, section: 0)],
+                scrollPosition: .nearestVerticalEdge
+            )
+        }
+    }
+
+    private func updateCollectionDocumentHeight() {
+        let rowCount = ceil(
+            CGFloat(visibleEntries.count) / CGFloat(Self.columnCount)
+        )
+        let documentHeight = layout.sectionInset.top
+            + rowCount * Self.cellSize
+            + max(rowCount - 1, 0) * Self.spacing
+            + layout.sectionInset.bottom
+        collectionView.setFrameSize(NSSize(
+            width: scrollView.contentSize.width,
+            height: max(documentHeight, scrollView.contentSize.height)
+        ))
+    }
+
+    private func updatePanelPresentation() {
+        let rowCount = max(
+            ceil(CGFloat(visibleEntries.count) / CGFloat(Self.columnCount)),
+            1
+        )
+        let documentHeight = layout.sectionInset.top
+            + rowCount * Self.cellSize
+            + max(rowCount - 1, 0) * Self.spacing
+            + layout.sectionInset.bottom
+        let listHeight = min(documentHeight, Self.maximumListHeight)
+        let size = NSSize(
+            width: panel.frame.width,
+            height: listHeight + Self.panelChromeHeight
+        )
+        panel.setContentSize(size)
+        panel.contentView?.frame = NSRect(origin: .zero, size: size)
+        scrollView.frame.size.height = listHeight
+        collectionView.setFrameSize(NSSize(
+            width: scrollView.contentSize.width,
+            height: max(documentHeight, scrollView.contentSize.height)
+        ))
+
+        guard let anchor = presentationAnchor,
+              let visible = presentationVisibleFrame else { return }
+        let belowY = anchor.minY - size.height - 8
+        let displaysAboveInput = belowY < visible.minY
+        layout.displaysBottomUp = displaysAboveInput
+        let preferredY = displaysAboveInput
+            ? anchor.maxY + 8
+            : belowY
+        let baseOrigin = NSPoint(
+            x: min(max(anchor.minX, visible.minX), visible.maxX - size.width),
+            y: min(max(preferredY, visible.minY), visible.maxY - size.height)
+        )
+        let occupied = avoidedFrames.reduce(anchor) { $0.union($1) }
+        let origins = [
+            baseOrigin,
+            NSPoint(x: occupied.maxX + 8, y: baseOrigin.y),
+            NSPoint(x: occupied.minX - size.width - 8, y: baseOrigin.y),
+            NSPoint(x: baseOrigin.x, y: occupied.maxY + 8),
+            NSPoint(x: baseOrigin.x, y: occupied.minY - size.height - 8)
+        ].map { point in
+            NSPoint(
+                x: min(max(point.x, visible.minX), visible.maxX - size.width),
+                y: min(max(point.y, visible.minY), visible.maxY - size.height)
+            )
+        }
+        let frames = origins.map { NSRect(origin: $0, size: size) }
+        let frame = frames.first { candidate in
+            avoidedFrames.allSatisfy { !candidate.intersects($0) }
+        } ?? frames.min { lhs, rhs in
+            overlapArea(of: lhs) < overlapArea(of: rhs)
+        } ?? NSRect(origin: baseOrigin, size: size)
+        layout.displaysBottomUp = frame.minY >= anchor.maxY
+        panel.setFrameOrigin(frame.origin)
+        layout.invalidateLayout()
+    }
+
+    private func overlapArea(of frame: NSRect) -> CGFloat {
+        avoidedFrames.reduce(0) { result, avoided in
+            let intersection = frame.intersection(avoided)
+            return result + max(intersection.width, 0) * max(intersection.height, 0)
+        }
+    }
+
+    private func scrollToListBottom() {
+        collectionView.layoutSubtreeIfNeeded()
+        let bottomY = max(
+            collectionView.frame.height - scrollView.contentView.bounds.height,
+            0
+        )
+        scrollView.contentView.scroll(to: NSPoint(x: 0, y: bottomY))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+    }
+
+    private func scrollToPreferredEdge() {
+        if layout.displaysBottomUp {
+            scrollToListBottom()
+        } else {
+            collectionView.layoutSubtreeIfNeeded()
+            scrollView.contentView.scroll(to: .zero)
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
     }
 
     private func rebuildRecentArea() {
@@ -374,6 +621,7 @@ final class EmojiWindowController: NSObject {
     }
 
     @objc private func selectRecentEmoji(_ sender: NSButton) {
+        guard canSelectEmoji else { return }
         selectRecent(index: sender.tag)
     }
 
@@ -593,6 +841,7 @@ final class EmojiWindowController: NSObject {
     }
 
     private static func loadEntries() -> [Entry] {
+        let searchTerms = loadSearchTerms()
         for root in resourceRoots() {
             let url = root.appendingPathComponent("Emoji/catalog.tsv")
             guard let text = try? String(contentsOf: url, encoding: .utf8) else {
@@ -601,7 +850,11 @@ final class EmojiWindowController: NSObject {
             let values = text.split(whereSeparator: \.isNewline).compactMap { line -> Entry? in
                 let columns = line.split(separator: "\t", maxSplits: 1).map(String.init)
                 guard columns.count == 2 else { return nil }
-                return Entry(code: columns[0], emoji: columns[1])
+                return Entry(
+                    code: columns[0],
+                    emoji: columns[1],
+                    searchTerms: searchTerms[columns[0]] ?? []
+                )
             }
             if !values.isEmpty { return values }
         }
@@ -609,9 +862,33 @@ final class EmojiWindowController: NSObject {
             Entry(
                 code: emoji.unicodeScalars.filter { $0.value != 0xFE0F }
                     .map { String($0.value, radix: 16) }.joined(separator: "-"),
-                emoji: emoji
+                emoji: emoji,
+                searchTerms: []
             )
         }
+    }
+
+    private static func loadSearchTerms() -> [String: [String]] {
+        for root in resourceRoots() {
+            let url = root.appendingPathComponent("Emoji/search-terms.tsv")
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+                continue
+            }
+            return Dictionary(uniqueKeysWithValues: text
+                .split(whereSeparator: \.isNewline)
+                .compactMap { line -> (String, [String])? in
+                    let columns = line.split(
+                        separator: "\t",
+                        maxSplits: 2,
+                        omittingEmptySubsequences: false
+                    ).map(String.init)
+                    guard columns.count == 3 else { return nil }
+                    let terms = (columns[1] + "|" + columns[2])
+                        .split(separator: "|").map(String.init)
+                    return (columns[0], terms)
+                })
+        }
+        return [:]
     }
 
     private static func resourceRoots() -> [URL] {
@@ -632,7 +909,7 @@ extension EmojiWindowController: NSCollectionViewDataSource, NSCollectionViewDel
         _ collectionView: NSCollectionView,
         numberOfItemsInSection section: Int
     ) -> Int {
-        Self.entries.count
+        visibleEntries.count
     }
 
     func collectionView(
@@ -643,7 +920,7 @@ extension EmojiWindowController: NSCollectionViewDataSource, NSCollectionViewDel
             withIdentifier: NSUserInterfaceItemIdentifier("EmojiItem"),
             for: indexPath
         ) as! EmojiCollectionItem
-        item.configure(emoji: Self.entries[indexPath.item].emoji)
+        item.configure(emoji: visibleEntries[indexPath.item].emoji)
         return item
     }
 
@@ -651,11 +928,15 @@ extension EmojiWindowController: NSCollectionViewDataSource, NSCollectionViewDel
         _ collectionView: NSCollectionView,
         didSelectItemsAt indexPaths: Set<IndexPath>
     ) {
+        guard canSelectEmoji else {
+            collectionView.selectionIndexPaths = []
+            return
+        }
         guard let index = indexPaths.first?.item,
-              Self.entries.indices.contains(index) else { return }
+              visibleEntries.indices.contains(index) else { return }
         selectedRecentIndex = nil
         updateRecentSelection()
         selectedIndex = index
-        showComparison(for: Self.entries[index])
+        showComparison(for: visibleEntries[index])
     }
 }

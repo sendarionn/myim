@@ -161,6 +161,10 @@ final class CandidateWindowController: NSObject {
         panel.frame
     }
 
+    var visibleFrame: NSRect? {
+        panel.isVisible ? panel.frame : nil
+    }
+
     func show(
         candidates: [String],
         selectedIndex: Int?,

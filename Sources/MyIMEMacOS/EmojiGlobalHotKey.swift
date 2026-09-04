@@ -48,9 +48,7 @@ final class EmojiGlobalHotKey {
                     }
                 } else {
                     let command = identifier.id
-                    DispatchQueue.main.async {
-                        InputController.handleGlobalEmojiPanelCommand(command)
-                    }
+                    InputController.handleGlobalEmojiPanelCommand(command)
                 }
                 return noErr
             },
@@ -100,8 +98,6 @@ final class EmojiGlobalHotKey {
     func beginPanelCapture() {
         endPanelCapture()
         let shortcuts: [(UInt32, UInt32, UInt32)] = [
-            (2, UInt32(kVK_Tab), 0),
-            (3, UInt32(kVK_Tab), UInt32(shiftKey)),
             (4, UInt32(kVK_LeftArrow), 0),
             (5, UInt32(kVK_RightArrow), 0),
             (6, UInt32(kVK_UpArrow), 0),

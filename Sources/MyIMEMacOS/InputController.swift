@@ -195,26 +195,32 @@ final class InputController: IMKInputController {
             return
         }
         switch command {
-        case 2:
-            controller.emojiWindow.advanceSelection(backward: false)
-        case 3:
-            controller.emojiWindow.advanceSelection(backward: true)
         case 4:
+            guard controller.emojiWindow.canSelectEmoji else { return }
             controller.emojiWindow.moveSelection(.left)
         case 5:
+            guard controller.emojiWindow.canSelectEmoji else { return }
             controller.emojiWindow.moveSelection(.right)
         case 6:
+            guard controller.emojiWindow.canSelectEmoji else { return }
             controller.emojiWindow.moveSelection(.up)
         case 7:
+            guard controller.emojiWindow.canSelectEmoji else { return }
             controller.emojiWindow.moveSelection(.down)
         case 8, 9:
-            guard let emoji = controller.emojiWindow.selectedEmoji else {
+            if let emoji = controller.emojiWindow.selectedEmoji {
+                controller.emojiWindow.recordUsage(emoji)
+                controller.emojiWindow.hide()
+                controller.commit(emoji, to: client, replacingMarkedText: true)
                 return
             }
-            controller.emojiWindow.recordUsage(emoji)
-            controller.emojiWindow.hide()
-            controller.commit(emoji, to: client)
+            guard controller.emojiWindow.isSearchConfirmed else {
+                controller.confirmEmojiSearch(client: client)
+                return
+            }
+            return
         case 10:
+            controller.clearCompositionForSystemPaste(in: client)
             controller.emojiWindow.hide()
         default:
             break
@@ -305,25 +311,64 @@ final class InputController: IMKInputController {
         if emojiWindow.isVisible {
             switch event.keyCode {
             case 48:
-                emojiWindow.advanceSelection(
-                    backward: event.modifierFlags.contains(.shift)
-                )
+                if !emojiWindow.isSearchConfirmed {
+                    _ = handleTab(event, client: sender)
+                    updateEmojiSearchFromComposition()
+                }
             case 123:
-                emojiWindow.moveSelection(.left)
+                if emojiWindow.canSelectEmoji {
+                    emojiWindow.moveSelection(.left)
+                }
             case 124:
-                emojiWindow.moveSelection(.right)
+                if emojiWindow.canSelectEmoji {
+                    emojiWindow.moveSelection(.right)
+                }
             case 125:
-                emojiWindow.moveSelection(.down)
+                if emojiWindow.canSelectEmoji {
+                    emojiWindow.moveSelection(.down)
+                }
             case 126:
-                emojiWindow.moveSelection(.up)
+                if emojiWindow.canSelectEmoji {
+                    emojiWindow.moveSelection(.up)
+                }
             case 36, 76:
-                guard let emoji = emojiWindow.selectedEmoji else { return true }
-                emojiWindow.recordUsage(emoji)
-                emojiWindow.hide()
-                commit(emoji, to: sender)
+                if let emoji = emojiWindow.selectedEmoji {
+                    emojiWindow.recordUsage(emoji)
+                    emojiWindow.hide()
+                    commit(emoji, to: sender, replacingMarkedText: true)
+                    return true
+                }
+                guard emojiWindow.isSearchConfirmed else {
+                    confirmEmojiSearch(client: sender)
+                    return true
+                }
+                return true
             case 53:
+                clearCompositionForSystemPaste(in: sender)
                 emojiWindow.hide()
+            case 51:
+                if !emojiWindow.isSearchConfirmed {
+                    _ = deleteBackward(
+                        from: sender,
+                        unit: deletionUnit(for: event)
+                    )
+                    updateEmojiSearchFromComposition()
+                }
             default:
+                let modifiers = event.modifierFlags.intersection(
+                    [.command, .control, .option]
+                )
+                if !emojiWindow.isSearchConfirmed,
+                   modifiers.isEmpty,
+                   let characters = event.characters,
+                   !characters.isEmpty {
+                    insertIntoInputBuffer(characters)
+                    selectedCandidateIndex = nil
+                    previewWindow.hide()
+                    updateMarkedText(in: sender)
+                    refreshCandidates(client: sender)
+                    updateEmojiSearchFromComposition()
+                }
                 return true
             }
             return true
@@ -789,6 +834,13 @@ final class InputController: IMKInputController {
             candidateDisplayValue($0) == candidate
         } ?? candidate
         recordCandidateSelection(storedCandidate)
+        if emojiWindow.isVisible {
+            selectedCandidateIndex = currentCandidates.firstIndex {
+                candidateDisplayValue($0) == candidate
+            }
+            confirmEmojiSearch(client: client() as Any)
+            return
+        }
         if isTranslationModeEnabled {
             selectedCandidateIndex = currentCandidates.firstIndex(
                 of: storedCandidate
@@ -2056,6 +2108,7 @@ final class InputController: IMKInputController {
     private func toggleEmojiWindow(client sender: Any) {
         if emojiWindow.isVisible {
             EmojiDiagnostics.logger.notice("hiding emoji panel")
+            clearCompositionForSystemPaste(in: sender)
             emojiWindow.hide()
             return
         }
@@ -2064,6 +2117,30 @@ final class InputController: IMKInputController {
         candidateWindow.hide()
         previewWindow.hide()
         emojiWindow.show(near: inputLocation(for: sender))
+        updateEmojiSearchFromComposition()
+    }
+
+    private func updateEmojiSearchFromComposition() {
+        let searchText = selectedCandidateIndex.flatMap { index in
+            currentCandidates.indices.contains(index)
+                ? candidateDisplayValue(currentCandidates[index])
+                : nil
+        } ?? inputBuffer
+        emojiWindow.updateSearchText(searchText)
+    }
+
+    private func confirmEmojiSearch(client sender: Any) {
+        let searchText = selectedCandidateIndex.flatMap { index in
+            currentCandidates.indices.contains(index)
+                ? candidateDisplayValue(currentCandidates[index])
+                : nil
+        } ?? inputBuffer
+        emojiWindow.updateSearchText(searchText)
+        setMarkedText(searchText, in: sender)
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        emojiWindow.confirmSearch()
     }
 
     private func beginCalendarSelection(
@@ -3558,6 +3635,11 @@ final class InputController: IMKInputController {
                 : (isTranslationInput ? "翻訳する日本語" : nil)),
             isAccented: isTranslationInput
         )
+        if emojiWindow.isVisible {
+            let frames = [candidateWindow.visibleFrame, fuzzySuggestionWindow.visibleFrame]
+                .compactMap { $0 }
+            emojiWindow.avoid(frames: frames)
+        }
     }
 
     private func inputLocation(for sender: Any) -> NSRect {
@@ -4241,10 +4323,14 @@ final class InputController: IMKInputController {
     }
 
     private func previewAnchorFrame(base anchorFrame: NSRect) -> NSRect {
-        guard let fuzzyFrame = fuzzySuggestionWindow.visibleFrame else {
-            return anchorFrame
+        var result = anchorFrame
+        if let fuzzyFrame = fuzzySuggestionWindow.visibleFrame {
+            result = result.union(fuzzyFrame)
         }
-        return anchorFrame.union(fuzzyFrame)
+        if let emojiFrame = emojiWindow.visibleFrame {
+            result = result.union(emojiFrame)
+        }
+        return result
     }
 
     private func showPreview(
