@@ -167,6 +167,7 @@ final class InputController: IMKInputController {
     private let modeStatusWindow = ModeStatusWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
+    private let symbolTipsWindow = SymbolTipsWindowController()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private var dictionaryDefinitionTask: Task<Void, Never>?
     private let romajiConverter = RomajiConverter()
@@ -2169,6 +2170,7 @@ final class InputController: IMKInputController {
         candidateWindow.hide()
         emojiWindow.hide()
         previewWindow.hide()
+        symbolTipsWindow.hide()
         calendarFormatTask?.cancel()
         calendarFormatCandidates = nil
         selectedCalendarFormatIndex = nil
@@ -2689,6 +2691,7 @@ final class InputController: IMKInputController {
         if !symbolCandidates.isEmpty {
             replaceCurrentCandidates(with: symbolCandidates)
             showCandidateWindow(client: sender)
+            showSymbolTipsForCurrentInput(client: sender)
             return
         }
 
@@ -3979,6 +3982,7 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.hide()
         emojiWindow.hide()
         previewWindow.hide()
+        symbolTipsWindow.hide()
         clearCalendarSelection()
         resetCandidateFilters()
         if recordsInputHistory {
@@ -4310,6 +4314,19 @@ final class InputController: IMKInputController {
                 ? candidateDisplayValue(currentCandidates[index])
                 : nil
         }
+        let inputFrame = inputLocation(for: sender)
+        var baseAnchorFrame = currentCandidates.isEmpty
+            ? inputFrame
+            : inputFrame.union(candidateWindow.frame)
+        let tipsText = selectedCandidate ?? inputBuffer
+        if let tips = SymbolTips.make(for: tipsText) {
+            symbolTipsWindow.show(tips, beside: baseAnchorFrame)
+            if let tipsFrame = symbolTipsWindow.visibleFrame {
+                baseAnchorFrame = baseAnchorFrame.union(tipsFrame)
+            }
+        } else {
+            symbolTipsWindow.hide()
+        }
         guard let pageTitle = PreviewPageTitleResolver.pageTitle(
             input: conversionReading,
             selectedCandidate: selectedCandidate
@@ -4318,15 +4335,23 @@ final class InputController: IMKInputController {
             previewWindow.hide()
             return
         }
-        let inputFrame = inputLocation(for: sender)
-        let baseAnchorFrame = currentCandidates.isEmpty
-            ? inputFrame
-            : inputFrame.union(candidateWindow.frame)
         showPreview(
             for: pageTitle,
             beside: previewAnchorFrame(base: baseAnchorFrame),
             includeDefinitions: true
         )
+    }
+
+    private func showSymbolTipsForCurrentInput(client sender: Any) {
+        guard let tips = SymbolTips.make(for: inputBuffer) else {
+            symbolTipsWindow.hide()
+            return
+        }
+        let inputFrame = inputLocation(for: sender)
+        let anchorFrame = candidateWindow.visibleFrame.map {
+            inputFrame.union($0)
+        } ?? inputFrame
+        symbolTipsWindow.show(tips, beside: anchorFrame)
     }
 
     private func showPreview(for candidate: String) {
@@ -4335,6 +4360,14 @@ final class InputController: IMKInputController {
             anchorFrame = anchorFrame.union(
                 inputLocation(for: inputClient)
             )
+        }
+        if let tips = SymbolTips.make(for: candidateDisplayValue(candidate)) {
+            symbolTipsWindow.show(tips, beside: anchorFrame)
+            if let tipsFrame = symbolTipsWindow.visibleFrame {
+                anchorFrame = anchorFrame.union(tipsFrame)
+            }
+        } else {
+            symbolTipsWindow.hide()
         }
         showPreview(
             for: candidateDisplayValue(candidate),
@@ -4350,6 +4383,9 @@ final class InputController: IMKInputController {
         }
         if let emojiFrame = emojiWindow.visibleFrame {
             result = result.union(emojiFrame)
+        }
+        if let symbolTipsFrame = symbolTipsWindow.visibleFrame {
+            result = result.union(symbolTipsFrame)
         }
         return result
     }
