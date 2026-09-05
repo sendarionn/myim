@@ -2882,7 +2882,16 @@ final class InputController: IMKInputController {
                 ? currentCandidates[index]
                 : nil
         }
-        currentCandidates = candidates
+        if inputBuffer == "-", let prolongedSoundMarkIndex = candidates.firstIndex(
+            of: "ー"
+        ) {
+            var fixedCandidates = candidates
+            fixedCandidates.remove(at: prolongedSoundMarkIndex)
+            fixedCandidates.insert("ー", at: 0)
+            currentCandidates = fixedCandidates
+        } else {
+            currentCandidates = candidates
+        }
         if let selectedCandidate {
             selectedCandidateIndex = currentCandidates.firstIndex(
                 of: selectedCandidate

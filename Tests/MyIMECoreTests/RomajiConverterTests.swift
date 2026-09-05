@@ -39,7 +39,7 @@ struct RomajiConverterTests {
         )
         #expect(
             JapaneseSymbolConverter.candidates(for: "-")
-                == ["－", "ー", "―", "−", "—"]
+                == ["ー", "－", "―", "−", "—"]
         )
         #expect(
             JapaneseSymbolConverter.candidates(for: "=")
