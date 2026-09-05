@@ -29,7 +29,9 @@ function candidates(context) {
 }
 
 function format(date, formats) {
+  const weekdays = ["日", "月", "火", "水", "木", "金", "土"]
   const values = {
+    E: weekdays[date.getDay()],
     YYYY: pad(date.getFullYear(), 4),
     YY: pad(date.getFullYear() % 100, 2),
     MM: pad(date.getMonth() + 1, 2),
@@ -43,7 +45,7 @@ function format(date, formats) {
     ss: pad(date.getSeconds(), 2),
     s: String(date.getSeconds())
   }
-  const tokens = ["YYYY", "YY", "MM", "DD", "HH", "mm", "ss", "M", "D", "H", "m", "s"]
+  const tokens = ["YYYY", "YY", "MM", "DD", "HH", "mm", "ss", "M", "D", "H", "m", "s", "E"]
   return formats.map(function(template) {
     return tokens.reduce(function(result, token) {
       return result.split(token).join(values[token])

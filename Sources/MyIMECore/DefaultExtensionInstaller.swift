@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DefaultExtensionInstaller {
-    public static let markerName = ".myim-default-extensions-installed-v6"
+    public static let markerName = ".myim-default-extensions-installed-v7"
 
     public static func installIfNeeded(
         from sourceDirectory: URL,
@@ -42,8 +42,38 @@ public enum DefaultExtensionInstaller {
             from: destinationDirectory.appendingPathComponent("datetime.js"),
             fileManager: fileManager
         )
+        try addWeekdayTokenSupport(
+            to: destinationDirectory.appendingPathComponent("datetime.js"),
+            fileManager: fileManager
+        )
 
         try Data().write(to: marker, options: .atomic)
+    }
+
+    private static func addWeekdayTokenSupport(
+        to fileURL: URL,
+        fileManager: FileManager
+    ) throws {
+        guard fileManager.fileExists(atPath: fileURL.path),
+              var script = try? String(contentsOf: fileURL, encoding: .utf8),
+              !script.contains("E: weekdays[date.getDay()]") else { return }
+        let functionHeader = "function format(date, formats) {\n"
+        guard script.contains(functionHeader),
+              script.contains("  const values = {\n") else { return }
+        script = script.replacingOccurrences(
+            of: functionHeader,
+            with: functionHeader
+                + "  const weekdays = [\"日\", \"月\", \"火\", \"水\", \"木\", \"金\", \"土\"]\n"
+        )
+        script = script.replacingOccurrences(
+            of: "  const values = {\n",
+            with: "  const values = {\n    E: weekdays[date.getDay()],\n"
+        )
+        script = script.replacingOccurrences(
+            of: "\"M\", \"D\", \"H\", \"m\", \"s\"]",
+            with: "\"M\", \"D\", \"H\", \"m\", \"s\", \"E\"]"
+        )
+        try script.write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
     private static func removeDeprecatedDateTimeReadings(

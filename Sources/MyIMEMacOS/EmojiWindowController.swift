@@ -104,6 +104,10 @@ final class EmojiWindowController: NSObject {
     private let layout: BottomUpEmojiFlowLayout
     private let scrollView: NSScrollView
     private let comparisonStack: NSStackView
+    private let guideLabel = NSTextField(
+        labelWithString: "Tab / 矢印 選択　Return 確定　Esc 閉じる"
+    )
+    private let recentTitle = NSTextField(labelWithString: "最近使った絵文字")
     private var selectedIndex: Int?
     private var selectedRecentIndex: Int?
     private var recentHistory: RecentEmojiHistory
@@ -265,20 +269,17 @@ final class EmojiWindowController: NSObject {
             }
             return
         }
-        if case .down = direction {
-            let isBottomDisplayRow = layout.displaysBottomUp
-                ? selectedIndex < Self.columnCount
-                : selectedIndex / Self.columnCount
-                    == (visibleEntries.count - 1) / Self.columnCount
-            if searchQuery.isEmpty,
-               isBottomDisplayRow,
-               !recentHistory.emojis.isEmpty {
-                selectRecent(index: min(
-                    selectedIndex % Self.columnCount,
-                    recentHistory.emojis.count - 1
-                ))
-                return
-            }
+        let entersRecentArea = layout.displaysBottomUp
+            ? direction == .down && selectedIndex < Self.columnCount
+            : direction == .up && selectedIndex < Self.columnCount
+        if searchQuery.isEmpty,
+           entersRecentArea,
+           !recentHistory.emojis.isEmpty {
+            selectRecent(index: min(
+                selectedIndex % Self.columnCount,
+                recentHistory.emojis.count - 1
+            ))
+            return
         }
         let gridDirection: EmojiGridDirection = if layout.displaysBottomUp {
             switch direction {
@@ -344,16 +345,9 @@ final class EmojiWindowController: NSObject {
             let previous = index - Self.recentColumnCount
             if previous >= 0 {
                 selectRecent(index: previous)
-            } else {
-                let rowStart = layout.displaysBottomUp
-                    ? 0
-                    : max(
-                        (visibleEntries.count - 1) / Self.columnCount
-                            * Self.columnCount,
-                        0
-                    )
+            } else if layout.displaysBottomUp {
                 select(index: min(
-                    rowStart + index % Self.recentColumnCount,
+                    index % Self.recentColumnCount,
                     visibleEntries.count - 1
                 ))
             }
@@ -361,6 +355,11 @@ final class EmojiWindowController: NSObject {
             let next = index + Self.recentColumnCount
             if next < count {
                 selectRecent(index: next)
+            } else if !layout.displaysBottomUp {
+                select(index: min(
+                    index % Self.recentColumnCount,
+                    visibleEntries.count - 1
+                ))
             }
         }
     }
@@ -411,9 +410,8 @@ final class EmojiWindowController: NSObject {
         let root = NSView(
             frame: NSRect(origin: .zero, size: contentSize)
         )
-        let guide = NSTextField(labelWithString: "Tab / 矢印 選択　Return 確定　Esc 閉じる")
-        guide.font = PanelShortcutGuideStyle.font
-        guide.textColor = PanelShortcutGuideStyle.color
+        guideLabel.font = PanelShortcutGuideStyle.font
+        guideLabel.textColor = PanelShortcutGuideStyle.color
         scrollView.frame = NSRect(
             x: 4,
             y: 76,
@@ -433,14 +431,11 @@ final class EmojiWindowController: NSObject {
             width: scrollView.contentSize.width,
             height: documentHeight
         )
-        guide.frame = NSRect(x: 8, y: 6, width: width - 16, height: 16)
-        let recentTitle = NSTextField(labelWithString: "最近使った絵文字")
         recentTitle.font = .systemFont(ofSize: 12, weight: .semibold)
         recentTitle.textColor = .secondaryLabelColor
-        recentTitle.frame = NSRect(x: 8, y: 56, width: width - 16, height: 16)
-        recentStack.frame = NSRect(x: 8, y: 28, width: width - 16, height: 26)
+        positionSections(listHeight: Self.maximumListHeight, width: width)
         root.addSubview(scrollView)
-        root.addSubview(guide)
+        root.addSubview(guideLabel)
         root.addSubview(recentTitle)
         root.addSubview(recentStack)
         panel.contentView = root
@@ -528,6 +523,7 @@ final class EmojiWindowController: NSObject {
         let belowY = anchor.minY - size.height - 8
         let displaysAboveInput = belowY < visible.minY
         layout.displaysBottomUp = displaysAboveInput
+        positionSections(listHeight: listHeight, width: size.width)
         let preferredY = displaysAboveInput
             ? anchor.maxY + 8
             : belowY
@@ -557,6 +553,29 @@ final class EmojiWindowController: NSObject {
         layout.displaysBottomUp = frame.minY >= anchor.maxY
         panel.setFrameOrigin(frame.origin)
         layout.invalidateLayout()
+    }
+
+    private func positionSections(listHeight: CGFloat, width: CGFloat) {
+        guideLabel.frame = NSRect(x: 8, y: 6, width: width - 16, height: 16)
+        if layout.displaysBottomUp {
+            recentStack.frame = NSRect(x: 8, y: 28, width: width - 16, height: 26)
+            recentTitle.frame = NSRect(x: 8, y: 56, width: width - 16, height: 16)
+            scrollView.frame = NSRect(x: 4, y: 76, width: width - 8, height: listHeight)
+        } else {
+            scrollView.frame = NSRect(x: 4, y: 28, width: width - 8, height: listHeight)
+            recentStack.frame = NSRect(
+                x: 8,
+                y: listHeight + 32,
+                width: width - 16,
+                height: 26
+            )
+            recentTitle.frame = NSRect(
+                x: 8,
+                y: listHeight + 60,
+                width: width - 16,
+                height: 16
+            )
+        }
     }
 
     private func overlapArea(of frame: NSRect) -> CGFloat {

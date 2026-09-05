@@ -354,6 +354,15 @@ final class InputController: IMKInputController {
                     )
                     updateEmojiSearchFromComposition()
                 }
+            case 97, 98, 100, 101, 109:
+                if !emojiWindow.isSearchConfirmed {
+                    _ = handleInputFormFunctionKey(
+                        event,
+                        client: sender,
+                        preservesEmojiWindow: true
+                    )
+                    updateEmojiSearchFromComposition()
+                }
             default:
                 let modifiers = event.modifierFlags.intersection(
                     [.command, .control, .option]
@@ -1530,7 +1539,8 @@ final class InputController: IMKInputController {
 
     private func handleInputFormFunctionKey(
         _ event: NSEvent,
-        client sender: Any
+        client sender: Any,
+        preservesEmojiWindow: Bool = false
     ) -> Bool {
         guard !inputBuffer.isEmpty else { return false }
         let form: InputForm
@@ -1575,7 +1585,9 @@ final class InputController: IMKInputController {
         cancelAuxiliarySuggestionSearches()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
-        emojiWindow.hide()
+        if !preservesEmojiWindow {
+            emojiWindow.hide()
+        }
         previewWindow.hide()
         setMarkedText(
             compositionPrefix + candidate,

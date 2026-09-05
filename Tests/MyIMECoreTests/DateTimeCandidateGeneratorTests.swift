@@ -68,7 +68,7 @@ struct DateTimeCandidateGeneratorTests {
     @Test
     func appliesConfiguredFormatsInOrder() {
         let formats = DateTimeCandidateGenerator.Formats(
-            date: ["YYYYMMDD", "YY-M-D"],
+            date: ["YYYYMMDD", "YY-M-D", "M/D(E)"],
             time: ["HHmmss"],
             dateTime: ["YYYY-MM-DD HH:mm"]
         )
@@ -78,7 +78,7 @@ struct DateTimeCandidateGeneratorTests {
             calendar: calendar,
             timeZone: timeZone,
             formats: formats
-        ) == ["20260810", "26-8-10"])
+        ) == ["20260810", "26-8-10", "8/10(月)"])
         #expect(generator.candidates(
             for: "jikoku",
             now: fixedDate,

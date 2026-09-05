@@ -84,6 +84,9 @@ public struct DateTimeCandidateGenerator: Sendable {
         }
 
         let values = [
+            "E": ["日", "月", "火", "水", "木", "金", "土"][
+                max(calendar.component(.weekday, from: date) - 1, 0)
+            ],
             "YYYY": String(format: "%04d", year),
             "YY": String(format: "%02d", year % 100),
             "MM": String(format: "%02d", month),
@@ -99,7 +102,7 @@ public struct DateTimeCandidateGenerator: Sendable {
         ]
         let tokens = [
             "YYYY", "YY", "MM", "DD", "HH", "mm", "ss",
-            "M", "D", "H", "m", "s"
+            "M", "D", "H", "m", "s", "E"
         ]
         var seen = Set<String>()
         return formats.compactMap { format in
