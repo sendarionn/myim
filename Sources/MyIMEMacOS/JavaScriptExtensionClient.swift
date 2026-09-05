@@ -11,6 +11,8 @@ actor JavaScriptExtensionClient {
 
     private static let disabledFileNamesDefaultsKey =
         "DisabledJavaScriptExtensionFileNames"
+    private static let executionTimeoutMilliseconds = 100
+    private static let coldStartTimeoutMilliseconds = 2_000
 
     private struct PendingRequest {
         let continuation: CheckedContinuation<JavaScriptExtensionResponse?, Never>
@@ -107,6 +109,16 @@ actor JavaScriptExtensionClient {
         stopHost()
     }
 
+    func validateExtensions() async {
+        _ = await candidates(
+            for: "__myim_extension_status__",
+            timestamp: Date(),
+            settings: [
+                "dateTimeCandidatesEnabled": ["true"]
+            ]
+        )
+    }
+
     func candidates(
         for input: String,
         dateTimeCandidatesEnabled: Bool
@@ -137,7 +149,12 @@ actor JavaScriptExtensionClient {
         timestamp: Date,
         settings: [String: [String]]
     ) async -> [String] {
-        guard !input.isEmpty, startIfNeeded() else { return [] }
+        guard !input.isEmpty else { return [] }
+        let wasRunning = process?.isRunning == true
+        guard startIfNeeded() else { return [] }
+        let timeoutMilliseconds = wasRunning
+            ? Self.executionTimeoutMilliseconds
+            : Self.coldStartTimeoutMilliseconds
         let request = JavaScriptExtensionRequest(
             input: input,
             timestamp: ISO8601DateFormatter().string(from: timestamp),
@@ -150,7 +167,9 @@ actor JavaScriptExtensionClient {
 
         let response = await withCheckedContinuation { continuation in
             let timeout = Task { [weak self] in
-                try? await Task.sleep(for: .milliseconds(100))
+                try? await Task.sleep(
+                    for: .milliseconds(timeoutMilliseconds)
+                )
                 guard !Task.isCancelled else { return }
                 await self?.timeout(request.id)
             }
@@ -227,7 +246,7 @@ actor JavaScriptExtensionClient {
 
     private func timeout(_ id: UUID) {
         guard pending[id] != nil else { return }
-        latestRuntimeError = "JavaScript拡張の実行が100ミリ秒を超えました"
+        latestRuntimeError = "JavaScript拡張の実行が制限時間を超えました"
         finish(id, response: nil)
         stopHost()
     }

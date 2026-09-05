@@ -52,6 +52,7 @@ final class JavaScriptExtensionSettingsController: NSObject {
     private func refresh() {
         Task { [weak self] in
             guard let self else { return }
+            await client.validateExtensions()
             let result = await client.extensionInfos()
             await MainActor.run {
                 self.render(
