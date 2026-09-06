@@ -19,7 +19,7 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 ## モードレスな日本語・英語入力
 
-[モードレスな日本語・英語入力](https://gyazo.com/e737d9242b3e7583af93ed94c4368789.gif)
+![モードレスな日本語・英語入力](https://gyazo.com/e737d9242b3e7583af93ed94c4368789.gif)
 
 
 
