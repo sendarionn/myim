@@ -28,7 +28,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .emoji: MyIMShortcut(modifiers: [.option], key: "e")
         case .dictionaryRegistration: MyIMShortcut(modifiers: [.option], key: "d")
         case .translationMode: MyIMShortcut(modifiers: [.option], key: "t")
-        case .webSearch: MyIMShortcut(modifiers: [.option], key: "s")
+        case .webSearch: MyIMShortcut(modifiers: [.option], key: "w")
         case .externalInformation: MyIMShortcut(modifiers: [.option], key: "o")
         }
     }
