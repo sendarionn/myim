@@ -3633,19 +3633,13 @@ final class InputController: IMKInputController {
         let isTranslationInput = isTranslationModeEnabled
         var guide: String
         if isDictionaryRegistration {
-            guide = selectedCandidateIndex == nil
-                ? "Tab 候補選択　↩ 入力を追加\nEsc 登録中止"
-                : "Tab / 矢印 移動\n↩ 入力を追加　Esc 登録中止"
+            guide = "Tab / 矢印 選択・移動\n↩ 入力を追加　Esc 登録中止"
         } else if isTranslationInput {
             let translationShortcut =
                 MyIMFeatureShortcut.translationMode.shortcut.displayName
-            guide = selectedCandidateIndex == nil
-                ? "Tab 候補選択　Return 原文に追加\n原文確定後にもう一度Returnで翻訳　Esc 日本語で確定　\(translationShortcut) モード解除"
-                : "Tab / 矢印 移動　Return 原文に追加\n原文確定後にもう一度Returnで翻訳　Esc 日本語で確定　\(translationShortcut) モード解除"
+            guide = "Tab / 矢印 選択・移動　Return 原文に追加\n原文確定後にもう一度Returnで翻訳　Esc 日本語で確定　\(translationShortcut) モード解除"
         } else {
-            guide = selectedCandidateIndex == nil
-                ? "Tab 選択　\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 辞書登録\nF6–F10 文字種変換　\(MyIMFeatureShortcut.externalInformation.shortcut.displayName) 外部ページ"
-                : "Tab / 矢印 移動　↩ 確定　Esc 解除\n\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 辞書登録　⌘X 削除　\(MyIMFeatureShortcut.webSearch.shortcut.displayName) Web検索　\(MyIMFeatureShortcut.externalInformation.shortcut.displayName) 外部ページ"
+            guide = "Tab / 矢印 選択・移動　↩ 確定　Esc 解除\n\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 辞書登録　⌘X 削除　\(MyIMFeatureShortcut.webSearch.shortcut.displayName) Web検索　\(MyIMFeatureShortcut.externalInformation.shortcut.displayName) 外部ページ"
         }
 
         if !candidateFilterConditions.isEmpty {
