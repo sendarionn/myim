@@ -33,13 +33,13 @@ enum InputSourceMenuBuilder {
             to: menu
         )
         let translationMode = NSMenuItem(
-            title: "翻訳モード",
+            title: "翻訳モード  \(MyIMFeatureShortcut.translationMode.shortcut.displayName)",
             action: actions.toggleTranslationMode,
-            keyEquivalent: "t"
+            keyEquivalent: ""
         )
         translationMode.target = nil
         translationMode.isEnabled = true
-        translationMode.keyEquivalentModifierMask = [.option]
+        translationMode.keyEquivalentModifierMask = []
         translationMode.state = actions.translationModeEnabled ? .on : .off
         menu.addItem(translationMode)
         menu.addItem(.separator())

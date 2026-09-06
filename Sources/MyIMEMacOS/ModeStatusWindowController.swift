@@ -46,7 +46,10 @@ final class ModeStatusWindowController: NSObject {
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
 
-        label.stringValue = enabled ? "翻訳モードON" : "翻訳モードOFF"
+        let shortcut = MyIMFeatureShortcut.translationMode.shortcut.displayName
+        label.stringValue = enabled
+            ? "翻訳モードON　\(shortcut)でOFF"
+            : "翻訳モードOFF　\(shortcut)でON"
         label.textColor = enabled ? .alternateSelectedControlTextColor : .labelColor
         panel.contentView?.layer?.backgroundColor = (
             enabled ? NSColor.controlAccentColor : NSColor.windowBackgroundColor

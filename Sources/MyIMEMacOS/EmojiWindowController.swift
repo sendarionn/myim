@@ -105,7 +105,7 @@ final class EmojiWindowController: NSObject {
     private let scrollView: NSScrollView
     private let comparisonStack: NSStackView
     private let guideLabel = NSTextField(
-        labelWithString: "Tab / 矢印 選択　Return 確定　Esc 閉じる"
+        labelWithString: ""
     )
     private let recentTitle = NSTextField(labelWithString: "最近使った絵文字")
     private var selectedIndex: Int?
@@ -167,6 +167,8 @@ final class EmojiWindowController: NSObject {
     }
 
     func show(near anchor: NSRect) {
+        guideLabel.stringValue =
+            "Tab / 矢印 選択　Return 確定　Esc / \(MyIMFeatureShortcut.emoji.shortcut.displayName) 閉じる"
         selectedIndex = nil
         selectedRecentIndex = nil
         collectionView.selectionIndexPaths = []

@@ -141,7 +141,9 @@ final class ExternalInformationWindowController: NSObject {
             frameY: frame.origin.y,
             frameWidth: frame.width,
             frameHeight: frame.height,
-            isVisible: isVisible
+            isVisible: isVisible,
+            openShortcutDisplayName:
+                MyIMFeatureShortcut.externalInformation.shortcut.displayName
         )
     }
 

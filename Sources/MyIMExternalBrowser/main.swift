@@ -100,6 +100,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
     private var panel: BrowserPanel!
     private var webView: WKWebView!
     private var titleLabel: NSTextField!
+    private var openButton: NSButton!
     private var displayedURL: URL?
     private var idleTerminationTask: Task<Void, Never>?
 
@@ -119,13 +120,13 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
         titleLabel = NSTextField(labelWithString: "外部情報")
         titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
-        let button = NSButton(
-            title: "ブラウザで開く  ⌘O",
+        openButton = NSButton(
+            title: "ブラウザで開く",
             target: self,
             action: #selector(openInDefaultBrowser(_:))
         )
-        button.bezelStyle = .inline
-        let header = NSStackView(views: [titleLabel, button])
+        openButton.bezelStyle = .inline
+        let header = NSStackView(views: [titleLabel, openButton])
         header.orientation = .horizontal
         header.alignment = .centerY
         header.spacing = 8
@@ -187,6 +188,9 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
         }
         panel.title = command.title
         titleLabel.stringValue = command.title
+        openButton.title = command.openShortcutDisplayName.map {
+            "ブラウザで開く  \($0)"
+        } ?? "ブラウザで開く"
         panel.setFrame(
             NSRect(
                 x: command.frameX,

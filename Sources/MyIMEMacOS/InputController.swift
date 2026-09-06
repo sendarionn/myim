@@ -3631,9 +3631,11 @@ final class InputController: IMKInputController {
                 ? "Tab 候補選択　↩ 入力を追加\nEsc 登録中止"
                 : "Tab / 矢印 移動\n↩ 入力を追加　Esc 登録中止"
         } else if isTranslationInput {
+            let translationShortcut =
+                MyIMFeatureShortcut.translationMode.shortcut.displayName
             guide = selectedCandidateIndex == nil
-                ? "Tab 候補選択　Return 原文に追加\n原文確定後にもう一度Returnで翻訳　Esc 日本語で確定"
-                : "Tab / 矢印 移動　Return 原文に追加\n原文確定後にもう一度Returnで翻訳　Esc 日本語で確定"
+                ? "Tab 候補選択　Return 原文に追加\n原文確定後にもう一度Returnで翻訳　Esc 日本語で確定　\(translationShortcut) モード解除"
+                : "Tab / 矢印 移動　Return 原文に追加\n原文確定後にもう一度Returnで翻訳　Esc 日本語で確定　\(translationShortcut) モード解除"
         } else {
             guide = selectedCandidateIndex == nil
                 ? "Tab 選択　\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 辞書登録\nF6–F10 文字種変換　\(MyIMFeatureShortcut.externalInformation.shortcut.displayName) 外部ページ"
@@ -4158,7 +4160,7 @@ final class InputController: IMKInputController {
             selectedIndex: nil,
             near: inputLocation(for: sender),
             guide: isTranslationModeEnabled
-                ? "Tab 選択　Return 原文に追加\n候補未選択でReturn 翻訳　Esc 閉じる"
+                ? "Tab 選択　Return 原文に追加\n候補未選択でReturn 翻訳　Esc 閉じる　\(MyIMFeatureShortcut.translationMode.shortcut.displayName) モード解除"
                 : "Tab 選択　Return / Esc 閉じる\n選択後はTab / 矢印 移動　Return 確定",
             isAccented: isTranslationModeEnabled
         )

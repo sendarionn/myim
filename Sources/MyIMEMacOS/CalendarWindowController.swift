@@ -40,13 +40,18 @@ private final class CalendarGridView: NSView {
     private let nextButton = NSButton(title: "›", target: nil, action: nil)
     private let nextYearButton = NSButton(title: "»", target: nil, action: nil)
     private let shortcutLabel = NSTextField(
-        labelWithString: "矢印 移動　⌥←→ 月　⌥↑↓ 年\nReturn 確定　Esc 閉じる"
+        labelWithString: ""
     )
     private var weekdayLabels: [NSTextField] = []
     private var dayButtons: [NSButton] = []
     private var dates: [Date] = []
 
     override var acceptsFirstResponder: Bool { true }
+
+    func updateShortcutGuide() {
+        shortcutLabel.stringValue =
+            "矢印 移動　⌥←→ 月　⌥↑↓ 年\nReturn 確定　Esc / \(MyIMFeatureShortcut.calendar.shortcut.displayName) 閉じる"
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -165,6 +170,10 @@ private final class CalendarGridView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if MyIMFeatureShortcut.calendar.shortcut.matches(event) {
+            cancelAction?()
+            return
+        }
         switch event.keyCode {
         case 36, 76:
             confirmAction?()
@@ -409,6 +418,7 @@ final class CalendarWindowController: NSObject {
     ) -> Date? {
         selectedDate = nil
         calendarView.setDate(initialDate)
+        calendarView.updateShortcutGuide()
         position(near: anchorFrame)
 
         let previousPolicy = NSApp.activationPolicy()
