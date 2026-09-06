@@ -2885,15 +2885,21 @@ final class InputController: IMKInputController {
                 ? currentCandidates[index]
                 : nil
         }
-        if inputBuffer == "-", let prolongedSoundMarkIndex = candidates.firstIndex(
+        let notationMatchedCandidates = inputBuffer == "-"
+            ? candidates
+            : LongVowelNotationCandidateFilter.candidates(
+                candidates,
+                for: conversionReading
+            )
+        if inputBuffer == "-", let prolongedSoundMarkIndex = notationMatchedCandidates.firstIndex(
             of: "ー"
         ) {
-            var fixedCandidates = candidates
+            var fixedCandidates = notationMatchedCandidates
             fixedCandidates.remove(at: prolongedSoundMarkIndex)
             fixedCandidates.insert("ー", at: 0)
             currentCandidates = fixedCandidates
         } else {
-            currentCandidates = candidates
+            currentCandidates = notationMatchedCandidates
         }
         if let selectedCandidate {
             selectedCandidateIndex = currentCandidates.firstIndex(

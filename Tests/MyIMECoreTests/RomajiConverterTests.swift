@@ -64,14 +64,14 @@ struct RomajiConverterTests {
     }
 
     @Test
-    func expandsLongVowelHyphensForDictionarySearch() {
+    func keepsLongVowelHyphensDistinctForDictionarySearch() {
         #expect(
             RomajiCanonicalizer.canonicalInput(from: "cha-to")
-                == "chaato"
+                == "cha-to"
         )
         #expect(
             RomajiCanonicalizer.canonicalInput(from: "ko-hi-")
-                == "koohii"
+                == "ko-hi-"
         )
         #expect(
             RomajiCanonicalizer.canonicalInput(from: "tuujou")
@@ -92,6 +92,19 @@ struct RomajiConverterTests {
         #expect(
             RomajiCanonicalizer.canonicalInput(from: "hiduke")
                 == "hizuke"
+        )
+    }
+
+    @Test
+    func separatesHyphenAndRepeatedVowelCandidates() {
+        let candidates = ["きい", "キイ", "奇異", "聞い", "キー"]
+        #expect(
+            LongVowelNotationCandidateFilter.candidates(candidates, for: "ki-")
+                == ["キー"]
+        )
+        #expect(
+            LongVowelNotationCandidateFilter.candidates(candidates, for: "kii")
+                == ["きい", "キイ", "奇異", "聞い"]
         )
     }
 

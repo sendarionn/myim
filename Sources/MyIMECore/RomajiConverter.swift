@@ -234,14 +234,10 @@ public enum RomajiCanonicalizer {
         let source = Array(input.lowercased())
         var result = ""
         var index = 0
-        var lastVowel: Character?
 
         while index < source.count {
             if source[index] == "-" {
-                guard let lastVowel else { return input.lowercased() }
-                result.append(lastVowel)
-                index += 1
-                continue
+                return input.lowercased()
             }
 
             if index + 1 < source.count,
@@ -288,7 +284,6 @@ public enum RomajiCanonicalizer {
             guard let match else { return input.lowercased() }
             let canonical = aliases[match] ?? match
             result.append(canonical)
-            lastVowel = canonical.last(where: { "aeiou".contains($0) })
         }
 
         return result
@@ -310,4 +305,23 @@ public enum RomajiCanonicalizer {
             && !"aeiou".contains(character)
     }
 
+}
+
+public enum LongVowelNotationCandidateFilter {
+    public static func candidates(
+        _ candidates: [String],
+        for input: String
+    ) -> [String] {
+        let normalized = input.lowercased()
+        guard normalized.count > 1,
+              normalized.allSatisfy({
+                  $0.isASCII && ($0.isLetter || $0 == "-" || $0 == "'")
+              }) else {
+            return candidates
+        }
+        if normalized.contains("-") {
+            return candidates.filter { $0.contains("ー") }
+        }
+        return candidates.filter { !$0.contains("ー") }
+    }
 }
