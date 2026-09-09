@@ -161,6 +161,8 @@ final class InputController: IMKInputController {
     private var nextInputCandidates: [String] = []
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
+    private var nextInputOutsideLocalMonitor: Any?
+    private var nextInputOutsideGlobalMonitor: Any?
     private let suggestionSearchSession = SuggestionSearchSession()
     private var officialCandidates: [String] = []
     private var javaScriptExtensionCandidates: [String] = []
@@ -3750,6 +3752,7 @@ final class InputController: IMKInputController {
             guide: "Tab 選択　Return 原文に追加\n候補未選択でReturn 翻訳　Esc 閉じる",
             isAccented: true
         )
+        startNextInputOutsideClickMonitoring()
         scheduleNextInputDismissal()
     }
 
@@ -4047,6 +4050,7 @@ final class InputController: IMKInputController {
         selectedFuzzySuggestionIndex = nil
         nextInputCandidates = []
         selectedNextInputIndex = nil
+        stopNextInputOutsideClickMonitoring()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
         suggestionSearchSession.cancelAll()
@@ -4171,6 +4175,7 @@ final class InputController: IMKInputController {
                 : "Tab 選択　Return / Esc 閉じる\n選択後はTab / 矢印 移動　Return 確定",
             isAccented: isTranslationModeEnabled
         )
+        startNextInputOutsideClickMonitoring()
         scheduleNextInputDismissal()
     }
 
@@ -4190,6 +4195,7 @@ final class InputController: IMKInputController {
     private func dismissNextInputSuggestions(
         clearMarkedTextIn sender: Any?
     ) {
+        stopNextInputOutsideClickMonitoring()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
         if selectedNextInputIndex != nil, let sender {
@@ -4203,6 +4209,44 @@ final class InputController: IMKInputController {
         selectedNextInputIndex = nil
         candidateWindow.hide()
         previewWindow.hide()
+    }
+
+    private func startNextInputOutsideClickMonitoring() {
+        stopNextInputOutsideClickMonitoring()
+        let mouseEvents: NSEvent.EventTypeMask = [
+            .leftMouseDown, .rightMouseDown, .otherMouseDown
+        ]
+        nextInputOutsideLocalMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: mouseEvents
+        ) { [weak self] event in
+            self?.dismissNextInputIfClickedOutside()
+            return event
+        }
+        nextInputOutsideGlobalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: mouseEvents
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.dismissNextInputIfClickedOutside()
+            }
+        }
+    }
+
+    private func stopNextInputOutsideClickMonitoring() {
+        if let monitor = nextInputOutsideLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            nextInputOutsideLocalMonitor = nil
+        }
+        if let monitor = nextInputOutsideGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            nextInputOutsideGlobalMonitor = nil
+        }
+    }
+
+    private func dismissNextInputIfClickedOutside() {
+        guard !nextInputCandidates.isEmpty,
+              !candidateWindow.contains(screenPoint: NSEvent.mouseLocation)
+        else { return }
+        dismissNextInputSuggestions(clearMarkedTextIn: client())
     }
 
     private func updateMarkedText(in sender: Any) {

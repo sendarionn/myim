@@ -165,6 +165,10 @@ final class CandidateWindowController: NSObject {
         panel.isVisible ? panel.frame : nil
     }
 
+    func contains(screenPoint: NSPoint) -> Bool {
+        panel.isVisible && panel.frame.contains(screenPoint)
+    }
+
     func show(
         candidates: [String],
         selectedIndex: Int?,
