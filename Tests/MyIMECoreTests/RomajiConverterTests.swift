@@ -122,6 +122,10 @@ struct RomajiConverterTests {
             RomajiCanonicalizer.dictionaryLookupInputs(from: "n-")
                 == ["n-"]
         )
+        #expect(
+            RomajiCanonicalizer.dictionaryLookupInputs(from: "huru-re")
+                == ["huru-re", "furu-re", "huruure", "furuure"]
+        )
     }
 
     @Test
@@ -148,6 +152,32 @@ struct RomajiConverterTests {
                 ordered,
                 for: "re-beru"
             ).first == "レーベル"
+        )
+    }
+
+    @Test
+    func findsKatakanaDictionaryCandidateAfterCanonicalizingLongVowelInput() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "furuure", candidates: ["フルーレ"])
+        ])
+        let found = RomajiCanonicalizer.dictionaryLookupInputs(
+            from: "huru-re"
+        ).flatMap { engine.candidateGroups(matching: $0).exact }
+        let ordered = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["ふるーれ", "フルーレ"],
+                direct: found,
+                other: [],
+                recencyRanks: [:],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(
+            LongVowelNotationCandidateFilter.candidates(
+                ordered,
+                for: "huru-re"
+            ).first == "フルーレ"
         )
     }
 

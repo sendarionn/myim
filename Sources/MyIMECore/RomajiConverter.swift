@@ -202,6 +202,10 @@ public enum RomajiCanonicalizer {
         let raw = input.lowercased()
         let canonical = canonicalInput(from: raw)
         var inputs = raw == canonical ? [raw] : [raw, canonical]
+        let hyphenCanonical = canonicalHyphenatedInput(from: raw)
+        if hyphenCanonical != raw, !inputs.contains(hyphenCanonical) {
+            inputs.append(hyphenCanonical)
+        }
         for value in inputs {
             let moraicN = moraicNBeforeYInput(from: value)
             if moraicN != value, !inputs.contains(moraicN) {
@@ -215,6 +219,16 @@ public enum RomajiCanonicalizer {
             }
         }
         return inputs
+    }
+
+    private static func canonicalHyphenatedInput(from input: String) -> String {
+        guard input.contains("-") else { return input }
+        return input.split(
+            separator: "-",
+            omittingEmptySubsequences: false
+        ).map {
+            canonicalInput(from: String($0))
+        }.joined(separator: "-")
     }
 
     private static func longVowelInput(from input: String) -> String {

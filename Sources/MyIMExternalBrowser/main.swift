@@ -125,7 +125,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             target: self,
             action: #selector(openInDefaultBrowser(_:))
         )
-        openButton.bezelStyle = .inline
+        openButton.bezelStyle = .regularSquare
         let header = NSStackView(views: [titleLabel, openButton])
         header.orientation = .horizontal
         header.alignment = .centerY

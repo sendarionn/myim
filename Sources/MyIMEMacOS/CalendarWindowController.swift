@@ -217,16 +217,25 @@ private final class CalendarGridView: NSView {
             button.title = String(calendar.component(.day, from: date))
             let inMonth = calendar.isDate(date, equalTo: displayedMonth, toGranularity: .month)
             let isToday = calendar.isDateInToday(date)
-            button.contentTintColor = isToday
-                ? .controlAccentColor
-                : (inMonth ? .labelColor : .tertiaryLabelColor)
+            let isSelected = calendar.isDate(
+                date,
+                inSameDayAs: selectedDate
+            )
+            button.contentTintColor = isSelected
+                ? .alternateSelectedControlTextColor
+                : (isToday
+                    ? .controlAccentColor
+                    : (inMonth ? .labelColor : .tertiaryLabelColor))
             button.font = .systemFont(ofSize: 13, weight: isToday ? .bold : .regular)
             button.wantsLayer = true
             button.layer?.cornerRadius = 0
-            button.layer?.borderWidth = isToday ? 1.5 : 0
+            button.layer?.backgroundColor = isSelected
+                ? NSColor.controlAccentColor.cgColor
+                : NSColor.clear.cgColor
+            button.layer?.borderWidth = isToday && !isSelected ? 1.5 : 0
             button.layer?.borderColor = isToday ? NSColor.controlAccentColor.cgColor : nil
-            button.isBordered = calendar.isDate(date, inSameDayAs: selectedDate)
-            button.bezelColor = button.isBordered ? .controlAccentColor : nil
+            button.isBordered = false
+            button.bezelColor = nil
         }
         needsDisplay = true
     }
@@ -372,6 +381,8 @@ final class CalendarWindowController: NSObject {
         super.init()
 
         panel.isMovableByWindowBackground = true
+        panel.contentView?.wantsLayer = true
+        panel.contentView?.layer?.cornerRadius = 0
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false

@@ -40,6 +40,7 @@ final class FuzzySuggestionWindowController {
         )
         stackView = NSStackView()
         stackView.wantsLayer = true
+        stackView.layer?.cornerRadius = 0
         stackView.orientation = .vertical
         stackView.alignment = .leading
         stackView.spacing = 3

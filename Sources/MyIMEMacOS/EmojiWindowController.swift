@@ -631,6 +631,7 @@ final class EmojiWindowController: NSObject {
                 button.isBordered = false
                 button.font = NSFont(name: "Apple Color Emoji", size: 18)
                 button.wantsLayer = true
+                button.layer?.cornerRadius = 0
                 button.widthAnchor.constraint(equalToConstant: Self.recentCellSize).isActive = true
                 button.heightAnchor.constraint(equalToConstant: Self.recentCellSize).isActive = true
                 row.addArrangedSubview(button)
