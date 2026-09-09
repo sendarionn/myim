@@ -350,6 +350,7 @@ final class CalendarWindowController: NSObject {
     private var selectedDate: Date?
     private var outsideLocalMonitor: Any?
     private var outsideGlobalMonitor: Any?
+    private var outsideClickTimer: Timer?
 
     override init() {
         let gridSize = NSSize(width: 240, height: 234)
@@ -358,13 +359,13 @@ final class CalendarWindowController: NSObject {
 
         panel = CalendarPanel(
             contentRect: NSRect(origin: .zero, size: gridSize),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )
         formatKeyPanel = CalendarFormatKeyPanel(
             contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )
@@ -374,6 +375,7 @@ final class CalendarWindowController: NSObject {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
+        panel.becomesKeyOnlyIfNeeded = false
         panel.collectionBehavior = [
             .moveToActiveSpace, .transient, .fullScreenAuxiliary
         ]
@@ -394,6 +396,7 @@ final class CalendarWindowController: NSObject {
         formatKeyPanel.isOpaque = false
         formatKeyPanel.backgroundColor = .clear
         formatKeyPanel.isReleasedWhenClosed = false
+        formatKeyPanel.becomesKeyOnlyIfNeeded = false
         formatKeyPanel.collectionBehavior = [
             .moveToActiveSpace, .transient, .fullScreenAuxiliary
         ]
@@ -401,6 +404,11 @@ final class CalendarWindowController: NSObject {
 
     var isVisible: Bool {
         panel.isVisible
+    }
+
+    func handleKeyEvent(_ event: NSEvent) {
+        guard panel.isVisible else { return }
+        calendarView.keyDown(with: event)
     }
 
     func runSelection(
@@ -417,7 +425,6 @@ final class CalendarWindowController: NSObject {
         if previousPolicy == .prohibited {
             _ = NSApp.setActivationPolicy(.accessory)
         }
-        NSApp.activate(ignoringOtherApps: false)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(calendarView)
         startOutsideClickMonitoring()
@@ -463,7 +470,6 @@ final class CalendarWindowController: NSObject {
             _ = NSApp.setActivationPolicy(.accessory)
         }
         formatKeyPanel.setFrameOrigin(anchorFrame.origin)
-        NSApp.activate(ignoringOtherApps: false)
         formatKeyPanel.makeKeyAndOrderFront(nil)
         formatKeyPanel.makeFirstResponder(formatKeyPanel)
 
@@ -530,19 +536,31 @@ final class CalendarWindowController: NSObject {
 
     private func startOutsideClickMonitoring() {
         stopOutsideClickMonitoring()
+        let mouseEvents: NSEvent.EventTypeMask = [
+            .leftMouseDown, .rightMouseDown, .otherMouseDown
+        ]
         outsideLocalMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
+            matching: mouseEvents
         ) { [weak self] event in
-            self?.cancelIfClickIsOutsideCalendar()
+            self?.cancelIfClickIsOutsideCalendar(at: NSEvent.mouseLocation)
             return event
         }
         outsideGlobalMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .rightMouseDown]
+            matching: mouseEvents
         ) { [weak self] _ in
+            let screenPoint = NSEvent.mouseLocation
             DispatchQueue.main.async {
-                self?.cancelIfClickIsOutsideCalendar()
+                self?.cancelIfClickIsOutsideCalendar(at: screenPoint)
             }
         }
+        let timer = Timer(timeInterval: 0.03, repeats: true) {
+            [weak self] _ in
+            guard NSEvent.pressedMouseButtons != 0 else { return }
+            self?.cancelIfClickIsOutsideCalendar(at: NSEvent.mouseLocation)
+        }
+        outsideClickTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(timer, forMode: .modalPanel)
     }
 
     private func stopOutsideClickMonitoring() {
@@ -554,12 +572,13 @@ final class CalendarWindowController: NSObject {
             NSEvent.removeMonitor(monitor)
             outsideGlobalMonitor = nil
         }
+        outsideClickTimer?.invalidate()
+        outsideClickTimer = nil
     }
 
-    private func cancelIfClickIsOutsideCalendar() {
+    private func cancelIfClickIsOutsideCalendar(at screenPoint: NSPoint) {
         guard panel.isVisible,
-              NSApp.modalWindow === panel,
-              !panel.frame.contains(NSEvent.mouseLocation)
+              !panel.frame.contains(screenPoint)
         else { return }
         cancelSelection()
     }

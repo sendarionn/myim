@@ -417,9 +417,7 @@ final class InputController: IMKInputController {
         }
 
         if calendarWindow.isVisible {
-            if event.keyCode == 53 {
-                calendarWindow.hide()
-            }
+            calendarWindow.handleKeyEvent(event)
             return true
         }
 
