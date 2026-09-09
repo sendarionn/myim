@@ -9,6 +9,8 @@ final class FuzzyEngineRepository: @unchecked Sendable {
     private var cachedEntries: [DictionaryEntry] = []
     private var cachedBaseKey: String?
     private var cachedUserEntries: [DictionaryEntry] = []
+    private var preparingBaseKey: String?
+    private var preparingUserEntries: [DictionaryEntry] = []
     private var cachedEngine = FuzzyConversionEngine(entries: [])
     private var generation = 0
 
@@ -35,17 +37,37 @@ final class FuzzyEngineRepository: @unchecked Sendable {
         userEntries: [DictionaryEntry]
     ) -> Int {
         lock.lock()
-        defer { lock.unlock() }
-
         if cachedBaseKey == baseKey, cachedUserEntries == userEntries {
-            return generation
+            let currentGeneration = generation
+            lock.unlock()
+            return currentGeneration
         }
-        cachedEngine = FuzzyConversionEngine(
+        if preparingBaseKey == baseKey,
+           preparingUserEntries == userEntries {
+            let currentGeneration = generation
+            lock.unlock()
+            return currentGeneration
+        }
+        preparingBaseKey = baseKey
+        preparingUserEntries = userEntries
+        lock.unlock()
+
+        let engine = FuzzyConversionEngine(
             entries: userEntries + baseEntries
         )
+
+        lock.lock()
+        defer { lock.unlock() }
+        guard preparingBaseKey == baseKey,
+              preparingUserEntries == userEntries else {
+            return generation
+        }
+        cachedEngine = engine
         cachedEntries = []
         cachedBaseKey = baseKey
         cachedUserEntries = userEntries
+        preparingBaseKey = nil
+        preparingUserEntries = []
         generation += 1
         return generation
     }
