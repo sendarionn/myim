@@ -21,6 +21,8 @@ final class ExternalInformationWindowController: NSObject {
     private let externalBrowser = ExternalBrowserBridge()
     private var informationPanelFrame = NSRect(origin: .zero, size: informationPanelSize)
     private var displayedURL: URL?
+    private var displayedPanelTitle = "外部情報"
+    private var informationPanelIsVisible = false
     private var requestID = UUID()
     private var displayTask: Task<Void, Never>?
     private var navigationTask: Task<Void, Never>?
@@ -98,6 +100,7 @@ final class ExternalInformationWindowController: NSObject {
         navigationTask?.cancel()
         requestID = currentRequestID
         externalBrowser.hide()
+        informationPanelIsVisible = false
         definitionPanel.orderOut(nil)
         if !definitions.isEmpty {
             definitionTextView.textStorage?.setAttributedString(
@@ -116,6 +119,7 @@ final class ExternalInformationWindowController: NSObject {
                 positionInformationPanel(near: candidateFrame)
                 externalBrowser.send(browserCommand(url: url, title: panelTitle, isVisible: false))
                 displayedURL = url
+                displayedPanelTitle = panelTitle
             }
         }
         displayTask = Task { @MainActor [weak self] in
@@ -129,6 +133,8 @@ final class ExternalInformationWindowController: NSObject {
             guard showExternalInformation, let url else { return }
             positionInformationPanel(near: candidateFrame)
             externalBrowser.send(browserCommand(url: url, title: panelTitle, isVisible: true))
+            displayedPanelTitle = panelTitle
+            informationPanelIsVisible = true
         }
     }
 
@@ -157,6 +163,7 @@ final class ExternalInformationWindowController: NSObject {
         isInteractionActive = false
         definitionPanel.orderOut(nil)
         externalBrowser.hide()
+        informationPanelIsVisible = false
     }
 
     func showDefinitions(
@@ -175,6 +182,14 @@ final class ExternalInformationWindowController: NSObject {
         definitionTextView.scrollToBeginningOfDocument(nil)
         positionDefinitionPanel(near: candidateFrame)
         definitionPanel.orderFrontRegardless()
+        if informationPanelIsVisible, let displayedURL {
+            positionInformationPanel(near: candidateFrame)
+            externalBrowser.send(browserCommand(
+                url: displayedURL,
+                title: displayedPanelTitle,
+                isVisible: true
+            ))
+        }
     }
 
     private func beginInteraction() {
@@ -279,19 +294,48 @@ final class ExternalInformationWindowController: NSObject {
             width: min(Self.informationPanelSize.width, visibleFrame.width),
             height: min(Self.informationPanelSize.height, visibleFrame.height)
         )
-        let occupiedFrame = definitionPanel.isVisible
-            ? candidateFrame.union(definitionPanel.frame)
-            : candidateFrame
-        let rightX = occupiedFrame.maxX + Self.spacing
-        let leftX = occupiedFrame.minX - panelSize.width - Self.spacing
-        let preferredX = rightX + panelSize.width <= visibleFrame.maxX ? rightX : leftX
+        let definitionFrame = definitionPanel.isVisible
+            ? definitionPanel.frame
+            : nil
+        let referenceFrame = definitionFrame ?? candidateFrame
+        let origins = [
+            NSPoint(x: referenceFrame.maxX + Self.spacing, y: referenceFrame.maxY - panelSize.height),
+            NSPoint(x: referenceFrame.minX - panelSize.width - Self.spacing, y: referenceFrame.maxY - panelSize.height),
+            NSPoint(x: referenceFrame.minX, y: referenceFrame.minY - panelSize.height - Self.spacing),
+            NSPoint(x: referenceFrame.minX, y: referenceFrame.maxY + Self.spacing),
+            NSPoint(x: candidateFrame.maxX + Self.spacing, y: candidateFrame.maxY - panelSize.height),
+            NSPoint(x: candidateFrame.minX - panelSize.width - Self.spacing, y: candidateFrame.maxY - panelSize.height)
+        ]
+        let avoidedFrames = [candidateFrame, definitionFrame].compactMap { $0 }
+        let preferredOrigin = origins.first { origin in
+            let frame = NSRect(origin: origin, size: panelSize)
+            return visibleFrame.contains(frame)
+                && avoidedFrames.allSatisfy { !frame.intersects($0) }
+        } ?? origins.max { lhs, rhs in
+            visibleArea(of: NSRect(origin: lhs, size: panelSize), excluding: avoidedFrames, inside: visibleFrame)
+                < visibleArea(of: NSRect(origin: rhs, size: panelSize), excluding: avoidedFrames, inside: visibleFrame)
+        } ?? origins[0]
         informationPanelFrame = NSRect(
             origin: NSPoint(
-                x: clamped(preferredX, minimum: visibleFrame.minX, maximum: visibleFrame.maxX - panelSize.width),
-                y: clamped(candidateFrame.maxY - panelSize.height, minimum: visibleFrame.minY, maximum: visibleFrame.maxY - panelSize.height)
+                x: clamped(preferredOrigin.x, minimum: visibleFrame.minX, maximum: visibleFrame.maxX - panelSize.width),
+                y: clamped(preferredOrigin.y, minimum: visibleFrame.minY, maximum: visibleFrame.maxY - panelSize.height)
             ),
             size: panelSize
         )
+    }
+
+    private func visibleArea(
+        of frame: NSRect,
+        excluding avoidedFrames: [NSRect],
+        inside visibleFrame: NSRect
+    ) -> CGFloat {
+        let visible = frame.intersection(visibleFrame)
+        guard !visible.isNull else { return 0 }
+        let overlap = avoidedFrames.reduce(CGFloat.zero) { result, avoided in
+            let intersection = visible.intersection(avoided)
+            return result + (intersection.isNull ? 0 : intersection.width * intersection.height)
+        }
+        return visible.width * visible.height - overlap
     }
 
     private func visibleFrame(near candidateFrame: NSRect) -> NSRect {

@@ -61,14 +61,14 @@ final class CandidateWindowController: NSObject {
     private static let itemHeight: CGFloat = 30
     private static let minimumItemWidth: CGFloat = 52
     private static let maximumItemWidth: CGFloat = 240
-    private static let maximumPanelWidth: CGFloat = 560
+    private static let maximumPanelWidth: CGFloat = 360
     private static let maximumRows = 6
     private static let itemSpacing: CGFloat = 2
     private static let anchorSpacing: CGFloat = 8
     private static let guideHorizontalPadding: CGFloat = 10
     private static let guideVerticalPadding: CGFloat = 4
     private static let minimumGuideWidth: CGFloat = 180
-    private static let maximumGuideWidth: CGFloat = 560
+    private static let maximumGuideWidth: CGFloat = 300
     private static let modeHeaderHeight: CGFloat = 28
 
     private let panel: NSPanel
@@ -456,7 +456,6 @@ final class CandidateWindowController: NSObject {
             sqrt(
                 totalWidth
                     * (Self.itemHeight + Self.itemSpacing)
-                    * 2
             )
         )
         let targetWidth = min(

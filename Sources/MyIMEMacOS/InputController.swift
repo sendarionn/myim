@@ -89,6 +89,13 @@ final class InputController: IMKInputController {
     private static let sharedMozcConversionEngine = loadMozcDictionaryEngine()
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
+    private static let sharedBasicCompoundGenerator =
+        CompoundDictionaryCandidateGenerator(entries: sharedBasicEntries)
+    private static let sharedBasicFuzzyEntries = sharedBasicEntries
+        + VerbInflectionCandidateGenerator.typoSearchEntries(
+            from: sharedBasicEntries
+        )
+    private static let sharedBasicFuzzyKey = "bundled-\(sharedBasicEntries.count)-\(sharedBasicFuzzyEntries.count)"
     private static let fuzzyEngineRepository = FuzzyEngineRepository()
     private static let basicDictionaryUpdateCoordinator =
         BasicDictionaryUpdateCoordinator()
@@ -264,9 +271,7 @@ final class InputController: IMKInputController {
         mozcConversionEngine = indexedMozcEngine
         verbInflectionGenerator = Self.sharedVerbInflectionGenerator
         compoundDictionaryCandidateGenerator =
-            CompoundDictionaryCandidateGenerator(
-                layers: [cachedUserEntries, bundledEntries]
-            )
+            Self.sharedBasicCompoundGenerator
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
 
@@ -2953,6 +2958,7 @@ final class InputController: IMKInputController {
         let query = conversionReading
         let mozcDictionary = mozcConversionEngine
         let compoundGenerator = compoundDictionaryCandidateGenerator
+        let userDictionary = userConversionEngine
         let visibleCandidates = Set(currentCandidates)
         let token = suggestionSearchSession.begin(.fuzzy, query: query)
         let task = Task { @MainActor [weak self] in
@@ -2979,7 +2985,8 @@ final class InputController: IMKInputController {
                     ))
                     let compoundMatches = compoundGenerator
                         .matches(for: query) {
-                            mozcDictionary.candidates(for: $0)
+                            userDictionary.candidates(for: $0)
+                                + mozcDictionary.candidates(for: $0)
                         } typoMatches: { segment in
                             var seenReadings = Set<String>()
                             let keyboardMatches =
@@ -4451,9 +4458,7 @@ final class InputController: IMKInputController {
             )
         }
         compoundDictionaryCandidateGenerator =
-            CompoundDictionaryCandidateGenerator(
-                layers: [userEntries, basicEntries]
-            )
+            Self.sharedBasicCompoundGenerator
         rebuildFuzzyConversionEngine()
     }
 
@@ -4461,15 +4466,13 @@ final class InputController: IMKInputController {
         cancelFuzzySuggestionSearch()
         fuzzyEngineBuildTask?.cancel()
         let userEntries = userEntries
-        let basicEntries = basicEntries
         fuzzyEngineBuildTask = Task { @MainActor [weak self] in
-            await Task.detached(priority: .utility) {
-                let entries = userEntries
-                    + basicEntries
-                    + VerbInflectionCandidateGenerator.typoSearchEntries(
-                        from: basicEntries
-                    )
-                Self.fuzzyEngineRepository.prepare(for: entries)
+            _ = await Task.detached(priority: .utility) {
+                Self.fuzzyEngineRepository.prepare(
+                    baseEntries: Self.sharedBasicFuzzyEntries,
+                    baseKey: Self.sharedBasicFuzzyKey,
+                    userEntries: userEntries
+                )
             }.value
             guard !Task.isCancelled, let self else {
                 return

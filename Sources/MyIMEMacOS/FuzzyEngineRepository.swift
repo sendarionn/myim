@@ -7,6 +7,8 @@ import MyIMECore
 final class FuzzyEngineRepository: @unchecked Sendable {
     private let lock = NSLock()
     private var cachedEntries: [DictionaryEntry] = []
+    private var cachedBaseKey: String?
+    private var cachedUserEntries: [DictionaryEntry] = []
     private var cachedEngine = FuzzyConversionEngine(entries: [])
     private var generation = 0
 
@@ -22,6 +24,28 @@ final class FuzzyEngineRepository: @unchecked Sendable {
         let engine = FuzzyConversionEngine(entries: entries)
         cachedEntries = entries
         cachedEngine = engine
+        generation += 1
+        return generation
+    }
+
+    @discardableResult
+    func prepare(
+        baseEntries: [DictionaryEntry],
+        baseKey: String,
+        userEntries: [DictionaryEntry]
+    ) -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if cachedBaseKey == baseKey, cachedUserEntries == userEntries {
+            return generation
+        }
+        cachedEngine = FuzzyConversionEngine(
+            entries: userEntries + baseEntries
+        )
+        cachedEntries = []
+        cachedBaseKey = baseKey
+        cachedUserEntries = userEntries
         generation += 1
         return generation
     }

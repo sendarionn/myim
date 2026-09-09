@@ -11,14 +11,6 @@ private final class CalendarPanel: NSPanel {
         cancelAction?()
     }
 
-    override func resignKey() {
-        super.resignKey()
-        guard NSApp.modalWindow === self else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self, NSApp.modalWindow === self else { return }
-            self.cancelAction?()
-        }
-    }
 }
 
 private final class CalendarGridView: NSView {
@@ -358,8 +350,6 @@ final class CalendarWindowController: NSObject {
     private var selectedDate: Date?
     private var outsideLocalMonitor: Any?
     private var outsideGlobalMonitor: Any?
-    private var resignActiveObserver: NSObjectProtocol?
-    private var outsideClickTimer: Timer?
 
     override init() {
         let gridSize = NSSize(width: 240, height: 234)
@@ -384,7 +374,9 @@ final class CalendarWindowController: NSObject {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.collectionBehavior = [
+            .moveToActiveSpace, .transient, .fullScreenAuxiliary
+        ]
         calendarView.frame = panel.contentView?.bounds ?? calendarView.frame
         calendarView.autoresizingMask = [.width, .height]
         panel.contentView?.addSubview(calendarView)
@@ -403,7 +395,7 @@ final class CalendarWindowController: NSObject {
         formatKeyPanel.backgroundColor = .clear
         formatKeyPanel.isReleasedWhenClosed = false
         formatKeyPanel.collectionBehavior = [
-            .canJoinAllSpaces, .fullScreenAuxiliary
+            .moveToActiveSpace, .transient, .fullScreenAuxiliary
         ]
     }
 
@@ -413,7 +405,7 @@ final class CalendarWindowController: NSObject {
 
     func runSelection(
         near anchorFrame: NSRect,
-        returnTo previousApplication: NSRunningApplication?,
+        returnTo _: NSRunningApplication?,
         initialDate: Date = Date()
     ) -> Date? {
         selectedDate = nil
@@ -425,10 +417,7 @@ final class CalendarWindowController: NSObject {
         if previousPolicy == .prohibited {
             _ = NSApp.setActivationPolicy(.accessory)
         }
-        NSRunningApplication.current.activate(
-            options: [.activateIgnoringOtherApps]
-        )
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate(ignoringOtherApps: false)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(calendarView)
         startOutsideClickMonitoring()
@@ -439,7 +428,6 @@ final class CalendarWindowController: NSObject {
         if NSApp.activationPolicy() != previousPolicy {
             _ = NSApp.setActivationPolicy(previousPolicy)
         }
-        previousApplication?.activate(options: [.activateIgnoringOtherApps])
 
         guard response == .OK else { return nil }
         return selectedDate
@@ -457,7 +445,7 @@ final class CalendarWindowController: NSObject {
     func runFormatSelection(
         candidateCount: Int,
         near anchorFrame: NSRect,
-        returnTo previousApplication: NSRunningApplication?,
+        returnTo _: NSRunningApplication?,
         directionalSelection: @escaping (
             Int?,
             CandidateNavigationDirection
@@ -475,10 +463,7 @@ final class CalendarWindowController: NSObject {
             _ = NSApp.setActivationPolicy(.accessory)
         }
         formatKeyPanel.setFrameOrigin(anchorFrame.origin)
-        NSRunningApplication.current.activate(
-            options: [.activateIgnoringOtherApps]
-        )
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate(ignoringOtherApps: false)
         formatKeyPanel.makeKeyAndOrderFront(nil)
         formatKeyPanel.makeFirstResponder(formatKeyPanel)
 
@@ -490,7 +475,6 @@ final class CalendarWindowController: NSObject {
         if NSApp.activationPolicy() != previousPolicy {
             _ = NSApp.setActivationPolicy(previousPolicy)
         }
-        previousApplication?.activate(options: [.activateIgnoringOtherApps])
 
         return response == .OK ? selectedIndex : nil
     }
@@ -559,20 +543,6 @@ final class CalendarWindowController: NSObject {
                 self?.cancelIfClickIsOutsideCalendar()
             }
         }
-        resignActiveObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: NSApp,
-            queue: .main
-        ) { [weak self] _ in
-            self?.cancelSelectionIfCalendarIsRunning()
-        }
-        outsideClickTimer = Timer.scheduledTimer(
-            withTimeInterval: 0.02,
-            repeats: true
-        ) { [weak self] _ in
-            guard NSEvent.pressedMouseButtons & 0b11 != 0 else { return }
-            self?.cancelIfClickIsOutsideCalendar()
-        }
     }
 
     private func stopOutsideClickMonitoring() {
@@ -584,12 +554,6 @@ final class CalendarWindowController: NSObject {
             NSEvent.removeMonitor(monitor)
             outsideGlobalMonitor = nil
         }
-        if let observer = resignActiveObserver {
-            NotificationCenter.default.removeObserver(observer)
-            resignActiveObserver = nil
-        }
-        outsideClickTimer?.invalidate()
-        outsideClickTimer = nil
     }
 
     private func cancelIfClickIsOutsideCalendar() {
@@ -597,11 +561,6 @@ final class CalendarWindowController: NSObject {
               NSApp.modalWindow === panel,
               !panel.frame.contains(NSEvent.mouseLocation)
         else { return }
-        cancelSelection()
-    }
-
-    private func cancelSelectionIfCalendarIsRunning() {
-        guard panel.isVisible, NSApp.modalWindow === panel else { return }
         cancelSelection()
     }
 

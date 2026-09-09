@@ -29,9 +29,11 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 ## Macの標準辞書や外部Webサイトで語義を確認する機能
 
-Macの標準辞書や外部Webサイトで語義を確認できます。外部WebサイトはWikipediaなどの任意のサイトを検索子（`%s`）付きのURLで指定できます。
+Macの標準辞書や外部Webサイトで語義を確認できます。外部WebサイトはWikipediaなどの任意のサイトを検索子（`%s`）付きのURLで指定できます。記述先のファイルは`../Library/Application Support/myim/extensions/external-information.js`です。
 
 - 例：https://ja.wikipedia.org/wiki/%s
+
+
 
 ## 翻訳モード
 
@@ -83,17 +85,16 @@ Macの標準辞書や外部Webサイトで語義を確認できます。外部We
 
 ## JavaScript拡張
 
-次のフォルダへ`.js`ファイルを追加すると、入力に応じた候補を生成できます
+次のフォルダへ`.js`ファイルを追加すると、入力に応じた動的な候補を生成できます
 
 ```text
 ~/Library/Application Support/myim/Extensions/
 ```
 
 標準では下記のサンプルコードが同梱されています。
-- `datetime.js`
-- `calendar.js`
-- `nendo.js`：4月始まりの現在年度を西暦と和暦で生成
-- `gengou.js`：現在の元号年を漢字表記と略号で生成
+- `datetime.js`：`kyou`や`ashita`などの入力で対応した日付候補を生成
+- `nendo.js`：`nendo`の入力で4月始まりの現在年度を西暦と和暦で生成
+- `gengou.js`：`gengou`の入力で現在の元号年を漢字表記と略号で生成
 
 ## ビルドとインストール
 
