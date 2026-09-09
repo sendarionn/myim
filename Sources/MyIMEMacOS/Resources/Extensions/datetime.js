@@ -5,7 +5,7 @@ function candidates(context) {
       context.settings.dateTimeCandidatesEnabled[0] !== "true") {
     return []
   }
-  const dateFormats = ["YYYYMMDD", "M/DD"]
+  const dateFormats = ["YYYYMMDD", "M/D(E)"]
   const timeFormats = ["H:m", "H時m分"]
   const dayOffsets = {
     ototoi: -2,

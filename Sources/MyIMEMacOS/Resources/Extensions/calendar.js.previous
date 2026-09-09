@@ -1,9 +1,6 @@
 // @myim-prefix calendar
 
 function candidates(context) {
-  if (context.input === "calendar-event") {
-    return context.calendarEvents.map(formatCalendarEvent)
-  }
   if (context.input !== "calendar") return []
 
   const date = new Date(context.timestamp)
@@ -20,6 +17,12 @@ function candidates(context) {
   const formats = [
     "YYYYMMDD",
     "M/D(E)",
+    "YYYY/MM/DD",
+    "YYYY-MM-DD",
+    "YYYY年M月D日",
+    "YYYY年M月D日(E)",
+    "M月D日(E)",
+    "M/D"
   ]
   const tokens = ["YYYY", "YY", "MM", "DD", "M", "D", "E"]
   return formats.map(function(template) {
@@ -31,8 +34,4 @@ function candidates(context) {
 
 function pad(value, length) {
   return String(value).padStart(length, "0")
-}
-
-function formatCalendarEvent(event) {
-  return event.url ? event.title + " " + event.url : event.title
 }
