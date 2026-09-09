@@ -109,6 +109,49 @@ struct RomajiConverterTests {
     }
 
     @Test
+    func expandsTypedLongVowelsForDictionaryLookup() {
+        #expect(
+            RomajiCanonicalizer.dictionaryLookupInputs(from: "re-beru")
+                == ["re-beru", "reeberu"]
+        )
+        #expect(
+            RomajiCanonicalizer.dictionaryLookupInputs(from: "ki-")
+                == ["ki-", "kii"]
+        )
+        #expect(
+            RomajiCanonicalizer.dictionaryLookupInputs(from: "n-")
+                == ["n-"]
+        )
+    }
+
+    @Test
+    func findsKatakanaDictionaryCandidateFromTypedLongVowel() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(reading: "reeberu", candidates: ["レーベル"]),
+            DictionaryEntry(reading: "reberu", candidates: ["レベル"])
+        ])
+        let found = RomajiCanonicalizer.dictionaryLookupInputs(
+            from: "re-beru"
+        ).flatMap { engine.candidateGroups(matching: $0).exact }
+        let ordered = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["れーべる", "レーベル"],
+                direct: found,
+                other: [],
+                recencyRanks: [:],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(
+            LongVowelNotationCandidateFilter.candidates(
+                ordered,
+                for: "re-beru"
+            ).first == "レーベル"
+        )
+    }
+
+    @Test
     func addsMoraicNVariantBeforeYForDictionarySearch() {
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "kinyou")

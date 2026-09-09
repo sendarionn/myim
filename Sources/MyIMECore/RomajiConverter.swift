@@ -208,7 +208,29 @@ public enum RomajiCanonicalizer {
                 inputs.append(moraicN)
             }
         }
+        for value in inputs {
+            let expanded = longVowelInput(from: value)
+            if expanded != value, !inputs.contains(expanded) {
+                inputs.append(expanded)
+            }
+        }
         return inputs
+    }
+
+    private static func longVowelInput(from input: String) -> String {
+        var result = ""
+        for character in input {
+            guard character == "-" else {
+                result.append(character)
+                continue
+            }
+            guard let previous = result.last,
+                  "aeiou".contains(previous) else {
+                return input
+            }
+            result.append(previous)
+        }
+        return result
     }
 
     private static func moraicNBeforeYInput(from input: String) -> String {

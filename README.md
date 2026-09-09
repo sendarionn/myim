@@ -19,19 +19,19 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 ローマ字から日本語と英語の候補を同時に生成するので、モードを切り替えることなく入力することができます。
 
-![モードレスな日本語・英語入力](https://gyazo.com/5a290fed2bc04956510f1d327d2f6659.gif)
+![モードレスな日本語・英語入力](https://gyazo.com/68af79c934fe2b1f257d0ae5dc81e44f.gif)
 
 ## シームレスな辞書登録
 
 欲しい候補が辞書に存在しないときは、`⌥D`で辞書モードを起動できます。
 
-![シームレスな辞書登録](https://gyazo.com/593987010a6a920fd7c7702054f00c8f.gif)
+![シームレスな辞書登録](https://gyazo.com/463f422c915f0db1357492bb97805535.gif)
 
 ## Macの標準辞書で語義を確認する機能
 
 Macの標準辞書で語義を確認できます。スーパー大辞林、New Oxford American Dictionary など複数の辞書を参照先として指定できます。
 
-![Macの標準辞書で語義を確認する機能](https://gyazo.com/847ebc302adbcea78c01ea5dd1d7297c.gif)
+![Macの標準辞書で語義を確認する機能](https://gyazo.com/19ac28af4961209e279375b33005f4e9.gif)
 
 ## 外部Webサイトで語義を確認する機能
 
@@ -39,55 +39,55 @@ Macの標準辞書や外部Webサイトで語義を確認できます。外部We
 
 - 例：https://ja.wikipedia.org/wiki/%s
 
-![外部Webサイトで語義を確認する機能](https://gyazo.com/11162083ef2dea132b4e30c2019731c9.gif)
+![外部Webサイトで語義を確認する機能](https://gyazo.com/55f609194a329b05c061008d230ffccd.gif)
 
 ## 翻訳モード
 
 `⌥T`で翻訳モードを起動し、入力した文章を丸ごと別の言語に翻訳できます。
 
-![翻訳モード](https://gyazo.com/aabb1dff6de7035ab5aa5bf16c4bf1c0.gif)
+![翻訳モード](https://gyazo.com/14c7547a5ab66e568978962787fbc58d.gif)
 
 ## 計算機能
 
 四則演算を入力すると計算結果を候補として表示します。
 
-![計算機能](https://gyazo.com/eb51c24c9131085af417ba3cdea8cbef.gif)
+![計算機能](https://gyazo.com/cd4782c14191884b0628eb4bda7f933c.gif)
 
 ## カレンダー入力モード
 
 `⌥C`でカレンダー入力モードを起動し、日付を選択して入力できます。
 
-![カレンダー入力モード](https://gyazo.com/f8d5e0f0c8d351745cee932550eec701.gif)
+![カレンダー入力モード](https://gyazo.com/7f887690c2e19871a9975ad78eb4f84d.gif)
 
 ## 単位変換機能
 
 距離・量・時間などの単位を変換した候補を表示します。
 
-![単位変換](https://gyazo.com/c387f822ef5d5de0572420765dbe3649.gif)
+![単位変換](https://gyazo.com/80011e0c6e0da3855fabfab10df7be7f.gif)
 
 ## 絵文字の見え方をOS別に比較する機能
 
 `⌥E`で絵文字ビューワを起動し、OS別の絵文字の見え方を比較できます。
 
-![OS別の絵文字の見え方を比較できる機能](https://gyazo.com/775ed8254c27755d8b0b9a3b12f3e8b5.gif)
+![OS別の絵文字の見え方を比較できる機能](https://gyazo.com/97a4aa55d05783bf7c4a262b531e8781.gif)
 
 ## 記号の文字コード・名称を確認できる機能
 
 記号の文字コード・名称を表示します。
 
-![記号の文字コード・名称を確認できる機能](https://gyazo.com/9dfbe00e4a420f9b29c08da12a732a94.gif)
+![記号の文字コード・名称を確認できる機能](https://gyazo.com/f9b2fb62d0d381347ffd48657227fb5b.gif)
 
 ## 次の入力を予測・提案する機能
 
 入力履歴から次の入力を予測し、候補として提案します。上手くいけば、最初の文字を入力した後は予測候補を選択するだけで文章が完成します。
 
-![次の入力を予測・提案する機能](https://gyazo.com/4eb3cdfc307cfb80486c08ee501495ba.gif)
+![次の入力を予測・提案する機能](https://gyazo.com/b8f6001f989132355b1c6665d77ef05c.gif)
 
 ## 誤入力を補完する機能
 
 多少の誤入力は補完・修正して候補を提案します。
 
-![誤入力を補完する機能](https://gyazo.com/e13973783bfe72e23f4333db3bdff53e.gif)
+![誤入力を補完する機能](https://gyazo.com/1395de111dc54ad00ffb0e8f425a05f2.gif)
 
 ## JavaScript拡張
 

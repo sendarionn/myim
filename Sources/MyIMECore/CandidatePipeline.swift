@@ -35,7 +35,8 @@ public struct CandidatePipeline: Sendable {
     public func candidates(from input: Input) -> [String] {
         let kana = orderedKanaCandidates(
             input.kana,
-            matching: input.direct
+            matching: input.direct,
+            recencyRanks: input.recencyRanks
         )
         let candidates = CandidatePriorityOrderer.ordered(
             kana: kana,
@@ -56,18 +57,23 @@ public struct CandidatePipeline: Sendable {
 
     private func orderedKanaCandidates(
         _ kana: [String],
-        matching dictionaryCandidates: [String]
+        matching dictionaryCandidates: [String],
+        recencyRanks: [String: Int]
     ) -> [String] {
-        guard kana.first?.count != 1 else {
-            return kana
-        }
         let kanaSet = Set(kana)
-        guard let preferred = dictionaryCandidates.first(where: {
-            kanaSet.contains($0)
-        }) else {
+        var seen = Set<String>()
+        let dictionaryKana = dictionaryCandidates.filter {
+            kanaSet.contains($0) && seen.insert($0).inserted
+        }
+        guard !dictionaryKana.isEmpty else {
             return kana
         }
-        return [preferred] + kana.filter { $0 != preferred }
+        let preferred = CandidateRecencyOrderer.ordered(
+            dictionaryKana,
+            ranks: recencyRanks
+        )
+        let preferredSet = Set(preferred)
+        return preferred + kana.filter { !preferredSet.contains($0) }
     }
 }
 
