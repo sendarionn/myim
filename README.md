@@ -27,13 +27,19 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 ![シームレスな辞書登録](https://gyazo.com/593987010a6a920fd7c7702054f00c8f.gif)
 
-## Macの標準辞書や外部Webサイトで語義を確認する機能
+## Macの標準辞書で語義を確認する機能
+
+Macの標準辞書で語義を確認できます。スーパー大辞林、New Oxford American Dictionary など複数の辞書を参照先として指定できます。
+
+![Macの標準辞書で語義を確認する機能](https://gyazo.com/847ebc302adbcea78c01ea5dd1d7297c.gif)
+
+## 外部Webサイトで語義を確認する機能
 
 Macの標準辞書や外部Webサイトで語義を確認できます。外部WebサイトはWikipediaなどの任意のサイトを検索子（`%s`）付きのURLで指定できます。記述先のファイルは`../Library/Application Support/myim/extensions/external-information.js`です。
 
 - 例：https://ja.wikipedia.org/wiki/%s
 
-
+![外部Webサイトで語義を確認する機能](https://gyazo.com/11162083ef2dea132b4e30c2019731c9.gif)
 
 ## 翻訳モード
 
@@ -69,7 +75,7 @@ Macの標準辞書や外部Webサイトで語義を確認できます。外部We
 
 記号の文字コード・名称を表示します。
 
-
+![記号の文字コード・名称を確認できる機能](https://gyazo.com/9dfbe00e4a420f9b29c08da12a732a94.gif)
 
 ## 次の入力を予測・提案する機能
 
