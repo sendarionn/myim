@@ -40,21 +40,20 @@ private func recordBrowserInteraction() {
 }
 
 private final class BrowserPanel: NSPanel {
-    private var acceptsKeyboardInteraction = false
+    var onEscape: (() -> Void)?
 
-    override var canBecomeKey: Bool { acceptsKeyboardInteraction }
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    func beginUserInteraction() {
-        acceptsKeyboardInteraction = true
-        makeKey()
-    }
+    func beginUserInteraction() {}
 
-    func endUserInteraction() {
-        acceptsKeyboardInteraction = false
-    }
+    func endUserInteraction() {}
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 53 {
+            onEscape?()
+            return
+        }
         switch event.type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown,
              .scrollWheel, .keyDown:
@@ -102,6 +101,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
     private var titleLabel: NSTextField!
     private var openButton: NSButton!
     private var displayedURL: URL?
+    private var returnApplicationProcessIdentifier: Int32?
     private var idleTerminationTask: Task<Void, Never>?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -154,6 +154,9 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.delegate = self
+        panel.onEscape = { [weak self] in
+            self?.finishInteractionAndReturnToInput()
+        }
 
         DistributedNotificationCenter.default().addObserver(
             self,
@@ -187,6 +190,10 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             return
         }
         panel.title = command.title
+        if let processIdentifier = command.returnApplicationProcessIdentifier,
+           processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            returnApplicationProcessIdentifier = processIdentifier
+        }
         titleLabel.stringValue = command.title
         openButton.title = command.openShortcutDisplayName.map {
             "ブラウザで開く  \($0)"
@@ -273,6 +280,26 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
         panel.orderOut(nil)
         scheduleIdleTermination()
         return false
+    }
+
+    private func finishInteractionAndReturnToInput() {
+        panel.endUserInteraction()
+        panel.orderOut(nil)
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name(
+                "io.github.sendarionn.myim.external-browser.interaction-ended"
+            ),
+            object: nil,
+            userInfo: nil,
+            deliverImmediately: true
+        )
+        if let processIdentifier = returnApplicationProcessIdentifier,
+           let application = NSRunningApplication(
+                processIdentifier: processIdentifier
+           ) {
+            application.activate(options: [.activateIgnoringOtherApps])
+        }
+        scheduleIdleTermination()
     }
 
     private func scheduleIdleTermination() {

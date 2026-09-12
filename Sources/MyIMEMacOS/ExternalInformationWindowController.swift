@@ -1,6 +1,11 @@
 @preconcurrency import AppKit
 import MyIMECore
 
+private final class PassiveInformationPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 final class ExternalInformationWindowController: NSObject {
     private struct PendingPresentation {
         let requestID: UUID
@@ -27,6 +32,7 @@ final class ExternalInformationWindowController: NSObject {
     private var displayTask: Task<Void, Never>?
     private var navigationTask: Task<Void, Never>?
     private var pendingPresentation: PendingPresentation?
+    private var returnApplicationProcessIdentifier: Int32?
     private(set) var isInteractionActive = false
     var onInteractionBegan: (() -> Void)?
     var onInteractionEnded: (() -> Void)?
@@ -40,6 +46,9 @@ final class ExternalInformationWindowController: NSObject {
         super.init()
         externalBrowser.onInteractionBegan = { [weak self] in
             self?.beginInteraction()
+        }
+        externalBrowser.onInteractionEnded = { [weak self] in
+            self?.finishInteractionAfterExternalEscape()
         }
         definitionTextView.isEditable = false
         definitionTextView.isSelectable = true
@@ -73,6 +82,10 @@ final class ExternalInformationWindowController: NSObject {
                 candidateFrame: candidateFrame
             )
             return currentRequestID
+        }
+        if let application = NSWorkspace.shared.frontmostApplication,
+           application.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            returnApplicationProcessIdentifier = application.processIdentifier
         }
         present(
             requestID: currentRequestID,
@@ -146,7 +159,9 @@ final class ExternalInformationWindowController: NSObject {
             frameHeight: frame.height,
             isVisible: isVisible,
             openShortcutDisplayName:
-                MyIMFeatureShortcut.externalInformation.shortcut.displayName
+                MyIMFeatureShortcut.externalInformation.shortcut.displayName,
+            returnApplicationProcessIdentifier:
+                returnApplicationProcessIdentifier
         )
     }
 
@@ -218,6 +233,15 @@ final class ExternalInformationWindowController: NSObject {
         endInteraction()
     }
 
+    private func finishInteractionAfterExternalEscape() {
+        externalBrowser.clearInteractionMarker()
+        pendingPresentation = nil
+        isInteractionActive = false
+        informationPanelIsVisible = false
+        definitionPanel.orderOut(nil)
+        onInteractionEnded?()
+    }
+
     func shouldPreserveForExternalInteraction() -> Bool {
         if externalBrowser.hasRecentInteraction() {
             beginInteraction()
@@ -234,7 +258,7 @@ final class ExternalInformationWindowController: NSObject {
     }
 
     private static func makePanel(title: String, size: NSSize) -> NSPanel {
-        let panel = NSPanel(
+        let panel = PassiveInformationPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,

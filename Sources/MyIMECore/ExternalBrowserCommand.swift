@@ -9,6 +9,7 @@ public struct ExternalBrowserCommand: Codable, Sendable {
     public let frameHeight: Double
     public let isVisible: Bool
     public let openShortcutDisplayName: String?
+    public let returnApplicationProcessIdentifier: Int32?
 
     public init(
         url: URL?,
@@ -18,7 +19,8 @@ public struct ExternalBrowserCommand: Codable, Sendable {
         frameWidth: Double,
         frameHeight: Double,
         isVisible: Bool,
-        openShortcutDisplayName: String? = nil
+        openShortcutDisplayName: String? = nil,
+        returnApplicationProcessIdentifier: Int32? = nil
     ) {
         self.url = url
         self.title = title
@@ -28,5 +30,7 @@ public struct ExternalBrowserCommand: Codable, Sendable {
         self.frameHeight = frameHeight
         self.isVisible = isVisible
         self.openShortcutDisplayName = openShortcutDisplayName
+        self.returnApplicationProcessIdentifier =
+            returnApplicationProcessIdentifier
     }
 }

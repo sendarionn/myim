@@ -8,7 +8,9 @@ final class ExternalBrowserBridge {
     private var isLaunching = false
     private var pendingCommand: ExternalBrowserCommand?
     private var interactionObserver: NSObjectProtocol?
+    private var interactionEndedObserver: NSObjectProtocol?
     var onInteractionBegan: (() -> Void)?
+    var onInteractionEnded: (() -> Void)?
 
     init() {
         interactionObserver = DistributedNotificationCenter.default()
@@ -21,12 +23,27 @@ final class ExternalBrowserBridge {
             ) { [weak self] _ in
                 self?.onInteractionBegan?()
             }
+        interactionEndedObserver = DistributedNotificationCenter.default()
+            .addObserver(
+                forName: Notification.Name(
+                    "io.github.sendarionn.myim.external-browser.interaction-ended"
+                ),
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.onInteractionEnded?()
+            }
     }
 
     deinit {
         if let interactionObserver {
             DistributedNotificationCenter.default().removeObserver(
                 interactionObserver
+            )
+        }
+        if let interactionEndedObserver {
+            DistributedNotificationCenter.default().removeObserver(
+                interactionEndedObserver
             )
         }
     }

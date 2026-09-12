@@ -1,14 +1,9 @@
 @preconcurrency import AppKit
 @preconcurrency import InputMethodKit
 import MyIMECore
-import os
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
-    private static let dictionaryLogger = Logger(
-        subsystem: "io.github.sendarionn.inputmethod.myime",
-        category: "dictionary"
-    )
     private static weak var activeController: InputController?
     private struct NeuralContextQuery: Equatable {
         let input: String
@@ -2748,11 +2743,6 @@ final class InputController: IMKInputController {
             lookup: { userConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
         )
-        if conversionReading.lowercased() == "rlj" {
-            Self.dictionaryLogger.notice(
-                "rlj lookup input=\(self.inputBuffer, privacy: .public) readings=\(lookupReadings.joined(separator: ","), privacy: .public) exact=\(userCandidates.exact.joined(separator: "|"), privacy: .public) prefix=\(userCandidates.prefix.joined(separator: "|"), privacy: .public) entries=\(self.userEntries.count, privacy: .public)"
-            )
-        }
         let basicCandidates = mergedCandidateGroups(
             lookup: { basicConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
@@ -2842,11 +2832,6 @@ final class InputController: IMKInputController {
                 prioritizeKana: kanaCandidates.first?.count == 1
             )
         ))
-        if conversionReading.lowercased() == "rlj" {
-            Self.dictionaryLogger.notice(
-                "rlj displayed=\(self.currentCandidates.joined(separator: "|"), privacy: .public) protected=\(self.longVowelFilterProtectedCandidates.joined(separator: "|"), privacy: .public)"
-            )
-        }
 
         updateNeuralContextCandidates(
             reading: kanaCandidates.first ?? conversionReading,
