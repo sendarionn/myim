@@ -10,6 +10,14 @@ struct CompoundDictionaryCandidateGeneratorTests {
         #expect(generator.candidates(for: "keioudaigaku") == ["慶應大学"])
     }
 
+    @Test func canonicalizesCommonRomajiBeforeCombiningSegments() {
+        let generator = makeGenerator([
+            ("tsuujou", "通常"),
+            ("kouho", "候補")
+        ])
+        #expect(generator.candidates(for: "tuujoukouho") == ["通常候補"])
+    }
+
     @Test func prefersLongMatchOverShortPrefix() {
         let generator = makeGenerator([
             ("kei", "軽"),

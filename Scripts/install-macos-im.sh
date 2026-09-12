@@ -31,6 +31,35 @@ wait_for_status() {
     return 1
 }
 
+wait_for_running_server() {
+    local expected_executable=$1
+    local attempt
+    local process_id
+    local confirmed_process_id=""
+    local stable_checks=0
+    for attempt in {1..100}; do
+        process_id=$(pgrep -x myim 2>/dev/null | head -n 1 || true)
+        if [[ -n "$process_id" ]] \
+            && [[ "$(ps -p "$process_id" -o command= 2>/dev/null)" == "$expected_executable" ]]; then
+            if [[ "$process_id" == "$confirmed_process_id" ]]; then
+                stable_checks=$((stable_checks + 1))
+            else
+                confirmed_process_id=$process_id
+                stable_checks=1
+            fi
+            if (( stable_checks >= 3 )); then
+                return 0
+            fi
+        else
+            confirmed_process_id=""
+            stable_checks=0
+        fi
+        sleep 0.1
+    done
+    echo "新しいmyimプロセスの起動を確認できませんでした" >&2
+    return 1
+}
+
 stop_process() {
     local process_name=$1
     local attempt
@@ -71,6 +100,7 @@ fi
 stop_process myim
 stop_process my-ime
 stop_process myim-external-browser
+stop_process myim-extension-host
 
 mkdir -p "$input_methods_directory"
 cleanup_staging
@@ -100,6 +130,11 @@ cleanup_staging
 [[ ! -e "$legacy_destination" ]] || rm -rf "$legacy_destination"
 
 installed_executable="$app_destination/Contents/MacOS/myim"
+if ! cmp -s "$source_executable" "$installed_executable"; then
+    restore_previous_application
+    echo "インストール先のmyimバイナリがビルド結果と一致しません" >&2
+    exit 1
+fi
 "$installed_executable" --register-input-source
 "$installed_executable" --enable-input-source
 wait_for_status "$installed_executable" registered 1
@@ -108,6 +143,10 @@ wait_for_status "$installed_executable" enabled 1
 if [[ "$was_selected" == "1" || "$was_registered" != "1" ]]; then
     "$installed_executable" --select-input-source
     wait_for_status "$installed_executable" selected 1
+fi
+
+if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
+    wait_for_running_server "$installed_executable"
 fi
 
 trap - EXIT

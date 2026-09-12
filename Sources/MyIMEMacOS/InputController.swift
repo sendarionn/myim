@@ -79,7 +79,8 @@ final class InputController: IMKInputController {
     private static let dateTimeCandidateFormatsDefaultsKey =
         "DateTimeCandidateFormats"
     private static let maximumCandidateCount = 4
-    private static let initialFuzzySuggestionCount = 3
+    private static let initialFuzzySuggestionCount = 4
+    private static let fuzzySuggestionDisplayDelay = Duration.milliseconds(120)
     private static let maximumMozcDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
     private static let sharedBasicEntries = loadBasicEntries()
@@ -532,11 +533,11 @@ final class InputController: IMKInputController {
         case 123:
             return selectedCandidateIndex == nil
                 ? moveInputCursor(by: -1, client: sender)
-                : moveCandidate(.left, client: sender)
+                : enterFuzzySuggestionsOrConsumeArrow(client: sender)
         case 124:
             return selectedCandidateIndex == nil
                 ? moveInputCursor(by: 1, client: sender)
-                : moveCandidate(.right, client: sender)
+                : enterFuzzySuggestionsOrConsumeArrow(client: sender)
         case 125:
             return selectedCandidateIndex == nil
                 ? false
@@ -748,7 +749,8 @@ final class InputController: IMKInputController {
             dateTimeCandidates: isDateTimeCandidatesEnabled,
             externalInformationPanel: isExternalInformationPanelEnabled,
             systemDictionaryPreview: isSystemDictionaryPreviewEnabled,
-            webSearch: isWebSearchEnabled
+            webSearch: isWebSearchEnabled,
+            shortcutGuides: PanelShortcutGuideStyle.isEnabled
         )
     }
 
@@ -768,6 +770,7 @@ final class InputController: IMKInputController {
             configureSystemDictionaries: #selector(configureSystemDictionaries(_:)),
             toggleWebSearch: #selector(toggleWebSearch(_:)),
             configureShortcuts: #selector(configureShortcuts(_:)),
+            toggleShortcutGuides: #selector(toggleShortcutGuides(_:)),
             configureTranslationLanguage: #selector(configureTranslationLanguage(_:)),
             updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:))
         )
@@ -776,6 +779,38 @@ final class InputController: IMKInputController {
     @objc
     private func configureShortcuts(_ sender: Any?) {
         shortcutSettingsController.show()
+    }
+
+    @objc
+    private func toggleShortcutGuides(_ sender: Any?) {
+        UserDefaults.standard.set(
+            !PanelShortcutGuideStyle.isEnabled,
+            forKey: PanelShortcutGuideStyle.enabledDefaultsKey
+        )
+        guard let inputClient = client() else {
+            candidateWindow.hide()
+            fuzzySuggestionWindow.hide()
+            return
+        }
+        if !inputBuffer.isEmpty || !currentCandidates.isEmpty {
+            showCandidateWindow(client: inputClient)
+        }
+        if let selectedFuzzySuggestionIndex {
+            showFuzzySuggestionPage(
+                selectedIndex: selectedFuzzySuggestionIndex,
+                client: inputClient
+            )
+        } else if !fuzzySuggestions.isEmpty {
+            fuzzySuggestionWindow.show(
+                suggestions: Array(fuzzySuggestions.prefix(
+                    Self.initialFuzzySuggestionCount
+                )),
+                selectedIndex: nil,
+                near: candidateWindow.frame,
+                avoidingFrames: candidateWindow.auxiliaryFrames,
+                isAccented: isTranslationModeEnabled
+            )
+        }
     }
 
     @objc
@@ -2111,10 +2146,7 @@ final class InputController: IMKInputController {
         }
 
         selectedCandidateIndex = index
-        cancelAuxiliarySuggestionSearches()
-        fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
-        fuzzySuggestionWindow.hide()
         showCandidateWindow(client: sender)
         let registrationPrefix = tabDictionaryRegistration?
             .confirmedCandidate ?? compositionPrefix
@@ -2127,6 +2159,19 @@ final class InputController: IMKInputController {
         )
         showPreview(for: currentCandidates[index])
         return true
+    }
+
+    private func enterFuzzySuggestionsOrConsumeArrow(client sender: Any) -> Bool {
+        guard !fuzzySuggestions.isEmpty else {
+            return true
+        }
+        let normalRow = selectedCandidateIndex.map {
+            $0 % Self.maximumCandidateCount
+        } ?? 0
+        return selectFuzzySuggestion(
+            index: min(normalRow, fuzzySuggestions.count - 1),
+            client: sender
+        )
     }
 
     private func isCandidateFilterShortcut(_ event: NSEvent) -> Bool {
@@ -2825,7 +2870,7 @@ final class InputController: IMKInputController {
                 other: otherCandidates,
                 english: englishCandidates,
                 trailing: uppercaseCandidates,
-                recencyRanks: candidateSelectionHistory.ranks(
+                recencyRanks: candidateSelectionRanks(
                     for: conversionReading
                 ),
                 contextualCandidates: contextualCandidates,
@@ -2986,6 +3031,7 @@ final class InputController: IMKInputController {
             selectedFuzzySuggestionIndex = nil
             return
         }
+        fuzzySuggestionWindow.hide()
 
         let query = conversionReading
         let mozcDictionary = mozcConversionEngine
@@ -3051,8 +3097,12 @@ final class InputController: IMKInputController {
                                 distance: $0.typoDistance
                             )
                         }
-                    return [filtered, compoundMatches]
+                    return FuzzySuggestionTierBuilder.build(
+                        directTypoMatches: filtered,
+                        compoundMatches: compoundMatches
+                    )
                 }.value
+                try await Task.sleep(for: Self.fuzzySuggestionDisplayDelay)
                 try Task.checkCancellation()
                 guard let self,
                       suggestionSearchSession.isCurrent(token),
@@ -3087,7 +3137,7 @@ final class InputController: IMKInputController {
         }
         let orderedTierIndices = TieredCandidateOrderer.orderedIndices(
             for: suggestionTiers.map { $0.map(\.candidate) },
-            ranks: candidateSelectionHistory.ranks(for: conversionReading)
+            ranks: candidateSelectionRanks(for: conversionReading)
         )
         var seenCandidates = Set<String>()
         fuzzySuggestions = zip(suggestionTiers, orderedTierIndices).flatMap {
@@ -3109,7 +3159,8 @@ final class InputController: IMKInputController {
                 Self.initialFuzzySuggestionCount
             )),
             selectedIndex: nil,
-            near: anchorFrame,
+            near: candidateWindow.frame,
+            avoidingFrames: candidateWindow.auxiliaryFrames,
             isAccented: isTranslationModeEnabled
         )
         if let inputClient = client() {
@@ -3130,33 +3181,24 @@ final class InputController: IMKInputController {
         case 36, 76:
             let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
             return acceptFuzzySuggestion(suggestion, suffix: "", client: sender)
-        case 48, 125, 124:
+        case 48, 125:
             let next = (selectedFuzzySuggestionIndex + 1)
                 % fuzzySuggestions.count
             return selectFuzzySuggestion(index: next, client: sender)
         case 49:
             let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
             return acceptFuzzySuggestion(suggestion, suffix: " ", client: sender)
-        case 126, 123:
+        case 126:
             let next = (
                 selectedFuzzySuggestionIndex
                     - 1
                     + fuzzySuggestions.count
             ) % fuzzySuggestions.count
             return selectFuzzySuggestion(index: next, client: sender)
+        case 123, 124:
+            return returnToNormalCandidateSelection(client: sender)
         case 53:
-            self.selectedFuzzySuggestionIndex = nil
-            updateMarkedText(in: sender)
-            showCandidateWindow(client: sender)
-            fuzzySuggestionWindow.show(
-                suggestions: Array(fuzzySuggestions.prefix(
-                    Self.initialFuzzySuggestionCount
-                )),
-                selectedIndex: nil,
-                near: candidateAndInputFrame(for: sender),
-                isAccented: isTranslationModeEnabled
-            )
-            return true
+            return returnToNormalCandidateSelection(client: sender)
         default:
             let flags = event.modifierFlags.intersection([
                 .command, .control, .option
@@ -3170,6 +3212,54 @@ final class InputController: IMKInputController {
             _ = acceptFuzzySuggestion(suggestion, suffix: "", client: sender)
             return nil
         }
+    }
+
+    private func returnToNormalCandidateSelection(client sender: Any) -> Bool {
+        if let selectedFuzzySuggestionIndex, !currentCandidates.isEmpty {
+            let fuzzyRow = selectedFuzzySuggestionIndex
+                % Self.maximumCandidateCount
+            let currentNormalIndex = selectedCandidateIndex ?? 0
+            let normalPageStart = currentNormalIndex
+                / Self.maximumCandidateCount
+                * Self.maximumCandidateCount
+            let normalPageEnd = min(
+                normalPageStart + Self.maximumCandidateCount,
+                currentCandidates.count
+            )
+            selectedCandidateIndex = min(
+                normalPageStart + fuzzyRow,
+                normalPageEnd - 1
+            )
+        }
+        selectedFuzzySuggestionIndex = nil
+        if let selectedCandidateIndex,
+           currentCandidates.indices.contains(selectedCandidateIndex) {
+            let value = candidateDisplayValue(currentCandidates[selectedCandidateIndex])
+            setMarkedText(
+                compositionPrefix + value + conversionSuffix + compositionSuffix,
+                in: sender
+            )
+        } else {
+            updateMarkedText(in: sender)
+        }
+        showCandidateWindow(client: sender)
+        fuzzySuggestionWindow.show(
+            suggestions: Array(fuzzySuggestions.prefix(
+                Self.initialFuzzySuggestionCount
+            )),
+            selectedIndex: nil,
+            near: candidateWindow.frame,
+            avoidingFrames: candidateWindow.auxiliaryFrames,
+            isAccented: isTranslationModeEnabled
+        )
+        return true
+    }
+
+    private func isFuzzySuggestionEntryShortcut(_ event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(
+            [.command, .control, .option, .shift]
+        )
+        return event.keyCode == 48 && flags == [.shift]
     }
 
     private func acceptFuzzySuggestion(
@@ -3251,13 +3341,6 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func isFuzzySuggestionEntryShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(
-            [.command, .control, .option, .shift]
-        )
-        return event.keyCode == 48 && flags == [.shift]
-    }
-
     private func selectFuzzySuggestion(index: Int, client sender: Any) -> Bool {
         guard fuzzySuggestions.indices.contains(index) else {
             return true
@@ -3291,7 +3374,8 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.show(
             suggestions: Array(fuzzySuggestions[pageStart..<pageEnd]),
             selectedIndex: selectedIndex - pageStart,
-            near: candidateAndInputFrame(for: sender),
+            near: candidateWindow.frame,
+            avoidingFrames: candidateWindow.auxiliaryFrames,
             isAccented: isTranslationModeEnabled
         )
     }
@@ -3803,7 +3887,9 @@ final class InputController: IMKInputController {
         let learnedReading = reading ?? conversionReading
         candidateSelectionHistory.record(
             candidate,
-            reading: learnedReading
+            readings: RomajiCanonicalizer.dictionaryLookupInputs(
+                from: learnedReading
+            )
         )
         candidateSelectionHistoryWriter.schedule(
             candidateSelectionHistory
@@ -3815,7 +3901,13 @@ final class InputController: IMKInputController {
     ) -> [String] {
         CandidateRecencyOrderer.ordered(
             candidates,
-            ranks: candidateSelectionHistory.ranks(for: conversionReading)
+            ranks: candidateSelectionRanks(for: conversionReading)
+        )
+    }
+
+    private func candidateSelectionRanks(for reading: String) -> [String: Int] {
+        candidateSelectionHistory.ranks(
+            for: RomajiCanonicalizer.dictionaryLookupInputs(from: reading)
         )
     }
 
@@ -3859,7 +3951,7 @@ final class InputController: IMKInputController {
         ].compactMap { $0 }
         let converted = CandidateRecencyOrderer.ordered(
             user + ime + basic + kana,
-            ranks: candidateSelectionHistory.ranks(for: parts.reading)
+            ranks: candidateSelectionRanks(for: parts.reading)
         )
         return NumericPrefixCandidateComposer.candidates(
             for: input,

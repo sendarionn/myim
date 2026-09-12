@@ -54,7 +54,9 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
         var candidatesByReading: [String: [String]] = [:]
         for layer in layers {
             for entry in layer {
-                let reading = entry.input.lowercased()
+                let reading = RomajiCanonicalizer.canonicalInput(
+                    from: entry.input
+                )
                 guard reading.count >= 2 else { continue }
                 for candidate in entry.candidates
                 where candidatesByReading[reading, default: []].contains(candidate) == false {
@@ -85,7 +87,7 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
         additionalCandidates: @Sendable (String) -> [String] = { _ in [] },
         typoMatches: @Sendable (String) -> [FuzzyConversionMatch] = { _ in [] }
     ) -> [CompoundDictionaryCandidate] {
-        let input = input.lowercased()
+        let input = RomajiCanonicalizer.canonicalInput(from: input)
         let directCandidates = Set(mergedCandidates(
             for: input,
             additionalCandidates: additionalCandidates

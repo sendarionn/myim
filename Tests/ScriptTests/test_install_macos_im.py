@@ -35,6 +35,28 @@ class InstallMacOSIMTests(unittest.TestCase):
         self.assertIn('"$installed_executable" --enable-input-source', self.script)
         self.assertIn('wait_for_status "$installed_executable" enabled 1', self.script)
 
+    def test_waits_for_the_new_server_before_reporting_success(self):
+        verify_binary = self.script.index(
+            'cmp -s "$source_executable" "$installed_executable"'
+        )
+        select_source = self.script.index(
+            '"$installed_executable" --select-input-source'
+        )
+        wait_for_server = self.script.index(
+            'wait_for_running_server "$installed_executable"'
+        )
+        success = self.script.index(
+            'echo "インストールしました: $app_destination"'
+        )
+        self.assertLess(verify_binary, select_source)
+        self.assertLess(select_source, wait_for_server)
+        self.assertLess(wait_for_server, success)
+
+    def test_stops_every_bundled_process_before_replacing_the_app(self):
+        self.assertIn("stop_process myim", self.script)
+        self.assertIn("stop_process myim-external-browser", self.script)
+        self.assertIn("stop_process myim-extension-host", self.script)
+
 
 if __name__ == "__main__":
     unittest.main()

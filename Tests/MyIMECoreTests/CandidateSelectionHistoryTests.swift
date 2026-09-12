@@ -70,6 +70,18 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
+    func combinesRanksAcrossEquivalentReadingInputs() {
+        var history = CandidateSelectionHistory()
+        history.record("通用候補", reading: "tuujoukouho")
+        history.record("通常候補", reading: "tsuujoukouho")
+
+        let ranks = history.ranks(
+            for: ["tuujoukouho", "tsuujoukouho"]
+        )
+        #expect(ranks["通常候補"]! > ranks["通用候補"]!)
+    }
+
+    @Test
     func doesNotApplyLearningFromAnotherReading() {
         var history = CandidateSelectionHistory()
         history.record("そのまま", reading: "sonomama")

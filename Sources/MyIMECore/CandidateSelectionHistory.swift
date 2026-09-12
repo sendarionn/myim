@@ -71,13 +71,30 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
     }
 
     public func ranks(for reading: String) -> [String: Int] {
-        guard let stats = statsByReading[reading.lowercased()], !stats.isEmpty,
-              let mostRecent = stats.max(by: {
+        ranks(for: [reading])
+    }
+
+    public func ranks(for readings: [String]) -> [String: Int] {
+        var combinedStats: [String: Stat] = [:]
+        for reading in Set(readings.lazy.map { $0.lowercased() }) {
+            for (candidate, stat) in statsByReading[reading] ?? [:] {
+                if let existing = combinedStats[candidate] {
+                    combinedStats[candidate] = Stat(
+                        count: max(existing.count, stat.count),
+                        lastUsed: max(existing.lastUsed, stat.lastUsed)
+                    )
+                } else {
+                    combinedStats[candidate] = stat
+                }
+            }
+        }
+        guard !combinedStats.isEmpty,
+              let mostRecent = combinedStats.max(by: {
                   $0.value.lastUsed < $1.value.lastUsed
               }) else {
             return [:]
         }
-        let ordered = [mostRecent] + stats
+        let ordered = [mostRecent] + combinedStats
             .filter { $0.key != mostRecent.key }
             .sorted {
                 if $0.value.count != $1.value.count {

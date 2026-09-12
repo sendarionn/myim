@@ -19,8 +19,8 @@ struct FuzzySuggestion: Equatable {
 final class FuzzySuggestionWindowController {
     private static let spacing: CGFloat = 6
     private static let guideSpacing: CGFloat = 4
-    private static let itemHeight: CGFloat = 30
-    private static let minimumItemWidth: CGFloat = 52
+    private static let itemHeight = CandidatePanelItemStyle.height
+    private static let minimumItemWidth: CGFloat = 32
     private static let maximumItemWidth: CGFloat = 240
     private static let maximumPanelWidth: CGFloat = 360
     private static let itemSpacing: CGFloat = 2
@@ -58,12 +58,12 @@ final class FuzzySuggestionWindowController {
         stackView.layer?.cornerRadius = 0
         stackView.orientation = .vertical
         stackView.alignment = .leading
-        stackView.spacing = 3
+        stackView.spacing = Self.itemSpacing
         stackView.edgeInsets = NSEdgeInsets(
-            top: 8,
-            left: 8,
-            bottom: 8,
-            right: 8
+            top: 0,
+            left: 0,
+            bottom: 0,
+            right: 0
         )
         panel.contentView = stackView
         panel.backgroundColor = .windowBackgroundColor
@@ -91,6 +91,7 @@ final class FuzzySuggestionWindowController {
         suggestions: [FuzzySuggestion],
         selectedIndex: Int?,
         near anchorFrame: NSRect,
+        avoidingFrames: [NSRect] = [],
         isAccented: Bool = false
     ) {
         stackView.layer?.borderWidth = isAccented ? 2 : 0
@@ -109,13 +110,10 @@ final class FuzzySuggestionWindowController {
             suggestions.prefix(Self.maximumVisibleSuggestionCount)
         )
 
-        let title = NSTextField(labelWithString: "もしかして？")
-        title.font = .systemFont(ofSize: 12, weight: .semibold)
-        title.textColor = .secondaryLabelColor
         let guideText = selectedIndex == nil
-            ? "⇧Tab 選択"
+            ? "Tabで通常候補を選択後、左右矢印で移動"
             : "矢印 移動　Return 確定　Esc 戻る"
-        stackView.addArrangedSubview(title)
+        let hasGuide = PanelShortcutGuideStyle.isEnabled
         guideLabel.stringValue = guideText
 
         let itemWidths = visibleSuggestions.map(itemWidth)
@@ -125,12 +123,9 @@ final class FuzzySuggestionWindowController {
             visibleFrame.width
         )
         let targetWidth = min(
-            max(
-                packedTargetWidth(
-                    itemWidths: itemWidths,
-                    availableWidth: availableWidth
-                ),
-                ceil(title.attributedStringValue.size().width)
+            packedTargetWidth(
+                itemWidths: itemWidths,
+                availableWidth: availableWidth
             ),
             availableWidth
         )
@@ -149,34 +144,48 @@ final class FuzzySuggestionWindowController {
             height: fittingSize.height
         ))
 
-        let guideTextWidth = ceil((guideText as NSString).size(
-            withAttributes: [.font: PanelShortcutGuideStyle.font]
-        ).width)
-        let guideTextHeight = ceil(guideLabel.attributedStringValue.size().height)
-        let guideSize = NSSize(
-            width: guideTextWidth + Self.guideHorizontalPadding * 2,
-            height: guideTextHeight + Self.guideVerticalPadding * 2
-        )
-        guidePanel.setContentSize(guideSize)
-        guideLabel.frame = NSRect(
-            x: Self.guideHorizontalPadding,
-            y: Self.guideVerticalPadding,
-            width: guideTextWidth,
-            height: guideTextHeight
-        )
+        if hasGuide {
+            let guideTextWidth = ceil((guideText as NSString).size(
+                withAttributes: [.font: PanelShortcutGuideStyle.font]
+            ).width)
+            let guideTextHeight = ceil(guideLabel.attributedStringValue.size().height)
+            let guideSize = NSSize(
+                width: guideTextWidth + Self.guideHorizontalPadding * 2,
+                height: guideTextHeight + Self.guideVerticalPadding * 2
+            )
+            guidePanel.setContentSize(guideSize)
+            guideLabel.frame = NSRect(
+                x: Self.guideHorizontalPadding,
+                y: Self.guideVerticalPadding,
+                width: guideTextWidth,
+                height: guideTextHeight
+            )
+        }
 
-        positionPanels(near: anchorFrame, visibleFrame: visibleFrame)
+        positionPanels(
+            near: anchorFrame,
+            visibleFrame: visibleFrame,
+            hasGuide: hasGuide,
+            avoidingFrames: avoidingFrames
+        )
         panel.orderFrontRegardless()
-        guidePanel.orderFrontRegardless()
+        if hasGuide {
+            guidePanel.orderFrontRegardless()
+        } else {
+            guidePanel.orderOut(nil)
+        }
     }
 
     private func itemWidth(for suggestion: FuzzySuggestion) -> CGFloat {
         let text = suggestion.candidate
         let textWidth = ceil((text as NSString).size(
-            withAttributes: [.font: NSFont.systemFont(ofSize: 13)]
+            withAttributes: [.font: CandidatePanelItemStyle.font]
         ).width)
         return min(
-            max(textWidth + 12, Self.minimumItemWidth),
+            max(
+                textWidth + CandidatePanelItemStyle.horizontalPadding * 2,
+                Self.minimumItemWidth
+            ),
             Self.maximumItemWidth
         )
     }
@@ -206,7 +215,7 @@ final class FuzzySuggestionWindowController {
         let label = NSTextField(
             labelWithString: suggestion.candidate
         )
-        label.font = .systemFont(ofSize: 13)
+        label.font = CandidatePanelItemStyle.font
         label.lineBreakMode = .byTruncatingTail
         label.textColor = isSelected
             ? .alternateSelectedControlTextColor
@@ -216,8 +225,14 @@ final class FuzzySuggestionWindowController {
         NSLayoutConstraint.activate([
             item.widthAnchor.constraint(equalToConstant: width),
             item.heightAnchor.constraint(equalToConstant: Self.itemHeight),
-            label.leadingAnchor.constraint(equalTo: item.leadingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: item.trailingAnchor, constant: -6),
+            label.leadingAnchor.constraint(
+                equalTo: item.leadingAnchor,
+                constant: CandidatePanelItemStyle.horizontalPadding
+            ),
+            label.trailingAnchor.constraint(
+                equalTo: item.trailingAnchor,
+                constant: -CandidatePanelItemStyle.horizontalPadding
+            ),
             label.centerYAnchor.constraint(equalTo: item.centerYAnchor)
         ])
         return item
@@ -228,30 +243,74 @@ final class FuzzySuggestionWindowController {
         guidePanel.orderOut(nil)
     }
 
-    private func positionPanels(near anchorFrame: NSRect, visibleFrame: NSRect) {
-        let groupHeight = panel.frame.height
-            + Self.guideSpacing
-            + guidePanel.frame.height
-        let fitsBelow = anchorFrame.minY - Self.spacing - groupHeight
-            >= visibleFrame.minY
-        let panelY = fitsBelow
-            ? anchorFrame.minY - Self.spacing - panel.frame.height
-            : anchorFrame.maxY + Self.spacing
-        let panelX = min(
-            max(anchorFrame.minX, visibleFrame.minX),
-            visibleFrame.maxX - panel.frame.width
+    private func positionPanels(
+        near anchorFrame: NSRect,
+        visibleFrame: NSRect,
+        hasGuide: Bool,
+        avoidingFrames: [NSRect]
+    ) {
+        let rightX = anchorFrame.maxX + Self.spacing
+        let leftX = anchorFrame.minX - Self.spacing - panel.frame.width
+        let rightSpace = max(visibleFrame.maxX - rightX, 0)
+        let leftSpace = max(anchorFrame.minX - Self.spacing - visibleFrame.minX, 0)
+        let panelX: CGFloat
+        if rightX + panel.frame.width <= visibleFrame.maxX {
+            panelX = rightX
+        } else if leftX >= visibleFrame.minX {
+            panelX = leftX
+        } else if rightSpace >= leftSpace {
+            panel.setFrame(
+                NSRect(
+                    x: rightX,
+                    y: panel.frame.minY,
+                    width: rightSpace,
+                    height: panel.frame.height
+                ),
+                display: false
+            )
+            panelX = rightX
+        } else {
+            panel.setFrame(
+                NSRect(
+                    x: visibleFrame.minX,
+                    y: panel.frame.minY,
+                    width: leftSpace,
+                    height: panel.frame.height
+                ),
+                display: false
+            )
+            panelX = visibleFrame.minX
+        }
+        let panelY = min(
+            max(anchorFrame.maxY - panel.frame.height, visibleFrame.minY),
+            visibleFrame.maxY - panel.frame.height
         )
         panel.setFrameOrigin(NSPoint(
             x: panelX,
-            y: min(max(panelY, visibleFrame.minY), visibleFrame.maxY - groupHeight)
+            y: panelY
         ))
+        guard hasGuide else { return }
         let guideX = min(
             max(panel.frame.minX, visibleFrame.minX),
             visibleFrame.maxX - guidePanel.frame.width
         )
-        let guideY = fitsBelow
-            ? panel.frame.minY - Self.guideSpacing - guidePanel.frame.height
-            : panel.frame.maxY + Self.guideSpacing
+        var guideY = panel.frame.minY - Self.guideSpacing - guidePanel.frame.height
+        var guideFrame = NSRect(
+            x: guideX,
+            y: guideY,
+            width: guidePanel.frame.width,
+            height: guidePanel.frame.height
+        )
+        for avoidedFrame in avoidingFrames where guideFrame.intersects(avoidedFrame) {
+            guideY = avoidedFrame.minY - Self.guideSpacing - guidePanel.frame.height
+            guideFrame.origin.y = guideY
+        }
+        if guideY < visibleFrame.minY {
+            guideY = min(
+                panel.frame.maxY + Self.guideSpacing,
+                visibleFrame.maxY - guidePanel.frame.height
+            )
+        }
         guidePanel.setFrameOrigin(NSPoint(x: guideX, y: guideY))
     }
 }

@@ -8,8 +8,26 @@ enum CandidateNavigationDirection {
 }
 
 enum PanelShortcutGuideStyle {
+    static let enabledDefaultsKey = "PanelShortcutGuidesEnabled"
     static let font = NSFont.systemFont(ofSize: 11)
     static let color = NSColor.secondaryLabelColor
+
+    static var isEnabled: Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: enabledDefaultsKey) != nil else {
+            return true
+        }
+        return defaults.bool(forKey: enabledDefaultsKey)
+    }
+}
+
+enum CandidatePanelItemStyle {
+    static let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    static let horizontalPadding: CGFloat = 9
+    static let verticalPadding: CGFloat = 9
+    static let height = ceil(
+        font.ascender - font.descender + font.leading
+    ) + verticalPadding * 2
 }
 
 private final class CandidateCollectionItem: NSCollectionViewItem {
@@ -21,11 +39,18 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
         container.layer?.cornerRadius = 0
 
         label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = CandidatePanelItemStyle.font
         label.lineBreakMode = .byTruncatingTail
         container.addSubview(label)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 9),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -9),
+            label.leadingAnchor.constraint(
+                equalTo: container.leadingAnchor,
+                constant: CandidatePanelItemStyle.horizontalPadding
+            ),
+            label.trailingAnchor.constraint(
+                equalTo: container.trailingAnchor,
+                constant: -CandidatePanelItemStyle.horizontalPadding
+            ),
             label.centerYAnchor.constraint(equalTo: container.centerYAnchor)
         ])
         view = container
@@ -58,8 +83,8 @@ final class CandidateWindowController: NSObject {
     private static let itemIdentifier = NSUserInterfaceItemIdentifier(
         "candidateItem"
     )
-    private static let itemHeight: CGFloat = 30
-    private static let minimumItemWidth: CGFloat = 52
+    private static let itemHeight = CandidatePanelItemStyle.height
+    private static let minimumItemWidth: CGFloat = 32
     private static let maximumItemWidth: CGFloat = 240
     private static let maximumPanelWidth: CGFloat = 360
     private static let maximumRows = 4
@@ -172,6 +197,10 @@ final class CandidateWindowController: NSObject {
         panel.frame
     }
 
+    var auxiliaryFrames: [NSRect] {
+        guidePanel.isVisible ? [guidePanel.frame] : []
+    }
+
     var visibleFrame: NSRect? {
         guard panel.isVisible else { return nil }
         return guidePanel.isVisible
@@ -206,7 +235,7 @@ final class CandidateWindowController: NSObject {
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
 
         let guideText = guide?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let hasGuide = !guideText.isEmpty
+        let hasGuide = PanelShortcutGuideStyle.isEnabled && !guideText.isEmpty
         let guideParagraphStyle = NSMutableParagraphStyle()
         guideParagraphStyle.lineBreakMode = .byCharWrapping
         guideLabel.textStorage?.setAttributedString(NSAttributedString(
@@ -433,13 +462,16 @@ final class CandidateWindowController: NSObject {
 
     private func itemSize(for candidate: String) -> NSSize {
         let textWidth = ceil(
-            (candidate as NSString).size(
-                withAttributes: [.font: NSFont.systemFont(ofSize: NSFont.systemFontSize)]
+                (candidate as NSString).size(
+                withAttributes: [.font: CandidatePanelItemStyle.font]
             ).width
         )
         return NSSize(
             width: min(
-                max(textWidth + 20, Self.minimumItemWidth),
+                max(
+                    textWidth + CandidatePanelItemStyle.horizontalPadding * 2,
+                    Self.minimumItemWidth
+                ),
                 Self.maximumItemWidth
             ),
             height: Self.itemHeight

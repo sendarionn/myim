@@ -83,6 +83,7 @@ enum SettingsWindowBuilder {
         let externalInformationPanel: Bool
         let systemDictionaryPreview: Bool
         let webSearch: Bool
+        let shortcutGuides: Bool
     }
 
     struct Actions {
@@ -100,6 +101,7 @@ enum SettingsWindowBuilder {
         let configureSystemDictionaries: Selector
         let toggleWebSearch: Selector
         let configureShortcuts: Selector
+        let toggleShortcutGuides: Selector
         let configureTranslationLanguage: Selector
         let updateBasicDictionary: Selector
     }
@@ -162,6 +164,9 @@ enum SettingsWindowBuilder {
             ("TKGJE基本辞書を更新", actions.updateBasicDictionary)
         ], target: target, to: stack)
         addSection("操作", to: stack)
+        addCheckboxes([
+            ("ショートカットキーの案内を表示", actions.toggleShortcutGuides, states.shortcutGuides)
+        ], target: target, to: stack)
         addButtons([
             ("ショートカット…", actions.configureShortcuts)
         ], target: target, to: stack)
