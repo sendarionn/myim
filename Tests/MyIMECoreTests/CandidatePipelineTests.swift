@@ -19,7 +19,7 @@ struct CandidatePipelineTests {
     }
 
     @Test
-    func prioritizesSingleKatakanaFoundInDictionary() {
+    func keepsSingleHiraganaBeforeKatakanaFoundInDictionary() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
                 kana: ["き", "キ"],
@@ -30,7 +30,22 @@ struct CandidatePipelineTests {
             )
         )
 
-        #expect(candidates == ["キ", "き", "木"])
+        #expect(candidates == ["き", "キ", "木"])
+    }
+
+    @Test
+    func keepsRiHiraganaBeforeMozcKatakanaCandidate() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["り", "リ"],
+                direct: ["リ", "李", "利", "里", "理"],
+                other: [],
+                recencyRanks: [:],
+                prioritizeKana: true
+            )
+        )
+
+        #expect(candidates == ["り", "リ", "李", "利", "里", "理"])
     }
 
     @Test

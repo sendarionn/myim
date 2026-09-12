@@ -78,7 +78,7 @@ final class InputController: IMKInputController {
         "TimeCandidateFormats"
     private static let dateTimeCandidateFormatsDefaultsKey =
         "DateTimeCandidateFormats"
-    private static let maximumCandidateCount = 7
+    private static let maximumCandidateCount = 4
     private static let initialFuzzySuggestionCount = 3
     private static let maximumMozcDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
@@ -3732,7 +3732,7 @@ final class InputController: IMKInputController {
 
     private func candidateAndInputFrame(for sender: Any) -> NSRect {
         let inputFrame = inputLocation(for: sender)
-        let frame = candidateWindow.frame
+        let frame = candidateWindow.visibleFrame ?? candidateWindow.frame
         guard inputFrame != .zero else { return frame }
         return frame.union(inputFrame)
     }

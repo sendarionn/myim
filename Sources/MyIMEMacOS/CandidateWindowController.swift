@@ -62,9 +62,10 @@ final class CandidateWindowController: NSObject {
     private static let minimumItemWidth: CGFloat = 52
     private static let maximumItemWidth: CGFloat = 240
     private static let maximumPanelWidth: CGFloat = 360
-    private static let maximumRows = 6
+    private static let maximumRows = 4
     private static let itemSpacing: CGFloat = 2
     private static let anchorSpacing: CGFloat = 8
+    private static let guideSpacing: CGFloat = 4
     private static let guideHorizontalPadding: CGFloat = 10
     private static let guideVerticalPadding: CGFloat = 4
     private static let minimumGuideWidth: CGFloat = 180
@@ -72,11 +73,11 @@ final class CandidateWindowController: NSObject {
     private static let modeHeaderHeight: CGFloat = 28
 
     private let panel: NSPanel
+    private let guidePanel: NSPanel
     private let collectionView: NSCollectionView
     private let layout: NSCollectionViewFlowLayout
     private let scrollView: NSScrollView
     private let guideLabel: NSTextView
-    private let separator: NSBox
     private let modeLabel: NSTextField
     private let modeSeparator: NSBox
     private var candidates: [String] = []
@@ -87,11 +88,16 @@ final class CandidateWindowController: NSObject {
         layout = NSCollectionViewFlowLayout()
         scrollView = NSScrollView()
         guideLabel = NSTextView(frame: .zero)
-        separator = NSBox()
         modeLabel = NSTextField(labelWithString: "")
         modeSeparator = NSBox()
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 280, height: 40),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        guidePanel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 180, height: 24),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -130,9 +136,6 @@ final class CandidateWindowController: NSObject {
         guideLabel.isVerticallyResizable = true
         guideLabel.isHidden = true
 
-        separator.boxType = .separator
-        separator.isHidden = true
-
         modeLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
         modeLabel.textColor = .controlAccentColor
         modeLabel.lineBreakMode = .byTruncatingTail
@@ -144,8 +147,6 @@ final class CandidateWindowController: NSObject {
         let contentView = NSView()
         contentView.wantsLayer = true
         contentView.addSubview(scrollView)
-        contentView.addSubview(separator)
-        contentView.addSubview(guideLabel)
         contentView.addSubview(modeLabel)
         contentView.addSubview(modeSeparator)
         panel.contentView = contentView
@@ -155,6 +156,16 @@ final class CandidateWindowController: NSObject {
         panel.level = .popUpMenu
         panel.isOpaque = true
         panel.isReleasedWhenClosed = false
+
+        let guideContentView = NSView()
+        guideContentView.addSubview(guideLabel)
+        guidePanel.contentView = guideContentView
+        guidePanel.backgroundColor = .windowBackgroundColor
+        guidePanel.hasShadow = true
+        guidePanel.hidesOnDeactivate = false
+        guidePanel.level = .popUpMenu
+        guidePanel.isOpaque = true
+        guidePanel.isReleasedWhenClosed = false
     }
 
     var frame: NSRect {
@@ -162,11 +173,15 @@ final class CandidateWindowController: NSObject {
     }
 
     var visibleFrame: NSRect? {
-        panel.isVisible ? panel.frame : nil
+        guard panel.isVisible else { return nil }
+        return guidePanel.isVisible
+            ? panel.frame.union(guidePanel.frame)
+            : panel.frame
     }
 
     func contains(screenPoint: NSPoint) -> Bool {
-        panel.isVisible && panel.frame.contains(screenPoint)
+        (panel.isVisible && panel.frame.contains(screenPoint))
+            || (guidePanel.isVisible && guidePanel.frame.contains(screenPoint))
     }
 
     func show(
@@ -182,7 +197,7 @@ final class CandidateWindowController: NSObject {
             ? NSColor.controlAccentColor.cgColor
             : NSColor.clear.cgColor
         self.candidates = candidates
-        itemSizes = candidates.map { itemSize(for: $0) }
+        let measuredItemSizes = candidates.map { itemSize(for: $0) }
 
         let screen = NSScreen.screens.first {
             $0.frame.intersects(anchorFrame)
@@ -190,13 +205,6 @@ final class CandidateWindowController: NSObject {
         let visibleFrame = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
 
-        let contentSize = packedContentSize(
-            itemSizes: itemSizes,
-            availableWidth: min(
-                Self.maximumPanelWidth,
-                visibleFrame.width
-            )
-        )
         let guideText = guide?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasGuide = !guideText.isEmpty
         let guideParagraphStyle = NSMutableParagraphStyle()
@@ -210,7 +218,6 @@ final class CandidateWindowController: NSObject {
             ]
         ))
         guideLabel.isHidden = !hasGuide
-        separator.isHidden = !hasGuide
         let modeText = modeTitle?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasModeHeader = !modeText.isEmpty
@@ -243,26 +250,21 @@ final class CandidateWindowController: NSObject {
             : 0
         let panelWidth = min(
             max(
-                contentSize.width,
-                guideWidth,
+                measuredItemSizes.map(\.width).max()
+                    ?? Self.minimumItemWidth,
                 hasModeHeader
                     ? ceil(modeLabel.attributedStringValue.size().width) + 20
                     : 0
             ),
             maximumPanelWidth
         )
-        let packedHeight = packedContentHeight(
-            itemSizes: itemSizes,
-            width: panelWidth
-        )
-        let panelHeight = min(
-            packedHeight,
-            CGFloat(Self.maximumRows) * (Self.itemHeight + Self.itemSpacing)
-        )
-        let guideContentWidth = max(
-            panelWidth - Self.guideHorizontalPadding * 2,
-            1
-        )
+        itemSizes = candidates.map { _ in
+            NSSize(width: panelWidth, height: Self.itemHeight)
+        }
+        let visibleItemCount = min(candidates.count, Self.maximumRows)
+        let panelHeight = CGFloat(visibleItemCount) * Self.itemHeight
+            + CGFloat(max(visibleItemCount - 1, 0)) * Self.itemSpacing
+        let guideContentWidth = max(guideWidth - Self.guideHorizontalPadding * 2, 1)
         guideLabel.frame = NSRect(
             x: 0,
             y: 0,
@@ -291,35 +293,30 @@ final class CandidateWindowController: NSObject {
 
         panel.setContentSize(NSSize(
             width: panelWidth,
-            height: panelHeight + guideHeight + modeHeaderHeight
+            height: panelHeight + modeHeaderHeight
         ))
         scrollView.frame = NSRect(
             x: 0,
-            y: guideHeight,
+            y: 0,
             width: panelWidth,
             height: panelHeight
         )
-        separator.frame = NSRect(
-            x: 0,
-            y: max(guideHeight - 1, 0),
-            width: panelWidth,
-            height: 1
-        )
+        guidePanel.setContentSize(NSSize(width: guideWidth, height: guideHeight))
         guideLabel.frame = NSRect(
             x: Self.guideHorizontalPadding,
             y: Self.guideVerticalPadding,
-            width: max(panelWidth - Self.guideHorizontalPadding * 2, 0),
+            width: max(guideWidth - Self.guideHorizontalPadding * 2, 0),
             height: max(guideHeight - Self.guideVerticalPadding * 2, 0)
         )
         modeSeparator.frame = NSRect(
             x: 0,
-            y: guideHeight + panelHeight,
+            y: panelHeight,
             width: panelWidth,
             height: 1
         )
         modeLabel.frame = NSRect(
             x: 10,
-            y: guideHeight + panelHeight + 1,
+            y: panelHeight + 1,
             width: max(panelWidth - 20, 0),
             height: max(modeHeaderHeight - 1, 0)
         )
@@ -332,12 +329,10 @@ final class CandidateWindowController: NSObject {
             : (hasModeHeader
                 ? NSColor.controlAccentColor.withAlphaComponent(0.75).cgColor
                 : NSColor.clear.cgColor)
-        panel.setFrameOrigin(
-            panelOrigin(
-                panelSize: panel.frame.size,
-                anchorFrame: anchorFrame,
-                visibleFrame: visibleFrame
-            )
+        positionPanels(
+            near: anchorFrame,
+            visibleFrame: visibleFrame,
+            hasGuide: hasGuide
         )
 
         collectionView.reloadData()
@@ -347,6 +342,11 @@ final class CandidateWindowController: NSObject {
             clearSelection()
         }
         panel.orderFrontRegardless()
+        if hasGuide {
+            guidePanel.orderFrontRegardless()
+        } else {
+            guidePanel.orderOut(nil)
+        }
     }
 
     func select(index: Int) {
@@ -428,6 +428,7 @@ final class CandidateWindowController: NSObject {
 
     func hide() {
         panel.orderOut(nil)
+        guidePanel.orderOut(nil)
     }
 
     private func itemSize(for candidate: String) -> NSSize {
@@ -445,99 +446,37 @@ final class CandidateWindowController: NSObject {
         )
     }
 
-    private func packedContentSize(
-        itemSizes: [NSSize],
-        availableWidth: CGFloat
-    ) -> NSSize {
-        guard !itemSizes.isEmpty else {
-            return NSSize(width: Self.minimumItemWidth, height: Self.itemHeight)
-        }
-
-        let totalWidth = itemSizes.reduce(0) { $0 + $1.width }
-            + CGFloat(max(itemSizes.count - 1, 0)) * Self.itemSpacing
-        let widestItem = itemSizes.map(\.width).max() ?? Self.minimumItemWidth
-        let balancedWidth = ceil(
-            sqrt(
-                totalWidth
-                    * (Self.itemHeight + Self.itemSpacing)
-            )
-        )
-        let targetWidth = min(
-            availableWidth,
-            max(widestItem, balancedWidth)
-        )
-
-        var rowWidth: CGFloat = 0
-        var widestRow: CGFloat = 0
-        var rowCount = 1
-
-        for itemSize in itemSizes {
-            let nextWidth = rowWidth == 0
-                ? itemSize.width
-                : rowWidth + Self.itemSpacing + itemSize.width
-
-            if rowWidth > 0, nextWidth > targetWidth {
-                widestRow = max(widestRow, rowWidth)
-                rowCount += 1
-                rowWidth = itemSize.width
-            } else {
-                rowWidth = nextWidth
-            }
-        }
-        widestRow = max(widestRow, rowWidth)
-
-        return NSSize(
-            width: min(max(widestRow, widestItem), availableWidth),
-            height: CGFloat(rowCount) * Self.itemHeight
-                + CGFloat(max(rowCount - 1, 0)) * Self.itemSpacing
-        )
-    }
-
-    private func packedContentHeight(
-        itemSizes: [NSSize],
-        width: CGFloat
-    ) -> CGFloat {
-        guard !itemSizes.isEmpty else {
-            return Self.itemHeight
-        }
-
-        var rowWidth: CGFloat = 0
-        var rowCount = 1
-        for itemSize in itemSizes {
-            let nextWidth = rowWidth == 0
-                ? itemSize.width
-                : rowWidth + Self.itemSpacing + itemSize.width
-            if rowWidth > 0, nextWidth > width {
-                rowCount += 1
-                rowWidth = itemSize.width
-            } else {
-                rowWidth = nextWidth
-            }
-        }
-        return CGFloat(rowCount) * Self.itemHeight
-            + CGFloat(max(rowCount - 1, 0)) * Self.itemSpacing
-    }
-
-    private func panelOrigin(
-        panelSize: NSSize,
-        anchorFrame: NSRect,
-        visibleFrame: NSRect
-    ) -> NSPoint {
-        let x = min(
+    private func positionPanels(
+        near anchorFrame: NSRect,
+        visibleFrame: NSRect,
+        hasGuide: Bool
+    ) {
+        let guideExtent = hasGuide
+            ? Self.guideSpacing + guidePanel.frame.height
+            : 0
+        let groupHeight = panel.frame.height + guideExtent
+        let fitsBelow = anchorFrame.minY - Self.anchorSpacing - groupHeight
+            >= visibleFrame.minY
+        let panelY = fitsBelow
+            ? anchorFrame.minY - Self.anchorSpacing - panel.frame.height
+            : anchorFrame.maxY + Self.anchorSpacing
+        let panelX = min(
             max(anchorFrame.minX, visibleFrame.minX),
-            visibleFrame.maxX - panelSize.width
+            visibleFrame.maxX - panel.frame.width
         )
-
-        let belowY = anchorFrame.minY
-            - Self.anchorSpacing
-            - panelSize.height
-        let aboveY = anchorFrame.maxY + Self.anchorSpacing
-        let preferredY = belowY >= visibleFrame.minY ? belowY : aboveY
-        let y = min(
-            max(preferredY, visibleFrame.minY),
-            visibleFrame.maxY - panelSize.height
+        panel.setFrameOrigin(NSPoint(
+            x: panelX,
+            y: min(max(panelY, visibleFrame.minY), visibleFrame.maxY - groupHeight)
+        ))
+        guard hasGuide else { return }
+        let guideX = min(
+            max(panel.frame.minX, visibleFrame.minX),
+            visibleFrame.maxX - guidePanel.frame.width
         )
-        return NSPoint(x: x, y: y)
+        let guideY = fitsBelow
+            ? panel.frame.minY - Self.guideSpacing - guidePanel.frame.height
+            : panel.frame.maxY + Self.guideSpacing
+        guidePanel.setFrameOrigin(NSPoint(x: guideX, y: guideY))
     }
 }
 

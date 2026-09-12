@@ -60,6 +60,9 @@ public struct CandidatePipeline: Sendable {
         matching dictionaryCandidates: [String],
         recencyRanks: [String: Int]
     ) -> [String] {
+        if kana.first?.count == 1 {
+            return kana
+        }
         let kanaSet = Set(kana)
         var seen = Set<String>()
         let dictionaryKana = dictionaryCandidates.filter {
