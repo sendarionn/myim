@@ -109,6 +109,19 @@ struct RomajiConverterTests {
     }
 
     @Test
+    func preservesExactDictionaryCandidateContainingLongVowels() {
+        let candidate = "リモートロックジャパン"
+
+        #expect(
+            LongVowelNotationCandidateFilter.candidates(
+                [candidate, "キー"],
+                for: "rlj",
+                preserving: [candidate]
+            ) == [candidate]
+        )
+    }
+
+    @Test
     func expandsTypedLongVowelsForDictionaryLookup() {
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "re-beru")

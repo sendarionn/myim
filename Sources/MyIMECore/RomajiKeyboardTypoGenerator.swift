@@ -59,15 +59,21 @@ public enum RomajiKeyboardTypoGenerator {
         for input: String,
         dictionary: IndexedDictionaryEngine
     ) -> [FuzzyConversionMatch] {
+        dictionaryMatches(for: input) {
+            dictionary.candidates(for: $0)
+        }
+    }
+
+    public static func dictionaryMatches(
+        for input: String,
+        lookup: @Sendable (String) -> [String]
+    ) -> [FuzzyConversionMatch] {
         var seenCandidates = Set<String>()
         var matches: [FuzzyConversionMatch] = []
         for correctedReading in corrections(for: input) {
-            let canonical = RomajiCanonicalizer.canonicalInput(
+            let candidates = RomajiCanonicalizer.dictionaryLookupInputs(
                 from: correctedReading
-            )
-            let candidates = dictionary.candidates(for: canonical).filter {
-                seenCandidates.insert($0).inserted
-            }
+            ).flatMap(lookup).filter { seenCandidates.insert($0).inserted }
             guard !candidates.isEmpty else {
                 continue
             }

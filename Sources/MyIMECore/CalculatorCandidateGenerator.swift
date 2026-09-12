@@ -17,7 +17,10 @@ public enum CalculatorCandidateGenerator {
             return []
         }
         let normalized = abs(value) < 1e-12 ? 0 : value
-        return [format(normalized)]
+        let result = format(normalized)
+        return [result] + NumberGroupingCandidateGenerator.candidates(
+            for: result
+        )
     }
 
     private static func format(_ value: Double) -> String {

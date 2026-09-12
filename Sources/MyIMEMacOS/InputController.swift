@@ -1,9 +1,14 @@
 @preconcurrency import AppKit
 @preconcurrency import InputMethodKit
 import MyIMECore
+import os
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
+    private static let dictionaryLogger = Logger(
+        subsystem: "io.github.sendarionn.inputmethod.myime",
+        category: "dictionary"
+    )
     private static weak var activeController: InputController?
     private struct NeuralContextQuery: Equatable {
         let input: String
@@ -123,6 +128,7 @@ final class InputController: IMKInputController {
     private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
     private var currentCandidates: [String] = []
+    private var longVowelFilterProtectedCandidates = Set<String>()
     private var selectedCandidateIndex: Int?
     private var unfilteredCandidates: [String]?
     private var candidateFilterConditions: [CandidateFilterCondition] = []
@@ -638,6 +644,20 @@ final class InputController: IMKInputController {
         command infoDictionary: [AnyHashable: Any]!
     ) {
         if let aSelector,
+           tabDictionaryRegistration != nil,
+           let inputClient = client() {
+            switch NSStringFromSelector(aSelector) {
+            case "insertNewline:", "insertNewlineIgnoringFieldEditor:":
+                _ = confirmTabDictionaryRegistration(client: inputClient)
+                return
+            case "cancelOperation:":
+                cancelTabDictionaryRegistration(client: inputClient)
+                return
+            default:
+                break
+            }
+        }
+        if let aSelector,
            inputBuffer.isEmpty,
            nextInputCandidates.isEmpty,
            ["insertNewline:", "insertNewlineIgnoringFieldEditor:"]
@@ -877,6 +897,10 @@ final class InputController: IMKInputController {
             return
         }
 
+        if tabDictionaryRegistration != nil {
+            showTabDictionaryRegistration(client: sender)
+            return
+        }
         if reconversionOriginal != nil {
             restoreReconversionOriginal(client: sender)
             return
@@ -885,7 +909,6 @@ final class InputController: IMKInputController {
             finishTranslationDraftAsJapanese(client: sender)
             return
         }
-        tabDictionaryRegistration = nil
         if inputBuffer.isEmpty {
             dismissNextInputSuggestions(clearMarkedTextIn: sender)
             return
@@ -1754,55 +1777,7 @@ final class InputController: IMKInputController {
 
         switch event.keyCode {
         case 36, 76:
-            let currentCandidate = registration.pastedCandidate
-                ?? selectedCandidateValue
-                ?? inputBuffer.nilIfEmpty
-            if currentCandidate == nil,
-               let confirmedCandidate = registration.confirmedCandidate {
-                do {
-                    let output = registration.outputCandidate
-                        ?? confirmedCandidate
-                    let display = registration.outputCandidate == nil
-                        ? nil
-                        : confirmedCandidate
-                    try saveUserDictionaryEntry(
-                        reading: registration.reading,
-                        candidate: output,
-                        display: display
-                    )
-                    tabDictionaryRegistration = nil
-                    commit(
-                        output,
-                        to: sender,
-                        replacingMarkedText: true
-                    )
-                } catch {
-                    NSLog(
-                        "ユーザー辞書の保存に失敗: %@",
-                        error.localizedDescription
-                    )
-                    NSSound.beep()
-                }
-                return true
-            }
-            guard let currentCandidate else {
-                NSSound.beep()
-                return true
-            }
-            if registration.pastedCandidate == nil,
-               selectedCandidateValue != nil {
-                recordSelectedCandidate()
-            }
-            registration.confirmedCandidate =
-                (registration.confirmedCandidate ?? "") + currentCandidate
-            registration.pastedCandidate = nil
-            tabDictionaryRegistration = registration
-            inputBuffer = ""
-            inputCursor = 0
-            currentCandidates = []
-            selectedCandidateIndex = nil
-            showTabDictionaryRegistration(client: sender)
-            return true
+            return confirmTabDictionaryRegistration(client: sender)
         case 49:
             if inputBuffer.isEmpty,
                registration.pastedCandidate == nil {
@@ -1876,13 +1851,7 @@ final class InputController: IMKInputController {
                 unit: deletionUnit(for: event)
             )
         case 53:
-            tabDictionaryRegistration = nil
-            inputBuffer = registration.originalInput
-            inputCursor = inputBuffer.count
-            currentCandidates = []
-            selectedCandidateIndex = nil
-            updateMarkedText(in: sender)
-            refreshCandidates(client: sender)
+            cancelTabDictionaryRegistration(client: sender)
             return true
         default:
             break
@@ -1937,6 +1906,68 @@ final class InputController: IMKInputController {
         )
         refreshCandidates(client: sender)
         return true
+    }
+
+    private func confirmTabDictionaryRegistration(client sender: Any) -> Bool {
+        guard var registration = tabDictionaryRegistration else {
+            return false
+        }
+        let currentCandidate = registration.pastedCandidate
+            ?? selectedCandidateValue
+            ?? inputBuffer.nilIfEmpty
+        if currentCandidate == nil,
+           let confirmedCandidate = registration.confirmedCandidate {
+            do {
+                let output = registration.outputCandidate ?? confirmedCandidate
+                let display = registration.outputCandidate == nil
+                    ? nil
+                    : confirmedCandidate
+                try saveUserDictionaryEntry(
+                    reading: registration.reading,
+                    candidate: output,
+                    display: display
+                )
+                tabDictionaryRegistration = nil
+                commit(output, to: sender, replacingMarkedText: true)
+            } catch {
+                NSLog(
+                    "ユーザー辞書の保存に失敗: %@",
+                    error.localizedDescription
+                )
+                NSSound.beep()
+            }
+            return true
+        }
+        guard let currentCandidate else {
+            NSSound.beep()
+            return true
+        }
+        if registration.pastedCandidate == nil,
+           selectedCandidateValue != nil {
+            recordSelectedCandidate()
+        }
+        registration.confirmedCandidate =
+            (registration.confirmedCandidate ?? "") + currentCandidate
+        registration.pastedCandidate = nil
+        tabDictionaryRegistration = registration
+        inputBuffer = ""
+        inputCursor = 0
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        setMarkedText(registration.confirmedCandidate ?? "", in: sender)
+        showTabDictionaryRegistration(client: sender)
+        return true
+    }
+
+    private func cancelTabDictionaryRegistration(client sender: Any) {
+        guard let registration = tabDictionaryRegistration else { return }
+        tabDictionaryRegistration = nil
+        inputBuffer = registration.originalInput
+        inputCursor = inputBuffer.count
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        updateMarkedText(in: sender)
+        refreshCandidates(client: sender)
     }
 
     private func beginDisplayNameRegistration(
@@ -2643,6 +2674,8 @@ final class InputController: IMKInputController {
     }
 
     private func refreshCandidates(client sender: Any) {
+        reloadUserDictionaryFromDiskIfNeeded()
+        longVowelFilterProtectedCandidates = []
         updateTranslationModeStatus(client: sender)
         cancelFuzzySuggestionSearch()
         fuzzySuggestionWindow.hide()
@@ -2715,6 +2748,11 @@ final class InputController: IMKInputController {
             lookup: { userConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
         )
+        if conversionReading.lowercased() == "rlj" {
+            Self.dictionaryLogger.notice(
+                "rlj lookup input=\(self.inputBuffer, privacy: .public) readings=\(lookupReadings.joined(separator: ","), privacy: .public) exact=\(userCandidates.exact.joined(separator: "|"), privacy: .public) prefix=\(userCandidates.prefix.joined(separator: "|"), privacy: .public) entries=\(self.userEntries.count, privacy: .public)"
+            )
+        }
         let basicCandidates = mergedCandidateGroups(
             lookup: { basicConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
@@ -2787,6 +2825,9 @@ final class InputController: IMKInputController {
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
             : []
+        longVowelFilterProtectedCandidates = Set(
+            userCandidates.exact + basicCandidates.exact + imeCandidates.exact
+        )
         replaceCurrentCandidates(with: CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
                 kana: kanaCandidates,
@@ -2801,6 +2842,11 @@ final class InputController: IMKInputController {
                 prioritizeKana: kanaCandidates.first?.count == 1
             )
         ))
+        if conversionReading.lowercased() == "rlj" {
+            Self.dictionaryLogger.notice(
+                "rlj displayed=\(self.currentCandidates.joined(separator: "|"), privacy: .public) protected=\(self.longVowelFilterProtectedCandidates.joined(separator: "|"), privacy: .public)"
+            )
+        }
 
         updateNeuralContextCandidates(
             reading: kanaCandidates.first ?? conversionReading,
@@ -2894,7 +2940,8 @@ final class InputController: IMKInputController {
             ? candidates
             : LongVowelNotationCandidateFilter.candidates(
                 candidates,
-                for: conversionReading
+                for: conversionReading,
+                preserving: longVowelFilterProtectedCandidates
             )
         if inputBuffer == "-", let prolongedSoundMarkIndex = notationMatchedCandidates.firstIndex(
             of: "ー"
@@ -2957,6 +3004,7 @@ final class InputController: IMKInputController {
 
         let query = conversionReading
         let mozcDictionary = mozcConversionEngine
+        let basicDictionary = basicConversionEngine
         let compoundGenerator = compoundDictionaryCandidateGenerator
         let userDictionary = userConversionEngine
         let visibleCandidates = Set(currentCandidates)
@@ -2967,9 +3015,12 @@ final class InputController: IMKInputController {
                 let matchTiers = await Task.detached(priority: .userInitiated) {
                     let keyboardMatches =
                         RomajiKeyboardTypoGenerator.dictionaryMatches(
-                            for: query,
-                            dictionary: mozcDictionary
-                        )
+                            for: query
+                        ) { reading in
+                            userDictionary.candidates(for: reading)
+                                + basicDictionary.candidates(for: reading)
+                                + mozcDictionary.candidates(for: reading)
+                        }
                     var seenReadings = Set<String>()
                     let fuzzyMatches = Self.fuzzyEngineRepository.matches(
                         for: query,
@@ -2991,9 +3042,12 @@ final class InputController: IMKInputController {
                             var seenReadings = Set<String>()
                             let keyboardMatches =
                                 RomajiKeyboardTypoGenerator.dictionaryMatches(
-                                    for: segment,
-                                    dictionary: mozcDictionary
-                                )
+                                    for: segment
+                                ) { reading in
+                                    userDictionary.candidates(for: reading)
+                                        + basicDictionary.candidates(for: reading)
+                                        + mozcDictionary.candidates(for: reading)
+                                }
                             let fuzzyMatches = Self.fuzzyEngineRepository
                                 .matches(
                                     for: segment,
@@ -3149,9 +3203,12 @@ final class InputController: IMKInputController {
                 error.localizedDescription
             )
         }
-        recordCandidateSelection(
+        candidateSelectionHistory.record(
             suggestion.candidate,
-            reading: suggestion.reading
+            readings: [conversionReading, suggestion.reading]
+        )
+        candidateSelectionHistoryWriter.schedule(
+            candidateSelectionHistory
         )
         let value = suggestion.candidate + conversionSuffix
         guard isTranslationModeEnabled else {
@@ -4501,6 +4558,14 @@ final class InputController: IMKInputController {
         }
         compoundDictionaryCandidateGenerator =
             Self.sharedBasicCompoundGenerator
+        rebuildFuzzyConversionEngine()
+    }
+
+    private func reloadUserDictionaryFromDiskIfNeeded() {
+        let storedEntries = Self.loadUserEntries()
+        guard storedEntries != userEntries else { return }
+        userEntries = storedEntries
+        userConversionEngine = ConversionEngine(entries: storedEntries)
         rebuildFuzzyConversionEngine()
     }
 

@@ -18,6 +18,20 @@ struct UserDictionaryEditorTests {
     }
 
     @Test
+    func addsAcronymReadingAndJapaneseCandidate() {
+        let result = UserDictionaryEditor.adding(
+            reading: "rlj",
+            candidate: "リモートロックジャパン",
+            to: []
+        )
+
+        #expect(
+            ConversionEngine(entries: result).candidates(for: "rlj")
+                == ["リモートロックジャパン"]
+        )
+    }
+
+    @Test
     func treatsNormalizedReadingAsSameEntry() {
         let entries = [
             DictionaryEntry(reading: "shuusei", candidates: ["修正"])

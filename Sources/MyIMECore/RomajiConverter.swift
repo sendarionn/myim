@@ -346,7 +346,8 @@ public enum RomajiCanonicalizer {
 public enum LongVowelNotationCandidateFilter {
     public static func candidates(
         _ candidates: [String],
-        for input: String
+        for input: String,
+        preserving preservedCandidates: Set<String> = []
     ) -> [String] {
         let normalized = input.lowercased()
         guard normalized.count > 1,
@@ -358,6 +359,8 @@ public enum LongVowelNotationCandidateFilter {
         if normalized.contains("-") {
             return candidates.filter { $0.contains("ー") }
         }
-        return candidates.filter { !$0.contains("ー") }
+        return candidates.filter {
+            !$0.contains("ー") || preservedCandidates.contains($0)
+        }
     }
 }

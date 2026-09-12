@@ -44,6 +44,21 @@ struct FuzzyConversionEngineTests {
     }
 
     @Test
+    func findsAdjacentKeyboardTypoAcrossDictionarySources() {
+        let matches = RomajiKeyboardTypoGenerator.dictionaryMatches(
+            for: "eo"
+        ) { reading in
+            reading == "wo" ? ["を"] : []
+        }
+
+        #expect(matches.first == FuzzyConversionMatch(
+            reading: "wo",
+            candidates: ["を"],
+            distance: 1
+        ))
+    }
+
+    @Test
     func findsAdjacentKeyboardTypoForLongReading() {
         let match = engine.matches(for: "shjusei").first
         #expect(match?.reading == "shuusei")

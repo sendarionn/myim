@@ -57,6 +57,19 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
+    func recordsOneSelectionForOriginalAndCorrectedReadings() {
+        var history = CandidateSelectionHistory()
+        history.record(
+            "慶應大学",
+            readings: ["keioudaigku", "keioudaigaku"]
+        )
+
+        #expect(history.ranks(for: "keioudaigku")["慶應大学"] != nil)
+        #expect(history.ranks(for: "keioudaigaku")["慶應大学"] != nil)
+        #expect(history.ranks["慶應大学"] == 1)
+    }
+
+    @Test
     func doesNotApplyLearningFromAnotherReading() {
         var history = CandidateSelectionHistory()
         history.record("そのまま", reading: "sonomama")

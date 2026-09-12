@@ -26,11 +26,17 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
     }
 
     public mutating func record(_ candidate: String, reading: String? = nil) {
+        record(candidate, readings: reading.map { [$0] } ?? [])
+    }
+
+    public mutating func record(_ candidate: String, readings: [String]) {
         guard !candidate.isEmpty else {
             return
         }
         ranks[candidate] = nextRank
-        if let reading = reading?.lowercased(), !reading.isEmpty {
+        let normalizedReadings = Set(readings.lazy.map { $0.lowercased() })
+            .filter { !$0.isEmpty }
+        for reading in normalizedReadings {
             var readingStats = statsByReading[reading] ?? [:]
             var stat = readingStats[candidate]
                 ?? Stat(count: 0, lastUsed: nextRank)

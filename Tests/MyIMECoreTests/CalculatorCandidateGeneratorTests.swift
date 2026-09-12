@@ -10,6 +10,18 @@ struct CalculatorCandidateGeneratorTests {
     }
 
     @Test
+    func addsGroupedCandidateForLargeResult() {
+        #expect(
+            CalculatorCandidateGenerator.candidates(for: "1000+2000=")
+                == ["3000", "3,000"]
+        )
+        #expect(
+            CalculatorCandidateGenerator.candidates(for: "1000000/2=")
+                == ["500000", "500,000"]
+        )
+    }
+
+    @Test
     func calculatesDecimalsAndUnaryOperators() {
         #expect(CalculatorCandidateGenerator.candidates(for: "5/2=") == ["2.5"])
         #expect(CalculatorCandidateGenerator.candidates(for: "-2+1=") == ["-1"])
