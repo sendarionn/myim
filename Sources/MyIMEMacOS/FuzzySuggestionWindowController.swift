@@ -25,8 +25,6 @@ final class FuzzySuggestionWindowController {
     private static let maximumPanelWidth: CGFloat = 360
     private static let itemSpacing: CGFloat = 2
     private static let maximumVisibleSuggestionCount = 4
-    private static let guideHorizontalPadding: CGFloat = 10
-    private static let guideVerticalPadding: CGFloat = 5
     private let panel: NSPanel
     private let guidePanel: NSPanel
     private let stackView: NSStackView
@@ -150,13 +148,15 @@ final class FuzzySuggestionWindowController {
             ).width)
             let guideTextHeight = ceil(guideLabel.attributedStringValue.size().height)
             let guideSize = NSSize(
-                width: guideTextWidth + Self.guideHorizontalPadding * 2,
-                height: guideTextHeight + Self.guideVerticalPadding * 2
+                width: guideTextWidth
+                    + PanelShortcutGuideStyle.horizontalPadding * 2,
+                height: guideTextHeight
+                    + PanelShortcutGuideStyle.verticalPadding * 2
             )
             guidePanel.setContentSize(guideSize)
             guideLabel.frame = NSRect(
-                x: Self.guideHorizontalPadding,
-                y: Self.guideVerticalPadding,
+                x: PanelShortcutGuideStyle.horizontalPadding,
+                y: PanelShortcutGuideStyle.verticalPadding,
                 width: guideTextWidth,
                 height: guideTextHeight
             )
@@ -206,34 +206,14 @@ final class FuzzySuggestionWindowController {
         width: CGFloat,
         isSelected: Bool
     ) -> NSView {
-        let item = NSView()
-        item.wantsLayer = true
-        item.layer?.cornerRadius = 0
-        item.layer?.backgroundColor = isSelected
-            ? NSColor.controlAccentColor.cgColor
-            : NSColor.clear.cgColor
-        let label = NSTextField(
-            labelWithString: suggestion.candidate
+        let item = CandidatePanelRowView(frame: .zero)
+        item.configure(
+            text: suggestion.candidate,
+            isSelected: isSelected
         )
-        label.font = CandidatePanelItemStyle.font
-        label.lineBreakMode = .byTruncatingTail
-        label.textColor = isSelected
-            ? .alternateSelectedControlTextColor
-            : .labelColor
-        label.translatesAutoresizingMaskIntoConstraints = false
-        item.addSubview(label)
         NSLayoutConstraint.activate([
             item.widthAnchor.constraint(equalToConstant: width),
-            item.heightAnchor.constraint(equalToConstant: Self.itemHeight),
-            label.leadingAnchor.constraint(
-                equalTo: item.leadingAnchor,
-                constant: CandidatePanelItemStyle.horizontalPadding
-            ),
-            label.trailingAnchor.constraint(
-                equalTo: item.trailingAnchor,
-                constant: -CandidatePanelItemStyle.horizontalPadding
-            ),
-            label.centerYAnchor.constraint(equalTo: item.centerYAnchor)
+            item.heightAnchor.constraint(equalToConstant: Self.itemHeight)
         ])
         return item
     }

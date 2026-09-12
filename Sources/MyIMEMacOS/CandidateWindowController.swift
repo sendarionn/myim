@@ -11,6 +11,8 @@ enum PanelShortcutGuideStyle {
     static let enabledDefaultsKey = "PanelShortcutGuidesEnabled"
     static let font = NSFont.systemFont(ofSize: 11)
     static let color = NSColor.secondaryLabelColor
+    static let horizontalPadding: CGFloat = 10
+    static let verticalPadding: CGFloat = 4
 
     static var isEnabled: Bool {
         let defaults = UserDefaults.standard
@@ -30,30 +32,57 @@ enum CandidatePanelItemStyle {
     ) + verticalPadding * 2
 }
 
-private final class CandidateCollectionItem: NSCollectionViewItem {
+final class CandidatePanelRowView: NSView {
     private let label = NSTextField(labelWithString: "")
+    private var text = ""
 
-    override func loadView() {
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.cornerRadius = 0
-
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 0
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = CandidatePanelItemStyle.font
         label.lineBreakMode = .byTruncatingTail
-        container.addSubview(label)
+        addSubview(label)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(
-                equalTo: container.leadingAnchor,
+                equalTo: leadingAnchor,
                 constant: CandidatePanelItemStyle.horizontalPadding
             ),
             label.trailingAnchor.constraint(
-                equalTo: container.trailingAnchor,
+                equalTo: trailingAnchor,
                 constant: -CandidatePanelItemStyle.horizontalPadding
             ),
-            label.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+            label.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
-        view = container
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(text: String, isSelected: Bool) {
+        self.text = text
+        label.stringValue = text
+        layer?.backgroundColor = isSelected
+            ? NSColor.controlAccentColor.cgColor
+            : NSColor.clear.cgColor
+        label.textColor = isSelected
+            ? .alternateSelectedControlTextColor
+            : .labelColor
+    }
+
+    func updateSelection(_ isSelected: Bool) {
+        configure(text: text, isSelected: isSelected)
+    }
+}
+
+private final class CandidateCollectionItem: NSCollectionViewItem {
+    private let rowView = CandidatePanelRowView(frame: .zero)
+
+    override func loadView() {
+        view = rowView
         updateSelectionAppearance()
     }
 
@@ -64,7 +93,7 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
     }
 
     func configure(text: String) {
-        label.stringValue = text
+        rowView.configure(text: text, isSelected: isSelected)
     }
 
     private func updateSelectionAppearance() {
@@ -72,10 +101,7 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
             return
         }
 
-        view.layer?.backgroundColor = isSelected
-            ? NSColor.controlAccentColor.cgColor
-            : NSColor.clear.cgColor
-        label.textColor = isSelected ? .alternateSelectedControlTextColor : .labelColor
+        rowView.updateSelection(isSelected)
     }
 }
 
@@ -91,8 +117,6 @@ final class CandidateWindowController: NSObject {
     private static let itemSpacing: CGFloat = 2
     private static let anchorSpacing: CGFloat = 8
     private static let guideSpacing: CGFloat = 4
-    private static let guideHorizontalPadding: CGFloat = 10
-    private static let guideVerticalPadding: CGFloat = 4
     private static let minimumGuideWidth: CGFloat = 180
     private static let maximumGuideWidth: CGFloat = 300
     private static let modeHeaderHeight: CGFloat = 28
@@ -147,6 +171,7 @@ final class CandidateWindowController: NSObject {
         scrollView.documentView = collectionView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
         scrollView.drawsBackground = false
 
         guideLabel.font = PanelShortcutGuideStyle.font
@@ -271,7 +296,7 @@ final class CandidateWindowController: NSObject {
             ? min(
                 max(
                     measuredGuideWidth
-                        + Self.guideHorizontalPadding * 2,
+                        + PanelShortcutGuideStyle.horizontalPadding * 2,
                     Self.minimumGuideWidth
                 ),
                 min(Self.maximumGuideWidth, maximumPanelWidth)
@@ -293,7 +318,10 @@ final class CandidateWindowController: NSObject {
         let visibleItemCount = min(candidates.count, Self.maximumRows)
         let panelHeight = CGFloat(visibleItemCount) * Self.itemHeight
             + CGFloat(max(visibleItemCount - 1, 0)) * Self.itemSpacing
-        let guideContentWidth = max(guideWidth - Self.guideHorizontalPadding * 2, 1)
+        let guideContentWidth = max(
+            guideWidth - PanelShortcutGuideStyle.horizontalPadding * 2,
+            1
+        )
         guideLabel.frame = NSRect(
             x: 0,
             y: 0,
@@ -316,7 +344,7 @@ final class CandidateWindowController: NSObject {
             guideTextHeight = 0
         }
         let guideHeight = hasGuide
-            ? guideTextHeight + Self.guideVerticalPadding * 2
+            ? guideTextHeight + PanelShortcutGuideStyle.verticalPadding * 2
             : 0
         let modeHeaderHeight = hasModeHeader ? Self.modeHeaderHeight : 0
 
@@ -332,10 +360,16 @@ final class CandidateWindowController: NSObject {
         )
         guidePanel.setContentSize(NSSize(width: guideWidth, height: guideHeight))
         guideLabel.frame = NSRect(
-            x: Self.guideHorizontalPadding,
-            y: Self.guideVerticalPadding,
-            width: max(guideWidth - Self.guideHorizontalPadding * 2, 0),
-            height: max(guideHeight - Self.guideVerticalPadding * 2, 0)
+            x: PanelShortcutGuideStyle.horizontalPadding,
+            y: PanelShortcutGuideStyle.verticalPadding,
+            width: max(
+                guideWidth - PanelShortcutGuideStyle.horizontalPadding * 2,
+                0
+            ),
+            height: max(
+                guideHeight - PanelShortcutGuideStyle.verticalPadding * 2,
+                0
+            )
         )
         modeSeparator.frame = NSRect(
             x: 0,
