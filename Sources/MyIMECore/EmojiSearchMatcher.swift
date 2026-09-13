@@ -7,7 +7,7 @@ public enum EmojiSearchMatcher {
         return terms.contains { normalized($0).contains(query) }
     }
 
-    private static func normalized(_ value: String) -> String {
+    public static func normalized(_ value: String) -> String {
         value.folding(
             options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
             locale: Locale(identifier: "ja_JP")

@@ -63,6 +63,7 @@ final class TranslationLanguageSettingsController: NSObject {
             backing: .buffered,
             defer: false
         )
+        panel.animationBehavior = .none
         panel.title = "翻訳先の言語"
         panel.isReleasedWhenClosed = false
         let popup = NSPopUpButton(frame: NSRect(x: 20, y: 35, width: 320, height: 30))

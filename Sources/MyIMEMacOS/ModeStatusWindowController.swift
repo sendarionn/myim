@@ -19,6 +19,7 @@ final class ModeStatusWindowController: NSObject {
         )
         super.init()
 
+        panel.animationBehavior = .none
         label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         label.alignment = .center
         label.lineBreakMode = .byClipping

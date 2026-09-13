@@ -35,6 +35,14 @@ class InstallMacOSIMTests(unittest.TestCase):
         self.assertIn('"$installed_executable" --enable-input-source', self.script)
         self.assertIn('wait_for_status "$installed_executable" enabled 1', self.script)
 
+    def test_increments_bundle_version_for_every_installation(self):
+        self.assertIn('next_build_number=', self.script)
+        self.assertIn('MYIM_BUILD_NUMBER="$next_build_number"', self.script)
+        self.assertIn(
+            'if [[ "$installed_build_number" != "$next_build_number" ]]',
+            self.script,
+        )
+
     def test_waits_for_the_new_server_before_reporting_success(self):
         verify_binary = self.script.index(
             'cmp -s "$source_executable" "$installed_executable"'

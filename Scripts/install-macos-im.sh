@@ -86,7 +86,31 @@ restore_previous_application() {
         "$app_destination/"
 }
 
-"$repository_root/Scripts/build-macos-ime.sh"
+installed_build_number=0
+if [[ -f "$app_destination/Contents/Info.plist" ]]; then
+    installed_build_number=$(
+        /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+            "$app_destination/Contents/Info.plist" 2>/dev/null || echo 0
+    )
+fi
+if [[ "$installed_build_number" != <-> ]]; then
+    installed_build_number=0
+fi
+source_build_number=$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+        "$repository_root/macOS/Info.plist" 2>/dev/null || echo 0
+)
+if [[ "$source_build_number" != <-> ]]; then
+    source_build_number=0
+fi
+base_build_number=$((
+    installed_build_number > source_build_number
+        ? installed_build_number
+        : source_build_number
+))
+next_build_number=$((base_build_number + 1))
+MYIM_BUILD_NUMBER="$next_build_number" \
+    "$repository_root/Scripts/build-macos-ime.sh"
 
 source_executable="$app_source/Contents/MacOS/myim"
 was_registered=$(status_value "$source_executable" registered)
@@ -133,6 +157,15 @@ installed_executable="$app_destination/Contents/MacOS/myim"
 if ! cmp -s "$source_executable" "$installed_executable"; then
     restore_previous_application
     echo "インストール先のmyimバイナリがビルド結果と一致しません" >&2
+    exit 1
+fi
+installed_build_number=$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+        "$app_destination/Contents/Info.plist"
+)
+if [[ "$installed_build_number" != "$next_build_number" ]]; then
+    restore_previous_application
+    echo "myim.app のビルド番号が更新されていません" >&2
     exit 1
 fi
 "$installed_executable" --register-input-source

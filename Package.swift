@@ -18,30 +18,17 @@ let package = Package(
             targets: ["MyIMExternalBrowser"]
         )
     ],
-    dependencies: [
-        .package(
-            url: "https://github.com/azooKey/AzooKeyKanaKanjiConverter.git",
-            revision: "93766c46e31fa6a18b7ced49dab31337780f6f45",
-            traits: ["Zenzai"]
-        )
-    ],
+    dependencies: [],
     targets: [
         .target(name: "MyIMECore"),
         .executableTarget(
             name: "MyIMEMacOS",
-            dependencies: [
-                "MyIMECore",
-                .product(
-                    name: "KanaKanjiConverterModuleWithDefaultDictionary",
-                    package: "AzooKeyKanaKanjiConverter"
-                )
-            ],
+            dependencies: ["MyIMECore"],
             exclude: [
                 "Resources"
             ],
             swiftSettings: [
-                .swiftLanguageMode(.v5),
-                .interoperabilityMode(.Cxx)
+                .swiftLanguageMode(.v5)
             ],
             linkerSettings: [
                 .linkedFramework("Carbon"),

@@ -16,6 +16,7 @@ private final class CalendarPanel: NSPanel {
 private final class CalendarGridView: NSView {
     var confirmAction: (() -> Void)?
     var cancelAction: (() -> Void)?
+    var passthroughAction: ((NSEvent) -> Void)?
     private(set) var selectedDate = Date()
     private var displayedMonth = Date()
     private var calendar: Calendar = {
@@ -41,8 +42,10 @@ private final class CalendarGridView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func updateShortcutGuide() {
+        shortcutLabel.isHidden = !PanelShortcutGuideStyle.isEnabled
         shortcutLabel.stringValue =
             "矢印 移動　⌥←→ 月　⌥↑↓ 年\nReturn 確定　Esc / \(MyIMFeatureShortcut.calendar.shortcut.displayName) 閉じる"
+        needsLayout = true
     }
 
     override init(frame frameRect: NSRect) {
@@ -130,10 +133,13 @@ private final class CalendarGridView: NSView {
         let padding: CGFloat = 9
         let headerHeight: CGFloat = 28
         let weekdayHeight: CGFloat = 18
-        let footerHeight: CGFloat = 28
+        let footerHeight: CGFloat = shortcutLabel.isHidden ? 0 : 28
         let gridTop = bounds.height - padding - headerHeight - weekdayHeight
-        let cellWidth = (bounds.width - padding * 2) / 7
-        let cellHeight = (gridTop - padding - footerHeight) / 6
+        let cellSize = min(
+            (bounds.width - padding * 2) / 7,
+            (gridTop - padding - footerHeight) / 6
+        )
+        let gridLeft = (bounds.width - cellSize * 7) / 2
         let buttonWidth: CGFloat = 24
         let headerY = bounds.height - padding - headerHeight
         previousYearButton.frame = NSRect(x: padding, y: headerY, width: buttonWidth, height: headerHeight)
@@ -145,18 +151,28 @@ private final class CalendarGridView: NSView {
         yearField.frame = NSRect(x: inputX, y: headerY + 3, width: 50, height: headerHeight - 6)
         monthField.frame = NSRect(x: inputX + 53, y: headerY + 3, width: 32, height: headerHeight - 6)
         applyDateButton.frame = NSRect(x: inputX + 88, y: headerY + 1, width: 38, height: headerHeight - 2)
-        shortcutLabel.frame = NSRect(x: padding, y: 2, width: bounds.width - padding * 2, height: footerHeight)
+        shortcutLabel.frame = NSRect(
+            x: padding,
+            y: 2,
+            width: bounds.width - padding * 2,
+            height: footerHeight
+        )
         for column in 0..<7 {
-            weekdayLabels[column].frame = NSRect(x: padding + CGFloat(column) * cellWidth, y: gridTop, width: cellWidth, height: weekdayHeight)
+            weekdayLabels[column].frame = NSRect(
+                x: gridLeft + CGFloat(column) * cellSize,
+                y: gridTop,
+                width: cellSize,
+                height: weekdayHeight
+            )
         }
         for index in 0..<42 {
             let row = index / 7
             let column = index % 7
             dayButtons[index].frame = NSRect(
-                x: padding + CGFloat(column) * cellWidth,
-                y: gridTop - CGFloat(row + 1) * cellHeight,
-                width: cellWidth,
-                height: cellHeight
+                x: gridLeft + CGFloat(column) * cellSize,
+                y: gridTop - CGFloat(row + 1) * cellSize,
+                width: cellSize,
+                height: cellSize
             )
         }
     }
@@ -201,7 +217,7 @@ private final class CalendarGridView: NSView {
                 reload()
             }
         default:
-            break
+            passthroughAction?(event)
         }
     }
 
@@ -380,6 +396,8 @@ final class CalendarWindowController: NSObject {
         )
         super.init()
 
+        panel.animationBehavior = .none
+        formatKeyPanel.animationBehavior = .none
         panel.isMovableByWindowBackground = true
         panel.contentView?.wantsLayer = true
         panel.contentView?.layer?.cornerRadius = 0
@@ -402,6 +420,13 @@ final class CalendarWindowController: NSObject {
         calendarView.cancelAction = { [weak self] in
             self?.cancelSelection()
         }
+        calendarView.passthroughAction = { [weak self] event in
+            self?.cancelSelection()
+            guard let copiedEvent = event.cgEvent?.copy() else { return }
+            DispatchQueue.main.async {
+                copiedEvent.post(tap: .cgSessionEventTap)
+            }
+        }
         formatKeyPanel.level = .popUpMenu
         formatKeyPanel.alphaValue = 0.01
         formatKeyPanel.isOpaque = false
@@ -417,9 +442,16 @@ final class CalendarWindowController: NSObject {
         panel.isVisible
     }
 
-    func handleKeyEvent(_ event: NSEvent) {
-        guard panel.isVisible else { return }
+    func handleKeyEvent(_ event: NSEvent) -> Bool {
+        guard panel.isVisible else { return false }
+        let handledKeyCodes: Set<UInt16> = [36, 53, 76, 123, 124, 125, 126]
+        guard handledKeyCodes.contains(event.keyCode)
+                || MyIMFeatureShortcut.calendar.shortcut.matches(event) else {
+            hide()
+            return false
+        }
         calendarView.keyDown(with: event)
+        return true
     }
 
     func runSelection(

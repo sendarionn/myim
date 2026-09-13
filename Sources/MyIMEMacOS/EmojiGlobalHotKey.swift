@@ -17,15 +17,24 @@ final class EmojiGlobalHotKey {
     private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
     private var panelHotKeys: [EventHotKeyRef] = []
+    private var repeatingCommand: UInt32?
+    private var repeatTimer: DispatchSourceTimer?
 
     private init() {
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-        InstallEventHandler(
-            GetApplicationEventTarget(),
-            { _, event, _ in
+        let eventTypes = [
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyPressed)
+            ),
+            EventTypeSpec(
+                eventClass: OSType(kEventClassKeyboard),
+                eventKind: UInt32(kEventHotKeyReleased)
+            )
+        ]
+        _ = eventTypes.withUnsafeBufferPointer { types in
+            InstallEventHandler(
+                GetApplicationEventTarget(),
+                { _, event, _ in
                 guard let event else { return OSStatus(eventNotHandledErr) }
                 var identifier = EventHotKeyID()
                 let status = GetEventParameter(
@@ -41,6 +50,16 @@ final class EmojiGlobalHotKey {
                       identifier.signature == EmojiGlobalHotKey.signature else {
                     return OSStatus(eventNotHandledErr)
                 }
+                let isPressed = GetEventKind(event)
+                    == UInt32(kEventHotKeyPressed)
+                if !isPressed {
+                    DispatchQueue.main.async {
+                        EmojiGlobalHotKey.shared.stopRepeating(
+                            command: identifier.id
+                        )
+                    }
+                    return noErr
+                }
                 if identifier.id == EmojiGlobalHotKey.identifier {
                     EmojiDiagnostics.logger.notice("global hot key received")
                     DispatchQueue.main.async {
@@ -48,15 +67,21 @@ final class EmojiGlobalHotKey {
                     }
                 } else {
                     let command = identifier.id
-                    InputController.handleGlobalEmojiPanelCommand(command)
+                    DispatchQueue.main.async {
+                        InputController.handleGlobalEmojiPanelCommand(command)
+                        EmojiGlobalHotKey.shared.startRepeating(
+                            command: command
+                        )
+                    }
                 }
                 return noErr
-            },
-            1,
-            &eventType,
-            nil,
-            &eventHandler
-        )
+                },
+                types.count,
+                types.baseAddress,
+                nil,
+                &eventHandler
+            )
+        }
     }
 
     func activate() {
@@ -130,8 +155,54 @@ final class EmojiGlobalHotKey {
     }
 
     func endPanelCapture() {
+        stopRepeating()
         panelHotKeys.forEach { UnregisterEventHotKey($0) }
         panelHotKeys = []
+    }
+
+    private func startRepeating(command: UInt32) {
+        guard (4...7).contains(command), repeatingCommand != command else {
+            return
+        }
+        stopRepeating()
+        repeatingCommand = command
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        let initialDelay = repeatMilliseconds(
+            setting: "InitialKeyRepeat",
+            fallback: 30
+        )
+        let interval = repeatMilliseconds(
+            setting: "KeyRepeat",
+            fallback: 5
+        )
+        timer.schedule(
+            deadline: .now() + .milliseconds(initialDelay),
+            repeating: .milliseconds(interval),
+            leeway: .milliseconds(5)
+        )
+        timer.setEventHandler { [weak self] in
+            guard let self,
+                  self.repeatingCommand == command else { return }
+            InputController.handleGlobalEmojiPanelCommand(command)
+        }
+        repeatTimer = timer
+        timer.resume()
+    }
+
+    private func repeatMilliseconds(
+        setting: String,
+        fallback: Int
+    ) -> Int {
+        let ticks = (UserDefaults.standard.object(forKey: setting) as? NSNumber)?
+            .intValue ?? fallback
+        return max(ticks, 1) * 15
+    }
+
+    private func stopRepeating(command: UInt32? = nil) {
+        if let command, command != repeatingCommand { return }
+        repeatTimer?.cancel()
+        repeatTimer = nil
+        repeatingCommand = nil
     }
 
     deinit {

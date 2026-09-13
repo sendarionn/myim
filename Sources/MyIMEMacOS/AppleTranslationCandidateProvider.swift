@@ -19,6 +19,7 @@ final class AppleTranslationCandidateProvider {
             backing: .buffered,
             defer: false
         )
+        panel.animationBehavior = .none
         panel.contentViewController = host
         panel.title = "翻訳言語を準備"
         panel.alphaValue = 0

@@ -17,6 +17,7 @@ final class SymbolTipsWindowController {
             backing: .buffered,
             defer: true
         )
+        panel.animationBehavior = .none
         panel.backgroundColor = .windowBackgroundColor
         panel.hasShadow = true
         panel.hidesOnDeactivate = false

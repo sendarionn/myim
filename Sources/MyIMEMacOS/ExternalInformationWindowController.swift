@@ -1,5 +1,6 @@
 @preconcurrency import AppKit
 import MyIMECore
+import os
 
 private final class PassiveInformationPanel: NSPanel {
     override var canBecomeKey: Bool { false }
@@ -7,11 +8,16 @@ private final class PassiveInformationPanel: NSPanel {
 }
 
 final class ExternalInformationWindowController: NSObject {
+    private static let logger = Logger(
+        subsystem: "io.github.sendarionn.inputmethod.myime",
+        category: "panel-layout"
+    )
     private struct PendingPresentation {
         let requestID: UUID
         let url: URL?
         let panelTitle: String
         let definitions: [SystemDictionaryDefinition]
+        let definitionsPending: Bool
         let showExternalInformation: Bool
         let candidateFrame: NSRect
     }
@@ -54,7 +60,7 @@ final class ExternalInformationWindowController: NSObject {
         definitionTextView.isSelectable = true
         definitionTextView.drawsBackground = false
         definitionTextView.font = .systemFont(ofSize: 13)
-        definitionTextView.textContainerInset = NSSize(width: 8, height: 7)
+        definitionTextView.textContainerInset = NSSize(width: 12, height: 12)
         let scrollView = NSScrollView()
         scrollView.documentView = definitionTextView
         scrollView.hasVerticalScroller = true
@@ -67,6 +73,7 @@ final class ExternalInformationWindowController: NSObject {
         url: URL?,
         panelTitle: String,
         definitions: [SystemDictionaryDefinition],
+        definitionsPending: Bool,
         showExternalInformation: Bool,
         beside candidateFrame: NSRect
     ) -> UUID {
@@ -78,6 +85,7 @@ final class ExternalInformationWindowController: NSObject {
                 url: url,
                 panelTitle: panelTitle,
                 definitions: definitions,
+                definitionsPending: definitionsPending,
                 showExternalInformation: showExternalInformation,
                 candidateFrame: candidateFrame
             )
@@ -92,6 +100,7 @@ final class ExternalInformationWindowController: NSObject {
             url: url,
             panelTitle: panelTitle,
             definitions: definitions,
+            definitionsPending: definitionsPending,
             showExternalInformation: showExternalInformation,
             beside: candidateFrame
         )
@@ -103,15 +112,13 @@ final class ExternalInformationWindowController: NSObject {
         url: URL?,
         panelTitle: String,
         definitions: [SystemDictionaryDefinition],
+        definitionsPending: Bool,
         showExternalInformation: Bool,
         beside candidateFrame: NSRect
     ) {
         displayTask?.cancel()
         navigationTask?.cancel()
         requestID = currentRequestID
-        externalBrowser.hide()
-        informationPanelIsVisible = false
-        definitionPanel.orderOut(nil)
         if !definitions.isEmpty {
             definitionTextView.textStorage?.setAttributedString(
                 attributedDefinitions(definitions)
@@ -127,7 +134,11 @@ final class ExternalInformationWindowController: NSObject {
                 guard !Task.isCancelled, let self,
                       requestID == currentRequestID else { return }
                 positionInformationPanel(near: candidateFrame)
-                externalBrowser.send(browserCommand(url: url, title: panelTitle, isVisible: false))
+                externalBrowser.send(browserCommand(
+                    url: url,
+                    title: panelTitle,
+                    isVisible: informationPanelIsVisible
+                ))
                 displayedURL = url
                 displayedPanelTitle = panelTitle
             }
@@ -138,9 +149,21 @@ final class ExternalInformationWindowController: NSObject {
                   requestID == currentRequestID else { return }
             if !definitions.isEmpty {
                 positionDefinitionPanel(near: candidateFrame)
-                definitionPanel.orderFrontRegardless()
+                if !definitionPanel.isVisible {
+                    definitionPanel.orderFrontRegardless()
+                }
+            } else if definitionsPending {
+                if definitionPanel.isVisible {
+                    positionDefinitionPanel(near: candidateFrame)
+                }
+            } else {
+                definitionPanel.orderOut(nil)
             }
-            guard showExternalInformation, let url else { return }
+            guard showExternalInformation, let url else {
+                externalBrowser.hide()
+                informationPanelIsVisible = false
+                return
+            }
             positionInformationPanel(near: candidateFrame)
             externalBrowser.send(browserCommand(url: url, title: panelTitle, isVisible: true))
             displayedPanelTitle = panelTitle
@@ -158,8 +181,9 @@ final class ExternalInformationWindowController: NSObject {
             frameWidth: frame.width,
             frameHeight: frame.height,
             isVisible: isVisible,
-            openShortcutDisplayName:
-                MyIMFeatureShortcut.externalInformation.shortcut.displayName,
+            openShortcutDisplayName: PanelShortcutGuideStyle.isEnabled
+                ? MyIMFeatureShortcut.externalInformation.shortcut.displayName
+                : nil,
             returnApplicationProcessIdentifier:
                 returnApplicationProcessIdentifier
         )
@@ -193,7 +217,9 @@ final class ExternalInformationWindowController: NSObject {
         )
         definitionTextView.scrollToBeginningOfDocument(nil)
         positionDefinitionPanel(near: candidateFrame)
-        definitionPanel.orderFrontRegardless()
+        if !definitionPanel.isVisible {
+            definitionPanel.orderFrontRegardless()
+        }
         if informationPanelIsVisible, let displayedURL {
             positionInformationPanel(near: candidateFrame)
             externalBrowser.send(browserCommand(
@@ -223,6 +249,7 @@ final class ExternalInformationWindowController: NSObject {
             url: pendingPresentation.url,
             panelTitle: pendingPresentation.panelTitle,
             definitions: pendingPresentation.definitions,
+            definitionsPending: pendingPresentation.definitionsPending,
             showExternalInformation: pendingPresentation.showExternalInformation,
             beside: pendingPresentation.candidateFrame
         )
@@ -264,6 +291,7 @@ final class ExternalInformationWindowController: NSObject {
             backing: .buffered,
             defer: true
         )
+        panel.animationBehavior = .none
         panel.title = title
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
@@ -286,6 +314,9 @@ final class ExternalInformationWindowController: NSObject {
             x: clamped(candidateFrame.minX, minimum: visibleFrame.minX, maximum: visibleFrame.maxX - panelSize.width),
             y: clamped(preferredY, minimum: visibleFrame.minY, maximum: visibleFrame.maxY - panelSize.height)
         ))
+        Self.logger.notice(
+            "definition candidate=\(String(describing: candidateFrame), privacy: .public) panel=\(String(describing: self.definitionPanel.frame), privacy: .public) intersects=\(self.definitionPanel.frame.intersects(candidateFrame), privacy: .public)"
+        )
     }
 
     private func positionInformationPanel(near candidateFrame: NSRect) {
@@ -322,6 +353,9 @@ final class ExternalInformationWindowController: NSObject {
             ),
             size: panelSize
         )
+        Self.logger.notice(
+            "external candidate=\(String(describing: candidateFrame), privacy: .public) definition=\(String(describing: definitionFrame), privacy: .public) panel=\(String(describing: self.informationPanelFrame), privacy: .public) candidateIntersects=\(self.informationPanelFrame.intersects(candidateFrame), privacy: .public) definitionIntersects=\(definitionFrame.map { self.informationPanelFrame.intersects($0) } ?? false, privacy: .public)"
+        )
     }
 
     private func visibleArea(
@@ -351,28 +385,94 @@ final class ExternalInformationWindowController: NSObject {
         _ definitions: [SystemDictionaryDefinition]
     ) -> NSAttributedString {
         let result = NSMutableAttributedString()
+        let sourceStyle = NSMutableParagraphStyle()
+        sourceStyle.paragraphSpacing = 4
+        let separatorStyle = NSMutableParagraphStyle()
+        separatorStyle.paragraphSpacing = 10
         for (index, definition) in definitions.enumerated() {
             if index > 0 {
                 result.append(NSAttributedString(
-                    string: "\n\n",
-                    attributes: [.font: NSFont.systemFont(ofSize: 13)]
+                    string: "\n",
+                    attributes: [
+                        .font: NSFont.systemFont(ofSize: 13),
+                        .paragraphStyle: separatorStyle
+                    ]
                 ))
             }
             result.append(NSAttributedString(
                 string: definition.dictionaryName + "\n",
                 attributes: [
-                    .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                    .foregroundColor: NSColor.labelColor
+                    .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .paragraphStyle: sourceStyle
                 ]
             ))
-            result.append(NSAttributedString(
-                string: definition.text,
-                attributes: [
-                    .font: NSFont.systemFont(ofSize: 13),
-                    .foregroundColor: NSColor.textColor
-                ]
-            ))
+            appendDefinitionText(definition.text, to: result)
         }
         return result
+    }
+
+    private func appendDefinitionText(
+        _ text: String,
+        to result: NSMutableAttributedString
+    ) {
+        let lines = definitionLines(from: text)
+        for (index, line) in lines.enumerated() {
+            let style = NSMutableParagraphStyle()
+            style.lineSpacing = 3
+            style.paragraphSpacing = isNumberedDefinitionLine(line) ? 7 : 4
+            if isNumberedDefinitionLine(line) {
+                style.firstLineHeadIndent = 0
+                style.headIndent = 20
+            }
+            result.append(NSAttributedString(
+                string: line,
+                attributes: [
+                    .font: NSFont.systemFont(ofSize: 13.5),
+                    .foregroundColor: NSColor.textColor,
+                    .paragraphStyle: style
+                ]
+            ))
+            if index < lines.count - 1 {
+                result.append(NSAttributedString(string: "\n"))
+            }
+        }
+    }
+
+    private func definitionLines(from text: String) -> [String] {
+        var normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        let itemMarker = #"(?:[①-⑳❶-❿㊀-㊉]|[（(][0-9０-９一二三四五六七八九十a-zA-Z]+[)）]|[0-9０-９]+[.．](?=[^0-9０-９])|[一二三四五六七八九十]+[、．]|[ア-ン][、．]|[●○■□◆◇▶▸※])"#
+        normalized = normalized.replacingOccurrences(
+            of: #"[ \t]+(?=\#(itemMarker))"#,
+            with: "\n",
+            options: .regularExpression
+        )
+        normalized = normalized.replacingOccurrences(
+            of: #"(?<!\n)(?=\#(itemMarker))"#,
+            with: "\n",
+            options: .regularExpression
+        )
+        return normalized
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    private func isCircledNumber(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first,
+              character.unicodeScalars.count == 1 else { return false }
+        return (0x2460...0x2473).contains(scalar.value)
+            || (0x2776...0x277F).contains(scalar.value)
+    }
+
+    private func isNumberedDefinitionLine(_ line: String) -> Bool {
+        guard let first = line.first else { return false }
+        if isCircledNumber(first) { return true }
+        return line.range(
+            of: #"^(?:[㊀-㊉]|[（(][0-9０-９一二三四五六七八九十a-zA-Z]+[)）]|[0-9０-９]+[.．]|[一二三四五六七八九十]+[、．]|[ア-ン][、．]|[●○■□◆◇▶▸※])\s*"#,
+            options: .regularExpression
+        ) != nil
     }
 }

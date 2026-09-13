@@ -117,6 +117,7 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             backing: .buffered,
             defer: false
         )
+        panel.animationBehavior = .none
         titleLabel = NSTextField(labelWithString: "外部情報")
         titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
         titleLabel.lineBreakMode = .byTruncatingTail
@@ -125,8 +126,23 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             target: self,
             action: #selector(openInDefaultBrowser(_:))
         )
-        openButton.bezelStyle = .regularSquare
-        let header = NSStackView(views: [titleLabel, openButton])
+        openButton.isBordered = false
+        openButton.image = NSImage(
+            systemSymbolName: "arrow.up.forward.square",
+            accessibilityDescription: "ブラウザで開く"
+        )
+        openButton.imagePosition = .imageLeading
+        openButton.imageHugsTitle = true
+        openButton.contentTintColor = .labelColor
+        openButton.focusRingType = .none
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(
+            .defaultLow,
+            for: .horizontal
+        )
+        openButton.setContentHuggingPriority(.required, for: .horizontal)
+        let header = NSStackView(views: [titleLabel, spacer, openButton])
         header.orientation = .horizontal
         header.alignment = .centerY
         header.spacing = 8
@@ -195,18 +211,20 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             returnApplicationProcessIdentifier = processIdentifier
         }
         titleLabel.stringValue = command.title
-        openButton.title = command.openShortcutDisplayName.map {
-            "ブラウザで開く  \($0)"
-        } ?? "ブラウザで開く"
-        panel.setFrame(
-            NSRect(
-                x: command.frameX,
-                y: command.frameY,
-                width: command.frameWidth,
-                height: command.frameHeight
-            ),
-            display: true
+        let shortcut = command.openShortcutDisplayName?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        openButton.title = shortcut.isEmpty
+            ? "ブラウザで開く"
+            : "ブラウザで開く　\(shortcut)"
+        let targetFrame = NSRect(
+            x: command.frameX,
+            y: command.frameY,
+            width: command.frameWidth,
+            height: command.frameHeight
         )
+        if panel.frame != targetFrame {
+            panel.setFrame(targetFrame, display: true)
+        }
         if displayedURL != url {
             webView.load(URLRequest(url: url))
             displayedURL = url
@@ -219,7 +237,9 @@ private final class BrowserController: NSObject, NSApplicationDelegate,
             panel.orderOut(nil)
             return
         }
-        panel.orderFrontRegardless()
+        if !panel.isVisible {
+            panel.orderFrontRegardless()
+        }
     }
 
     private func loadCommand() -> ExternalBrowserCommand? {

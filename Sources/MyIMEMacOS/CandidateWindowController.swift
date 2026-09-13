@@ -35,6 +35,8 @@ enum CandidatePanelItemStyle {
 final class CandidatePanelRowView: NSView {
     private let label = NSTextField(labelWithString: "")
     private var text = ""
+    private var fixedWidthConstraint: NSLayoutConstraint?
+    private var fixedHeightConstraint: NSLayoutConstraint?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -75,6 +77,18 @@ final class CandidatePanelRowView: NSView {
 
     func updateSelection(_ isSelected: Bool) {
         configure(text: text, isSelected: isSelected)
+    }
+
+    func setFixedSize(width: CGFloat, height: CGFloat) {
+        if fixedWidthConstraint == nil {
+            fixedWidthConstraint = widthAnchor.constraint(equalToConstant: width)
+            fixedHeightConstraint = heightAnchor.constraint(equalToConstant: height)
+            fixedWidthConstraint?.isActive = true
+            fixedHeightConstraint?.isActive = true
+        } else {
+            fixedWidthConstraint?.constant = width
+            fixedHeightConstraint?.constant = height
+        }
     }
 }
 
@@ -154,6 +168,8 @@ final class CandidateWindowController: NSObject {
 
         super.init()
 
+        panel.animationBehavior = .none
+        guidePanel.animationBehavior = .none
         layout.minimumInteritemSpacing = Self.itemSpacing
         layout.minimumLineSpacing = Self.itemSpacing
         layout.scrollDirection = .vertical
@@ -318,6 +334,8 @@ final class CandidateWindowController: NSObject {
         let visibleItemCount = min(candidates.count, Self.maximumRows)
         let panelHeight = CGFloat(visibleItemCount) * Self.itemHeight
             + CGFloat(max(visibleItemCount - 1, 0)) * Self.itemSpacing
+        let reservedPanelHeight = CGFloat(Self.maximumRows) * Self.itemHeight
+            + CGFloat(Self.maximumRows - 1) * Self.itemSpacing
         let guideContentWidth = max(
             guideWidth - PanelShortcutGuideStyle.horizontalPadding * 2,
             1
@@ -395,7 +413,8 @@ final class CandidateWindowController: NSObject {
         positionPanels(
             near: anchorFrame,
             visibleFrame: visibleFrame,
-            hasGuide: hasGuide
+            hasGuide: hasGuide,
+            reservedPanelHeight: reservedPanelHeight
         )
 
         collectionView.reloadData()
@@ -515,13 +534,16 @@ final class CandidateWindowController: NSObject {
     private func positionPanels(
         near anchorFrame: NSRect,
         visibleFrame: NSRect,
-        hasGuide: Bool
+        hasGuide: Bool,
+        reservedPanelHeight: CGFloat
     ) {
         let guideExtent = hasGuide
             ? Self.guideSpacing + guidePanel.frame.height
             : 0
         let groupHeight = panel.frame.height + guideExtent
-        let fitsBelow = anchorFrame.minY - Self.anchorSpacing - groupHeight
+        let reservedGroupHeight = reservedPanelHeight + guideExtent
+        let fitsBelow = anchorFrame.minY - Self.anchorSpacing
+            - reservedGroupHeight
             >= visibleFrame.minY
         let panelY = fitsBelow
             ? anchorFrame.minY - Self.anchorSpacing - panel.frame.height

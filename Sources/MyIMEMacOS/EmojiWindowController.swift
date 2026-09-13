@@ -1,16 +1,22 @@
 @preconcurrency import AppKit
 import MyIMECore
 
+private final class EmojiCollectionButton: NSButton {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 private final class EmojiCollectionItem: NSCollectionViewItem {
     override func loadView() {
-        let label = NSTextField(labelWithString: "")
-        label.font = NSFont(name: "Apple Color Emoji", size: 22)
-        label.alignment = .center
-        label.isBezeled = false
-        label.drawsBackground = false
-        label.isEditable = false
-        label.isSelectable = false
-        view = label
+        let button = EmojiCollectionButton(
+            title: "",
+            target: nil,
+            action: nil
+        )
+        button.font = NSFont(name: "Apple Color Emoji", size: 22)
+        button.alignment = .center
+        button.isBordered = false
+        button.focusRingType = .none
+        view = button
     }
 
     override var isSelected: Bool {
@@ -24,7 +30,7 @@ private final class EmojiCollectionItem: NSCollectionViewItem {
     }
 
     func configure(emoji: String) {
-        (view as? NSTextField)?.stringValue = emoji
+        (view as? NSButton)?.title = emoji
     }
 }
 
@@ -80,18 +86,29 @@ final class EmojiWindowController: NSObject {
     private struct Entry {
         let code: String
         let emoji: String
-        let searchTerms: [String]
+        let normalizedSearchText: String
     }
 
     static let shared = EmojiWindowController()
-    static let columnCount = 8
-    private static let recentColumnCount = 10
-    private static let recentCellSize: CGFloat = 26
+    static let columnCount = 6
+    private static let recentColumnCount = columnCount
     private static let recentDefaultsKey = "EmojiRecentHistory"
-    private static let cellSize: CGFloat = 34
     private static let spacing: CGFloat = 2
-    private static let maximumListHeight: CGFloat = 362
-    private static let panelChromeHeight: CGFloat = 84
+    private static let outerPadding: CGFloat = 8
+    private static let panelWidth: CGFloat = 240
+    private static let cellSize = (
+        panelWidth - outerPadding * 2
+            - spacing * CGFloat(columnCount - 1)
+    ) / CGFloat(columnCount)
+    private static let recentCellWidth = cellSize
+    private static let recentCellHeight = cellSize
+    private static let maximumListHeight: CGFloat = 155
+    private static let recentContentHeight = recentCellHeight * 2 + spacing
+    private static let recentAreaHeight = recentContentHeight
+        + outerPadding * 2
+    private static let panelChromeHeight = recentAreaHeight
+        + outerPadding * 3 + 1
+    private static let comparisonPanelSize = NSSize(width: 240, height: 88)
     private static let fallbackEmojis = Array(
         "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪"
             .split(separator: " ").map(String.init)
@@ -104,14 +121,11 @@ final class EmojiWindowController: NSObject {
     private let layout: BottomUpEmojiFlowLayout
     private let scrollView: NSScrollView
     private let comparisonStack: NSStackView
-    private let guideLabel = NSTextField(
-        labelWithString: ""
-    )
-    private let recentTitle = NSTextField(labelWithString: "最近使った絵文字")
     private var selectedIndex: Int?
     private var selectedRecentIndex: Int?
     private var recentHistory: RecentEmojiHistory
     private let recentStack = NSStackView()
+    private let recentSeparator = NSView()
     private var recentButtons: [NSButton] = []
     private var visibleEntries: [Entry]
     private var searchQuery = ""
@@ -119,6 +133,8 @@ final class EmojiWindowController: NSObject {
     private var presentationVisibleFrame: NSRect?
     private var avoidedFrames: [NSRect] = []
     private(set) var isSearchConfirmed = false
+    private var outsideLocalMonitor: Any?
+    private var outsideGlobalMonitor: Any?
     private let romajiConverter = RomajiConverter()
     private let comparisonImageCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()
@@ -150,6 +166,8 @@ final class EmojiWindowController: NSObject {
             defer: true
         )
         super.init()
+        panel.animationBehavior = .none
+        comparisonPanel.animationBehavior = .none
         configurePanels()
         buildCollection()
     }
@@ -167,8 +185,6 @@ final class EmojiWindowController: NSObject {
     }
 
     func show(near anchor: NSRect) {
-        guideLabel.stringValue =
-            "Tab / 矢印 選択　Return 確定　Esc / \(MyIMFeatureShortcut.emoji.shortcut.displayName) 閉じる"
         selectedIndex = nil
         selectedRecentIndex = nil
         collectionView.selectionIndexPaths = []
@@ -183,7 +199,7 @@ final class EmojiWindowController: NSObject {
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         presentationAnchor = resolvedAnchor
         presentationVisibleFrame = visible
-        updateSearchText("")
+        setSearchQuery("")
         comparisonPanel.orderOut(nil)
         panel.orderFrontRegardless()
         scrollToPreferredEdge()
@@ -192,12 +208,14 @@ final class EmojiWindowController: NSObject {
             self.scrollToPreferredEdge()
         }
         EmojiGlobalHotKey.shared.beginPanelCapture()
+        startOutsideClickMonitoring()
         EmojiDiagnostics.logger.notice(
             "panel ordered size=\(String(describing: self.panel.frame.size), privacy: .public) origin=\(String(describing: self.panel.frame.origin), privacy: .public) visible=\(self.panel.isVisible, privacy: .public)"
         )
     }
 
     func hide() {
+        stopOutsideClickMonitoring()
         EmojiGlobalHotKey.shared.endPanelCapture()
         panel.orderOut(nil)
         comparisonPanel.orderOut(nil)
@@ -344,24 +362,38 @@ final class EmojiWindowController: NSObject {
             )
             selectRecent(index: min(index + 1, rowEnd))
         case .up:
-            let previous = index - Self.recentColumnCount
-            if previous >= 0 {
-                selectRecent(index: previous)
-            } else if layout.displaysBottomUp {
-                select(index: min(
-                    index % Self.recentColumnCount,
-                    visibleEntries.count - 1
-                ))
+            if layout.displaysBottomUp {
+                let next = index + Self.recentColumnCount
+                if next < count {
+                    selectRecent(index: next)
+                } else {
+                    select(index: min(
+                        index % Self.recentColumnCount,
+                        visibleEntries.count - 1
+                    ))
+                }
+            } else {
+                let previous = index - Self.recentColumnCount
+                if previous >= 0 {
+                    selectRecent(index: previous)
+                }
             }
         case .down:
-            let next = index + Self.recentColumnCount
-            if next < count {
-                selectRecent(index: next)
-            } else if !layout.displaysBottomUp {
-                select(index: min(
-                    index % Self.recentColumnCount,
-                    visibleEntries.count - 1
-                ))
+            if layout.displaysBottomUp {
+                let previous = index - Self.recentColumnCount
+                if previous >= 0 {
+                    selectRecent(index: previous)
+                }
+            } else {
+                let next = index + Self.recentColumnCount
+                if next < count {
+                    selectRecent(index: next)
+                } else {
+                    select(index: min(
+                        index % Self.recentColumnCount,
+                        visibleEntries.count - 1
+                    ))
+                }
             }
         }
     }
@@ -377,19 +409,33 @@ final class EmojiWindowController: NSObject {
         }
         comparisonStack.orientation = .horizontal
         comparisonStack.alignment = .top
+        comparisonStack.distribution = .fillEqually
         comparisonStack.spacing = 8
-        comparisonStack.edgeInsets = NSEdgeInsets(top: 9, left: 9, bottom: 9, right: 9)
+        comparisonStack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         comparisonPanel.contentView = comparisonStack
         recentStack.orientation = .vertical
         recentStack.alignment = .leading
         recentStack.spacing = Self.spacing
+        recentStack.edgeInsets = NSEdgeInsets(
+            top: Self.outerPadding,
+            left: 0,
+            bottom: Self.outerPadding,
+            right: 0
+        )
+        recentSeparator.wantsLayer = true
+        recentSeparator.layer?.backgroundColor = NSColor.separatorColor.cgColor
     }
 
     private func buildCollection() {
         layout.itemSize = NSSize(width: Self.cellSize, height: Self.cellSize)
         layout.minimumInteritemSpacing = Self.spacing
         layout.minimumLineSpacing = Self.spacing
-        layout.sectionInset = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+        layout.sectionInset = NSEdgeInsets(
+            top: Self.outerPadding,
+            left: Self.outerPadding,
+            bottom: Self.outerPadding,
+            right: Self.outerPadding
+        )
         collectionView.collectionViewLayout = layout
         collectionView.dataSource = self
         collectionView.delegate = self
@@ -405,20 +451,11 @@ final class EmojiWindowController: NSObject {
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
         scrollView.drawsBackground = false
-        let width = Self.cellSize * CGFloat(Self.columnCount)
-            + Self.spacing * CGFloat(Self.columnCount - 1) + 12
+        let width = Self.panelWidth
         let height = Self.maximumListHeight + Self.panelChromeHeight
         let contentSize = NSSize(width: width, height: height)
         let root = NSView(
             frame: NSRect(origin: .zero, size: contentSize)
-        )
-        guideLabel.font = PanelShortcutGuideStyle.font
-        guideLabel.textColor = PanelShortcutGuideStyle.color
-        scrollView.frame = NSRect(
-            x: 4,
-            y: 76,
-            width: width - 8,
-            height: Self.maximumListHeight
         )
         let rowCount = ceil(
             CGFloat(Self.entries.count) / CGFloat(Self.columnCount)
@@ -433,12 +470,9 @@ final class EmojiWindowController: NSObject {
             width: scrollView.contentSize.width,
             height: documentHeight
         )
-        recentTitle.font = .systemFont(ofSize: 12, weight: .semibold)
-        recentTitle.textColor = .secondaryLabelColor
         positionSections(listHeight: Self.maximumListHeight, width: width)
         root.addSubview(scrollView)
-        root.addSubview(guideLabel)
-        root.addSubview(recentTitle)
+        root.addSubview(recentSeparator)
         root.addSubview(recentStack)
         panel.contentView = root
         panel.setContentSize(contentSize)
@@ -455,13 +489,11 @@ final class EmojiWindowController: NSObject {
         if let katakana = romajiConverter.katakana(from: query) {
             queries.append(katakana)
         }
-        let matches = query.isEmpty ? Self.entries : Self.entries.filter { entry in
-            queries.contains { query in
-                EmojiSearchMatcher.matches(
-                    query: query,
-                    terms: [entry.emoji] + entry.searchTerms
-                )
-            }
+        let normalizedQueries = queries
+            .map(EmojiSearchMatcher.normalized)
+            .filter { !$0.isEmpty }
+        let matches = normalizedQueries.isEmpty ? Self.entries : Self.entries.filter { entry in
+            normalizedQueries.contains { entry.normalizedSearchText.contains($0) }
         }
         visibleEntries = matches
         selectedIndex = nil
@@ -499,6 +531,7 @@ final class EmojiWindowController: NSObject {
     }
 
     private func updatePanelPresentation() {
+        let previousDirection = layout.displaysBottomUp
         let rowCount = max(
             ceil(CGFloat(visibleEntries.count) / CGFloat(Self.columnCount)),
             1
@@ -553,29 +586,46 @@ final class EmojiWindowController: NSObject {
             overlapArea(of: lhs) < overlapArea(of: rhs)
         } ?? NSRect(origin: baseOrigin, size: size)
         layout.displaysBottomUp = frame.minY >= anchor.maxY
+        positionSections(listHeight: listHeight, width: size.width)
+        if previousDirection != layout.displaysBottomUp {
+            rebuildRecentArea()
+        }
         panel.setFrameOrigin(frame.origin)
         layout.invalidateLayout()
     }
 
     private func positionSections(listHeight: CGFloat, width: CGFloat) {
-        guideLabel.frame = NSRect(x: 8, y: 6, width: width - 16, height: 16)
         if layout.displaysBottomUp {
-            recentStack.frame = NSRect(x: 8, y: 28, width: width - 16, height: 26)
-            recentTitle.frame = NSRect(x: 8, y: 56, width: width - 16, height: 16)
-            scrollView.frame = NSRect(x: 4, y: 76, width: width - 8, height: listHeight)
+            recentStack.frame = NSRect(
+                x: 8, y: 8, width: width - 16,
+                height: Self.recentAreaHeight
+            )
+            recentSeparator.frame = NSRect(
+                x: 8,
+                y: Self.outerPadding + Self.recentAreaHeight
+                    + Self.outerPadding,
+                width: width - 16,
+                height: 1
+            )
+            scrollView.frame = NSRect(
+                x: 0,
+                y: Self.panelChromeHeight,
+                width: width,
+                height: listHeight
+            )
         } else {
-            scrollView.frame = NSRect(x: 4, y: 28, width: width - 8, height: listHeight)
+            scrollView.frame = NSRect(
+                x: 0, y: 0, width: width, height: listHeight
+            )
+            recentSeparator.frame = NSRect(
+                x: 8, y: listHeight + 8,
+                width: width - 16, height: 1
+            )
             recentStack.frame = NSRect(
                 x: 8,
-                y: listHeight + 32,
+                y: listHeight + 17,
                 width: width - 16,
-                height: 26
-            )
-            recentTitle.frame = NSRect(
-                x: 8,
-                y: listHeight + 60,
-                width: width - 16,
-                height: 16
+                height: Self.recentAreaHeight
             )
         }
     }
@@ -613,11 +663,15 @@ final class EmojiWindowController: NSObject {
             $0.removeFromSuperview()
         }
         recentButtons = []
-        for rowStart in stride(
+        let rowStarts = Array(stride(
             from: 0,
             to: recentHistory.emojis.count,
             by: Self.recentColumnCount
-        ) {
+        ))
+        let displayedRowStarts = layout.displaysBottomUp
+            ? Array(rowStarts.reversed())
+            : rowStarts
+        for rowStart in displayedRowStarts {
             let row = NSStackView()
             row.orientation = .horizontal
             row.spacing = Self.spacing
@@ -629,11 +683,15 @@ final class EmojiWindowController: NSObject {
                 let button = NSButton(title: recentHistory.emojis[index], target: self, action: #selector(selectRecentEmoji(_:)))
                 button.tag = index
                 button.isBordered = false
-                button.font = NSFont(name: "Apple Color Emoji", size: 18)
+                button.font = NSFont(name: "Apple Color Emoji", size: 22)
                 button.wantsLayer = true
                 button.layer?.cornerRadius = 0
-                button.widthAnchor.constraint(equalToConstant: Self.recentCellSize).isActive = true
-                button.heightAnchor.constraint(equalToConstant: Self.recentCellSize).isActive = true
+                button.widthAnchor.constraint(
+                    equalToConstant: Self.recentCellWidth
+                ).isActive = true
+                button.heightAnchor.constraint(
+                    equalToConstant: Self.recentCellHeight
+                ).isActive = true
                 row.addArrangedSubview(button)
                 recentButtons.append(button)
             }
@@ -648,8 +706,8 @@ final class EmojiWindowController: NSObject {
     }
 
     private func updateRecentSelection() {
-        for (index, button) in recentButtons.enumerated() {
-            button.layer?.backgroundColor = index == selectedRecentIndex
+        for button in recentButtons {
+            button.layer?.backgroundColor = button.tag == selectedRecentIndex
                 ? NSColor.controlAccentColor.cgColor
                 : NSColor.clear.cgColor
         }
@@ -667,12 +725,17 @@ final class EmojiWindowController: NSObject {
         comparisonStack.addArrangedSubview(
             bundledView(title: "Windows", platform: "Windows", entry: entry)
         )
-        comparisonPanel.setContentSize(NSSize(width: 260, height: 104))
+        let size = Self.comparisonPanelSize
+        comparisonPanel.setContentSize(size)
         let frame = panel.frame
         let visible = panel.screen?.visibleFrame ?? frame
-        let x = frame.maxX + 8 + 260 <= visible.maxX
-            ? frame.maxX + 8 : frame.minX - 268
-        comparisonPanel.setFrameOrigin(NSPoint(x: x, y: frame.maxY - 104))
+        let x = frame.maxX + 8 + size.width <= visible.maxX
+            ? frame.maxX + 8 : frame.minX - size.width - 8
+        let y = min(
+            max(frame.maxY - size.height, visible.minY),
+            visible.maxY - size.height
+        )
+        comparisonPanel.setFrameOrigin(NSPoint(x: x, y: y))
         comparisonPanel.orderFrontRegardless()
     }
 
@@ -731,6 +794,7 @@ final class EmojiWindowController: NSObject {
         content.heightAnchor.constraint(equalToConstant: 56).isActive = true
         let stack = NSStackView(views: [label, content])
         stack.orientation = .vertical
+        stack.alignment = .centerX
         stack.spacing = 3
         return stack
     }
@@ -875,7 +939,10 @@ final class EmojiWindowController: NSObject {
                 return Entry(
                     code: columns[0],
                     emoji: columns[1],
-                    searchTerms: searchTerms[columns[0]] ?? []
+                    normalizedSearchText: ([columns[1]]
+                        + (searchTerms[columns[0]] ?? []))
+                        .map(EmojiSearchMatcher.normalized)
+                        .joined(separator: "\t")
                 )
             }
             if !values.isEmpty { return values }
@@ -885,7 +952,7 @@ final class EmojiWindowController: NSObject {
                 code: emoji.unicodeScalars.filter { $0.value != 0xFE0F }
                     .map { String($0.value, radix: 16) }.joined(separator: "-"),
                 emoji: emoji,
-                searchTerms: []
+                normalizedSearchText: EmojiSearchMatcher.normalized(emoji)
             )
         }
     }
@@ -911,6 +978,45 @@ final class EmojiWindowController: NSObject {
                 })
         }
         return [:]
+    }
+
+    private func startOutsideClickMonitoring() {
+        stopOutsideClickMonitoring()
+        let events: NSEvent.EventTypeMask = [
+            .leftMouseDown, .rightMouseDown, .otherMouseDown
+        ]
+        outsideLocalMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: events
+        ) { [weak self] event in
+            self?.cancelIfClickIsOutside(at: NSEvent.mouseLocation)
+            return event
+        }
+        outsideGlobalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: events
+        ) { [weak self] _ in
+            let point = NSEvent.mouseLocation
+            DispatchQueue.main.async {
+                self?.cancelIfClickIsOutside(at: point)
+            }
+        }
+    }
+
+    private func stopOutsideClickMonitoring() {
+        if let monitor = outsideLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideLocalMonitor = nil
+        }
+        if let monitor = outsideGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideGlobalMonitor = nil
+        }
+    }
+
+    private func cancelIfClickIsOutside(at point: NSPoint) {
+        guard panel.isVisible,
+              !panel.frame.contains(point),
+              !comparisonPanel.frame.contains(point) else { return }
+        hide()
     }
 
     private static func resourceRoots() -> [URL] {

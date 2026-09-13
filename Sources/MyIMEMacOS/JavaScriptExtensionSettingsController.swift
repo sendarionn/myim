@@ -70,6 +70,7 @@ final class JavaScriptExtensionSettingsController: NSObject {
             backing: .buffered,
             defer: false
         )
+        panel.animationBehavior = .none
         panel.title = "JavaScript拡張"
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false

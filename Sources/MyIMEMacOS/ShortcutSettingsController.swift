@@ -78,6 +78,7 @@ final class ShortcutSettingsController: NSObject {
             backing: .buffered,
             defer: false
         )
+        panel.animationBehavior = .none
         panel.title = "ショートカット"
         panel.isReleasedWhenClosed = false
 

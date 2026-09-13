@@ -5,12 +5,7 @@ import MyIMECore
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
     private static weak var activeController: InputController?
-    private struct NeuralContextQuery: Equatable {
-        let input: String
-        let reading: String
-        let context: String
-    }
-
+    private static weak var emojiPanelController: InputController?
     private struct TabDictionaryRegistration {
         let originalInput: String
         let reading: String
@@ -70,8 +65,6 @@ final class InputController: IMKInputController {
         "FuzzySuggestionsEnabled"
     private static let dateTimeCandidatesEnabledDefaultsKey =
         "DateTimeCandidatesEnabled"
-    private static let neuralContextEnabledDefaultsKey =
-        "NeuralContextEnabled"
     private static let dateCandidateFormatsDefaultsKey =
         "DateCandidateFormats"
     private static let timeCandidateFormatsDefaultsKey =
@@ -115,11 +108,6 @@ final class InputController: IMKInputController {
     private var translationDraft: String?
     private var translationDraftCursor = 0
     private var translationTask: Task<Void, Never>?
-    private var neuralContextTask: Task<Void, Never>?
-    private let neuralContextProvider = NeuralContextCandidateProvider()
-    private var neuralContextQuery: NeuralContextQuery?
-    private var cachedNeuralContextQuery: NeuralContextQuery?
-    private var cachedNeuralCandidates: [String] = []
     private var recentCommittedContext = ""
     private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
@@ -158,6 +146,7 @@ final class InputController: IMKInputController {
     private let candidateSelectionHistoryWriter:
         DeferredJSONFileWriter<CandidateSelectionHistory>
     private var nextInputPredictionModel: NextInputPredictionModel
+    private var closingBracketTracker = ClosingBracketTracker()
     private let nextInputPredictionWriter:
         DeferredJSONFileWriter<NextInputPredictionModel>
     private var nextInputCandidates: [String] = []
@@ -167,6 +156,7 @@ final class InputController: IMKInputController {
     private var nextInputOutsideGlobalMonitor: Any?
     private let suggestionSearchSession = SuggestionSearchSession()
     private var officialCandidates: [String] = []
+    private var learnableOfficialCandidates = Set<String>()
     private var javaScriptExtensionCandidates: [String] = []
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
@@ -200,12 +190,13 @@ final class InputController: IMKInputController {
     }
 
     static func handleGlobalEmojiPanelCommand(_ command: UInt32) {
-        guard let controller = activeController,
-              let client = controller.activeInputClient,
+        guard let controller = activeController ?? emojiPanelController,
               controller.emojiWindow.isVisible else {
             EmojiGlobalHotKey.shared.endPanelCapture()
             return
         }
+        let client: Any? = controller.activeInputClient
+            ?? (controller.client() as Any?)
         switch command {
         case 4:
             guard controller.emojiWindow.canSelectEmoji else { return }
@@ -220,6 +211,7 @@ final class InputController: IMKInputController {
             guard controller.emojiWindow.canSelectEmoji else { return }
             controller.emojiWindow.moveSelection(.down)
         case 8, 9:
+            guard let client else { return }
             if let emoji = controller.emojiWindow.selectedEmoji {
                 controller.emojiWindow.recordUsage(emoji)
                 controller.emojiWindow.hide()
@@ -232,8 +224,11 @@ final class InputController: IMKInputController {
             }
             return
         case 10:
-            controller.clearCompositionForSystemPaste(in: client)
+            if let client {
+                controller.clearCompositionForSystemPaste(in: client)
+            }
             controller.emojiWindow.hide()
+            emojiPanelController = nil
         default:
             break
         }
@@ -357,6 +352,11 @@ final class InputController: IMKInputController {
                 clearCompositionForSystemPaste(in: sender)
                 emojiWindow.hide()
             case 51:
+                if inputBuffer.isEmpty {
+                    emojiWindow.hide()
+                    Self.emojiPanelController = nil
+                    return true
+                }
                 if !emojiWindow.isSearchConfirmed {
                     _ = deleteBackward(
                         from: sender,
@@ -419,8 +419,7 @@ final class InputController: IMKInputController {
         }
 
         if calendarWindow.isVisible {
-            calendarWindow.handleKeyEvent(event)
-            return true
+            return calendarWindow.handleKeyEvent(event)
         }
 
         if calendarFormatCandidates != nil {
@@ -554,7 +553,10 @@ final class InputController: IMKInputController {
             if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
                 if let selectedNextInputIndex,
                    nextInputCandidates.indices.contains(selectedNextInputIndex) {
-                    commit(nextInputCandidates[selectedNextInputIndex], to: sender)
+                    commitNextInputCandidate(
+                        nextInputCandidates[selectedNextInputIndex],
+                        to: sender
+                    )
                     return true
                 }
                 dismissNextInputSuggestions(clearMarkedTextIn: sender)
@@ -711,6 +713,7 @@ final class InputController: IMKInputController {
     private func openSettingsWindow(_ sender: Any?) {
         if let settingsWindow {
             resetSettingsScrollPosition(settingsWindow)
+            placeSettingsWindowOnActiveScreen(settingsWindow)
             NSApp.activate(ignoringOtherApps: true)
             settingsWindow.makeKeyAndOrderFront(nil)
             return
@@ -722,10 +725,28 @@ final class InputController: IMKInputController {
             actions: settingsActions
         )
         settingsWindow = panel
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         resetSettingsScrollPosition(panel)
+        placeSettingsWindowOnActiveScreen(panel)
         NSApp.activate(ignoringOtherApps: true)
-        panel.center()
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func placeSettingsWindowOnActiveScreen(_ window: NSWindow) {
+        let inputFrame = activeInputClient.map { inputLocation(for: $0) }
+            ?? .zero
+        let pointer = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first {
+            inputFrame != .zero && $0.frame.intersects(inputFrame)
+        } ?? NSScreen.screens.first {
+            $0.frame.contains(pointer)
+        } ?? NSScreen.main
+        guard let visibleFrame = screen?.visibleFrame else { return }
+        let origin = NSPoint(
+            x: visibleFrame.midX - window.frame.width / 2,
+            y: visibleFrame.midY - window.frame.height / 2
+        )
+        window.setFrameOrigin(origin)
     }
 
     private func resetSettingsScrollPosition(_ window: NSWindow) {
@@ -744,7 +765,6 @@ final class InputController: IMKInputController {
             googleJapaneseInput: isGoogleJapaneseInputEnabled,
             appleTranslation: isAppleTranslationEnabled,
             nextInputPrediction: isNextInputPredictionEnabled,
-            neuralContext: isNeuralContextEnabled,
             fuzzySuggestions: isFuzzySuggestionsEnabled,
             dateTimeCandidates: isDateTimeCandidatesEnabled,
             externalInformationPanel: isExternalInformationPanelEnabled,
@@ -761,7 +781,6 @@ final class InputController: IMKInputController {
             toggleGoogleJapaneseInput: #selector(toggleGoogleJapaneseInput(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
-            toggleNeuralContext: #selector(toggleNeuralContext(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
@@ -783,10 +802,15 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleShortcutGuides(_ sender: Any?) {
+        let enabled = checkboxValue(
+            sender,
+            current: PanelShortcutGuideStyle.isEnabled
+        )
         UserDefaults.standard.set(
-            !PanelShortcutGuideStyle.isEnabled,
+            enabled,
             forKey: PanelShortcutGuideStyle.enabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         guard let inputClient = client() else {
             candidateWindow.hide()
             fuzzySuggestionWindow.hide()
@@ -807,7 +831,8 @@ final class InputController: IMKInputController {
                 )),
                 selectedIndex: nil,
                 near: candidateWindow.frame,
-                avoidingFrames: candidateWindow.auxiliaryFrames,
+                avoidingFrames: [candidateWindow.frame]
+                    + candidateWindow.auxiliaryFrames,
                 isAccented: isTranslationModeEnabled
             )
         }
@@ -1021,11 +1046,12 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleNextInputPrediction(_ sender: Any?) {
-        let enabled = !isNextInputPredictionEnabled
+        let enabled = checkboxValue(sender, current: isNextInputPredictionEnabled)
         UserDefaults.standard.set(
             enabled,
             forKey: Self.nextInputEnabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         if !enabled {
             dismissNextInputSuggestions(clearMarkedTextIn: client())
             nextInputPredictionModel.breakSequence()
@@ -1033,79 +1059,13 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func toggleNeuralContext(_ sender: Any?) {
-        let enabled = !isNeuralContextEnabled
-        if enabled, !neuralContextModelIsInstalled {
-            offerNeuralContextModelDownload()
-            return
-        }
+    private func toggleFuzzySuggestions(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: isFuzzySuggestionsEnabled)
         UserDefaults.standard.set(
             enabled,
-            forKey: Self.neuralContextEnabledDefaultsKey
-        )
-        if !enabled {
-            resetNeuralContextRanking()
-        }
-        if !inputBuffer.isEmpty, let inputClient = client() {
-            refreshCandidates(client: inputClient)
-        }
-    }
-
-    private func offerNeuralContextModelDownload() {
-        let alert = NSAlert()
-        alert.messageText = "Zenzaiモデルをダウンロード"
-        alert.informativeText = "ニューラル文脈変換に約74MBのモデルが必要です"
-        alert.addButton(withTitle: "ダウンロード")
-        alert.addButton(withTitle: "キャンセル")
-        NSApp.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        Task { @MainActor [weak self] in
-            do {
-                try await self?.downloadNeuralContextModel()
-                UserDefaults.standard.set(
-                    true,
-                    forKey: Self.neuralContextEnabledDefaultsKey
-                )
-                self?.settingsWindow?.close()
-                self?.settingsWindow = nil
-            } catch {
-                let failure = NSAlert()
-                failure.messageText = "Zenzaiモデルをダウンロードできません"
-                failure.informativeText = error.localizedDescription
-                failure.addButton(withTitle: "閉じる")
-                failure.runModal()
-            }
-        }
-    }
-
-    private func downloadNeuralContextModel() async throws {
-        guard let destination = NeuralContextCandidateProvider.modelURL() else {
-            throw CocoaError(.fileNoSuchFile)
-        }
-        let directory = destination.deletingLastPathComponent()
-        try FileManager.default.createDirectory(
-            at: directory,
-            withIntermediateDirectories: true
-        )
-        let (temporaryURL, response) = try await URLSession.shared.download(
-            from: NeuralContextCandidateProvider.modelDownloadURL
-        )
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-        try FileManager.default.moveItem(at: temporaryURL, to: destination)
-    }
-
-    @objc
-    private func toggleFuzzySuggestions(_ sender: Any?) {
-        UserDefaults.standard.set(
-            !isFuzzySuggestionsEnabled,
             forKey: Self.fuzzySuggestionsEnabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         cancelFuzzySuggestionSearch()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             fuzzySuggestionWindow.hide()
@@ -1116,10 +1076,12 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleDateTimeCandidates(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: isDateTimeCandidatesEnabled)
         UserDefaults.standard.set(
-            !isDateTimeCandidatesEnabled,
+            enabled,
             forKey: Self.dateTimeCandidatesEnabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
         }
@@ -1159,17 +1121,18 @@ final class InputController: IMKInputController {
     private func toggleEnglishCompletion(_ sender: Any?) {
         toggleCandidateSource(
             defaultsKey: Self.englishCompletionEnabledDefaultsKey,
-            currentlyEnabled: isEnglishCompletionEnabled
+            enabled: checkboxValue(sender, current: isEnglishCompletionEnabled)
         )
     }
 
     @objc
     private func toggleWikipediaSuggestions(_ sender: Any?) {
-        let enabled = !isWikipediaSuggestionsEnabled
+        let enabled = checkboxValue(sender, current: isWikipediaSuggestionsEnabled)
         UserDefaults.standard.set(
             enabled,
             forKey: Self.wikipediaSuggestionsEnabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         resetOfficialCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
@@ -1181,10 +1144,12 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleGoogleJapaneseInput(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: isGoogleJapaneseInputEnabled)
         UserDefaults.standard.set(
-            !isGoogleJapaneseInputEnabled,
+            enabled,
             forKey: Self.googleJapaneseInputEnabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         resetOfficialCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
@@ -1192,10 +1157,12 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleAppleTranslation(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: isAppleTranslationEnabled)
         UserDefaults.standard.set(
-            !isAppleTranslationEnabled,
+            enabled,
             forKey: Self.appleTranslationEnabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         resetOfficialCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
@@ -1238,7 +1205,11 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleWebSearch(_ sender: Any?) {
-        UserDefaults.standard.set(!isWebSearchEnabled, forKey: Self.webSearchEnabledDefaultsKey)
+        UserDefaults.standard.set(
+            checkboxValue(sender, current: isWebSearchEnabled),
+            forKey: Self.webSearchEnabledDefaultsKey
+        )
+        UserDefaults.standard.synchronize()
     }
 
     @objc
@@ -1255,13 +1226,15 @@ final class InputController: IMKInputController {
     private func resetOfficialCandidates() {
         suggestionSearchSession.cancel(.official)
         officialCandidates = []
+        learnableOfficialCandidates = []
     }
 
     private func toggleCandidateSource(
         defaultsKey: String,
-        currentlyEnabled: Bool
+        enabled: Bool
     ) {
-        UserDefaults.standard.set(!currentlyEnabled, forKey: defaultsKey)
+        UserDefaults.standard.set(enabled, forKey: defaultsKey)
+        UserDefaults.standard.synchronize()
         rebuildFuzzyConversionEngine()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
@@ -1274,20 +1247,35 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleExternalInformationPanel(_ sender: Any?) {
+        let enabled = checkboxValue(
+            sender,
+            current: isExternalInformationPanelEnabled
+        )
         UserDefaults.standard.set(
-            !isExternalInformationPanelEnabled,
+            enabled,
             forKey: Self.externalInformationPanelEnabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         refreshExperimentalPreview()
     }
 
     @objc
     private func toggleSystemDictionaryPreview(_ sender: Any?) {
+        let enabled = checkboxValue(
+            sender,
+            current: isSystemDictionaryPreviewEnabled
+        )
         UserDefaults.standard.set(
-            !isSystemDictionaryPreviewEnabled,
+            enabled,
             forKey: Self.systemDictionaryPreviewEnabledDefaultsKey
         )
+        UserDefaults.standard.synchronize()
         refreshExperimentalPreview()
+    }
+
+    private func checkboxValue(_ sender: Any?, current: Bool) -> Bool {
+        guard let button = sender as? NSButton else { return !current }
+        return button.state == .on
     }
 
     @objc
@@ -1681,7 +1669,10 @@ final class InputController: IMKInputController {
         else {
             return
         }
-        commit(nextInputCandidates[selectedNextInputIndex], to: sender)
+        commitNextInputCandidate(
+            nextInputCandidates[selectedNextInputIndex],
+            to: sender
+        )
     }
 
     private func handleTab(_ event: NSEvent, client sender: Any) -> Bool {
@@ -2199,6 +2190,7 @@ final class InputController: IMKInputController {
             EmojiDiagnostics.logger.notice("hiding emoji panel")
             clearCompositionForSystemPaste(in: sender)
             emojiWindow.hide()
+            Self.emojiPanelController = nil
             return
         }
         EmojiDiagnostics.logger.notice("showing emoji panel")
@@ -2206,6 +2198,7 @@ final class InputController: IMKInputController {
         candidateWindow.hide()
         previewWindow.hide()
         emojiWindow.show(near: inputLocation(for: sender))
+        Self.emojiPanelController = self
         updateEmojiSearchFromComposition()
     }
 
@@ -2717,10 +2710,6 @@ final class InputController: IMKInputController {
         reloadUserDictionaryFromDiskIfNeeded()
         longVowelFilterProtectedCandidates = []
         updateTranslationModeStatus(client: sender)
-        cancelFuzzySuggestionSearch()
-        fuzzySuggestionWindow.hide()
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
         updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
         let calculatorCandidates = CalculatorCandidateGenerator.candidates(
             for: inputBuffer
@@ -2863,7 +2852,7 @@ final class InputController: IMKInputController {
         longVowelFilterProtectedCandidates = Set(
             userCandidates.exact + basicCandidates.exact + imeCandidates.exact
         )
-        replaceCurrentCandidates(with: CandidatePipeline().candidates(
+        let orderedCandidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
                 kana: kanaCandidates,
                 direct: directCandidates,
@@ -2876,12 +2865,8 @@ final class InputController: IMKInputController {
                 contextualCandidates: contextualCandidates,
                 prioritizeKana: kanaCandidates.first?.count == 1
             )
-        ))
-
-        updateNeuralContextCandidates(
-            reading: kanaCandidates.first ?? conversionReading,
-            client: sender
         )
+        replaceCurrentCandidates(with: orderedCandidates)
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
@@ -2896,68 +2881,6 @@ final class InputController: IMKInputController {
             near: auxiliaryAnchorFrame
         )
         showInputPreview(client: sender)
-    }
-
-    private func updateNeuralContextCandidates(
-        reading: String,
-        client sender: Any
-    ) {
-        guard isNeuralContextEnabled,
-              !secureInputPassthroughActive,
-              let modelURL = NeuralContextCandidateProvider.modelURL(),
-              FileManager.default.fileExists(atPath: modelURL.path),
-              !reading.isEmpty,
-              !currentCandidates.isEmpty else {
-            resetNeuralContextRanking()
-            return
-        }
-        let context = leftSideContext(from: sender)
-        guard !context.isEmpty else {
-            resetNeuralContextRanking()
-            return
-        }
-        let query = NeuralContextQuery(
-            input: conversionReading,
-            reading: reading,
-            context: context
-        )
-        if cachedNeuralContextQuery == query {
-            replaceCurrentCandidates(with: NeuralCandidateRanker.ordered(
-                currentCandidates,
-                neuralCandidates: cachedNeuralCandidates
-            ))
-            return
-        }
-        if neuralContextQuery == query, neuralContextTask != nil {
-            return
-        }
-        neuralContextTask?.cancel()
-        neuralContextQuery = query
-        cachedNeuralContextQuery = nil
-        cachedNeuralCandidates = []
-        let provider = neuralContextProvider
-        neuralContextTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(80))
-            guard !Task.isCancelled else { return }
-            let neuralCandidates = await provider.candidates(
-                for: reading,
-                context: context,
-                modelURL: modelURL,
-                limit: Self.maximumCandidateCount * 3
-            )
-            guard let self, !Task.isCancelled,
-                  self.neuralContextQuery == query,
-                  self.conversionReading == query.input,
-                  !self.inputBuffer.isEmpty else { return }
-            self.neuralContextTask = nil
-            self.cachedNeuralContextQuery = query
-            self.cachedNeuralCandidates = neuralCandidates
-            self.replaceCurrentCandidates(with: NeuralCandidateRanker.ordered(
-                self.currentCandidates,
-                neuralCandidates: neuralCandidates
-            ))
-            self.showCandidateWindow(client: sender)
-        }
     }
 
     private func replaceCurrentCandidates(with candidates: [String]) {
@@ -2992,48 +2915,22 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func resetNeuralContextRanking() {
-        neuralContextTask?.cancel()
-        neuralContextTask = nil
-        neuralContextQuery = nil
-        cachedNeuralContextQuery = nil
-        cachedNeuralCandidates = []
-    }
-
-    private func leftSideContext(from sender: Any) -> String {
-        guard let textClient = sender as? IMKTextInput else {
-            return recentCommittedContext
-        }
-        let markedRange = textClient.markedRange()
-        let selectedRange = textClient.selectedRange()
-        let end = markedRange.location != NSNotFound
-            ? markedRange.location
-            : selectedRange.location
-        if end != NSNotFound, end > 0 {
-            let length = min(end, 256)
-            let range = NSRange(location: end - length, length: length)
-            if let context = textClient.attributedSubstring(from: range)?.string,
-               !context.isEmpty {
-                return context
-            }
-        }
-        return recentCommittedContext
-    }
-
     private func updateFuzzySuggestionsIfNeeded(
         near anchorFrame: NSRect
     ) {
-        suggestionSearchSession.cancel(.fuzzy)
         guard isFuzzySuggestionsEnabled,
               conversionReading.count >= 2 else {
+            suggestionSearchSession.cancel(.fuzzy)
             fuzzySuggestionWindow.hide()
             fuzzySuggestions = []
             selectedFuzzySuggestionIndex = nil
             return
         }
-        fuzzySuggestionWindow.hide()
-
         let query = conversionReading
+        guard suggestionSearchSession.query(for: .fuzzy) != query else {
+            return
+        }
+        suggestionSearchSession.cancel(.fuzzy)
         let mozcDictionary = mozcConversionEngine
         let basicDictionary = basicConversionEngine
         let compoundGenerator = compoundDictionaryCandidateGenerator
@@ -3140,7 +3037,7 @@ final class InputController: IMKInputController {
             ranks: candidateSelectionRanks(for: conversionReading)
         )
         var seenCandidates = Set<String>()
-        fuzzySuggestions = zip(suggestionTiers, orderedTierIndices).flatMap {
+        let updatedSuggestions = zip(suggestionTiers, orderedTierIndices).flatMap {
             suggestions, indices in
             indices.compactMap { index in
                 let suggestion = suggestions[index]
@@ -3149,6 +3046,11 @@ final class InputController: IMKInputController {
                     : nil
             }
         }
+        if updatedSuggestions == fuzzySuggestions,
+           fuzzySuggestionWindow.isVisible {
+            return
+        }
+        fuzzySuggestions = updatedSuggestions
         selectedFuzzySuggestionIndex = nil
         guard !fuzzySuggestions.isEmpty else {
             fuzzySuggestionWindow.hide()
@@ -3160,7 +3062,8 @@ final class InputController: IMKInputController {
             )),
             selectedIndex: nil,
             near: candidateWindow.frame,
-            avoidingFrames: candidateWindow.auxiliaryFrames,
+            avoidingFrames: [candidateWindow.frame]
+                + candidateWindow.auxiliaryFrames,
             isAccented: isTranslationModeEnabled
         )
         if let inputClient = client() {
@@ -3249,7 +3152,8 @@ final class InputController: IMKInputController {
             )),
             selectedIndex: nil,
             near: candidateWindow.frame,
-            avoidingFrames: candidateWindow.auxiliaryFrames,
+            avoidingFrames: [candidateWindow.frame]
+                + candidateWindow.auxiliaryFrames,
             isAccented: isTranslationModeEnabled
         )
         return true
@@ -3375,7 +3279,8 @@ final class InputController: IMKInputController {
             suggestions: Array(fuzzySuggestions[pageStart..<pageEnd]),
             selectedIndex: selectedIndex - pageStart,
             near: candidateWindow.frame,
-            avoidingFrames: candidateWindow.auxiliaryFrames,
+            avoidingFrames: [candidateWindow.frame]
+                + candidateWindow.auxiliaryFrames,
             isAccented: isTranslationModeEnabled
         )
     }
@@ -3417,6 +3322,7 @@ final class InputController: IMKInputController {
             return
         }
         officialCandidates = []
+        learnableOfficialCandidates = []
         let japaneseInput = romajiConverter.hiragana(from: input) ?? input
         let token = suggestionSearchSession.begin(.official, query: input)
         let task = Task { @MainActor [weak self] in
@@ -3433,7 +3339,8 @@ final class InputController: IMKInputController {
                     for: japaneseInput,
                     sentenceMode: false
                 )
-                let suggestions = await wikipedia + google + apple
+                let results = await (wikipedia, google, apple)
+                let suggestions = results.0 + results.1 + results.2
                 try Task.checkCancellation()
                 guard suggestionSearchSession.isCurrent(token),
                       isWikipediaSuggestionsEnabled
@@ -3444,6 +3351,7 @@ final class InputController: IMKInputController {
                 }
                 var seen = Set<String>()
                 officialCandidates = suggestions.filter { seen.insert($0).inserted }
+                learnableOfficialCandidates = Set(results.0 + results.1)
                 if let inputClient = client() {
                     refreshCandidates(client: inputClient)
                 }
@@ -3775,6 +3683,10 @@ final class InputController: IMKInputController {
             guide = "Tab / 矢印 選択・移動　↩ 確定　Esc 解除\n\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 辞書登録　⌘X 削除　\(MyIMFeatureShortcut.webSearch.shortcut.displayName) Web検索　\(MyIMFeatureShortcut.externalInformation.shortcut.displayName) 外部ページ"
         }
 
+        if isFuzzySuggestionsEnabled && !isDictionaryRegistration {
+            guide += "\n←→ 通常 / もしかして切替　⇧Tab もしかして"
+        }
+
         if !candidateFilterConditions.isEmpty {
             guide += "\n文字入力 次の条件を追加"
         }
@@ -3793,6 +3705,11 @@ final class InputController: IMKInputController {
                 ? "登録したい文字列を入力"
                 : (isTranslationInput ? "翻訳する日本語" : nil)),
             isAccented: isTranslationInput
+        )
+        fuzzySuggestionWindow.reposition(
+            near: candidateWindow.frame,
+            avoidingFrames: [candidateWindow.frame]
+                + candidateWindow.auxiliaryFrames
         )
         if emojiWindow.isVisible {
             let frames = [candidateWindow.visibleFrame, fuzzySuggestionWindow.visibleFrame]
@@ -3829,7 +3746,10 @@ final class InputController: IMKInputController {
             else {
                 return false
             }
-            commit(nextInputCandidates[selectedNextInputIndex], to: sender)
+            commitNextInputCandidate(
+                nextInputCandidates[selectedNextInputIndex],
+                to: sender
+            )
             return true
         }
 
@@ -3885,6 +3805,20 @@ final class InputController: IMKInputController {
         reading: String? = nil
     ) {
         let learnedReading = reading ?? conversionReading
+        if learnableOfficialCandidates.contains(candidate),
+           !learnedReading.isEmpty {
+            do {
+                try saveUserDictionaryEntry(
+                    reading: learnedReading,
+                    candidate: candidate
+                )
+            } catch {
+                NSLog(
+                    "外部API候補のユーザー辞書登録に失敗: %@",
+                    error.localizedDescription
+                )
+            }
+        }
         candidateSelectionHistory.record(
             candidate,
             readings: RomajiCanonicalizer.dictionaryLookupInputs(
@@ -4083,6 +4017,15 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func commitNextInputCandidate(_ value: String, to sender: Any) {
+        commit(
+            value,
+            to: sender,
+            recordsInputHistory: closingBracketTracker
+                .shouldRecordAsNextInput(value)
+        )
+    }
+
     private func commit(
         _ value: String,
         to sender: Any,
@@ -4109,10 +4052,10 @@ final class InputController: IMKInputController {
             value,
             replacementRange: replacementRange
         )
+        closingBracketTracker.consume(value)
         recentCommittedContext = String(
             (recentCommittedContext + value).suffix(256)
         )
-        resetNeuralContextRanking()
         suggestionSearchSession.cancelAll()
         inputBuffer = ""
         inputCursor = 0
@@ -4130,9 +4073,13 @@ final class InputController: IMKInputController {
         clearCalendarSelection()
         resetCandidateFilters()
         if recordsInputHistory {
+            let structuralCandidates = closingBracketTracker.candidate.map {
+                [$0]
+            } ?? []
             recordCommittedInput(
                 historyValue ?? value,
-                preferredCandidates: preferredNextInputCandidates,
+                preferredCandidates: structuralCandidates
+                    + preferredNextInputCandidates,
                 breakPreviousSequence: beginsAfterLineBreak,
                 client: sender
             )
@@ -4169,7 +4116,6 @@ final class InputController: IMKInputController {
     private func resetTransientInteractionState() {
         translationTask?.cancel()
         translationTask = nil
-        resetNeuralContextRanking()
         calendarFormatTask?.cancel()
         calendarFormatTask = nil
         dictionaryDefinitionTask?.cancel()
@@ -4308,7 +4254,12 @@ final class InputController: IMKInputController {
             isAccented: isTranslationModeEnabled
         )
         startNextInputOutsideClickMonitoring()
-        scheduleNextInputDismissal()
+        if closingBracketTracker.candidate == nil {
+            scheduleNextInputDismissal()
+        } else {
+            nextInputDismissTimer?.invalidate()
+            nextInputDismissTimer = nil
+        }
     }
 
     private func scheduleNextInputDismissal() {
@@ -4502,7 +4453,9 @@ final class InputController: IMKInputController {
         let inputFrame = inputLocation(for: sender)
         var baseAnchorFrame = currentCandidates.isEmpty
             ? inputFrame
-            : inputFrame.union(candidateWindow.frame)
+            : inputFrame.union(
+                candidateWindow.visibleFrame ?? candidateWindow.frame
+            )
         let tipsText = selectedCandidate ?? inputBuffer
         if let tips = SymbolTips.make(for: tipsText) {
             symbolTipsWindow.show(tips, beside: baseAnchorFrame)
@@ -4540,7 +4493,8 @@ final class InputController: IMKInputController {
     }
 
     private func showPreview(for candidate: String) {
-        var anchorFrame = candidateWindow.frame
+        var anchorFrame = candidateWindow.visibleFrame
+            ?? candidateWindow.frame
         if let inputClient = client() {
             anchorFrame = anchorFrame.union(
                 inputLocation(for: inputClient)
@@ -4597,6 +4551,8 @@ final class InputController: IMKInputController {
             url: url,
             panelTitle: url?.host ?? "外部情報",
             definitions: [],
+            definitionsPending: includeDefinitions
+                && isSystemDictionaryPreviewEnabled,
             showExternalInformation: isExternalInformationPanelEnabled,
             beside: anchorFrame
         )
@@ -4731,19 +4687,6 @@ final class InputController: IMKInputController {
         return UserDefaults.standard.bool(
             forKey: Self.nextInputEnabledDefaultsKey
         )
-    }
-
-    private var isNeuralContextEnabled: Bool {
-        UserDefaults.standard.bool(
-            forKey: Self.neuralContextEnabledDefaultsKey
-        )
-    }
-
-    private var neuralContextModelIsInstalled: Bool {
-        guard let url = NeuralContextCandidateProvider.modelURL() else {
-            return false
-        }
-        return FileManager.default.fileExists(atPath: url.path)
     }
 
     private var isExternalInformationPanelEnabled: Bool {

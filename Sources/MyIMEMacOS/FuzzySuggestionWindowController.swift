@@ -37,6 +37,8 @@ final class FuzzySuggestionWindowController {
             : panel.frame
     }
 
+    var isVisible: Bool { panel.isVisible }
+
     init() {
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
@@ -52,6 +54,8 @@ final class FuzzySuggestionWindowController {
         )
         stackView = NSStackView()
         guideLabel = NSTextField(labelWithString: "")
+        panel.animationBehavior = .none
+        guidePanel.animationBehavior = .none
         stackView.wantsLayer = true
         stackView.layer?.cornerRadius = 0
         stackView.orientation = .vertical
@@ -100,19 +104,9 @@ final class FuzzySuggestionWindowController {
             $0.frame.intersects(anchorFrame)
         } ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame ?? anchorFrame
-        stackView.arrangedSubviews.forEach {
-            stackView.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
         let visibleSuggestions = Array(
             suggestions.prefix(Self.maximumVisibleSuggestionCount)
         )
-
-        let guideText = selectedIndex == nil
-            ? "Tabで通常候補を選択後、左右矢印で移動"
-            : "矢印 移動　Return 確定　Esc 戻る"
-        let hasGuide = PanelShortcutGuideStyle.isEnabled
-        guideLabel.stringValue = guideText
 
         let itemWidths = visibleSuggestions.map(itemWidth)
         let availableWidth = min(
@@ -127,13 +121,11 @@ final class FuzzySuggestionWindowController {
             ),
             availableWidth
         )
-        for (index, suggestion) in visibleSuggestions.enumerated() {
-            stackView.addArrangedSubview(suggestionView(
-                suggestion,
-                width: targetWidth,
-                isSelected: index == selectedIndex
-            ))
-        }
+        updateSuggestionRows(
+            visibleSuggestions,
+            width: targetWidth,
+            selectedIndex: selectedIndex
+        )
 
         stackView.layoutSubtreeIfNeeded()
         let fittingSize = stackView.fittingSize
@@ -142,38 +134,16 @@ final class FuzzySuggestionWindowController {
             height: fittingSize.height
         ))
 
-        if hasGuide {
-            let guideTextWidth = ceil((guideText as NSString).size(
-                withAttributes: [.font: PanelShortcutGuideStyle.font]
-            ).width)
-            let guideTextHeight = ceil(guideLabel.attributedStringValue.size().height)
-            let guideSize = NSSize(
-                width: guideTextWidth
-                    + PanelShortcutGuideStyle.horizontalPadding * 2,
-                height: guideTextHeight
-                    + PanelShortcutGuideStyle.verticalPadding * 2
-            )
-            guidePanel.setContentSize(guideSize)
-            guideLabel.frame = NSRect(
-                x: PanelShortcutGuideStyle.horizontalPadding,
-                y: PanelShortcutGuideStyle.verticalPadding,
-                width: guideTextWidth,
-                height: guideTextHeight
-            )
-        }
-
         positionPanels(
             near: anchorFrame,
             visibleFrame: visibleFrame,
-            hasGuide: hasGuide,
+            hasGuide: false,
             avoidingFrames: avoidingFrames
         )
-        panel.orderFrontRegardless()
-        if hasGuide {
-            guidePanel.orderFrontRegardless()
-        } else {
-            guidePanel.orderOut(nil)
+        if !panel.isVisible {
+            panel.orderFrontRegardless()
         }
+        guidePanel.orderOut(nil)
     }
 
     private func itemWidth(for suggestion: FuzzySuggestion) -> CGFloat {
@@ -201,26 +171,49 @@ final class FuzzySuggestionWindowController {
         )
     }
 
-    private func suggestionView(
-        _ suggestion: FuzzySuggestion,
+    private func updateSuggestionRows(
+        _ suggestions: [FuzzySuggestion],
         width: CGFloat,
-        isSelected: Bool
-    ) -> NSView {
-        let item = CandidatePanelRowView(frame: .zero)
-        item.configure(
-            text: suggestion.candidate,
-            isSelected: isSelected
-        )
-        NSLayoutConstraint.activate([
-            item.widthAnchor.constraint(equalToConstant: width),
-            item.heightAnchor.constraint(equalToConstant: Self.itemHeight)
-        ])
-        return item
+        selectedIndex: Int?
+    ) {
+        while stackView.arrangedSubviews.count > suggestions.count {
+            guard let last = stackView.arrangedSubviews.last else { break }
+            stackView.removeArrangedSubview(last)
+            last.removeFromSuperview()
+        }
+        while stackView.arrangedSubviews.count < suggestions.count {
+            stackView.addArrangedSubview(CandidatePanelRowView(frame: .zero))
+        }
+        for (index, suggestion) in suggestions.enumerated() {
+            guard let row = stackView.arrangedSubviews[index]
+                as? CandidatePanelRowView else { continue }
+            row.setFixedSize(width: width, height: Self.itemHeight)
+            row.configure(
+                text: suggestion.candidate,
+                isSelected: index == selectedIndex
+            )
+        }
     }
 
     func hide() {
         panel.orderOut(nil)
         guidePanel.orderOut(nil)
+    }
+
+    func reposition(
+        near anchorFrame: NSRect,
+        avoidingFrames: [NSRect] = []
+    ) {
+        guard panel.isVisible else { return }
+        let screen = NSScreen.screens.first {
+            $0.frame.intersects(anchorFrame)
+        } ?? NSScreen.main
+        positionPanels(
+            near: anchorFrame,
+            visibleFrame: screen?.visibleFrame ?? anchorFrame,
+            hasGuide: guidePanel.isVisible,
+            avoidingFrames: avoidingFrames
+        )
     }
 
     private func positionPanels(
@@ -261,36 +254,140 @@ final class FuzzySuggestionWindowController {
             )
             panelX = visibleFrame.minX
         }
-        let panelY = min(
+        let alignedPanelY = min(
             max(anchorFrame.maxY - panel.frame.height, visibleFrame.minY),
             visibleFrame.maxY - panel.frame.height
+        )
+        let panelY = nonOverlappingY(
+            preferredY: alignedPanelY,
+            panelX: panelX,
+            visibleFrame: visibleFrame,
+            avoidingFrames: avoidingFrames
         )
         panel.setFrameOrigin(NSPoint(
             x: panelX,
             y: panelY
         ))
         guard hasGuide else { return }
-        let guideX = min(
+        guidePanel.setFrameOrigin(guideOrigin(
+            visibleFrame: visibleFrame,
+            avoidingFrames: [panel.frame] + avoidingFrames
+        ))
+    }
+
+    private func guideOrigin(
+        visibleFrame: NSRect,
+        avoidingFrames: [NSRect]
+    ) -> NSPoint {
+        let size = guidePanel.frame.size
+        let alignedX = min(
             max(panel.frame.minX, visibleFrame.minX),
-            visibleFrame.maxX - guidePanel.frame.width
+            visibleFrame.maxX - size.width
         )
-        var guideY = panel.frame.minY - Self.guideSpacing - guidePanel.frame.height
-        var guideFrame = NSRect(
-            x: guideX,
-            y: guideY,
-            width: guidePanel.frame.width,
-            height: guidePanel.frame.height
+        let preferred = NSPoint(
+            x: alignedX,
+            y: panel.frame.minY - Self.guideSpacing - size.height
         )
-        for avoidedFrame in avoidingFrames where guideFrame.intersects(avoidedFrame) {
-            guideY = avoidedFrame.minY - Self.guideSpacing - guidePanel.frame.height
-            guideFrame.origin.y = guideY
+        let rawCandidates = [preferred]
+            + avoidingFrames.flatMap { avoided in
+                [
+                    NSPoint(
+                        x: alignedX,
+                        y: avoided.minY - Self.guideSpacing - size.height
+                    ),
+                    NSPoint(
+                        x: alignedX,
+                        y: avoided.maxY + Self.guideSpacing
+                    ),
+                    NSPoint(
+                        x: avoided.minX - Self.guideSpacing - size.width,
+                        y: panel.frame.minY
+                    ),
+                    NSPoint(
+                        x: avoided.maxX + Self.guideSpacing,
+                        y: panel.frame.minY
+                    )
+                ]
+            }
+        let candidates = rawCandidates.filter { origin in
+            visibleFrame.contains(NSRect(origin: origin, size: size))
         }
-        if guideY < visibleFrame.minY {
-            guideY = min(
-                panel.frame.maxY + Self.guideSpacing,
-                visibleFrame.maxY - guidePanel.frame.height
+        let ranked = candidates.sorted { lhs, rhs in
+            let lhsFrame = NSRect(origin: lhs, size: size)
+            let rhsFrame = NSRect(origin: rhs, size: size)
+            let lhsOverlap = overlapArea(
+                frame: lhsFrame,
+                avoidingFrames: avoidingFrames
             )
+            let rhsOverlap = overlapArea(
+                frame: rhsFrame,
+                avoidingFrames: avoidingFrames
+            )
+            if lhsOverlap != rhsOverlap { return lhsOverlap < rhsOverlap }
+            return hypot(lhs.x - preferred.x, lhs.y - preferred.y)
+                < hypot(rhs.x - preferred.x, rhs.y - preferred.y)
         }
-        guidePanel.setFrameOrigin(NSPoint(x: guideX, y: guideY))
+        if let origin = ranked.first { return origin }
+        return NSPoint(
+            x: min(max(preferred.x, visibleFrame.minX), visibleFrame.maxX - size.width),
+            y: min(max(preferred.y, visibleFrame.minY), visibleFrame.maxY - size.height)
+        )
+    }
+
+    private func overlapArea(
+        frame: NSRect,
+        avoidingFrames: [NSRect]
+    ) -> CGFloat {
+        avoidingFrames.reduce(0) { result, avoided in
+            let intersection = frame.intersection(avoided)
+            return result + max(intersection.width, 0)
+                * max(intersection.height, 0)
+        }
+    }
+
+    private func nonOverlappingY(
+        preferredY: CGFloat,
+        panelX: CGFloat,
+        visibleFrame: NSRect,
+        avoidingFrames: [NSRect]
+    ) -> CGFloat {
+        let size = panel.frame.size
+        let preferredFrame = NSRect(
+            x: panelX,
+            y: preferredY,
+            width: size.width,
+            height: size.height
+        )
+        guard avoidingFrames.contains(where: preferredFrame.intersects) else {
+            return preferredY
+        }
+        let candidates = avoidingFrames.flatMap { avoided in
+            [
+                avoided.maxY + Self.guideSpacing,
+                avoided.minY - Self.guideSpacing - size.height
+            ]
+        }.filter { y in
+            y >= visibleFrame.minY
+                && y + size.height <= visibleFrame.maxY
+        }
+        return candidates.min { lhs, rhs in
+            let lhsFrame = NSRect(
+                x: panelX,
+                y: lhs,
+                width: size.width,
+                height: size.height
+            )
+            let rhsFrame = NSRect(
+                x: panelX,
+                y: rhs,
+                width: size.width,
+                height: size.height
+            )
+            let lhsOverlap = avoidingFrames.filter(lhsFrame.intersects).count
+            let rhsOverlap = avoidingFrames.filter(rhsFrame.intersects).count
+            return lhsOverlap == rhsOverlap
+                ? abs(lhs - preferredY) < abs(rhs - preferredY)
+                : lhsOverlap < rhsOverlap
+        } ?? preferredY
     }
 }
