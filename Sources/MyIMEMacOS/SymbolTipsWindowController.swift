@@ -11,13 +11,14 @@ final class SymbolTipsWindowController {
     private let text = NSTextField(wrappingLabelWithString: "")
 
     init() {
-        panel = NSPanel(
+        panel = PassiveInputPanel(
             contentRect: NSRect(x: 0, y: 0, width: 180, height: 42),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )
         panel.animationBehavior = .none
+        panel.becomesKeyOnlyIfNeeded = true
         panel.backgroundColor = .windowBackgroundColor
         panel.hasShadow = true
         panel.hidesOnDeactivate = false

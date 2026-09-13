@@ -1,9 +1,15 @@
 @preconcurrency import AppKit
 @preconcurrency import InputMethodKit
 import MyIMECore
+import OSLog
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
+    private static let lifecycleLogger = Logger(
+        subsystem: "com.sendarionn.myim",
+        category: "input-lifecycle"
+    )
+    private static let transientDeactivationDelay: TimeInterval = 0.35
     private static weak var activeController: InputController?
     private static weak var emojiPanelController: InputController?
     private struct TabDictionaryRegistration {
@@ -174,6 +180,9 @@ final class InputController: IMKInputController {
     private let romajiConverter = RomajiConverter()
     private var settingsWindow: NSWindow?
     private var activeInputClient: Any?
+    private var pendingDeactivation: DispatchWorkItem?
+    private var isServerActive = false
+    private var lifecycleGeneration: UInt = 0
 
     static func handleGlobalEmojiShortcut() {
         guard let controller = activeController,
@@ -973,44 +982,82 @@ final class InputController: IMKInputController {
     }
 
     override func activateServer(_ sender: Any!) {
+        lifecycleGeneration &+= 1
+        pendingDeactivation?.cancel()
+        pendingDeactivation = nil
+        isServerActive = true
         activatedAt = ProcessInfo.processInfo.systemUptime
         activeInputClient = sender
         Self.activeController = self
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
+        Self.lifecycleLogger.notice(
+            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
+        )
         updateTranslationModeStatus(client: sender as Any)
     }
 
     override func deactivateServer(_ sender: Any!) {
+        lifecycleGeneration &+= 1
+        let deactivationGeneration = lifecycleGeneration
+        isServerActive = false
         EmojiGlobalHotKey.shared.deactivate()
         if Self.activeController === self {
             Self.activeController = nil
         }
-        activeInputClient = nil
         if previewWindow.shouldPreserveForExternalInteraction() {
+            activeInputClient = nil
             super.deactivateServer(sender)
             return
         }
         if calendarSessionActive {
+            activeInputClient = nil
             super.deactivateServer(sender)
             return
         }
-        finishControllerSession(
-            client: sender,
-            commitsComposition: true,
-            closesController: false
+        pendingDeactivation?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  !self.isServerActive,
+                  self.lifecycleGeneration == deactivationGeneration else {
+                return
+            }
+            Self.lifecycleLogger.notice(
+                "deactivation committed after grace period bufferLength=\(self.inputBuffer.count, privacy: .public)"
+            )
+            self.finishControllerSession(
+                client: sender,
+                commitsComposition: true,
+                closesController: false
+            )
+            self.activeInputClient = nil
+            self.pendingDeactivation = nil
+        }
+        pendingDeactivation = workItem
+        Self.lifecycleLogger.notice(
+            "deactivation deferred bufferLength=\(self.inputBuffer.count, privacy: .public)"
+        )
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.transientDeactivationDelay,
+            execute: workItem
         )
         super.deactivateServer(sender)
     }
 
     override func inputControllerWillClose() {
+        lifecycleGeneration &+= 1
+        let deactivationWasPending = pendingDeactivation != nil
+        pendingDeactivation?.cancel()
+        pendingDeactivation = nil
+        isServerActive = false
+        activeInputClient = nil
         if previewWindow.shouldPreserveForExternalInteraction() {
             super.inputControllerWillClose()
             return
         }
         finishControllerSession(
             client: client(),
-            commitsComposition: false,
+            commitsComposition: deactivationWasPending,
             closesController: true
         )
         super.inputControllerWillClose()

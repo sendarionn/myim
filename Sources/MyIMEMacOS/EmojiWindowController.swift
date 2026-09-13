@@ -153,13 +153,13 @@ final class EmojiWindowController: NSObject {
             ) ?? []
         )
         visibleEntries = Self.entries
-        panel = NSPanel(
+        panel = PassiveInputPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )
-        comparisonPanel = NSPanel(
+        comparisonPanel = PassiveInputPanel(
             contentRect: .zero,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -168,6 +168,8 @@ final class EmojiWindowController: NSObject {
         super.init()
         panel.animationBehavior = .none
         comparisonPanel.animationBehavior = .none
+        panel.becomesKeyOnlyIfNeeded = true
+        comparisonPanel.becomesKeyOnlyIfNeeded = true
         configurePanels()
         buildCollection()
     }

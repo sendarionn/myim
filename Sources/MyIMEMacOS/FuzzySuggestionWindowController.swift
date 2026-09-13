@@ -40,13 +40,13 @@ final class FuzzySuggestionWindowController {
     var isVisible: Bool { panel.isVisible }
 
     init() {
-        panel = NSPanel(
+        panel = PassiveInputPanel(
             contentRect: NSRect(x: 0, y: 0, width: 260, height: 80),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )
-        guidePanel = NSPanel(
+        guidePanel = PassiveInputPanel(
             contentRect: NSRect(x: 0, y: 0, width: 180, height: 24),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -56,6 +56,8 @@ final class FuzzySuggestionWindowController {
         guideLabel = NSTextField(labelWithString: "")
         panel.animationBehavior = .none
         guidePanel.animationBehavior = .none
+        panel.becomesKeyOnlyIfNeeded = true
+        guidePanel.becomesKeyOnlyIfNeeded = true
         stackView.wantsLayer = true
         stackView.layer?.cornerRadius = 0
         stackView.orientation = .vertical

@@ -11,7 +11,7 @@ final class ModeStatusWindowController: NSObject {
 
     override init() {
         label = NSTextField(labelWithString: "")
-        panel = NSPanel(
+        panel = PassiveInputPanel(
             contentRect: NSRect(x: 0, y: 0, width: 160, height: 36),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -20,6 +20,7 @@ final class ModeStatusWindowController: NSObject {
         super.init()
 
         panel.animationBehavior = .none
+        panel.becomesKeyOnlyIfNeeded = true
         label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         label.alignment = .center
         label.lineBreakMode = .byClipping

@@ -153,13 +153,13 @@ final class CandidateWindowController: NSObject {
         guideLabel = NSTextView(frame: .zero)
         modeLabel = NSTextField(labelWithString: "")
         modeSeparator = NSBox()
-        panel = NSPanel(
+        panel = PassiveInputPanel(
             contentRect: NSRect(x: 0, y: 0, width: 280, height: 40),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
         )
-        guidePanel = NSPanel(
+        guidePanel = PassiveInputPanel(
             contentRect: NSRect(x: 0, y: 0, width: 180, height: 24),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -170,6 +170,8 @@ final class CandidateWindowController: NSObject {
 
         panel.animationBehavior = .none
         guidePanel.animationBehavior = .none
+        panel.becomesKeyOnlyIfNeeded = true
+        guidePanel.becomesKeyOnlyIfNeeded = true
         layout.minimumInteritemSpacing = Self.itemSpacing
         layout.minimumLineSpacing = Self.itemSpacing
         layout.scrollDirection = .vertical
