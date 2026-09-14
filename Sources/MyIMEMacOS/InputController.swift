@@ -183,6 +183,7 @@ final class InputController: IMKInputController {
     private var pendingDeactivation: DispatchWorkItem?
     private var isServerActive = false
     private var lifecycleGeneration: UInt = 0
+    private var transientCompositionGuard = TransientCompositionGuard()
 
     static func handleGlobalEmojiShortcut() {
         guard let controller = activeController,
@@ -842,7 +843,8 @@ final class InputController: IMKInputController {
                 near: candidateWindow.frame,
                 avoidingFrames: [candidateWindow.frame]
                     + candidateWindow.auxiliaryFrames,
-                isAccented: isTranslationModeEnabled
+                isAccented: isTranslationModeEnabled,
+                prepareAnchor: prepareCandidateAnchorForFuzzyPanel
             )
         }
     }
@@ -961,6 +963,17 @@ final class InputController: IMKInputController {
             return
         }
 
+        if transientCompositionGuard.consumeSystemCommitSuppression(
+            now: ProcessInfo.processInfo.systemUptime,
+            hasComposition: !inputBuffer.isEmpty
+        ) {
+            Self.lifecycleLogger.notice(
+                "suppressed transient system commit bufferLength=\(self.inputBuffer.count, privacy: .public)"
+            )
+            updateMarkedText(in: sender)
+            return
+        }
+
         if tabDictionaryRegistration != nil {
             showTabDictionaryRegistration(client: sender)
             return
@@ -982,12 +995,19 @@ final class InputController: IMKInputController {
     }
 
     override func activateServer(_ sender: Any!) {
+        let resumesTransientDeactivation = pendingDeactivation != nil
         lifecycleGeneration &+= 1
         pendingDeactivation?.cancel()
         pendingDeactivation = nil
         isServerActive = true
         activatedAt = ProcessInfo.processInfo.systemUptime
         activeInputClient = sender
+        transientCompositionGuard.recordActivation(
+            resumingDeactivation: resumesTransientDeactivation,
+            hasComposition: !inputBuffer.isEmpty,
+            now: ProcessInfo.processInfo.systemUptime,
+            gracePeriod: Self.transientDeactivationDelay
+        )
         Self.activeController = self
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
@@ -1050,6 +1070,7 @@ final class InputController: IMKInputController {
         pendingDeactivation?.cancel()
         pendingDeactivation = nil
         isServerActive = false
+        transientCompositionGuard.reset()
         activeInputClient = nil
         if previewWindow.shouldPreserveForExternalInteraction() {
             super.inputControllerWillClose()
@@ -3111,7 +3132,8 @@ final class InputController: IMKInputController {
             near: candidateWindow.frame,
             avoidingFrames: [candidateWindow.frame]
                 + candidateWindow.auxiliaryFrames,
-            isAccented: isTranslationModeEnabled
+            isAccented: isTranslationModeEnabled,
+            prepareAnchor: prepareCandidateAnchorForFuzzyPanel
         )
         if let inputClient = client() {
             showInputPreview(client: inputClient)
@@ -3201,7 +3223,8 @@ final class InputController: IMKInputController {
             near: candidateWindow.frame,
             avoidingFrames: [candidateWindow.frame]
                 + candidateWindow.auxiliaryFrames,
-            isAccented: isTranslationModeEnabled
+            isAccented: isTranslationModeEnabled,
+            prepareAnchor: prepareCandidateAnchorForFuzzyPanel
         )
         return true
     }
@@ -3328,7 +3351,29 @@ final class InputController: IMKInputController {
             near: candidateWindow.frame,
             avoidingFrames: [candidateWindow.frame]
                 + candidateWindow.auxiliaryFrames,
-            isAccented: isTranslationModeEnabled
+            isAccented: isTranslationModeEnabled,
+            prepareAnchor: prepareCandidateAnchorForFuzzyPanel
+        )
+    }
+
+    private func prepareCandidateAnchorForFuzzyPanel(
+        width: CGFloat,
+        spacing: CGFloat
+    ) -> NSRect {
+        candidateWindow.makeRoomOnRight(width: width, spacing: spacing)
+        return candidateWindow.frame
+    }
+
+    private func alignFuzzySuggestionWindowToCandidateRight() {
+        guard fuzzySuggestionWindow.isVisible else { return }
+        candidateWindow.makeRoomOnRight(
+            width: fuzzySuggestionWindow.panelWidth,
+            spacing: fuzzySuggestionWindow.spacingFromCandidatePanel
+        )
+        fuzzySuggestionWindow.reposition(
+            near: candidateWindow.frame,
+            avoidingFrames: [candidateWindow.frame]
+                + candidateWindow.auxiliaryFrames
         )
     }
 
@@ -3751,13 +3796,13 @@ final class InputController: IMKInputController {
             modeTitle: filterTitle ?? (isDictionaryRegistration
                 ? "登録したい文字列を入力"
                 : (isTranslationInput ? "翻訳する日本語" : nil)),
-            isAccented: isTranslationInput
+            isAccented: isTranslationInput,
+            reservedRightWidth: fuzzySuggestionWindow.isVisible
+                ? fuzzySuggestionWindow.panelWidth
+                    + fuzzySuggestionWindow.spacingFromCandidatePanel
+                : 0
         )
-        fuzzySuggestionWindow.reposition(
-            near: candidateWindow.frame,
-            avoidingFrames: [candidateWindow.frame]
-                + candidateWindow.auxiliaryFrames
-        )
+        alignFuzzySuggestionWindowToCandidateRight()
         if emojiWindow.isVisible {
             let frames = [candidateWindow.visibleFrame, fuzzySuggestionWindow.visibleFrame]
                 .compactMap { $0 }

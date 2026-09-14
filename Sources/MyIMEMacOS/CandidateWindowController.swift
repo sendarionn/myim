@@ -251,6 +251,34 @@ final class CandidateWindowController: NSObject {
             : panel.frame
     }
 
+    /// 右隣のパネルが画面内へ収まるよう、候補パネル一式を左へ移動する
+    func makeRoomOnRight(width: CGFloat, spacing: CGFloat) {
+        guard panel.isVisible,
+              let visibleFrame = screenContaining(panel.frame)?.visibleFrame else {
+            return
+        }
+        let groupFrame = guidePanel.isVisible
+            ? panel.frame.union(guidePanel.frame)
+            : panel.frame
+        let requestedShift = min(
+            visibleFrame.maxX - width - spacing - panel.frame.maxX,
+            0
+        )
+        let availableShift = visibleFrame.minX - groupFrame.minX
+        let shift = max(requestedShift, availableShift)
+        guard shift < 0 else { return }
+        panel.setFrameOrigin(NSPoint(
+            x: panel.frame.minX + shift,
+            y: panel.frame.minY
+        ))
+        if guidePanel.isVisible {
+            guidePanel.setFrameOrigin(NSPoint(
+                x: guidePanel.frame.minX + shift,
+                y: guidePanel.frame.minY
+            ))
+        }
+    }
+
     func contains(screenPoint: NSPoint) -> Bool {
         (panel.isVisible && panel.frame.contains(screenPoint))
             || (guidePanel.isVisible && guidePanel.frame.contains(screenPoint))
@@ -262,7 +290,8 @@ final class CandidateWindowController: NSObject {
         near anchorFrame: NSRect,
         guide: String? = nil,
         modeTitle: String? = nil,
-        isAccented: Bool = false
+        isAccented: Bool = false,
+        reservedRightWidth: CGFloat = 0
     ) {
         panel.contentView?.layer?.borderWidth = isAccented ? 2 : 0
         panel.contentView?.layer?.borderColor = isAccented
@@ -416,7 +445,8 @@ final class CandidateWindowController: NSObject {
             near: anchorFrame,
             visibleFrame: visibleFrame,
             hasGuide: hasGuide,
-            reservedPanelHeight: reservedPanelHeight
+            reservedPanelHeight: reservedPanelHeight,
+            reservedRightWidth: reservedRightWidth
         )
 
         collectionView.reloadData()
@@ -537,7 +567,8 @@ final class CandidateWindowController: NSObject {
         near anchorFrame: NSRect,
         visibleFrame: NSRect,
         hasGuide: Bool,
-        reservedPanelHeight: CGFloat
+        reservedPanelHeight: CGFloat,
+        reservedRightWidth: CGFloat
     ) {
         let guideExtent = hasGuide
             ? Self.guideSpacing + guidePanel.frame.height
@@ -550,9 +581,13 @@ final class CandidateWindowController: NSObject {
         let panelY = fitsBelow
             ? anchorFrame.minY - Self.anchorSpacing - panel.frame.height
             : anchorFrame.maxY + Self.anchorSpacing
+        let maximumPanelX = max(
+            visibleFrame.minX,
+            visibleFrame.maxX - panel.frame.width - max(reservedRightWidth, 0)
+        )
         let panelX = min(
             max(anchorFrame.minX, visibleFrame.minX),
-            visibleFrame.maxX - panel.frame.width
+            maximumPanelX
         )
         panel.setFrameOrigin(NSPoint(
             x: panelX,
@@ -567,6 +602,10 @@ final class CandidateWindowController: NSObject {
             ? panel.frame.minY - Self.guideSpacing - guidePanel.frame.height
             : panel.frame.maxY + Self.guideSpacing
         guidePanel.setFrameOrigin(NSPoint(x: guideX, y: guideY))
+    }
+
+    private func screenContaining(_ frame: NSRect) -> NSScreen? {
+        NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main
     }
 }
 

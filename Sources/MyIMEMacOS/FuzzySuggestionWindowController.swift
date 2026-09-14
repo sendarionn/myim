@@ -38,6 +38,8 @@ final class FuzzySuggestionWindowController {
     }
 
     var isVisible: Bool { panel.isVisible }
+    var panelWidth: CGFloat { panel.frame.width }
+    var spacingFromCandidatePanel: CGFloat { Self.spacing }
 
     init() {
         panel = PassiveInputPanel(
@@ -96,7 +98,8 @@ final class FuzzySuggestionWindowController {
         selectedIndex: Int?,
         near anchorFrame: NSRect,
         avoidingFrames: [NSRect] = [],
-        isAccented: Bool = false
+        isAccented: Bool = false,
+        prepareAnchor: ((CGFloat, CGFloat) -> NSRect)? = nil
     ) {
         stackView.layer?.borderWidth = isAccented ? 2 : 0
         stackView.layer?.borderColor = isAccented
@@ -136,8 +139,12 @@ final class FuzzySuggestionWindowController {
             height: fittingSize.height
         ))
 
+        let preparedAnchor = prepareAnchor?(
+            panel.frame.width,
+            Self.spacing
+        ) ?? anchorFrame
         positionPanels(
-            near: anchorFrame,
+            near: preparedAnchor,
             visibleFrame: visibleFrame,
             hasGuide: false,
             avoidingFrames: avoidingFrames
@@ -225,15 +232,11 @@ final class FuzzySuggestionWindowController {
         avoidingFrames: [NSRect]
     ) {
         let rightX = anchorFrame.maxX + Self.spacing
-        let leftX = anchorFrame.minX - Self.spacing - panel.frame.width
         let rightSpace = max(visibleFrame.maxX - rightX, 0)
-        let leftSpace = max(anchorFrame.minX - Self.spacing - visibleFrame.minX, 0)
         let panelX: CGFloat
         if rightX + panel.frame.width <= visibleFrame.maxX {
             panelX = rightX
-        } else if leftX >= visibleFrame.minX {
-            panelX = leftX
-        } else if rightSpace >= leftSpace {
+        } else {
             panel.setFrame(
                 NSRect(
                     x: rightX,
@@ -244,17 +247,6 @@ final class FuzzySuggestionWindowController {
                 display: false
             )
             panelX = rightX
-        } else {
-            panel.setFrame(
-                NSRect(
-                    x: visibleFrame.minX,
-                    y: panel.frame.minY,
-                    width: leftSpace,
-                    height: panel.frame.height
-                ),
-                display: false
-            )
-            panelX = visibleFrame.minX
         }
         let alignedPanelY = min(
             max(anchorFrame.maxY - panel.frame.height, visibleFrame.minY),
