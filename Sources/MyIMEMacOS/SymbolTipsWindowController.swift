@@ -9,6 +9,8 @@ final class SymbolTipsWindowController {
     private static let maximumWidth: CGFloat = 240
     private let panel: NSPanel
     private let text = NSTextField(wrappingLabelWithString: "")
+    private var outsideLocalMonitor: Any?
+    private var outsideGlobalMonitor: Any?
 
     init() {
         panel = PassiveInputPanel(
@@ -31,6 +33,10 @@ final class SymbolTipsWindowController {
         text.frame = NSRect(x: 8, y: 5, width: 164, height: 32)
         panel.contentView = NSView(frame: panel.contentRect(forFrameRect: panel.frame))
         panel.contentView?.addSubview(text)
+    }
+
+    deinit {
+        stopOutsideClickMonitoring()
     }
 
     var visibleFrame: NSRect? { panel.isVisible ? panel.frame : nil }
@@ -56,10 +62,53 @@ final class SymbolTipsWindowController {
             y: min(max(y, visible.minY), visible.maxY - size.height)
         ))
         panel.orderFrontRegardless()
+        startOutsideClickMonitoring()
     }
 
     func hide() {
+        stopOutsideClickMonitoring()
         panel.orderOut(nil)
+    }
+
+    private func startOutsideClickMonitoring() {
+        guard outsideLocalMonitor == nil, outsideGlobalMonitor == nil else {
+            return
+        }
+        let events: NSEvent.EventTypeMask = [
+            .leftMouseDown, .rightMouseDown, .otherMouseDown
+        ]
+        outsideLocalMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: events
+        ) { [weak self] event in
+            self?.hideIfClickIsOutside(at: NSEvent.mouseLocation)
+            return event
+        }
+        outsideGlobalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: events
+        ) { [weak self] _ in
+            let screenPoint = NSEvent.mouseLocation
+            DispatchQueue.main.async {
+                self?.hideIfClickIsOutside(at: screenPoint)
+            }
+        }
+    }
+
+    private func stopOutsideClickMonitoring() {
+        if let monitor = outsideLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideLocalMonitor = nil
+        }
+        if let monitor = outsideGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideGlobalMonitor = nil
+        }
+    }
+
+    private func hideIfClickIsOutside(at screenPoint: NSPoint) {
+        guard panel.isVisible, !panel.frame.contains(screenPoint) else {
+            return
+        }
+        hide()
     }
 
     private func resizePanelToFitText() {
