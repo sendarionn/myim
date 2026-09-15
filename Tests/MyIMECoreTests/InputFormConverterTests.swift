@@ -10,5 +10,11 @@ struct InputFormConverterTests {
         #expect(InputFormConverter.convert("miru", to: .halfWidthKatakana) == "ﾐﾙ")
         #expect(InputFormConverter.convert("Miru12", to: .fullWidthAlphanumeric) == "Ｍｉｒｕ１２")
         #expect(InputFormConverter.convert("Miru12", to: .halfWidthAlphanumeric) == "Miru12")
+        #expect(
+            InputFormConverter.convert(
+                "Miru１２-test",
+                to: .halfWidthUppercaseAlphanumeric
+            ) == "MIRU12-TEST"
+        )
     }
 }

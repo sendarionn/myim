@@ -1679,7 +1679,7 @@ final class InputController: IMKInputController {
             source = inputBuffer
             suffix = ""
         case 109:
-            form = .halfWidthAlphanumeric
+            form = .halfWidthUppercaseAlphanumeric
             source = inputBuffer
             suffix = ""
         default:

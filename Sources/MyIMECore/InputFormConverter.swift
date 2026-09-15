@@ -6,6 +6,7 @@ public enum InputForm: Sendable {
     case halfWidthKatakana
     case fullWidthAlphanumeric
     case halfWidthAlphanumeric
+    case halfWidthUppercaseAlphanumeric
 }
 
 public enum InputFormConverter {
@@ -28,6 +29,11 @@ public enum InputFormConverter {
             )
         case .halfWidthAlphanumeric:
             return input
+        case .halfWidthUppercaseAlphanumeric:
+            return input.applyingTransform(
+                .fullwidthToHalfwidth,
+                reverse: false
+            )?.uppercased()
         }
     }
 }
