@@ -187,9 +187,10 @@ final class CandidateWindowController: NSObject {
         )
 
         scrollView.documentView = collectionView
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.scrollerStyle = .overlay
+        scrollView.hasVerticalScroller = false
+        scrollView.hasHorizontalScroller = false
+        scrollView.verticalScroller = nil
+        scrollView.horizontalScroller = nil
         scrollView.drawsBackground = false
 
         guideLabel.font = PanelShortcutGuideStyle.font

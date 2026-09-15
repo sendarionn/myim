@@ -540,18 +540,46 @@ final class InputController: IMKInputController {
                 ? handleTranslationSpace(space: space, client: sender)
                 : handleSpace(space: space, client: sender)
         case 123:
+            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+                guard selectedNextInputIndex != nil else {
+                    dismissNextInputSuggestions(clearMarkedTextIn: nil)
+                    return false
+                }
+                return moveNextInputCandidate(.left, client: sender)
+            }
             return selectedCandidateIndex == nil
                 ? moveInputCursor(by: -1, client: sender)
                 : enterFuzzySuggestionsOrConsumeArrow(client: sender)
         case 124:
+            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+                guard selectedNextInputIndex != nil else {
+                    dismissNextInputSuggestions(clearMarkedTextIn: nil)
+                    return false
+                }
+                return moveNextInputCandidate(.right, client: sender)
+            }
             return selectedCandidateIndex == nil
                 ? moveInputCursor(by: 1, client: sender)
                 : enterFuzzySuggestionsOrConsumeArrow(client: sender)
         case 125:
+            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+                guard selectedNextInputIndex != nil else {
+                    dismissNextInputSuggestions(clearMarkedTextIn: nil)
+                    return false
+                }
+                return moveNextInputCandidate(.down, client: sender)
+            }
             return selectedCandidateIndex == nil
                 ? false
                 : moveCandidate(.down, client: sender)
         case 126:
+            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+                guard selectedNextInputIndex != nil else {
+                    dismissNextInputSuggestions(clearMarkedTextIn: nil)
+                    return false
+                }
+                return moveNextInputCandidate(.up, client: sender)
+            }
             return selectedCandidateIndex == nil
                 ? false
                 : moveCandidate(.up, client: sender)
@@ -2167,10 +2195,6 @@ final class InputController: IMKInputController {
             return selectCandidate(index: 0, client: sender)
         }
 
-        let pageStart = selectedCandidateIndex
-            / Self.maximumCandidateCount
-            * Self.maximumCandidateCount
-        let localIndex = selectedCandidateIndex - pageStart
         let fallbackOffset: Int
         switch direction {
         case .left:
@@ -2178,24 +2202,15 @@ final class InputController: IMKInputController {
         case .right:
             fallbackOffset = 1
         case .up:
-            fallbackOffset = -Self.maximumCandidateCount
+            fallbackOffset = -1
         case .down:
-            fallbackOffset = Self.maximumCandidateCount
+            fallbackOffset = 1
         }
-        let nextIndex: Int
-        if let localNextIndex = candidateWindow.adjacentIndex(
-            from: localIndex,
-            direction: direction
-        ) {
-            nextIndex = pageStart + localNextIndex
-        } else {
-            nextIndex = (
-                selectedCandidateIndex
-                    + fallbackOffset
-                    + currentCandidates.count
-            ) % currentCandidates.count
-        }
-
+        guard let nextIndex = LinearCandidateNavigator.index(
+            from: selectedCandidateIndex,
+            offset: fallbackOffset,
+            candidateCount: currentCandidates.count
+        ) else { return true }
         return selectCandidate(index: nextIndex, client: sender)
     }
 
@@ -3884,13 +3899,7 @@ final class InputController: IMKInputController {
         )
         selectedNextInputIndex = nil
         guard !nextInputCandidates.isEmpty else { return }
-        candidateWindow.show(
-            candidates: nextInputCandidates,
-            selectedIndex: nil,
-            near: inputLocation(for: sender),
-            guide: "Tab 選択　Return 原文に追加\n候補未選択でReturn 翻訳　Esc 閉じる",
-            isAccented: true
-        )
+        showNextInputCandidateWindow(client: sender)
         startNextInputOutsideClickMonitoring()
         scheduleNextInputDismissal()
     }
@@ -4252,20 +4261,6 @@ final class InputController: IMKInputController {
             return false
         }
 
-        guard let selectedNextInputIndex else {
-            return false
-        }
-
-        if let adjacentIndex = candidateWindow.adjacentIndex(
-            from: selectedNextInputIndex,
-            direction: direction
-        ) {
-            return selectNextInputCandidate(
-                index: adjacentIndex,
-                client: sender
-            )
-        }
-
         let offset: Int
         switch direction {
         case .left, .up:
@@ -4273,7 +4268,12 @@ final class InputController: IMKInputController {
         case .right, .down:
             offset = 1
         }
-        return selectNextInputCandidate(offset: offset, client: sender)
+        guard let nextIndex = LinearCandidateNavigator.index(
+            from: selectedNextInputIndex,
+            offset: offset,
+            candidateCount: nextInputCandidates.count
+        ) else { return true }
+        return selectNextInputCandidate(index: nextIndex, client: sender)
     }
 
     private func selectNextInputCandidate(
@@ -4295,8 +4295,22 @@ final class InputController: IMKInputController {
         guard nextInputCandidates.indices.contains(index) else {
             return true
         }
+        let previousPage = LinearCandidateNavigator.pageRange(
+            containing: selectedNextInputIndex,
+            pageSize: Self.maximumCandidateCount,
+            candidateCount: nextInputCandidates.count
+        )
         selectedNextInputIndex = index
-        candidateWindow.select(index: index)
+        let currentPage = LinearCandidateNavigator.pageRange(
+            containing: index,
+            pageSize: Self.maximumCandidateCount,
+            candidateCount: nextInputCandidates.count
+        )
+        if currentPage == previousPage {
+            candidateWindow.select(index: index - currentPage.lowerBound)
+        } else {
+            showNextInputCandidateWindow(client: sender)
+        }
         if translationDraft != nil {
             updateMarkedText(in: sender)
         } else {
@@ -4339,15 +4353,7 @@ final class InputController: IMKInputController {
             nextInputDismissTimer = nil
             return
         }
-        candidateWindow.show(
-            candidates: nextInputCandidates,
-            selectedIndex: nil,
-            near: inputLocation(for: sender),
-            guide: isTranslationModeEnabled
-                ? "Tab 選択　Return 原文に追加\n候補未選択でReturn 翻訳　Esc 閉じる　\(MyIMFeatureShortcut.translationMode.shortcut.displayName) モード解除"
-                : "Tab 選択　Return / Esc 閉じる\n選択後はTab / 矢印 移動　Return 確定",
-            isAccented: isTranslationModeEnabled
-        )
+        showNextInputCandidateWindow(client: sender)
         startNextInputOutsideClickMonitoring()
         if closingBracketTracker.candidate == nil {
             scheduleNextInputDismissal()
@@ -4355,6 +4361,29 @@ final class InputController: IMKInputController {
             nextInputDismissTimer?.invalidate()
             nextInputDismissTimer = nil
         }
+    }
+
+    private func showNextInputCandidateWindow(client sender: Any) {
+        let pageRange = LinearCandidateNavigator.pageRange(
+            containing: selectedNextInputIndex,
+            pageSize: Self.maximumCandidateCount,
+            candidateCount: nextInputCandidates.count
+        )
+        guard !pageRange.isEmpty else {
+            candidateWindow.hide()
+            return
+        }
+        candidateWindow.show(
+            candidates: Array(nextInputCandidates[pageRange]),
+            selectedIndex: selectedNextInputIndex.map {
+                $0 - pageRange.lowerBound
+            },
+            near: inputLocation(for: sender),
+            guide: isTranslationModeEnabled
+                ? "Tab 選択　Return 原文に追加\n候補未選択でReturn 翻訳　Esc 閉じる　\(MyIMFeatureShortcut.translationMode.shortcut.displayName) モード解除"
+                : "Tab 選択　Return / Esc 閉じる\n選択後はTab / 矢印 移動　Return 確定",
+            isAccented: isTranslationModeEnabled
+        )
     }
 
     private func scheduleNextInputDismissal() {
