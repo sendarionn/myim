@@ -4,16 +4,23 @@ import SwiftUI
 #if canImport(Translation)
 import Translation
 
+private final class TranslationHostPanel: NSPanel {
+    var permitsKeyWindow = false
+
+    override var canBecomeKey: Bool { permitsKeyWindow }
+    override var canBecomeMain: Bool { false }
+}
+
 @available(macOS 15.0, *)
 @MainActor
 final class AppleTranslationCandidateProvider {
-    private let panel: NSPanel
+    private let panel: TranslationHostPanel
     private let host: NSHostingController<AnyView>
     private var pendingCompletion: ((String?) -> Void)?
 
     init() {
         host = NSHostingController(rootView: AnyView(EmptyView()))
-        panel = NSPanel(
+        panel = TranslationHostPanel(
             contentRect: NSRect(x: -10_000, y: -10_000, width: 360, height: 100),
             styleMask: [.titled],
             backing: .buffered,
@@ -24,16 +31,23 @@ final class AppleTranslationCandidateProvider {
         panel.title = "翻訳言語を準備"
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
-        panel.orderFrontRegardless()
     }
 
-    func translateJapaneseToEnglish(_ text: String) async -> String? {
-        await translateJapanese(text, targetIdentifier: "en")
+    func translateJapaneseToEnglish(
+        _ text: String,
+        allowsPreparationUI: Bool = true
+    ) async -> String? {
+        await translateJapanese(
+            text,
+            targetIdentifier: "en",
+            allowsPreparationUI: allowsPreparationUI
+        )
     }
 
     func translateJapanese(
         _ text: String,
-        targetIdentifier: String
+        targetIdentifier: String,
+        allowsPreparationUI: Bool = true
     ) async -> String? {
         let sourceLanguage = Locale.Language(identifier: "ja")
         let targetLanguage = Locale.Language(identifier: targetIdentifier)
@@ -43,6 +57,7 @@ final class AppleTranslationCandidateProvider {
             to: targetLanguage
         )
         guard status != .unsupported else { return nil }
+        guard status != .supported || allowsPreparationUI else { return nil }
 
         if status == .installed {
             if #available(macOS 26.0, *) {
@@ -77,9 +92,15 @@ final class AppleTranslationCandidateProvider {
                     }
                 )
                 if requiresPreparation {
+                    panel.permitsKeyWindow = true
                     panel.alphaValue = 1
                     panel.ignoresMouseEvents = false
                     panel.center()
+                    panel.makeKeyAndOrderFront(nil)
+                } else {
+                    panel.permitsKeyWindow = false
+                    panel.alphaValue = 0
+                    panel.ignoresMouseEvents = true
                     panel.orderFrontRegardless()
                 }
             }
@@ -91,6 +112,8 @@ final class AppleTranslationCandidateProvider {
     }
 
     private func finishPendingTranslation(with result: String?) {
+        panel.orderOut(nil)
+        panel.permitsKeyWindow = false
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
         panel.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))

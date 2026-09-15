@@ -3532,7 +3532,10 @@ final class InputController: IMKInputController {
             let provider = await MainActor.run {
                 AppleTranslationCandidateProvider()
             }
-            if let value = await provider.translateJapaneseToEnglish(text) {
+            if let value = await provider.translateJapaneseToEnglish(
+                text,
+                allowsPreparationUI: sentenceMode
+            ) {
                 if sentenceMode {
                     let trimmed = value.trimmingCharacters(
                         in: .whitespacesAndNewlines
