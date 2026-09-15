@@ -4512,16 +4512,21 @@ final class InputController: IMKInputController {
                 value: translationDraft,
                 cursor: translationDraftCursor
             )
+            dismissPanelsForCursorMovement(client: sender)
             guard editor.move(by: offset) else { return true }
             translationDraftCursor = editor.cursor
             updateMarkedText(in: sender)
             return true
         }
-        guard !inputBuffer.isEmpty else { return false }
+        guard !inputBuffer.isEmpty else {
+            dismissPanelsForCursorMovement(client: sender)
+            return false
+        }
         var editor = InputBufferEditor(
             value: inputBuffer,
             cursor: inputCursor
         )
+        dismissPanelsForCursorMovement(client: sender)
         guard editor.move(by: offset) else { return true }
         inputCursor = editor.cursor
         if !compositionPrefix.isEmpty {
@@ -4534,6 +4539,13 @@ final class InputController: IMKInputController {
             updateMarkedText(in: sender)
         }
         return true
+    }
+
+    private func dismissPanelsForCursorMovement(client sender: Any) {
+        symbolTipsWindow.hide()
+        if !nextInputCandidates.isEmpty {
+            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+        }
     }
 
     private func showInputPreview(client sender: Any) {
