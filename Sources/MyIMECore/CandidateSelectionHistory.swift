@@ -1,6 +1,10 @@
 import Foundation
 
 public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
+    public static let defaultMaximumEntryCount = 10_000
+    public static let maximumReadingCount = 10_000
+    public static let maximumCandidatesPerReading = 16
+
     public struct Stat: Equatable, Codable, Sendable {
         public var count: Int
         public var lastUsed: Int
@@ -13,7 +17,7 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
 
     public init(
         ranks: [String: Int] = [:],
-        maximumEntryCount: Int? = nil
+        maximumEntryCount: Int? = defaultMaximumEntryCount
     ) {
         self.maximumEntryCount = maximumEntryCount.map { max(1, $0) }
         let recentRanks = Self.compacted(
@@ -43,6 +47,10 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
             stat.count = min(stat.count + 1, Int.max - 1)
             stat.lastUsed = nextRank
             readingStats[candidate] = stat
+            readingStats = Self.compactedStats(
+                readingStats,
+                limit: Self.maximumCandidatesPerReading
+            )
             statsByReading[reading] = readingStats
         }
         nextRank += 1
@@ -50,6 +58,7 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
             ranks = Self.compacted(ranks, limit: maximumEntryCount)
             nextRank = (ranks.values.max() ?? 0) + 1
         }
+        compactReadingsIfNeeded()
     }
 
     public mutating func remove(_ candidates: Set<String>) {
@@ -144,5 +153,83 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         return Dictionary(uniqueKeysWithValues: recent.enumerated().map {
             ($0.element.key, recent.count - $0.offset)
         })
+    }
+
+    private static func compactedStats(
+        _ stats: [String: Stat],
+        limit: Int
+    ) -> [String: Stat] {
+        guard stats.count > limit else { return stats }
+        guard let mostRecent = stats.max(by: {
+            $0.value.lastUsed < $1.value.lastUsed
+        }) else { return [:] }
+        let retained = [mostRecent] + stats
+            .filter { $0.key != mostRecent.key }
+            .sorted {
+                if $0.value.count != $1.value.count {
+                    return $0.value.count > $1.value.count
+                }
+                if $0.value.lastUsed != $1.value.lastUsed {
+                    return $0.value.lastUsed > $1.value.lastUsed
+                }
+                return $0.key < $1.key
+            }
+            .prefix(max(0, limit - 1))
+        return Dictionary(uniqueKeysWithValues: retained.map {
+            ($0.key, $0.value)
+        })
+    }
+
+    private mutating func compactReadingsIfNeeded() {
+        guard statsByReading.count > Self.maximumReadingCount else { return }
+        let retained = statsByReading.sorted {
+            let lhsLastUsed = $0.value.values.map(\.lastUsed).max() ?? 0
+            let rhsLastUsed = $1.value.values.map(\.lastUsed).max() ?? 0
+            if lhsLastUsed != rhsLastUsed {
+                return lhsLastUsed > rhsLastUsed
+            }
+            return $0.key < $1.key
+        }.prefix(Self.maximumReadingCount)
+        statsByReading = Dictionary(uniqueKeysWithValues: retained.map {
+            ($0.key, $0.value)
+        })
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ranks
+        case statsByReading
+        case maximumEntryCount
+        case nextRank
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        maximumEntryCount = try container.decodeIfPresent(
+            Int.self,
+            forKey: .maximumEntryCount
+        ) ?? Self.defaultMaximumEntryCount
+        maximumEntryCount = maximumEntryCount.map { max(1, $0) }
+        ranks = Self.compacted(
+            try container.decodeIfPresent(
+                [String: Int].self,
+                forKey: .ranks
+            ) ?? [:],
+            limit: maximumEntryCount
+        )
+        statsByReading = try container.decodeIfPresent(
+            [String: [String: Stat]].self,
+            forKey: .statsByReading
+        ) ?? [:]
+        for reading in Array(statsByReading.keys) {
+            statsByReading[reading] = Self.compactedStats(
+                statsByReading[reading] ?? [:],
+                limit: Self.maximumCandidatesPerReading
+            )
+        }
+        nextRank = max(
+            try container.decodeIfPresent(Int.self, forKey: .nextRank) ?? 1,
+            (ranks.values.max() ?? 0) + 1
+        )
+        compactReadingsIfNeeded()
     }
 }

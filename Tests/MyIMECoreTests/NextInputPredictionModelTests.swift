@@ -69,21 +69,26 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func retainsAllContextsAndFollowers() {
+    func prunesOldContextsAndLowPriorityFollowers() {
         var model = NextInputPredictionModel()
-        for index in 0..<300 {
+        for index in 0...NextInputPredictionModel.maximumContextCount {
             model.record("文脈\(index)")
             model.record("候補\(index)")
             model.breakSequence()
         }
-        for index in 0..<20 {
+        for index in 0...NextInputPredictionModel.maximumFollowersPerContext {
             model.record("共通")
             model.record("候補\(index)")
             model.breakSequence()
         }
 
-        #expect(model.contextCount == 301)
-        #expect(model.candidates(after: "共通", limit: 30).count == 20)
+        #expect(model.contextCount == NextInputPredictionModel.maximumContextCount)
+        #expect(
+            model.candidates(after: "共通", limit: 30).count
+                == NextInputPredictionModel.maximumFollowersPerContext
+        )
+        #expect(model.candidates(after: "文脈0").isEmpty)
+        #expect(model.candidates(after: "共通").first == "候補16")
     }
 
     @Test

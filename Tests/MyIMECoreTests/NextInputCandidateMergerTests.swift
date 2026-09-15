@@ -24,4 +24,17 @@ struct NextInputCandidateMergerTests {
             ) == ["3", "次"]
         )
     }
+
+    @Test
+    func retainsAllLearnedCandidatesAfterPreferredCandidates() {
+        let learned = (0..<16).map { "履歴候補\($0)" }
+
+        #expect(
+            NextInputCandidateMerger.merged(
+                preferred: ["計算結果"],
+                learned: learned,
+                limit: 17
+            ) == ["計算結果"] + learned
+        )
+    }
 }

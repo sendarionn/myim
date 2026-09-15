@@ -3880,7 +3880,7 @@ final class InputController: IMKInputController {
         nextInputPredictionWriter.schedule(nextInputPredictionModel)
         nextInputCandidates = nextInputPredictionModel.candidates(
             after: value,
-            limit: Self.maximumCandidateCount
+            limit: NextInputPredictionModel.maximumFollowersPerContext
         )
         selectedNextInputIndex = nil
         guard !nextInputCandidates.isEmpty else { return }
@@ -4324,14 +4324,14 @@ final class InputController: IMKInputController {
 
             learnedCandidates = nextInputPredictionModel.candidates(
                 after: value,
-                limit: Self.maximumCandidateCount
+                limit: NextInputPredictionModel.maximumFollowersPerContext
             )
         }
 
         nextInputCandidates = NextInputCandidateMerger.merged(
             preferred: preferredCandidates,
             learned: learnedCandidates,
-            limit: Self.maximumCandidateCount
+            limit: preferredCandidates.count + learnedCandidates.count
         )
         selectedNextInputIndex = nil
         guard !nextInputCandidates.isEmpty else {

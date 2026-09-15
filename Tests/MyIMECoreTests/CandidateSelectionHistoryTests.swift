@@ -112,13 +112,33 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
-    func keepsAllEntriesByDefault() {
+    func limitsEntriesByDefault() {
         var history = CandidateSelectionHistory()
-        for index in 0..<4_200 {
+        for index in 0...CandidateSelectionHistory.defaultMaximumEntryCount {
             history.record("候補\(index)", reading: "よみ\(index)")
         }
 
-        #expect(history.ranks.count == 4_200)
+        #expect(
+            history.ranks.count
+                == CandidateSelectionHistory.defaultMaximumEntryCount
+        )
+        #expect(history.ranks["候補0"] == nil)
+        #expect(history.ranks["候補10000"] != nil)
+    }
+
+    @Test
+    func limitsCandidatesForEachReading() {
+        var history = CandidateSelectionHistory()
+        for index in 0...CandidateSelectionHistory.maximumCandidatesPerReading {
+            history.record("候補\(index)", reading: "yomi")
+        }
+
+        #expect(
+            history.ranks(for: "yomi").count
+                == CandidateSelectionHistory.maximumCandidatesPerReading
+        )
+        #expect(history.ranks(for: "yomi")["候補0"] == nil)
+        #expect(history.ranks(for: "yomi")["候補16"] != nil)
     }
 
     @Test
