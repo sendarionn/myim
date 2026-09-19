@@ -156,6 +156,7 @@ final class InputController: IMKInputController {
     private let nextInputPredictionWriter:
         DeferredJSONFileWriter<NextInputPredictionModel>
     private var nextInputCandidates: [String] = []
+    private var nonLearnableGeneratedCandidates = Set<String>()
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
     private var nextInputOutsideLocalMonitor: Any?
@@ -2793,6 +2794,7 @@ final class InputController: IMKInputController {
 
     private func refreshCandidates(client sender: Any) {
         reloadUserDictionaryFromDiskIfNeeded()
+        nonLearnableGeneratedCandidates = []
         longVowelFilterProtectedCandidates = []
         updateTranslationModeStatus(client: sender)
         updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
@@ -2890,6 +2892,16 @@ final class InputController: IMKInputController {
         let numericPrefixCandidates = numericPrefixCandidates(
             for: conversionReading
         )
+        let particleCandidates = particleBoundaryCandidates(
+            for: conversionReading
+        )
+        nonLearnableGeneratedCandidates = JapaneseParticleCandidateGenerator
+            .nonLearnableCandidates(
+                generated: particleCandidates,
+                exactDictionaryCandidates: userCandidates.exact
+                    + basicCandidates.exact
+                    + imeCandidates.exact
+            )
         let uppercaseCandidates = inputBuffer == conversionReading
             ? EnglishCandidateCaseRestorer.uppercaseCandidate(
                 for: conversionReading
@@ -2920,6 +2932,7 @@ final class InputController: IMKInputController {
             + scriptCandidates
             + basicCandidates.exact
             + imeCandidates.exact
+            + particleCandidates
             + inflectionCandidates
         let otherCandidates = userCandidates.prefix
             + candidateSelectionHistory.completions(
@@ -3910,6 +3923,9 @@ final class InputController: IMKInputController {
         _ candidate: String,
         reading: String? = nil
     ) {
+        guard !nonLearnableGeneratedCandidates.contains(candidate) else {
+            return
+        }
         let learnedReading = reading ?? conversionReading
         if learnableOfficialCandidates.contains(candidate),
            !learnedReading.isEmpty {
@@ -3997,6 +4013,24 @@ final class InputController: IMKInputController {
             for: input,
             convertedReadings: converted
         )
+    }
+
+    private func particleBoundaryCandidates(for input: String) -> [String] {
+        JapaneseParticleCandidateGenerator.candidates(for: input) { reading in
+            let readings = RomajiCanonicalizer.dictionaryLookupInputs(
+                from: reading
+            )
+            return mergedCandidates(
+                lookup: { userConversionEngine.candidates(for: $0) },
+                readings: readings
+            ) + mergedCandidates(
+                lookup: { basicConversionEngine.candidates(for: $0) },
+                readings: readings
+            ) + mergedCandidates(
+                lookup: { mozcConversionEngine.candidates(for: $0) },
+                readings: readings
+            )
+        }
     }
 
     private func mergedCandidateGroups(
@@ -4134,7 +4168,8 @@ final class InputController: IMKInputController {
     }
 
     private func recordNextInputCandidateSelection(_ candidate: String) {
-        guard closingBracketTracker.shouldRecordAsNextInput(candidate) else {
+        guard closingBracketTracker.shouldRecordAsNextInput(candidate),
+              !nonLearnableGeneratedCandidates.contains(candidate) else {
             return
         }
         let readings = reconversionReadings(for: candidate).flatMap {
@@ -4155,6 +4190,10 @@ final class InputController: IMKInputController {
         guard let textClient = sender as? IMKTextInput else {
             return
         }
+
+        let inputHistoryValue = historyValue ?? value
+        let shouldRecordInputHistory = recordsInputHistory
+            && !nonLearnableGeneratedCandidates.contains(inputHistoryValue)
 
         let markedRange = textClient.markedRange()
         let beginsAfterLineBreak = inputBeginsAfterLineBreak(
@@ -4190,12 +4229,12 @@ final class InputController: IMKInputController {
         symbolTipsWindow.hide()
         clearCalendarSelection()
         resetCandidateFilters()
-        if recordsInputHistory {
+        if shouldRecordInputHistory {
             let structuralCandidates = closingBracketTracker.candidate.map {
                 [$0]
             } ?? []
             recordCommittedInput(
-                historyValue ?? value,
+                inputHistoryValue,
                 preferredCandidates: structuralCandidates
                     + preferredNextInputCandidates,
                 breakPreviousSequence: beginsAfterLineBreak,
