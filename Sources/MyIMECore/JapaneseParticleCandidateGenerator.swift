@@ -1,4 +1,5 @@
 public enum JapaneseParticleCandidateGenerator {
+    // 選定根拠はdocs/JAPANESE_PARTICLE_SOURCES.mdを参照
     private struct Particle: Sendable {
         let reading: String
         let text: String

@@ -122,4 +122,5 @@ Macの標準辞書や外部Webサイトで語義を確認できます。外部We
 - `MISCELLANEOUS.md` 入力変換と候補順の細かな調整
 - `docs/DICTIONARY_DATASETS.md` 辞書の生成方法と実行時構成
 - `docs/DICTIONARY_LICENSES.md` 辞書の出典とライセンス
+- `docs/JAPANESE_PARTICLE_SOURCES.md` 助詞付き候補の参考資料
 - `docs/MACOS_DICTIONARY.md` macOS標準辞書の利用方針
