@@ -58,7 +58,6 @@ final class InputController: IMKInputController {
     private static let appleTranslationEnabledDefaultsKey =
         "AppleTranslationEnabled"
     private static let webSearchEnabledDefaultsKey = "WebSearchEnabled"
-    private static let webSearchTemplateDefaultsKey = "WebSearchTemplate"
     private static let externalInformationPanelEnabledDefaultsKey =
         "ExternalInformationPanelEnabled"
     private static let systemDictionaryPreviewEnabledDefaultsKey =
@@ -69,12 +68,6 @@ final class InputController: IMKInputController {
         "FuzzySuggestionsEnabled"
     private static let dateTimeCandidatesEnabledDefaultsKey =
         "DateTimeCandidatesEnabled"
-    private static let dateCandidateFormatsDefaultsKey =
-        "DateCandidateFormats"
-    private static let timeCandidateFormatsDefaultsKey =
-        "TimeCandidateFormats"
-    private static let dateTimeCandidateFormatsDefaultsKey =
-        "DateTimeCandidateFormats"
     private static let maximumCandidateCount = 4
     private static let initialFuzzySuggestionCount = 4
     private static let fuzzySuggestionDisplayDelay = Duration.milliseconds(120)
@@ -139,7 +132,6 @@ final class InputController: IMKInputController {
     private var compoundDictionaryCandidateGenerator:
         CompoundDictionaryCandidateGenerator
     private var fuzzyEngineBuildTask: Task<Void, Never>?
-    private let settingsDialogController = SettingsDialogController()
     private let shortcutSettingsController = ShortcutSettingsController()
     private lazy var javaScriptExtensionSettingsController =
         JavaScriptExtensionSettingsController(
@@ -1178,35 +1170,6 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func configureDateTimeCandidateFormats(_ sender: Any?) {
-        guard let formats = settingsDialogController.dateTimeFormats(
-            current: DateTimeCandidateGenerator.Formats(
-                date: dateCandidateFormats,
-                time: timeCandidateFormats,
-                dateTime: dateTimeCandidateFormats
-            )
-        ) else {
-            return
-        }
-        UserDefaults.standard.set(
-            formats.date,
-            forKey: Self.dateCandidateFormatsDefaultsKey
-        )
-        UserDefaults.standard.set(
-            formats.time,
-            forKey: Self.timeCandidateFormatsDefaultsKey
-        )
-        UserDefaults.standard.set(
-            formats.dateTime,
-            forKey: Self.dateTimeCandidateFormatsDefaultsKey
-        )
-        guard !inputBuffer.isEmpty, let inputClient = client() else {
-            return
-        }
-        refreshCandidates(client: inputClient)
-    }
-
-    @objc
     private func toggleEnglishCompletion(_ sender: Any?) {
         toggleCandidateSource(
             defaultsKey: Self.englishCompletionEnabledDefaultsKey,
@@ -1264,17 +1227,6 @@ final class InputController: IMKInputController {
             forKey: Self.webSearchEnabledDefaultsKey
         )
         UserDefaults.standard.synchronize()
-    }
-
-    @objc
-    private func configureWebSearch(_ sender: Any?) {
-        guard let value = settingsDialogController.webSearchTemplate(
-            current: webSearchTemplate
-        ) else { return }
-        UserDefaults.standard.set(
-            value,
-            forKey: Self.webSearchTemplateDefaultsKey
-        )
     }
 
     private func resetOfficialCandidates() {
@@ -4981,37 +4933,6 @@ final class InputController: IMKInputController {
         UserDefaults.standard.bool(
             forKey: Self.dateTimeCandidatesEnabledDefaultsKey
         )
-    }
-
-    private var dateCandidateFormats: [String] {
-        candidateFormats(
-            defaultsKey: Self.dateCandidateFormatsDefaultsKey,
-            fallback: DateTimeCandidateGenerator.Formats.default.date
-        )
-    }
-
-    private var timeCandidateFormats: [String] {
-        candidateFormats(
-            defaultsKey: Self.timeCandidateFormatsDefaultsKey,
-            fallback: DateTimeCandidateGenerator.Formats.default.time
-        )
-    }
-
-    private var dateTimeCandidateFormats: [String] {
-        candidateFormats(
-            defaultsKey: Self.dateTimeCandidateFormatsDefaultsKey,
-            fallback: DateTimeCandidateGenerator.Formats.default.dateTime
-        )
-    }
-
-    private func candidateFormats(
-        defaultsKey: String,
-        fallback: [String]
-    ) -> [String] {
-        guard UserDefaults.standard.object(forKey: defaultsKey) != nil else {
-            return fallback
-        }
-        return UserDefaults.standard.stringArray(forKey: defaultsKey) ?? []
     }
 
     private func experimentalFeatureIsEnabled(defaultsKey: String) -> Bool {

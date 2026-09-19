@@ -129,13 +129,7 @@ actor JavaScriptExtensionClient {
             settings: [
                 "dateTimeCandidatesEnabled": [
                     dateTimeCandidatesEnabled ? "true" : "false"
-                ],
-                "dateFormats": dateTimeCandidatesEnabled
-                    ? DateTimeCandidateGenerator.Formats.default.date : [],
-                "timeFormats": dateTimeCandidatesEnabled
-                    ? DateTimeCandidateGenerator.Formats.default.time : [],
-                "dateTimeFormats": dateTimeCandidatesEnabled
-                    ? DateTimeCandidateGenerator.Formats.default.dateTime : []
+                ]
             ]
         )
     }

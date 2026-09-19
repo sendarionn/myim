@@ -100,9 +100,15 @@ Macの標準辞書や外部Webサイトで語義を確認できます。外部We
 ```
 
 標準では下記のサンプルコードが同梱されています。
-- `datetime.js`：`kyou`や`ashita`などの入力で対応した日付候補を生成
+- `datetime.js`：日時の読みとカレンダーで選択した日付を書式化
+- `calendar.js`：Googleカレンダーの予定タイトルやURLを書式化
 - `nendo.js`：`nendo`の入力で4月始まりの現在年度を西暦と和暦で生成
 - `gengou.js`：`gengou`の入力で現在の元号年を漢字表記と略号で生成
+- `websearch.js`：Web検索先を定義
+- `external-information.js`：外部情報パネルの検索先を定義
+
+候補生成や出力書式、検索先はJavaScript拡張が担当します
+カレンダーUI、Googleカレンダーの認証と予定取得など、macOSとの連携は本体が担当します
 
 ## ビルドとインストール
 
