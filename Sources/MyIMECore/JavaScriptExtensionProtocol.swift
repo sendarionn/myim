@@ -8,6 +8,7 @@ public struct JavaScriptExtensionRequest: Codable, Sendable {
     public let extensionDirectories: [String]
     public let disabledFileNames: [String]
     public let settings: [String: [String]]
+    public let functionName: String?
 
     public init(
         id: UUID = UUID(),
@@ -16,7 +17,8 @@ public struct JavaScriptExtensionRequest: Codable, Sendable {
         timeZone: String,
         extensionDirectories: [String],
         disabledFileNames: [String] = [],
-        settings: [String: [String]] = [:]
+        settings: [String: [String]] = [:],
+        functionName: String? = nil
     ) {
         self.id = id
         self.input = input
@@ -25,6 +27,7 @@ public struct JavaScriptExtensionRequest: Codable, Sendable {
         self.extensionDirectories = extensionDirectories
         self.disabledFileNames = disabledFileNames
         self.settings = settings
+        self.functionName = functionName
     }
 }
 

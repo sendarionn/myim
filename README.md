@@ -106,6 +106,7 @@ Macの標準辞書や外部Webサイトで語義を確認できます。外部We
 - `gengou.js`：`gengou`の入力で現在の元号年を漢字表記と略号で生成
 - `websearch.js`：Web検索先を定義
 - `external-information.js`：外部情報パネルの検索先を定義
+- `nextinput.js`：数字を確定した後に表示する単位候補を定義
 
 候補生成や出力書式、検索先はJavaScript拡張が担当します
 カレンダーUI、Googleカレンダーの認証と予定取得など、macOSとの連携は本体が担当します

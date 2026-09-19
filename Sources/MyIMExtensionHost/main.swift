@@ -59,9 +59,14 @@ while let line = readLine() {
                 exceptionMessage = exception?.toString()
             }
             context.evaluateScript(source, withSourceURL: fileURL)
+            let functionName = request.functionName ?? "candidates"
             guard exceptionMessage == nil,
-                  let function = context.objectForKeyedSubscript("candidates"),
+                  let function = context.objectForKeyedSubscript(functionName),
                   !function.isUndefined else {
+                if request.functionName != nil, exceptionMessage == nil {
+                    statuses.append(.init(fileName: fileName, state: .ready))
+                    continue
+                }
                 let message = exceptionMessage ?? "candidates関数がありません"
                 errors.append("\(fileName): \(message)")
                 statuses.append(.init(fileName: fileName, state: .error, message: message))

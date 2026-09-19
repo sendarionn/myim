@@ -35,6 +35,15 @@ class InstallMacOSIMTests(unittest.TestCase):
         self.assertIn('"$installed_executable" --enable-input-source', self.script)
         self.assertIn('wait_for_status "$installed_executable" enabled 1', self.script)
 
+    def test_installs_default_extensions_before_starting_input_source(self):
+        install_extensions = self.script.index(
+            '"$installed_executable" --install-default-extensions'
+        )
+        register = self.script.index(
+            '"$installed_executable" --register-input-source'
+        )
+        self.assertLess(install_extensions, register)
+
     def test_increments_bundle_version_for_every_installation(self):
         self.assertIn('next_build_number=', self.script)
         self.assertIn('MYIM_BUILD_NUMBER="$next_build_number"', self.script)

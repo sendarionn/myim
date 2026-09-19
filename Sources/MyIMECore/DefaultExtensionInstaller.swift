@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DefaultExtensionInstaller {
-    public static let markerName = ".myim-default-extensions-installed-v11"
+    public static let markerName = ".myim-default-extensions-installed-v12"
 
     public static func installIfNeeded(
         from sourceDirectory: URL,

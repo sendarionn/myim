@@ -168,6 +168,7 @@ if [[ "$installed_build_number" != "$next_build_number" ]]; then
     echo "myim.app のビルド番号が更新されていません" >&2
     exit 1
 fi
+"$installed_executable" --install-default-extensions
 "$installed_executable" --register-input-source
 "$installed_executable" --enable-input-source
 wait_for_status "$installed_executable" registered 1

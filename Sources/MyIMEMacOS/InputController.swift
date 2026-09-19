@@ -131,6 +131,10 @@ final class InputController: IMKInputController {
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var compoundDictionaryCandidateGenerator:
         CompoundDictionaryCandidateGenerator
+    private var userDictionaryContinuationGenerator:
+        DictionaryContinuationCandidateGenerator
+    private var basicDictionaryContinuationGenerator:
+        DictionaryContinuationCandidateGenerator
     private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let shortcutSettingsController = ShortcutSettingsController()
     private lazy var javaScriptExtensionSettingsController =
@@ -145,9 +149,11 @@ final class InputController: IMKInputController {
     private let nextInputPredictionWriter:
         DeferredJSONFileWriter<NextInputPredictionModel>
     private var nextInputCandidates: [String] = []
+    private var nextInputContext: String?
     private var nonLearnableGeneratedCandidates = Set<String>()
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
+    private var nextInputExtensionGeneration: UInt = 0
     private var nextInputOutsideLocalMonitor: Any?
     private var nextInputOutsideGlobalMonitor: Any?
     private let suggestionSearchSession = SuggestionSearchSession()
@@ -271,6 +277,10 @@ final class InputController: IMKInputController {
         verbInflectionGenerator = Self.sharedVerbInflectionGenerator
         compoundDictionaryCandidateGenerator =
             Self.sharedBasicCompoundGenerator
+        userDictionaryContinuationGenerator =
+            DictionaryContinuationCandidateGenerator(entries: cachedUserEntries)
+        basicDictionaryContinuationGenerator =
+            DictionaryContinuationCandidateGenerator(entries: bundledEntries)
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
 
@@ -449,6 +459,13 @@ final class InputController: IMKInputController {
 
         if interactionState == .registeringDictionary {
             return handleTabDictionaryRegistration(event, client: sender)
+        }
+
+        if isUserDictionaryDeletionShortcut(event),
+           inputBuffer.isEmpty,
+           selectedNextInputIndex != nil {
+            removeSelectedNextInputCandidate(client: sender)
+            return true
         }
 
         commitSelectedNextInputBeforeNewInput(event, client: sender)
@@ -3877,6 +3894,7 @@ final class InputController: IMKInputController {
     ) {
         guard isNextInputPredictionEnabled, !value.isEmpty else { return }
         nextInputPredictionModel.record(value)
+        nextInputContext = value
         nextInputPredictionWriter.schedule(nextInputPredictionModel)
         nextInputCandidates = nextInputPredictionModel.candidates(
             after: value,
@@ -4148,6 +4166,35 @@ final class InputController: IMKInputController {
         candidateSelectionHistoryWriter.schedule(candidateSelectionHistory)
     }
 
+    private func removeSelectedNextInputCandidate(client sender: Any) {
+        guard let selectedNextInputIndex,
+              nextInputCandidates.indices.contains(selectedNextInputIndex),
+              let context = nextInputContext else {
+            NSSound.beep()
+            return
+        }
+        let candidate = nextInputCandidates[selectedNextInputIndex]
+        nextInputPredictionModel.suppress(candidate, after: context)
+        nextInputPredictionWriter.schedule(nextInputPredictionModel)
+        nextInputCandidates.remove(at: selectedNextInputIndex)
+        self.selectedNextInputIndex = nil
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(candidate, forType: .string)
+        if translationDraft != nil {
+            updateMarkedText(in: sender)
+        } else {
+            setMarkedText("", in: sender)
+        }
+        previewWindow.hide()
+        guard !nextInputCandidates.isEmpty else {
+            dismissNextInputSuggestions(clearMarkedTextIn: nil)
+            return
+        }
+        showNextInputCandidateWindow(client: sender)
+        scheduleNextInputDismissal()
+    }
+
     private func commit(
         _ value: String,
         to sender: Any,
@@ -4349,6 +4396,9 @@ final class InputController: IMKInputController {
         breakPreviousSequence: Bool = false,
         client sender: Any
     ) {
+        nextInputExtensionGeneration &+= 1
+        let extensionGeneration = nextInputExtensionGeneration
+        nextInputContext = value
         var learnedCandidates: [String] = []
         if isNextInputPredictionEnabled {
             if breakPreviousSequence {
@@ -4363,24 +4413,64 @@ final class InputController: IMKInputController {
             )
         }
 
+        let dictionaryCandidates = NextInputCandidateMerger.merged(
+            preferred: userDictionaryContinuationGenerator.candidates(
+                after: value
+            ),
+            learned: basicDictionaryContinuationGenerator.candidates(
+                after: value
+            ),
+            limit: 16
+        ).filter {
+            !nextInputPredictionModel.isSuppressed($0, after: value)
+        }
+        let visiblePreferredCandidates = preferredCandidates.filter {
+            !nextInputPredictionModel.isSuppressed($0, after: value)
+        }
         nextInputCandidates = NextInputCandidateMerger.merged(
-            preferred: preferredCandidates,
-            learned: learnedCandidates,
-            limit: preferredCandidates.count + learnedCandidates.count
+            preferred: visiblePreferredCandidates,
+            learned: learnedCandidates + dictionaryCandidates,
+            limit: visiblePreferredCandidates.count
+                + learnedCandidates.count
+                + dictionaryCandidates.count
         )
         selectedNextInputIndex = nil
-        guard !nextInputCandidates.isEmpty else {
+        if nextInputCandidates.isEmpty {
             nextInputDismissTimer?.invalidate()
             nextInputDismissTimer = nil
-            return
-        }
-        showNextInputCandidateWindow(client: sender)
-        startNextInputOutsideClickMonitoring()
-        if closingBracketTracker.candidate == nil {
-            scheduleNextInputDismissal()
         } else {
-            nextInputDismissTimer?.invalidate()
-            nextInputDismissTimer = nil
+            showNextInputCandidateWindow(client: sender)
+            startNextInputOutsideClickMonitoring()
+            if closingBracketTracker.candidate == nil {
+                scheduleNextInputDismissal()
+            } else {
+                nextInputDismissTimer?.invalidate()
+                nextInputDismissTimer = nil
+            }
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let generated = await Self.javaScriptExtensionClient
+                .nextInputCandidates(after: value)
+            guard !Task.isCancelled,
+                  nextInputExtensionGeneration == extensionGeneration,
+                  inputBuffer.isEmpty,
+                  !generated.isEmpty else {
+                return
+            }
+            let visibleGenerated = generated.filter {
+                !self.nextInputPredictionModel.isSuppressed($0, after: value)
+            }
+            let merged = NextInputCandidateMerger.merged(
+                preferred: nextInputCandidates,
+                learned: visibleGenerated,
+                limit: nextInputCandidates.count + visibleGenerated.count
+            )
+            guard merged != nextInputCandidates else { return }
+            nextInputCandidates = merged
+            showNextInputCandidateWindow(client: sender)
+            startNextInputOutsideClickMonitoring()
+            scheduleNextInputDismissal()
         }
     }
 
@@ -4423,6 +4513,7 @@ final class InputController: IMKInputController {
     private func dismissNextInputSuggestions(
         clearMarkedTextIn sender: Any?
     ) {
+        nextInputExtensionGeneration &+= 1
         stopNextInputOutsideClickMonitoring()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
@@ -4434,6 +4525,7 @@ final class InputController: IMKInputController {
             }
         }
         nextInputCandidates = []
+        nextInputContext = nil
         selectedNextInputIndex = nil
         candidateWindow.hide()
         previewWindow.hide()
@@ -4726,8 +4818,12 @@ final class InputController: IMKInputController {
         basicDictionaryChanged: Bool = false
     ) {
         userConversionEngine = ConversionEngine(entries: userEntries)
+        userDictionaryContinuationGenerator =
+            DictionaryContinuationCandidateGenerator(entries: userEntries)
         if basicDictionaryChanged {
             basicConversionEngine = ConversionEngine(entries: basicEntries)
+            basicDictionaryContinuationGenerator =
+                DictionaryContinuationCandidateGenerator(entries: basicEntries)
             verbInflectionGenerator = VerbInflectionCandidateGenerator(
                 entries: basicEntries
             )

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import MyIMECore
 
@@ -101,6 +102,31 @@ struct NextInputPredictionModelTests {
         #expect(model.candidates(after: "A").isEmpty)
         #expect(model.contextCount == 0)
         #expect(model.lastInput == nil)
+    }
+
+    @Test
+    func suppressesADeletedCandidateForItsContext() {
+        var model = NextInputPredictionModel()
+        model.record("よろしく")
+        model.record("お願いします")
+        model.suppress("お願いします", after: "よろしく")
+
+        #expect(model.candidates(after: "よろしく").isEmpty)
+        #expect(model.isSuppressed("お願いします", after: "よろしく"))
+        #expect(!model.isSuppressed("お願いします", after: "別の文脈"))
+    }
+
+    @Test
+    func persistsSuppressedCandidates() throws {
+        var model = NextInputPredictionModel()
+        model.suppress("円", after: "100")
+
+        let restored = try JSONDecoder().decode(
+            NextInputPredictionModel.self,
+            from: JSONEncoder().encode(model)
+        )
+
+        #expect(restored.isSuppressed("円", after: "100"))
     }
 
     @Test

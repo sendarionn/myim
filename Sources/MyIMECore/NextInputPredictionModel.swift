@@ -16,6 +16,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
     }
 
     private var contexts: [String: Context] = [:]
+    private var suppressedCandidates: [String: [String]] = [:]
     private var sequence = 0
     public private(set) var lastInput: String?
 
@@ -63,8 +64,9 @@ public struct NextInputPredictionModel: Codable, Sendable {
         }) else {
             return []
         }
+        let suppressed = Set(suppressedCandidates[normalized] ?? [])
         let remaining = context.candidates
-            .filter { $0.key != mostRecent.key }
+            .filter { $0.key != mostRecent.key && !suppressed.contains($0.key) }
             .sorted {
                 if $0.value.count != $1.value.count {
                     return $0.value.count > $1.value.count
@@ -74,9 +76,33 @@ public struct NextInputPredictionModel: Codable, Sendable {
                 }
                 return $0.key < $1.key
             }
-        return ([mostRecent] + remaining)
+        let ordered = suppressed.contains(mostRecent.key)
+            ? remaining
+            : [mostRecent] + remaining
+        return ordered
             .prefix(limit)
             .map(\.key)
+    }
+
+    public mutating func suppress(_ candidate: String, after value: String) {
+        guard let context = Self.normalizedValue(value),
+              let candidate = Self.normalizedValue(candidate) else { return }
+        contexts[context]?.candidates.removeValue(forKey: candidate)
+        var values = suppressedCandidates[context] ?? []
+        values.removeAll { $0 == candidate }
+        values.insert(candidate, at: 0)
+        suppressedCandidates[context] = Array(
+            values.prefix(Self.maximumFollowersPerContext)
+        )
+        compactSuppressedCandidatesIfNeeded()
+    }
+
+    public func isSuppressed(_ candidate: String, after value: String) -> Bool {
+        guard let context = Self.normalizedValue(value),
+              let candidate = Self.normalizedValue(candidate) else {
+            return false
+        }
+        return suppressedCandidates[context]?.contains(candidate) == true
     }
 
     public func candidatesAfterLastInput(limit: Int = 7) -> [String] {
@@ -88,6 +114,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
 
     public mutating func removeAll() {
         contexts = [:]
+        suppressedCandidates = [:]
         sequence = 0
         lastInput = nil
     }
@@ -115,6 +142,13 @@ public struct NextInputPredictionModel: Codable, Sendable {
         contexts = Dictionary(uniqueKeysWithValues: retained.map {
             ($0.key, $0.value)
         })
+    }
+
+    private mutating func compactSuppressedCandidatesIfNeeded() {
+        while suppressedCandidates.count > Self.maximumContextCount,
+              let key = suppressedCandidates.keys.first {
+            suppressedCandidates.removeValue(forKey: key)
+        }
     }
 
     private static func compactedCandidates(
@@ -146,6 +180,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
         case contexts
         case sequence
         case lastInput
+        case suppressedCandidates
     }
 
     public init(from decoder: Decoder) throws {
@@ -160,6 +195,10 @@ public struct NextInputPredictionModel: Codable, Sendable {
             String.self,
             forKey: .lastInput
         )
+        suppressedCandidates = try container.decodeIfPresent(
+            [String: [String]].self,
+            forKey: .suppressedCandidates
+        ) ?? [:]
         for key in Array(contexts.keys) {
             guard var context = contexts[key] else { continue }
             context.candidates = Self.compactedCandidates(
@@ -179,6 +218,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
                 ($0.key, $0.value)
             })
         }
+        compactSuppressedCandidatesIfNeeded()
         if let lastInput, Self.normalizedValue(lastInput) == nil {
             self.lastInput = nil
         }

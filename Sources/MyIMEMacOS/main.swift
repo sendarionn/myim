@@ -22,6 +22,18 @@ if let command = CommandLine.arguments.dropFirst().first {
             try InputSourceRegistrationManager.selectMyIM()
         case "--select-fallback-input-source":
             try InputSourceRegistrationManager.selectFallback()
+        case "--install-default-extensions":
+            guard JavaScriptExtensionClient.prepareUserExtensionDirectory()
+                != nil else {
+                throw NSError(
+                    domain: "myim.command",
+                    code: 3,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "標準JavaScript拡張を配置できません"
+                    ]
+                )
+            }
         default:
             throw NSError(
                 domain: "myim.command",

@@ -138,10 +138,20 @@ actor JavaScriptExtensionClient {
         await candidates(for: "calendar", timestamp: date, settings: [:])
     }
 
+    func nextInputCandidates(after value: String) async -> [String] {
+        await candidates(
+            for: value,
+            timestamp: Date(),
+            settings: [:],
+            functionName: "nextInputCandidates"
+        )
+    }
+
     private func candidates(
         for input: String,
         timestamp: Date,
-        settings: [String: [String]]
+        settings: [String: [String]],
+        functionName: String? = nil
     ) async -> [String] {
         guard !input.isEmpty else { return [] }
         let wasRunning = process?.isRunning == true
@@ -155,7 +165,8 @@ actor JavaScriptExtensionClient {
             timeZone: TimeZone.current.identifier,
             extensionDirectories: Self.extensionDirectories,
             disabledFileNames: Self.disabledFileNames.sorted(),
-            settings: settings
+            settings: settings,
+            functionName: functionName
         )
         guard let data = try? JSONEncoder().encode(request) else { return [] }
 
