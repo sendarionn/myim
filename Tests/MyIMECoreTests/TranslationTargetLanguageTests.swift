@@ -28,4 +28,32 @@ struct TranslationTargetLanguageTests {
         #expect(TranslationTargetLanguage.language(forPrefix: "ja") == nil)
         #expect(TranslationTargetLanguage.language(forPrefix: "") == nil)
     }
+
+    @Test
+    func acceptsOnlyTranslationDirectiveSeparators() {
+        #expect(
+            TranslationTargetLanguage.language(
+                forPrefix: "en",
+                terminatedBy: " "
+            )?.identifier == "en"
+        )
+        #expect(
+            TranslationTargetLanguage.language(
+                forPrefix: "zh",
+                terminatedBy: "　"
+            )?.identifier == "zh-Hans"
+        )
+        #expect(
+            TranslationTargetLanguage.language(
+                forPrefix: "ko",
+                terminatedBy: "\t"
+            ) == nil
+        )
+        #expect(
+            TranslationTargetLanguage.language(
+                forPrefix: "en",
+                terminatedBy: "\n"
+            ) == nil
+        )
+    }
 }

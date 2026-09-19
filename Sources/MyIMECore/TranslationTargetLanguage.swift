@@ -34,4 +34,15 @@ public struct TranslationTargetLanguage: Equatable, Sendable {
         let normalized = prefix.lowercased()
         return available.first { $0.prefix == normalized }
     }
+
+    public static func language(
+        forPrefix prefix: String,
+        terminatedBy separator: Character
+    ) -> Self? {
+        guard separator == " " || separator == "　"
+        else {
+            return nil
+        }
+        return language(forPrefix: prefix)
+    }
 }

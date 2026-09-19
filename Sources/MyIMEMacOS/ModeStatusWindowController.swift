@@ -1,13 +1,12 @@
 @preconcurrency import AppKit
 
-final class ModeStatusWindowController: NSObject {
+final class TranslationStatusWindowController: NSObject {
     private static let horizontalPadding: CGFloat = 14
     private static let verticalPadding: CGFloat = 9
     private static let anchorSpacing: CGFloat = 8
 
     private let panel: NSPanel
     private let label: NSTextField
-    private var dismissWorkItem: DispatchWorkItem?
 
     override init() {
         label = NSTextField(labelWithString: "")
@@ -24,12 +23,13 @@ final class ModeStatusWindowController: NSObject {
         label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         label.alignment = .center
         label.lineBreakMode = .byClipping
-        label.maximumNumberOfLines = 0
+        label.maximumNumberOfLines = 1
 
         let contentView = NSView()
         contentView.wantsLayer = true
         contentView.layer?.cornerRadius = 0
         contentView.layer?.masksToBounds = true
+        contentView.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
         contentView.addSubview(label)
         panel.contentView = contentView
         panel.backgroundColor = .clear
@@ -41,27 +41,9 @@ final class ModeStatusWindowController: NSObject {
         panel.level = .popUpMenu
     }
 
-    func show(
-        enabled: Bool,
-        near anchorFrame: NSRect,
-        dismissesAutomatically: Bool = true,
-        detail: String? = nil
-    ) {
-        dismissWorkItem?.cancel()
-        dismissWorkItem = nil
-
-        let shortcut = MyIMFeatureShortcut.translationMode.shortcut.displayName
-        let status = enabled
-            ? "翻訳モードON　\(shortcut)でOFF"
-            : "翻訳モードOFF　\(shortcut)でON"
-        label.stringValue = [status, detail]
-            .compactMap { $0 }
-            .joined(separator: "\n")
-        label.alignment = detail == nil ? .center : .left
-        label.textColor = enabled ? .alternateSelectedControlTextColor : .labelColor
-        panel.contentView?.layer?.backgroundColor = (
-            enabled ? NSColor.controlAccentColor : NSColor.windowBackgroundColor
-        ).cgColor
+    func show(title: String, near anchorFrame: NSRect) {
+        label.stringValue = title
+        label.textColor = .alternateSelectedControlTextColor
 
         let textSize = label.intrinsicContentSize
         let panelSize = NSSize(
@@ -84,7 +66,9 @@ final class ModeStatusWindowController: NSObject {
         } ?? NSScreen.main
         let visibleFrame = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let preferredY = resolvedAnchor.minY - panelSize.height - Self.anchorSpacing
+        let preferredY = resolvedAnchor.minY
+            - panelSize.height
+            - Self.anchorSpacing
         let fallbackY = resolvedAnchor.maxY + Self.anchorSpacing
         panel.setFrameOrigin(NSPoint(
             x: min(
@@ -96,22 +80,9 @@ final class ModeStatusWindowController: NSObject {
                 : min(fallbackY, visibleFrame.maxY - panelSize.height)
         ))
         panel.orderFrontRegardless()
-
-        if dismissesAutomatically {
-            let workItem = DispatchWorkItem { [weak self] in
-                self?.panel.orderOut(nil)
-            }
-            dismissWorkItem = workItem
-            DispatchQueue.main.asyncAfter(
-                deadline: .now() + 1.4,
-                execute: workItem
-            )
-        }
     }
 
     func hide() {
-        dismissWorkItem?.cancel()
-        dismissWorkItem = nil
         panel.orderOut(nil)
     }
 }

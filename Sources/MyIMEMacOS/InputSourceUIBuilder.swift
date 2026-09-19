@@ -9,8 +9,6 @@ enum InputSourceMenuBuilder {
         let openSettings: Selector
         let openJavaScriptExtensionDirectory: Selector
         let manageJavaScriptExtensions: Selector
-        let toggleTranslationMode: Selector
-        let translationModeEnabled: Bool
         let showStatus: Selector
     }
 
@@ -32,16 +30,6 @@ enum InputSourceMenuBuilder {
             selector: actions.manageJavaScriptExtensions,
             to: menu
         )
-        let translationMode = NSMenuItem(
-            title: "翻訳モード  \(MyIMFeatureShortcut.translationMode.shortcut.displayName)",
-            action: actions.toggleTranslationMode,
-            keyEquivalent: ""
-        )
-        translationMode.target = nil
-        translationMode.isEnabled = true
-        translationMode.keyEquivalentModifierMask = []
-        translationMode.state = actions.translationModeEnabled ? .on : .off
-        menu.addItem(translationMode)
         menu.addItem(.separator())
         addAction(
             title: "状態を確認…",
