@@ -70,6 +70,25 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
+    func learnsNextInputSelectionForItsDictionaryReading() {
+        let engine = ConversionEngine(entries: [
+            DictionaryEntry(
+                reading: "kouho",
+                candidates: ["候補", "公募"]
+            )
+        ])
+        var history = CandidateSelectionHistory()
+
+        history.record(
+            "候補",
+            readings: engine.readings(for: "候補")
+        )
+
+        #expect(history.ranks(for: "kouho")["候補"] != nil)
+        #expect(history.ranks(for: "kouho")["公募"] == nil)
+    }
+
+    @Test
     func combinesRanksAcrossEquivalentReadingInputs() {
         var history = CandidateSelectionHistory()
         history.record("通用候補", reading: "tuujoukouho")

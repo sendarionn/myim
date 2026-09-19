@@ -1505,6 +1505,7 @@ final class InputController: IMKInputController {
             if let selectedNextInputIndex,
                nextInputCandidates.indices.contains(selectedNextInputIndex) {
                 let value = nextInputCandidates[selectedNextInputIndex]
+                recordNextInputCandidateSelection(value)
                 commit(value + space, to: sender, historyValue: value)
                 return true
             }
@@ -1549,6 +1550,7 @@ final class InputController: IMKInputController {
            let selectedNextInputIndex,
            nextInputCandidates.indices.contains(selectedNextInputIndex) {
             let value = nextInputCandidates[selectedNextInputIndex]
+            recordNextInputCandidateSelection(value)
             dismissNextInputSuggestions(clearMarkedTextIn: nil)
             insertIntoTranslationDraft(value)
             updateMarkedText(in: sender)
@@ -4122,12 +4124,24 @@ final class InputController: IMKInputController {
     }
 
     private func commitNextInputCandidate(_ value: String, to sender: Any) {
+        recordNextInputCandidateSelection(value)
         commit(
             value,
             to: sender,
             recordsInputHistory: closingBracketTracker
                 .shouldRecordAsNextInput(value)
         )
+    }
+
+    private func recordNextInputCandidateSelection(_ candidate: String) {
+        guard closingBracketTracker.shouldRecordAsNextInput(candidate) else {
+            return
+        }
+        let readings = reconversionReadings(for: candidate).flatMap {
+            RomajiCanonicalizer.dictionaryLookupInputs(from: $0)
+        }
+        candidateSelectionHistory.record(candidate, readings: readings)
+        candidateSelectionHistoryWriter.schedule(candidateSelectionHistory)
     }
 
     private func commit(
