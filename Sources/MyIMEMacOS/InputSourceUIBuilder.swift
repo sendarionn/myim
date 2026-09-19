@@ -100,7 +100,6 @@ enum SettingsWindowBuilder {
         let toggleWebSearch: Selector
         let configureShortcuts: Selector
         let toggleShortcutGuides: Selector
-        let configureTranslationLanguage: Selector
         let updateBasicDictionary: Selector
     }
 
@@ -142,9 +141,6 @@ enum SettingsWindowBuilder {
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
-        ], target: target, to: stack)
-        addButtons([
-            ("翻訳先の言語…", actions.configureTranslationLanguage)
         ], target: target, to: stack)
         addButtons([
             ("次入力履歴を削除", actions.clearNextInputHistory)

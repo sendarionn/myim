@@ -113,6 +113,7 @@ final class InputController: IMKInputController {
     private var reconversionOriginal: String?
     private var translationDraft: String?
     private var translationDraftCursor = 0
+    private var translationTargetLanguage: TranslationTargetLanguage?
     private var translationTask: Task<Void, Never>?
     private var recentCommittedContext = ""
     private var activatedAt: TimeInterval?
@@ -142,8 +143,6 @@ final class InputController: IMKInputController {
     private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let settingsDialogController = SettingsDialogController()
     private let shortcutSettingsController = ShortcutSettingsController()
-    private let translationLanguageSettingsController =
-        TranslationLanguageSettingsController()
     private lazy var javaScriptExtensionSettingsController =
         JavaScriptExtensionSettingsController(
             client: Self.javaScriptExtensionClient
@@ -529,6 +528,13 @@ final class InputController: IMKInputController {
 
         switch event.keyCode {
         case 48:
+            if isTranslationModeEnabled,
+               translationTargetLanguage == nil,
+               event.modifierFlags.intersection(
+                [.command, .control, .option, .shift]
+               ).isEmpty {
+                return confirmTranslationTargetPrefix(client: sender)
+            }
             return handleTab(event, client: sender)
         case 49:
             let space = isFullWidthSpaceShortcut(event) ? "　" : " "
@@ -829,7 +835,6 @@ final class InputController: IMKInputController {
             toggleWebSearch: #selector(toggleWebSearch(_:)),
             configureShortcuts: #selector(configureShortcuts(_:)),
             toggleShortcutGuides: #selector(toggleShortcutGuides(_:)),
-            configureTranslationLanguage: #selector(configureTranslationLanguage(_:)),
             updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:))
         )
     }
@@ -876,11 +881,6 @@ final class InputController: IMKInputController {
                 prepareAnchor: prepareCandidateAnchorForFuzzyPanel
             )
         }
-    }
-
-    @objc
-    private func configureTranslationLanguage(_ sender: Any?) {
-        translationLanguageSettingsController.show()
     }
 
     @objc
@@ -1133,6 +1133,7 @@ final class InputController: IMKInputController {
         modeStatusWindow.hide()
         translationDraft = nil
         translationDraftCursor = 0
+        translationTargetLanguage = nil
         nextInputPredictionModel.breakSequence()
         if closesController {
             fuzzyEngineBuildTask?.cancel()
@@ -1287,6 +1288,7 @@ final class InputController: IMKInputController {
             translationTask?.cancel()
             translationTask = nil
         }
+        translationTargetLanguage = nil
         if enabled, let inputClient = client() {
             updateTranslationModeStatus(client: inputClient)
         } else if let inputClient = client() {
@@ -1524,6 +1526,9 @@ final class InputController: IMKInputController {
         space: String,
         client sender: Any
     ) -> Bool {
+        if translationTargetLanguage == nil {
+            return confirmTranslationTargetPrefix(client: sender)
+        }
         guard !inputBuffer.isEmpty else {
             guard translationDraft != nil else {
                 guard space == "　" else { return false }
@@ -1539,6 +1544,29 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func confirmTranslationTargetPrefix(client sender: Any) -> Bool {
+        guard inputCursor == inputBuffer.count,
+              let language = TranslationTargetLanguage.language(
+                forPrefix: inputBuffer
+              ) else {
+            NSSound.beep()
+            return true
+        }
+        translationTargetLanguage = language
+        inputBuffer = ""
+        inputCursor = 0
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        fuzzySuggestions = []
+        selectedFuzzySuggestionIndex = nil
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        modeStatusWindow.hide()
+        setMarkedText("", in: sender)
+        return true
+    }
+
     private func isFullWidthSpaceShortcut(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(
             [.command, .control, .option, .shift]
@@ -1547,6 +1575,10 @@ final class InputController: IMKInputController {
     }
 
     private func handleTranslationReturn(client sender: Any) -> Bool {
+        guard translationTargetLanguage != nil else {
+            NSSound.beep()
+            return true
+        }
         if inputBuffer.isEmpty,
            let selectedNextInputIndex,
            nextInputCandidates.indices.contains(selectedNextInputIndex) {
@@ -1614,6 +1646,7 @@ final class InputController: IMKInputController {
 
     private func translateDraft(client sender: Any) -> Bool {
         guard translationTask == nil,
+              let target = translationTargetLanguage,
               let source = translationDraft,
               !source.isEmpty else {
             return true
@@ -1622,7 +1655,7 @@ final class InputController: IMKInputController {
             candidates: ["翻訳中…"],
             selectedIndex: nil,
             near: inputLocation(for: sender),
-            modeTitle: "\(TranslationTargetLanguage.current.name)へ翻訳",
+            modeTitle: "\(target.name)へ翻訳",
             isAccented: true
         )
         translationTask = Task { @MainActor [weak self] in
@@ -1630,7 +1663,6 @@ final class InputController: IMKInputController {
 #if canImport(Translation)
             if #available(macOS 15.0, *) {
                 let provider = AppleTranslationCandidateProvider()
-                let target = TranslationTargetLanguage.current
                 let translated = await provider.translateJapanese(
                     source,
                     targetIdentifier: target.identifier
@@ -1647,6 +1679,7 @@ final class InputController: IMKInputController {
                     if !value.isEmpty {
                         self.translationDraft = nil
                         self.translationDraftCursor = 0
+                        self.translationTargetLanguage = nil
                         self.translationTask = nil
                         self.commit(
                             value,
@@ -1680,6 +1713,7 @@ final class InputController: IMKInputController {
         guard !value.isEmpty else { return }
         translationDraft = nil
         translationDraftCursor = 0
+        translationTargetLanguage = nil
         commit(value, to: sender, replacingMarkedText: true)
     }
 
@@ -2797,6 +2831,16 @@ final class InputController: IMKInputController {
         nonLearnableGeneratedCandidates = []
         longVowelFilterProtectedCandidates = []
         updateTranslationModeStatus(client: sender)
+        if isTranslationModeEnabled, translationTargetLanguage == nil {
+            currentCandidates = []
+            selectedCandidateIndex = nil
+            fuzzySuggestions = []
+            selectedFuzzySuggestionIndex = nil
+            candidateWindow.hide()
+            fuzzySuggestionWindow.hide()
+            previewWindow.hide()
+            return
+        }
         updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
         let calculatorCandidates = CalculatorCandidateGenerator.candidates(
             for: inputBuffer
@@ -3731,6 +3775,7 @@ final class InputController: IMKInputController {
         translationTask?.cancel()
         translationTask = nil
         translationDraft = nil
+        translationTargetLanguage = nil
         resetTransientInteractionState()
         modeStatusWindow.hide()
         nextInputPredictionModel.breakSequence()
@@ -4579,6 +4624,7 @@ final class InputController: IMKInputController {
 
     private func updateTranslationModeStatus(client sender: Any) {
         guard isTranslationModeEnabled,
+              translationTargetLanguage == nil,
               inputBuffer.isEmpty,
               translationDraft == nil else {
             modeStatusWindow.hide()
@@ -4587,8 +4633,21 @@ final class InputController: IMKInputController {
         modeStatusWindow.show(
             enabled: true,
             near: inputLocation(for: sender),
-            dismissesAutomatically: false
+            dismissesAutomatically: false,
+            detail: PanelShortcutGuideStyle.isEnabled
+                ? translationPrefixGuide
+                : nil
         )
+    }
+
+    private var translationPrefixGuide: String {
+        let entries = TranslationTargetLanguage.available.map {
+            "\($0.prefix) \($0.name)"
+        }
+        return stride(from: 0, to: entries.count, by: 3).map { start in
+            entries[start..<min(start + 3, entries.count)]
+                .joined(separator: "　")
+        }.joined(separator: "\n")
     }
 
     private func moveInputCursor(by offset: Int, client sender: Any) -> Bool {

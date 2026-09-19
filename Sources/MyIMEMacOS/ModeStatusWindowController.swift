@@ -24,6 +24,7 @@ final class ModeStatusWindowController: NSObject {
         label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         label.alignment = .center
         label.lineBreakMode = .byClipping
+        label.maximumNumberOfLines = 0
 
         let contentView = NSView()
         contentView.wantsLayer = true
@@ -43,15 +44,20 @@ final class ModeStatusWindowController: NSObject {
     func show(
         enabled: Bool,
         near anchorFrame: NSRect,
-        dismissesAutomatically: Bool = true
+        dismissesAutomatically: Bool = true,
+        detail: String? = nil
     ) {
         dismissWorkItem?.cancel()
         dismissWorkItem = nil
 
         let shortcut = MyIMFeatureShortcut.translationMode.shortcut.displayName
-        label.stringValue = enabled
+        let status = enabled
             ? "翻訳モードON　\(shortcut)でOFF"
             : "翻訳モードOFF　\(shortcut)でON"
+        label.stringValue = [status, detail]
+            .compactMap { $0 }
+            .joined(separator: "\n")
+        label.alignment = detail == nil ? .center : .left
         label.textColor = enabled ? .alternateSelectedControlTextColor : .labelColor
         panel.contentView?.layer?.backgroundColor = (
             enabled ? NSColor.controlAccentColor : NSColor.windowBackgroundColor
