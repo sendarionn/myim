@@ -122,8 +122,10 @@ public struct DateTimeCandidateGenerator: Sendable {
 
     private static let dayOffsets = [
         "ototoi": -2,
+        "sakujitu": -1,
         "kinou": -1,
         "kyou": 0,
+        "asu": 1,
         "ashita": 1,
         "asatte": 2
     ]

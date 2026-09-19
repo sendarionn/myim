@@ -1471,6 +1471,14 @@ final class InputController: IMKInputController {
             commit(space, to: sender)
             return true
         }
+        if selectedCandidateIndex == nil,
+           !CalculatorCandidateGenerator.candidates(
+            for: inputBuffer
+           ).isEmpty {
+            insertIntoInputBuffer(space)
+            refreshCandidates(client: sender)
+            return true
+        }
         let value = selectedCandidateValue ?? inputBuffer
         recordSelectedCandidate()
         commit(value + space, to: sender, historyValue: value)

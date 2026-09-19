@@ -31,11 +31,33 @@ struct DateTimeCandidateGeneratorTests {
             timeZone: timeZone
         ).first == "2026年8月9日")
         #expect(generator.candidates(
+            for: "sakujitu",
+            now: fixedDate,
+            calendar: calendar,
+            timeZone: timeZone
+        ) == generator.candidates(
+            for: "kinou",
+            now: fixedDate,
+            calendar: calendar,
+            timeZone: timeZone
+        ))
+        #expect(generator.candidates(
             for: "ashita",
             now: fixedDate,
             calendar: calendar,
             timeZone: timeZone
         ).first == "2026年8月11日")
+        #expect(generator.candidates(
+            for: "asu",
+            now: fixedDate,
+            calendar: calendar,
+            timeZone: timeZone
+        ) == generator.candidates(
+            for: "ashita",
+            now: fixedDate,
+            calendar: calendar,
+            timeZone: timeZone
+        ))
     }
 
     @Test

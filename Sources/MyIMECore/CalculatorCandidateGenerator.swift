@@ -5,10 +5,12 @@ public enum CalculatorCandidateGenerator {
     private static let maximumMagnitude = 1e15
 
     public static func candidates(for input: String) -> [String] {
-        guard input.hasSuffix("="), input.count <= maximumExpressionLength else {
+        guard input.count <= maximumExpressionLength else {
             return []
         }
-        let expression = String(input.dropLast())
+        let trimmedInput = input.trimmingCharacters(in: .whitespaces)
+        guard trimmedInput.hasSuffix("=") else { return [] }
+        let expression = String(trimmedInput.dropLast())
         guard !expression.isEmpty,
               var parser = ArithmeticParser(expression),
               let value = parser.parse(),
