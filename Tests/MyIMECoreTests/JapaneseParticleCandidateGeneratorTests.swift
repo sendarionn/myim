@@ -14,8 +14,8 @@ struct JapaneseParticleCandidateGeneratorTests {
     }
 
     @Test
-    func keepsLeadingParticleInHiragana() {
-        #expect(candidates(for: "hakouho") == ["は候補"])
+    func doesNotGenerateLeadingParticleCandidate() {
+        #expect(candidates(for: "hakouho").isEmpty)
     }
 
     @Test

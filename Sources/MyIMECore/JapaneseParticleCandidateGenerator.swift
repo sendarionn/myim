@@ -65,12 +65,10 @@ public enum JapaneseParticleCandidateGenerator {
         var results: [String] = []
         var seen = Set<String>()
 
-        func append(stem: String, particle: Particle, isPrefix: Bool) {
+        func append(stem: String, particle: Particle) {
             guard stem.count >= 2 else { return }
             for candidate in exactCandidates(stem) where !candidate.isEmpty {
-                let combined = isPrefix
-                    ? particle.text + candidate
-                    : candidate + particle.text
+                let combined = candidate + particle.text
                 if seen.insert(combined).inserted {
                     results.append(combined)
                 }
@@ -86,18 +84,7 @@ public enum JapaneseParticleCandidateGenerator {
             if input.hasSuffix(particle.reading) {
                 append(
                     stem: String(input.dropLast(particle.reading.count)),
-                    particle: particle,
-                    isPrefix: false
-                )
-            }
-        }
-        for particle in orderedParticles {
-            guard results.count < limit else { break }
-            if input.hasPrefix(particle.reading) {
-                append(
-                    stem: String(input.dropFirst(particle.reading.count)),
-                    particle: particle,
-                    isPrefix: true
+                    particle: particle
                 )
             }
         }
