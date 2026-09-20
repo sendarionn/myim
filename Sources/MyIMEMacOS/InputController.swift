@@ -1588,9 +1588,7 @@ final class InputController: IMKInputController {
             return true
         }
         if selectedCandidateIndex == nil,
-           !CalculatorCandidateGenerator.candidates(
-            for: inputBuffer
-           ).isEmpty {
+           isCalculationExpressionDraft {
             insertIntoInputBuffer(space)
             refreshCandidates(client: sender)
             return true
@@ -3001,12 +2999,12 @@ final class InputController: IMKInputController {
         defer {
             updateJavaScriptExtensionCandidatesIfNeeded(for: extensionInput)
         }
-        let calculatorCandidates = CalculatorCandidateGenerator.candidates(
-            for: inputBuffer
-        )
-        if !calculatorCandidates.isEmpty {
+        if isCalculationExpressionDraft, !scriptCandidates.isEmpty {
             replaceCurrentCandidates(
-                with: calculatorCandidates + scriptCandidates
+                with: CalculationCandidateSet.visible(
+                    generatedCandidates: scriptCandidates,
+                    input: inputBuffer
+                )
             )
             showCandidateWindow(client: sender)
             return
@@ -4086,7 +4084,7 @@ final class InputController: IMKInputController {
 
         let value = selectedCandidateValue ?? inputBuffer
         let calculatorNextInputCandidates = selectedCandidateIndex == nil
-            ? CalculatorCandidateGenerator.candidates(for: inputBuffer)
+            ? cachedJavaScriptCalculationCandidates
             : []
         recordSelectedCandidate()
         commit(
@@ -5106,7 +5104,7 @@ final class InputController: IMKInputController {
     }
 
     private var conversionSuffix: String {
-        if !CalculatorCandidateGenerator.candidates(for: inputBuffer).isEmpty
+        if isCalculationExpressionDraft
             || !UnitConversionCandidateGenerator.candidates(
                 for: inputBuffer
             ).isEmpty
@@ -5122,6 +5120,19 @@ final class InputController: IMKInputController {
             return ""
         }
         return String(inputBuffer.dropFirst(conversionReading.count))
+    }
+
+    private var isCalculationExpressionDraft: Bool {
+        inputBuffer.trimmingCharacters(in: .whitespaces).hasSuffix("=")
+    }
+
+    private var cachedJavaScriptCalculationCandidates: [String] {
+        guard isCalculationExpressionDraft,
+              suggestionSearchSession.query(for: .javaScriptExtensions)
+                == inputBuffer else {
+            return []
+        }
+        return javaScriptExtensionCandidates
     }
 
     private var selectedCandidateValue: String? {

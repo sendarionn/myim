@@ -33,6 +33,30 @@ process.stdout.write(JSON.stringify(candidates({{ input: {json.dumps(value)} }})
         self.assertEqual(self.candidates("10"), ["0b1010"])
         self.assertEqual(self.candidates("-5"), ["-0b101"])
 
+    def test_calculates_expressions_with_precedence_and_parentheses(self):
+        self.assertEqual(self.candidates("2+1="), ["3"])
+        self.assertEqual(self.candidates("2+3*4="), ["14"])
+        self.assertEqual(self.candidates("(2+3)*4="), ["20"])
+
+    def test_calculates_whitespace_decimals_and_unary_operators(self):
+        self.assertEqual(self.candidates(" 5 / 2 = "), ["2.5"])
+        self.assertEqual(self.candidates("-2+1="), ["-1"])
+        self.assertEqual(self.candidates("0.1+0.2="), ["0.3"])
+
+    def test_adds_grouped_and_approximate_calculation_candidates(self):
+        self.assertEqual(self.candidates("1000+2000="), ["3000", "3,000"])
+        self.assertEqual(
+            self.candidates("1/3="),
+            ["0.333333333333", "約0.3", "約0.33"],
+        )
+        self.assertEqual(self.candidates("1/8="), ["0.125"])
+
+    def test_rejects_incomplete_or_unsafe_calculations(self):
+        self.assertEqual(self.candidates("2+1"), [])
+        self.assertEqual(self.candidates("1/0="), [])
+        self.assertEqual(self.candidates("1+a="), [])
+        self.assertEqual(self.candidates("="), [])
+
     def test_converts_metric_length_to_imperial_units(self):
         self.assertEqual(
             self.candidates("10cm"),
