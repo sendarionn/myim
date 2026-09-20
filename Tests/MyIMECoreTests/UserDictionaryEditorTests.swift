@@ -4,6 +4,91 @@ import Testing
 @Suite
 struct UserDictionaryEditorTests {
     @Test
+    func acceptsPrintableSymbolsFromOptionKeyInput() {
+        for symbol in ["•", "±", "©", "･", "→"] {
+            #expect(UserDictionaryInputPolicy.accepts(
+                symbol,
+                hasCommandModifier: false,
+                hasControlModifier: false
+            ))
+        }
+        #expect(!UserDictionaryInputPolicy.accepts(
+            "©",
+            hasCommandModifier: true,
+            hasControlModifier: false
+        ))
+        #expect(!UserDictionaryInputPolicy.accepts(
+            "\n",
+            hasCommandModifier: false,
+            hasControlModifier: false
+        ))
+    }
+
+    @Test
+    func roundTripsCandidateContainingSymbols() throws {
+        let entries = UserDictionaryEditor.adding(
+            reading: "kigou",
+            candidate: "価格：¥1,000 → ¥2,000",
+            to: []
+        )
+        let text = DictionarySerializer.text(from: entries)
+
+        #expect(try DictionaryParser().parse(text) == entries)
+        #expect(ConversionEngine(entries: entries).candidates(for: "kigou")
+            == ["価格：¥1,000 → ¥2,000"])
+    }
+
+    @Test
+    func registersASymbolForASymbolOnlyReading() throws {
+        let reading = try #require(UserDictionaryRegistrationReading.resolve(
+            conversionReading: "",
+            originalInput: "/"
+        ))
+        let entries = UserDictionaryEditor.adding(
+            reading: reading,
+            candidate: "･",
+            to: []
+        )
+
+        #expect(reading == "/")
+        #expect(ConversionEngine(entries: entries).candidates(for: "/") == ["･"])
+        #expect(try DictionaryParser().parse(
+            DictionarySerializer.text(from: entries)
+        ) == entries)
+    }
+
+    @Test
+    func looksUpARegisteredCandidateForRepeatedSymbols() throws {
+        let originalInput = "///"
+        let reading = try #require(UserDictionaryRegistrationReading.resolve(
+            conversionReading: "",
+            originalInput: originalInput
+        ))
+        let entries = UserDictionaryEditor.adding(
+            reading: reading,
+            candidate: "･･･",
+            to: []
+        )
+        let lookupReading = UserDictionaryLookupReading.resolve(
+            conversionReading: "",
+            originalInput: originalInput
+        )
+
+        #expect(lookupReading == "///")
+        #expect(ConversionEngine(entries: entries).candidates(
+            for: lookupReading
+        ) == ["･･･"])
+    }
+
+    @Test
+    func keepsRomanReadingWhenTheInputAlsoContainsSymbols() {
+        #expect(UserDictionaryRegistrationReading.resolve(
+            conversionReading: "kigou",
+            originalInput: "kigou/"
+        ) == "kigou")
+    }
+
+    @Test
     func addsCandidateToExistingReading() {
         let entries = [
             DictionaryEntry(reading: "kouzou", candidates: ["構造"])

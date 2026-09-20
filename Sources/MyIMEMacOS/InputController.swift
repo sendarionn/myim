@@ -1997,9 +1997,16 @@ final class InputController: IMKInputController {
     }
 
     private func beginTabDictionaryRegistration(client sender: Any) -> Bool {
+        guard let reading = UserDictionaryRegistrationReading.resolve(
+            conversionReading: conversionReading,
+            originalInput: inputBuffer
+        ) else {
+            NSSound.beep()
+            return true
+        }
         let registration = TabDictionaryRegistration(
             originalInput: inputBuffer,
-            reading: conversionReading.lowercased()
+            reading: reading
         )
         tabDictionaryRegistration = registration
         inputBuffer = ""
@@ -2138,11 +2145,12 @@ final class InputController: IMKInputController {
             return true
         }
 
-        guard
-            event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-            let characters = event.characters,
-            !characters.isEmpty
-        else {
+        guard let characters = event.characters,
+              UserDictionaryInputPolicy.accepts(
+                  characters,
+                  hasCommandModifier: event.modifierFlags.contains(.command),
+                  hasControlModifier: event.modifierFlags.contains(.control)
+              ) else {
             return true
         }
         if let selectedValue = selectedCandidateValue {
@@ -3045,10 +3053,17 @@ final class InputController: IMKInputController {
             RomajiCanonicalizer.dictionaryLookupInputs(
                 from: conversionReading
             )
+        let userLookupReadings =
+            RomajiCanonicalizer.dictionaryLookupInputs(
+                from: UserDictionaryLookupReading.resolve(
+                    conversionReading: conversionReading,
+                    originalInput: inputBuffer
+                )
+            )
         let dateTimeCandidates: [String] = []
         let userCandidates = mergedCandidateGroups(
             lookup: { userConversionEngine.candidateGroups(matching: $0) },
-            readings: lookupReadings
+            readings: userLookupReadings
         )
         let basicCandidates = mergedCandidateGroups(
             lookup: { basicConversionEngine.candidateGroups(matching: $0) },

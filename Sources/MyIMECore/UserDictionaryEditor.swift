@@ -1,3 +1,54 @@
+import Foundation
+
+public enum UserDictionaryInputPolicy {
+    public static func accepts(
+        _ characters: String,
+        hasCommandModifier: Bool,
+        hasControlModifier: Bool
+    ) -> Bool {
+        guard !characters.isEmpty,
+              !hasCommandModifier,
+              !hasControlModifier else {
+            return false
+        }
+        return characters.unicodeScalars.allSatisfy {
+            !CharacterSet.controlCharacters.contains($0)
+        }
+    }
+}
+
+public enum UserDictionaryRegistrationReading {
+    public static func resolve(
+        conversionReading: String,
+        originalInput: String
+    ) -> String? {
+        let conversion = conversionReading.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        if !conversion.isEmpty {
+            return conversion.lowercased()
+        }
+        let original = originalInput.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !original.isEmpty,
+              !original.contains("\t"),
+              !original.contains("\n") else {
+            return nil
+        }
+        return original.lowercased()
+    }
+}
+
+public enum UserDictionaryLookupReading {
+    public static func resolve(
+        conversionReading: String,
+        originalInput: String
+    ) -> String {
+        conversionReading.isEmpty ? originalInput : conversionReading
+    }
+}
+
 public enum UserDictionaryEditor {
     public static func adding(
         reading: String,
