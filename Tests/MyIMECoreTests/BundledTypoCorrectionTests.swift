@@ -38,6 +38,8 @@ struct BundledTypoCorrectionTests {
         #expect(baseDictionary.candidates(for: "mugen").contains("∞"))
         #expect(baseDictionary.candidates(for: "onpu").contains("♪"))
         #expect(baseDictionary.candidates(for: "en").contains("¥"))
+        #expect(baseDictionary.candidates(for: "nakaguro").contains("・"))
+        #expect(baseDictionary.candidates(for: "nakaguro").contains("･"))
         let entries = baseEntries
             + VerbInflectionCandidateGenerator.typoSearchEntries(
                 from: baseEntries

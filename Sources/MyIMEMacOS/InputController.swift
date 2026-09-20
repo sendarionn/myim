@@ -5293,7 +5293,7 @@ final class InputController: IMKInputController {
             "shaapu", "supe-do", "kurabu", "haato", "daiya", "en",
             "doru", "yuuro", "pondo", "sento", "won", "yuubin",
             "sesshi", "kashi", "nambaa", "tore-domaaku",
-            "kopiiraito", "touroku"
+            "kopiiraito", "touroku", "nakaguro"
         ]
         return entries + bundled.filter { readings.contains($0.input) }
     }
