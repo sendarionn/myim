@@ -42,9 +42,8 @@ private final class CalendarGridView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func updateShortcutGuide() {
-        shortcutLabel.isHidden = !PanelShortcutGuideStyle.isEnabled
-        shortcutLabel.stringValue =
-            "矢印 移動　⌥←→ 月　⌥↑↓ 年\nReturn 確定　Esc / \(MyIMFeatureShortcut.calendar.shortcut.displayName) 閉じる"
+        shortcutLabel.isHidden = true
+        shortcutLabel.stringValue = ""
         needsLayout = true
     }
 

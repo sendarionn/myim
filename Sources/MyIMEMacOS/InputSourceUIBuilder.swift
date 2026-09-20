@@ -78,7 +78,6 @@ enum SettingsWindowBuilder {
         let externalInformationPanel: Bool
         let systemDictionaryPreview: Bool
         let webSearch: Bool
-        let shortcutGuides: Bool
     }
 
     struct Actions {
@@ -95,7 +94,6 @@ enum SettingsWindowBuilder {
         let configureSystemDictionaries: Selector
         let toggleWebSearch: Selector
         let configureShortcuts: Selector
-        let toggleShortcutGuides: Selector
         let updateBasicDictionary: Selector
         let downloadCandidateFilterIDS: Selector
         let openCandidateFilterIDSDirectory: Selector
@@ -161,11 +159,8 @@ enum SettingsWindowBuilder {
             ("データフォルダを開く…", actions.openCandidateFilterIDSDirectory)
         ], target: target, to: stack)
         addSection("操作", to: stack)
-        addCheckboxes([
-            ("ショートカットキーの案内を表示", actions.toggleShortcutGuides, states.shortcutGuides)
-        ], target: target, to: stack)
         addButtons([
-            ("ショートカット…", actions.configureShortcuts)
+            ("ショートカットキーを変更", actions.configureShortcuts)
         ], target: target, to: stack)
 
         let scrollView = NSScrollView()

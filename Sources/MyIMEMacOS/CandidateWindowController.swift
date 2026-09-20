@@ -9,19 +9,12 @@ enum CandidateNavigationDirection {
 }
 
 enum PanelShortcutGuideStyle {
-    static let enabledDefaultsKey = "PanelShortcutGuidesEnabled"
     static let font = NSFont.systemFont(ofSize: 11)
     static let color = NSColor.secondaryLabelColor
     static let horizontalPadding: CGFloat = 10
     static let verticalPadding: CGFloat = 4
 
-    static var isEnabled: Bool {
-        let defaults = UserDefaults.standard
-        guard defaults.object(forKey: enabledDefaultsKey) != nil else {
-            return true
-        }
-        return defaults.bool(forKey: enabledDefaultsKey)
-    }
+    static var isEnabled: Bool { false }
 }
 
 enum CandidatePanelItemStyle {

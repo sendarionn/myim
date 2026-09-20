@@ -181,9 +181,7 @@ final class ExternalInformationWindowController: NSObject {
             frameWidth: frame.width,
             frameHeight: frame.height,
             isVisible: isVisible,
-            openShortcutDisplayName: PanelShortcutGuideStyle.isEnabled
-                ? MyIMFeatureShortcut.externalInformation.shortcut.displayName
-                : nil,
+            openShortcutDisplayName: nil,
             returnApplicationProcessIdentifier:
                 returnApplicationProcessIdentifier
         )

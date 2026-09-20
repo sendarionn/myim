@@ -842,8 +842,7 @@ final class InputController: IMKInputController {
             dateTimeCandidates: isDateTimeCandidatesEnabled,
             externalInformationPanel: isExternalInformationPanelEnabled,
             systemDictionaryPreview: isSystemDictionaryPreviewEnabled,
-            webSearch: isWebSearchEnabled,
-            shortcutGuides: PanelShortcutGuideStyle.isEnabled
+            webSearch: isWebSearchEnabled
         )
     }
 
@@ -862,7 +861,6 @@ final class InputController: IMKInputController {
             configureSystemDictionaries: #selector(configureSystemDictionaries(_:)),
             toggleWebSearch: #selector(toggleWebSearch(_:)),
             configureShortcuts: #selector(configureShortcuts(_:)),
-            toggleShortcutGuides: #selector(toggleShortcutGuides(_:)),
             updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:)),
             downloadCandidateFilterIDS: #selector(downloadCandidateFilterIDS(_:)),
             openCandidateFilterIDSDirectory: #selector(
@@ -874,45 +872,6 @@ final class InputController: IMKInputController {
     @objc
     private func configureShortcuts(_ sender: Any?) {
         shortcutSettingsController.show()
-    }
-
-    @objc
-    private func toggleShortcutGuides(_ sender: Any?) {
-        let enabled = checkboxValue(
-            sender,
-            current: PanelShortcutGuideStyle.isEnabled
-        )
-        UserDefaults.standard.set(
-            enabled,
-            forKey: PanelShortcutGuideStyle.enabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
-        guard let inputClient = client() else {
-            candidateWindow.hide()
-            fuzzySuggestionWindow.hide()
-            return
-        }
-        if !inputBuffer.isEmpty || !currentCandidates.isEmpty {
-            showCandidateWindow(client: inputClient)
-        }
-        if let selectedFuzzySuggestionIndex {
-            showFuzzySuggestionPage(
-                selectedIndex: selectedFuzzySuggestionIndex,
-                client: inputClient
-            )
-        } else if !fuzzySuggestions.isEmpty {
-            fuzzySuggestionWindow.show(
-                suggestions: Array(fuzzySuggestions.prefix(
-                    Self.initialFuzzySuggestionCount
-                )),
-                selectedIndex: nil,
-                near: candidateWindow.frame,
-                avoidingFrames: [candidateWindow.frame]
-                    + candidateWindow.auxiliaryFrames,
-                isAccented: isTranslationSessionActive,
-                prepareAnchor: prepareCandidateAnchorForFuzzyPanel
-            )
-        }
     }
 
     @objc
