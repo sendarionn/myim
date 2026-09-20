@@ -19,6 +19,29 @@ function candidates(context) {
     asatte: 2
   }
   const timeReadings = ["ima", "jikoku", "genzaijikoku"]
+  const weekdayReadings = {
+    nichi: "日",
+    nichiyou: "日",
+    nichiyoubi: "日",
+    getsu: "月",
+    getsuyou: "月",
+    getsuyoubi: "月",
+    ka: "火",
+    kayou: "火",
+    kayoubi: "火",
+    sui: "水",
+    suiyou: "水",
+    suiyoubi: "水",
+    moku: "木",
+    mokuyou: "木",
+    mokuyoubi: "木",
+    kin: "金",
+    kinyou: "金",
+    kinyoubi: "金",
+    do: "土",
+    doyou: "土",
+    doyoubi: "土"
+  }
   const now = new Date(context.timestamp)
 
   if (input === "calendar") {
@@ -30,6 +53,9 @@ function candidates(context) {
   }
   if (timeReadings.indexOf(input) >= 0) {
     return format(now, timeFormats)
+  }
+  if (Object.prototype.hasOwnProperty.call(weekdayReadings, input)) {
+    return ["(" + weekdayReadings[input] + ")"]
   }
   return []
 }

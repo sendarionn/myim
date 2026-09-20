@@ -1,8 +1,10 @@
 // @myim-prefix 
 
 function candidates(context) {
-  if (!context.settings.dateTimeCandidatesEnabled ||
-      context.settings.dateTimeCandidatesEnabled[0] !== "true") {
+  const input = context.input.toLowerCase()
+  if (input !== "calendar" &&
+      (!context.settings.dateTimeCandidatesEnabled ||
+       context.settings.dateTimeCandidatesEnabled[0] !== "true")) {
     return []
   }
   const dateFormats = ["YYYYMMDD", "M/D(E)"]
@@ -17,9 +19,11 @@ function candidates(context) {
     asatte: 2
   }
   const timeReadings = ["ima", "jikoku", "genzaijikoku"]
-  const input = context.input.toLowerCase()
   const now = new Date(context.timestamp)
 
+  if (input === "calendar") {
+    return format(now, dateFormats)
+  }
   if (Object.prototype.hasOwnProperty.call(dayOffsets, input)) {
     now.setDate(now.getDate() + dayOffsets[input])
     return format(now, dateFormats)
