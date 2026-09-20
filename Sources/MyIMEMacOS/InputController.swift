@@ -1533,7 +1533,7 @@ final class InputController: IMKInputController {
                     snapshot.generatedAt > $0
                 }) ?? true else {
                     if let self, basicEntries.isEmpty {
-                        basicEntries = Self.addingBundledKeyboardSymbols(
+                        basicEntries = Self.addingBundledRequiredEntries(
                             to: snapshot.entries
                         )
                         rebuildConversionEngine(basicDictionaryChanged: true)
@@ -1556,7 +1556,7 @@ final class InputController: IMKInputController {
                 guard let self else {
                     return
                 }
-                basicEntries = Self.addingBundledKeyboardSymbols(
+                basicEntries = Self.addingBundledRequiredEntries(
                     to: snapshot.entries
                 )
                 rebuildConversionEngine(basicDictionaryChanged: true)
@@ -2894,7 +2894,11 @@ final class InputController: IMKInputController {
         let choice = draft.choices[selectedIndex]
         switch choice {
         case let .input(value):
-            recordCandidateSelection(value)
+            if let filterReading = CandidateFilterLearning.reading(
+                for: draft.input
+            ) {
+                recordCandidateSelection(value, reading: filterReading)
+            }
             var updatedDraft = draft
             updatedDraft.input = value
             updatedDraft.stage = .filter
@@ -3098,6 +3102,9 @@ final class InputController: IMKInputController {
             },
             readings: lookupReadings
         )
+        let learnedExactCandidates = candidateSelectionHistory.candidates(
+            for: lookupReadings
+        )
         var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(
             from: conversionReading
@@ -3109,6 +3116,7 @@ final class InputController: IMKInputController {
                 .compactMap { $0 }
         }
         let directCandidates = userCandidates.exact
+            + learnedExactCandidates
             + dateTimeCandidates
             + numericPrefixCandidates
             + scriptCandidates
@@ -5249,7 +5257,7 @@ final class InputController: IMKInputController {
         }
         if let cache = try? basicDictionaryCache(),
            let cachedEntries = loadEntries(from: cache) {
-            return addingBundledKeyboardSymbols(
+            return addingBundledRequiredEntries(
                 to: cachedEntries,
                 bundledEntries: entries
             )
@@ -5257,7 +5265,7 @@ final class InputController: IMKInputController {
         return entries
     }
 
-    private static func addingBundledKeyboardSymbols(
+    private static func addingBundledRequiredEntries(
         to entries: [DictionaryEntry],
         bundledEntries: [DictionaryEntry]? = nil
     ) -> [DictionaryEntry] {
@@ -5275,7 +5283,17 @@ final class InputController: IMKInputController {
             "command", "cmd", "option", "alt", "shift", "control",
             "ctrl", "capslock", "escape", "esc", "return", "enter",
             "tab", "delete", "forwarddelete", "backspace", "space",
-            "eject"
+            "eject", "yajirushi", "migiyajirushi", "hidariyajirushi",
+            "ueyajirushi", "shitayajirushi", "maru", "sankaku",
+            "migisankaku", "hidarisankaku", "uesankaku",
+            "shitasankaku", "shikaku", "hoshi", "puramain", "kakeru",
+            "waru", "nottoikooru", "yakunari", "shounari", "dainari",
+            "mugen", "ruuto", "shiguma", "sekibun", "komejirushi",
+            "asutarisuku", "dagaa", "daburudagaa", "onpu", "furatto",
+            "shaapu", "supe-do", "kurabu", "haato", "daiya", "en",
+            "doru", "yuuro", "pondo", "sento", "won", "yuubin",
+            "sesshi", "kashi", "nambaa", "tore-domaaku",
+            "kopiiraito", "touroku"
         ]
         return entries + bundled.filter { readings.contains($0.input) }
     }

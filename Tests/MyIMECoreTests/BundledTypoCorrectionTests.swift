@@ -18,6 +18,26 @@ struct BundledTypoCorrectionTests {
             encoding: .utf8
         )
         let baseEntries = try DictionaryParser().parse(dictionaryText)
+        let baseDictionary = ConversionEngine(entries: baseEntries)
+        #expect(baseDictionary.candidates(for: "maru").contains("◯"))
+        #expect(baseDictionary.candidates(for: "maru").contains("○"))
+        #expect(baseDictionary.candidates(for: "maru").contains("〇"))
+        #expect(baseDictionary.candidates(for: "sankaku").contains("△"))
+        #expect(baseDictionary.candidates(for: "shikaku").contains("□"))
+        #expect(baseDictionary.candidates(for: "hoshi").contains("☆"))
+        let arrows = baseDictionary.candidates(for: "yajirushi")
+        #expect(["→", "←", "↑", "↓", "↗", "↘", "↙", "↖"].allSatisfy {
+            arrows.contains($0)
+        })
+        #expect(!arrows.contains("▶"))
+        #expect(!arrows.contains("▲"))
+        let triangles = baseDictionary.candidates(for: "sankaku")
+        #expect(["△", "▽", "▲", "▼", "▶", "◀"].allSatisfy {
+            triangles.contains($0)
+        })
+        #expect(baseDictionary.candidates(for: "mugen").contains("∞"))
+        #expect(baseDictionary.candidates(for: "onpu").contains("♪"))
+        #expect(baseDictionary.candidates(for: "en").contains("¥"))
         let entries = baseEntries
             + VerbInflectionCandidateGenerator.typoSearchEntries(
                 from: baseEntries

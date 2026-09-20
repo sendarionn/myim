@@ -174,6 +174,15 @@ public enum CandidateFilterArrowNavigation {
     }
 }
 
+public enum CandidateFilterLearning {
+    public static func reading(for filterInput: String) -> String? {
+        let reading = filterInput.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        return reading.isEmpty ? nil : reading
+    }
+}
+
 public struct CandidateFilterPanelRect: Equatable, Sendable {
     public let x: Double
     public let y: Double

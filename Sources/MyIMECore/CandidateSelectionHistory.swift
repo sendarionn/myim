@@ -119,6 +119,13 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         })
     }
 
+    public func candidates(for readings: [String]) -> [String] {
+        ranks(for: readings).sorted {
+            if $0.value != $1.value { return $0.value > $1.value }
+            return $0.key < $1.key
+        }.map(\.key)
+    }
+
     public func completions(for readingPrefix: String, limit: Int = 14) -> [String] {
         let prefix = readingPrefix.lowercased()
         guard prefix.count >= 2, limit > 0 else { return [] }

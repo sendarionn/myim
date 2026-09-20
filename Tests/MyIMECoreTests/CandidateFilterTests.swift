@@ -4,6 +4,19 @@ import Testing
 
 @Suite
 struct CandidateFilterTests {
+    @Test
+    func usesFilterInputInsteadOfOriginalConversionForLearning() {
+        var history = CandidateSelectionHistory()
+        let reading = CandidateFilterLearning.reading(for: "1")
+        if let reading {
+            history.record("1", reading: reading)
+        }
+
+        #expect(history.candidates(for: ["1"]) == ["1"])
+        #expect(history.candidates(for: ["maru"]).isEmpty)
+        #expect(CandidateFilterLearning.reading(for: "  ") == nil)
+    }
+
     private let database = KanjiFilterDatabase(values: [
         "校": KanjiFilterAttributes(radical: "木", strokeCount: 10, components: ["木", "交"]),
         "構": KanjiFilterAttributes(radical: "木", strokeCount: 14, components: ["木"]),

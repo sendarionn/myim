@@ -110,6 +110,18 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
+    func restoresCandidatesLearnedForTheExactReading() {
+        var history = CandidateSelectionHistory()
+        history.record("◯", reading: "maru")
+        history.record("○", reading: "maru")
+        history.record("候補", reading: "kouho")
+        history.record("◯", reading: "maru")
+
+        #expect(history.candidates(for: ["maru"]) == ["◯", "○"])
+        #expect(!history.candidates(for: ["maru"]).contains("候補"))
+    }
+
+    @Test
     func suggestsFrequentlyUsedLongerReadingsAsCompletions() {
         var history = CandidateSelectionHistory()
         history.record("そのため", reading: "sonotame")
