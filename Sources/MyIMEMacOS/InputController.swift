@@ -4377,11 +4377,22 @@ final class InputController: IMKInputController {
               !nonLearnableGeneratedCandidates.contains(candidate) else {
             return
         }
-        let readings = reconversionReadings(for: candidate).flatMap {
-            RomajiCanonicalizer.dictionaryLookupInputs(from: $0)
+        let userEngine = userConversionEngine
+        let basicEngine = basicConversionEngine
+        let indexedEngine = mozcConversionEngine
+        Task { @MainActor [weak self] in
+            let readings = await CandidateReadingLookup.resolve(
+                candidate: candidate,
+                userEngine: userEngine,
+                basicEngine: basicEngine,
+                indexedEngine: indexedEngine
+            )
+            guard let self else { return }
+            candidateSelectionHistory.record(candidate, readings: readings)
+            candidateSelectionHistoryWriter.schedule(
+                candidateSelectionHistory
+            )
         }
-        candidateSelectionHistory.record(candidate, readings: readings)
-        candidateSelectionHistoryWriter.schedule(candidateSelectionHistory)
     }
 
     private func removeSelectedNextInputCandidate(client sender: Any) {
