@@ -8,6 +8,7 @@ enum InputSourceMenuBuilder {
     struct Actions {
         let openSettings: Selector
         let openJavaScriptExtensionDirectory: Selector
+        let openCandidateFilterIDSDirectory: Selector
         let manageJavaScriptExtensions: Selector
         let showStatus: Selector
     }
@@ -20,14 +21,21 @@ enum InputSourceMenuBuilder {
             selector: actions.openSettings,
             to: menu
         )
+        menu.addItem(.separator())
+        addAction(
+            title: "JavaScript拡張を管理…",
+            selector: actions.manageJavaScriptExtensions,
+            to: menu
+        )
         addAction(
             title: "JavaScript拡張フォルダを開く…",
             selector: actions.openJavaScriptExtensionDirectory,
             to: menu
         )
+        menu.addItem(.separator())
         addAction(
-            title: "JavaScript拡張を管理…",
-            selector: actions.manageJavaScriptExtensions,
+            title: "候補フィルターデータフォルダを開く…",
+            selector: actions.openCandidateFilterIDSDirectory,
             to: menu
         )
         menu.addItem(.separator())
@@ -89,6 +97,8 @@ enum SettingsWindowBuilder {
         let configureShortcuts: Selector
         let toggleShortcutGuides: Selector
         let updateBasicDictionary: Selector
+        let downloadCandidateFilterIDS: Selector
+        let openCandidateFilterIDSDirectory: Selector
     }
 
     static func make(
@@ -144,6 +154,11 @@ enum SettingsWindowBuilder {
         addButtons([
             ("表示するmacOS辞書…", actions.configureSystemDictionaries),
             ("TKGJE基本辞書を更新", actions.updateBasicDictionary)
+        ], target: target, to: stack)
+        addSection("候補フィルター", to: stack)
+        addButtons([
+            ("CJKVI IDSデータをダウンロード", actions.downloadCandidateFilterIDS),
+            ("データフォルダを開く…", actions.openCandidateFilterIDSDirectory)
         ], target: target, to: stack)
         addSection("操作", to: stack)
         addCheckboxes([

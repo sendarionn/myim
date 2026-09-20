@@ -125,11 +125,35 @@ Macの標準辞書や外部Webサイトで語義を確認できます。外部We
 ~/Library/Input Methods/myim.app
 ```
 
+## 任意のIDS構成要素データ
+
+候補フィルターの漢字構成要素検索へ、CHISE-IDSやCJKVI-IDSなどのIDSデータを任意で追加できます
+
+設定の「候補フィルター」から、取得元とライセンスを確認してCJKVI IDSをダウンロードできます
+
+手動で追加する場合は下記の手順です
+
+1. メニューバーのmyimから「候補フィルターデータフォルダを開く…」を選択
+2. `.txt`、`.tsv`、`.ids`のいずれかのファイルを配置
+3. 次に`⌥F`で候補フィルターを開始すると追加データを反映
+
+配置先は下記です
+
+```text
+~/Library/Application Support/myim/CandidateFilter/IDS/
+```
+
+`U+XXXX<Tab>対象文字<Tab>IDS記述`形式を読み込み、入れ子になった構成要素も展開します
+追加データはmyimへ同梱、複製されません
+データの取得と利用では各配布元のライセンスに従ってください
+
 ## 関連資料
 
 - `HISTORY.md` 実装の更新履歴
 - `MISCELLANEOUS.md` 入力変換と候補順の細かな調整
 - `docs/DICTIONARY_DATASETS.md` 辞書の生成方法と実行時構成
 - `docs/DICTIONARY_LICENSES.md` 辞書の出典とライセンス
+- `docs/CANDIDATE_FILTER_IDS.md` 任意IDS構成要素データの導入方法
+- `THIRD_PARTY_NOTICES.md` 同梱する第三者データとライセンスの一覧
 - `docs/JAPANESE_PARTICLE_SOURCES.md` 助詞付き候補の参考資料
 - `docs/MACOS_DICTIONARY.md` macOS標準辞書の利用方針

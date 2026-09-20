@@ -37,8 +37,140 @@ public struct KanjiFilterDatabase: Sendable {
         self.values = values
     }
 
+    public init(text: String, supplementalIDSTexts: [String]) {
+        var base = KanjiFilterDatabase(text: text).values
+        let supplemental = KanjiIDSComponentParser.components(
+            from: supplementalIDSTexts
+        )
+        for (character, components) in supplemental {
+            let current = base[character] ?? KanjiFilterAttributes()
+            base[character] = KanjiFilterAttributes(
+                radical: current.radical,
+                strokeCount: current.strokeCount,
+                components: current.components.union(components)
+            )
+        }
+        values = base
+    }
+
     public func attributes(for character: Character) -> KanjiFilterAttributes? {
         values[character]
+    }
+}
+
+public enum KanjiIDSComponentParser {
+    public static func components(from texts: [String]) -> [Character: Set<Character>] {
+        var direct: [Character: Set<Character>] = [:]
+        for text in texts {
+            for rawLine in text.split(whereSeparator: \Character.isNewline) {
+                let line = rawLine.trimmingCharacters(in: .whitespaces)
+                guard !line.isEmpty, !line.hasPrefix("#") else { continue }
+                let fields = line.split(
+                    omittingEmptySubsequences: true,
+                    whereSeparator: { $0 == "\t" || $0 == " " }
+                )
+                guard fields.count >= 3,
+                      fields[0].hasPrefix("U+"),
+                      let target = fields[1].first else { continue }
+                let description = fields.dropFirst(2).joined(separator: " ")
+                    .replacingOccurrences(
+                        of: #"&[^;]+;|\[[^\]]+\]"#,
+                        with: "",
+                        options: .regularExpression
+                    )
+                let values = Set(description.filter {
+                    $0 != target && isComponentCharacter($0)
+                })
+                if !values.isEmpty {
+                    direct[target, default: []].formUnion(values)
+                }
+            }
+        }
+
+        var expanded: [Character: Set<Character>] = [:]
+        func resolve(_ character: Character, visiting: Set<Character>) -> Set<Character> {
+            if let cached = expanded[character] { return cached }
+            guard !visiting.contains(character) else { return [] }
+            var nextVisiting = visiting
+            nextVisiting.insert(character)
+            var result = direct[character] ?? []
+            for component in Array(result) {
+                result.formUnion(resolve(component, visiting: nextVisiting))
+            }
+            result.remove(character)
+            expanded[character] = result
+            return result
+        }
+        for character in direct.keys {
+            _ = resolve(character, visiting: [])
+        }
+        return expanded
+    }
+
+    private static func isComponentCharacter(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy { scalar in
+            let value = scalar.value
+            if (0x2ff0...0x2fff).contains(value) || value == 0x303e {
+                return false
+            }
+            return (0x2e80...0x2fdf).contains(value)
+                || (0x31c0...0x31ef).contains(value)
+                || (0x3400...0x4dbf).contains(value)
+                || (0x4e00...0x9fff).contains(value)
+                || (0xf900...0xfaff).contains(value)
+                || (0x20000...0x323af).contains(value)
+        }
+    }
+}
+
+public enum KanjiRadicalNormalizer {
+    private static let canonicalByVariant: [Character: Character] = [
+        "亻": "人",
+        "氵": "水",
+        "氺": "水",
+        "扌": "手",
+        "忄": "心",
+        "㣺": "心",
+        "灬": "火",
+        "艹": "艸",
+        "礻": "示",
+        "衤": "衣",
+        "犭": "犬",
+        "刂": "刀",
+        "攵": "攴",
+        "辶": "辵",
+        "飠": "食"
+    ]
+
+    public static func canonical(_ radical: Character) -> Character {
+        canonicalByVariant[radical] ?? radical
+    }
+}
+
+public enum CandidateFilterInputConfirmationPolicy {
+    public static func canConfirmDirectly(
+        input: String,
+        queryVariants: [String]
+    ) -> Bool {
+        !input.isEmpty && queryVariants == [input]
+    }
+}
+
+public enum CandidateFilterArrowNavigation {
+    public static func offset(forKeyCode keyCode: Int) -> Int? {
+        switch keyCode {
+        case 124, 125: 1
+        case 123, 126: -1
+        default: nil
+        }
+    }
+
+    public static func offset(forCommand command: String) -> Int? {
+        switch command {
+        case "moveRight:", "moveDown:": 1
+        case "moveLeft:", "moveUp:": -1
+        default: nil
+        }
     }
 }
 
@@ -50,8 +182,6 @@ public enum CandidateFilterCondition: Equatable, Sendable {
     case katakanaOnly
     case containsAlphanumeric
     case kanjiCount(Int)
-    case radical(Character)
-    case component(Character)
     case strokeCount(Int)
     case semantic(String)
 
@@ -64,8 +194,6 @@ public enum CandidateFilterCondition: Equatable, Sendable {
         case .katakanaOnly: "カタカナのみ"
         case .containsAlphanumeric: "英数字を含む"
         case let .kanjiCount(count): "漢字\(count)字"
-        case let .radical(value): "部首: \(value)"
-        case let .component(value): "構成要素: \(value)"
         case let .strokeCount(count): "\(count)画"
         case let .semantic(query): "意味: \(query)"
         }
@@ -122,10 +250,7 @@ public struct CandidateFilterChoiceGenerator: Sendable {
             conditions.append(.kanjiCount(count))
         }
         for component in aliases[query.lowercased()] ?? [] {
-            conditions += [.component(component), .radical(component)]
-        }
-        if query.count == 1, let character = query.first {
-            conditions += [.component(character), .radical(character)]
+            conditions.append(.contains(String(component)))
         }
         conditions += [.contains(query), .semantic(query)]
 
@@ -181,23 +306,48 @@ public struct CandidateFilter: Sendable {
     ) -> Bool {
         switch condition {
         case let .characterCount(count): candidate.count == count
-        case let .contains(value): candidate.localizedCaseInsensitiveContains(value)
+        case let .contains(value): matchesContains(value, candidate: candidate)
         case .kanjiOnly: !candidate.isEmpty && candidate.allSatisfy(isKanji)
         case .hiraganaOnly: !candidate.isEmpty && candidate.allSatisfy(isHiragana)
         case .katakanaOnly: !candidate.isEmpty && candidate.allSatisfy(isKatakana)
         case .containsAlphanumeric: candidate.contains { $0.isASCII && $0.isLetter || $0.isNumber }
         case let .kanjiCount(count): candidate.filter(isKanji).count == count
-        case let .radical(radical): candidate.contains {
-            kanjiDatabase.attributes(for: $0)?.radical == radical
-        }
-        case let .component(component): candidate.contains {
-            $0 == component
-                || kanjiDatabase.attributes(for: $0)?.components.contains(component) == true
-        }
         case let .strokeCount(count): candidate.contains {
             kanjiDatabase.attributes(for: $0)?.strokeCount == count
         }
         case .semantic: true
+        }
+    }
+
+    private func matchesContains(_ value: String, candidate: String) -> Bool {
+        if candidate.localizedCaseInsensitiveContains(value) {
+            return true
+        }
+        guard value.count == 1, let element = value.first else {
+            return false
+        }
+        return candidate.contains { character in
+            containsCharacterElement(element, in: character)
+        }
+    }
+
+    private func containsCharacterElement(
+        _ element: Character,
+        in character: Character
+    ) -> Bool {
+        let canonicalElement = KanjiRadicalNormalizer.canonical(element)
+        if KanjiRadicalNormalizer.canonical(character) == canonicalElement {
+            return true
+        }
+        guard let attributes = kanjiDatabase.attributes(for: character) else {
+            return false
+        }
+        if let radical = attributes.radical,
+           KanjiRadicalNormalizer.canonical(radical) == canonicalElement {
+            return true
+        }
+        return attributes.components.contains {
+            KanjiRadicalNormalizer.canonical($0) == canonicalElement
         }
     }
 

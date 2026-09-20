@@ -137,6 +137,9 @@ cp \
 cp \
     "Sources/MyIMEMacOS/Resources/kanji-filter-data-source.json" \
     "$resources_directory/kanji-filter-data-source.json"
+cp \
+    "THIRD_PARTY_NOTICES.md" \
+    "$resources_directory/THIRD_PARTY_NOTICES.md"
 xcrun swift "Scripts/generate-ime-icon.swift" \
     "$resources_directory/myimChip.pdf" 28 36 26 white
 xcrun swift "Scripts/generate-ime-icon.swift" \

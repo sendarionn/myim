@@ -44,6 +44,16 @@ class InstallMacOSIMTests(unittest.TestCase):
         )
         self.assertLess(install_extensions, register)
 
+    def test_bundles_third_party_notices(self):
+        build_script = (
+            SCRIPT.parents[1] / "Scripts" / "build-macos-ime.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"THIRD_PARTY_NOTICES.md"', build_script)
+        self.assertIn(
+            '"$resources_directory/THIRD_PARTY_NOTICES.md"',
+            build_script,
+        )
+
     def test_increments_bundle_version_for_every_installation(self):
         self.assertIn('next_build_number=', self.script)
         self.assertIn('MYIM_BUILD_NUMBER="$next_build_number"', self.script)

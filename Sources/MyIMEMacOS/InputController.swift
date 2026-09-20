@@ -91,7 +91,9 @@ final class InputController: IMKInputController {
     private static let basicDictionaryUpdateCoordinator =
         BasicDictionaryUpdateCoordinator()
     private static let javaScriptExtensionClient = JavaScriptExtensionClient()
-    private static let candidateFilterDatabase = loadCandidateFilterDatabase()
+    private static var candidateFilterDatabase = loadCandidateFilterDatabase()
+    private static var candidateFilterIDSSignature =
+        calculateCandidateFilterIDSSignature()
     private static let candidateFilterChoiceGenerator =
         CandidateFilterChoiceGenerator(
             aliasDictionaryText: loadBundledText(
@@ -446,6 +448,16 @@ final class InputController: IMKInputController {
             return handleCandidateFilterInput(event, client: sender)
         }
 
+        if unfilteredCandidates != nil,
+           let offset = CandidateFilterArrowNavigation.offset(
+               forKeyCode: Int(event.keyCode)
+           ) {
+            return moveCandidate(
+                offset > 0 ? .down : .up,
+                client: sender
+            )
+        }
+
         if isCandidateFilterShortcut(event) {
             return beginCandidateFilterInput(client: sender)
         }
@@ -713,7 +725,24 @@ final class InputController: IMKInputController {
         if let aSelector,
            candidateFilterDraft != nil || unfilteredCandidates != nil,
            let inputClient = client() {
-            switch NSStringFromSelector(aSelector) {
+            let command = NSStringFromSelector(aSelector)
+            if let offset = CandidateFilterArrowNavigation.offset(
+                forCommand: command
+            ) {
+                if candidateFilterDraft != nil {
+                    moveCandidateFilterDraftSelection(
+                        by: offset,
+                        client: inputClient
+                    )
+                } else {
+                    _ = moveCandidate(
+                        offset > 0 ? .down : .up,
+                        client: inputClient
+                    )
+                }
+                return
+            }
+            switch command {
             case "cancelOperation:":
                 if candidateFilterDraft != nil {
                     handleCandidateFilterEscape(client: inputClient)
@@ -746,6 +775,9 @@ final class InputController: IMKInputController {
                 openSettings: #selector(openSettingsWindow(_:)),
                 openJavaScriptExtensionDirectory: #selector(
                     openJavaScriptExtensionDirectory(_:)
+                ),
+                openCandidateFilterIDSDirectory: #selector(
+                    openCandidateFilterIDSDirectory(_:)
                 ),
                 manageJavaScriptExtensions: #selector(
                     manageJavaScriptExtensions(_:)
@@ -836,7 +868,11 @@ final class InputController: IMKInputController {
             toggleWebSearch: #selector(toggleWebSearch(_:)),
             configureShortcuts: #selector(configureShortcuts(_:)),
             toggleShortcutGuides: #selector(toggleShortcutGuides(_:)),
-            updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:))
+            updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:)),
+            downloadCandidateFilterIDS: #selector(downloadCandidateFilterIDS(_:)),
+            openCandidateFilterIDSDirectory: #selector(
+                openCandidateFilterIDSDirectory(_:)
+            )
         )
     }
 
@@ -907,6 +943,116 @@ final class InputController: IMKInputController {
                 message: error.localizedDescription
             )
         }
+    }
+
+    @objc
+    private func openCandidateFilterIDSDirectory(_ sender: Any?) {
+        guard let directory = Self.candidateFilterIDSDirectory() else {
+            showJavaScriptExtensionDirectoryError(
+                title: "IDSデータフォルダを開けません",
+                message: "Application Supportフォルダが見つかりません"
+            )
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            let guideURL = directory.appendingPathComponent("README.txt")
+            if !FileManager.default.fileExists(atPath: guideURL.path) {
+                try Self.candidateFilterIDSGuide.write(
+                    to: guideURL,
+                    atomically: true,
+                    encoding: .utf8
+                )
+            }
+            JavaScriptExtensionDirectoryPresenter.open(directory)
+        } catch {
+            showJavaScriptExtensionDirectoryError(
+                title: "IDSデータフォルダを開けません",
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    @objc
+    private func downloadCandidateFilterIDS(_ sender: Any?) {
+        let confirmation = NSAlert()
+        confirmation.messageText = "CJKVI IDSデータをダウンロード"
+        confirmation.informativeText = """
+        取得元: github.com/cjkvi/cjkvi-ids
+        対象: ids.txt
+        ライセンス: CHISE由来で配布元の条件が適用
+
+        データはApplication Supportへ保存され、myim本体には同梱されません
+        既にダウンロード済みの場合は同じファイルを置き換えます
+        配布元のライセンスに従って利用してください
+        """
+        confirmation.addButton(withTitle: "ダウンロード")
+        confirmation.addButton(withTitle: "キャンセル")
+        guard confirmation.runModal() == .alertFirstButtonReturn else { return }
+
+        let button = sender as? NSButton
+        let originalTitle = button?.title
+        button?.title = "ダウンロード中…"
+        button?.isEnabled = false
+        Task { @MainActor [weak self, weak button] in
+            defer {
+                button?.title = originalTitle ?? "CJKVI IDSデータをダウンロード"
+                button?.isEnabled = true
+            }
+            do {
+                let data = try await OptionalIDSDataClient().fetch()
+                guard let directory = Self.candidateFilterIDSDirectory() else {
+                    throw OptionalIDSDataError.invalidData
+                }
+                try FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: true
+                )
+                try data.write(
+                    to: directory.appendingPathComponent("cjkvi-ids.txt"),
+                    options: .atomic
+                )
+                let sourceInformation = """
+                Source: https://github.com/cjkvi/cjkvi-ids/blob/master/ids.txt
+                Downloaded: \(ISO8601DateFormatter().string(from: Date()))
+                License: CHISE-derived data under the upstream terms
+                """
+                try sourceInformation.write(
+                    to: directory.appendingPathComponent("cjkvi-ids-source.md"),
+                    atomically: true,
+                    encoding: .utf8
+                )
+                let database = await Task.detached(priority: .utility) {
+                    Self.loadCandidateFilterDatabase()
+                }.value
+                Self.candidateFilterDatabase = database
+                Self.candidateFilterIDSSignature =
+                    Self.calculateCandidateFilterIDSSignature()
+                self?.showCandidateFilterIDSDownloadResult(
+                    title: "ダウンロード完了",
+                    message: "次の候補フィルターから構成要素検索へ反映されます"
+                )
+            } catch {
+                self?.showCandidateFilterIDSDownloadResult(
+                    title: "ダウンロードできませんでした",
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private func showCandidateFilterIDSDownloadResult(
+        title: String,
+        message: String
+    ) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "閉じる")
+        alert.runModal()
     }
 
     @objc
@@ -2513,6 +2659,11 @@ final class InputController: IMKInputController {
         if unfilteredCandidates == nil {
             unfilteredCandidates = currentCandidates
         }
+        let currentIDSSignature = Self.calculateCandidateFilterIDSSignature()
+        if currentIDSSignature != Self.candidateFilterIDSSignature {
+            Self.candidateFilterDatabase = Self.loadCandidateFilterDatabase()
+            Self.candidateFilterIDSSignature = currentIDSSignature
+        }
         suggestionSearchSession.cancelAll()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
@@ -2545,22 +2696,28 @@ final class InputController: IMKInputController {
         guard var draft = candidateFilterDraft else { return false }
         switch event.keyCode {
         case 36, 76:
+            if draft.stage == .conversion,
+               draft.selectedIndex == nil,
+               CandidateFilterInputConfirmationPolicy.canConfirmDirectly(
+                   input: draft.input,
+                   queryVariants: candidateFilterQueryVariants(for: draft.input)
+               ) {
+                draft.stage = .filter
+                candidateFilterDraft = draft
+                updateCandidateFilterChoices(client: sender)
+                return true
+            }
             candidateFilterDraft = draft
             return applySelectedCandidateFilter(client: sender)
-        case 48, 124, 125:
-            guard !draft.choices.isEmpty else { return true }
-            draft.selectedIndex = ((draft.selectedIndex ?? -1) + 1)
-                % draft.choices.count
-            candidateFilterDraft = draft
-            showCandidateFilterChoices(client: sender)
+        case 48:
+            moveCandidateFilterDraftSelection(by: 1, client: sender)
             return true
-        case 123, 126:
-            guard !draft.choices.isEmpty else { return true }
-            draft.selectedIndex = (
-                (draft.selectedIndex ?? 0) - 1 + draft.choices.count
-            ) % draft.choices.count
-            candidateFilterDraft = draft
-            showCandidateFilterChoices(client: sender)
+        case 123, 124, 125, 126:
+            if let offset = CandidateFilterArrowNavigation.offset(
+                forKeyCode: Int(event.keyCode)
+            ) {
+                moveCandidateFilterDraftSelection(by: offset, client: sender)
+            }
             return true
         case 51:
             if draft.stage == .conversion, !draft.input.isEmpty {
@@ -2589,6 +2746,22 @@ final class InputController: IMKInputController {
         candidateFilterDraft = draft
         updateCandidateFilterChoices(client: sender)
         return true
+    }
+
+    private func moveCandidateFilterDraftSelection(
+        by offset: Int,
+        client sender: Any
+    ) {
+        guard var draft = candidateFilterDraft,
+              !draft.choices.isEmpty else { return }
+        let initialIndex = offset > 0 ? -1 : 0
+        draft.selectedIndex = (
+            (draft.selectedIndex ?? initialIndex)
+                + offset
+                + draft.choices.count
+        ) % draft.choices.count
+        candidateFilterDraft = draft
+        showCandidateFilterChoices(client: sender)
     }
 
     private func handleCandidateFilterEscape(client sender: Any) {
@@ -5104,10 +5277,77 @@ final class InputController: IMKInputController {
     }
 
     private static func loadCandidateFilterDatabase() -> KanjiFilterDatabase {
-        KanjiFilterDatabase(
-            text: loadBundledText(resource: "kanji-filter-data") ?? ""
+        let supplementalTexts: [String]
+        if let directory = candidateFilterIDSDirectory(),
+           let files = try? FileManager.default.contentsOfDirectory(
+               at: directory,
+               includingPropertiesForKeys: nil,
+               options: [.skipsHiddenFiles]
+           ) {
+            let supportedExtensions = Set(["txt", "tsv", "ids"])
+            supplementalTexts = files
+                .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
+                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+                .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
+        } else {
+            supplementalTexts = []
+        }
+        return KanjiFilterDatabase(
+            text: loadBundledText(resource: "kanji-filter-data") ?? "",
+            supplementalIDSTexts: supplementalTexts
         )
     }
+
+    private static func candidateFilterIDSDirectory() -> URL? {
+        FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first?
+            .appendingPathComponent("myim", isDirectory: true)
+            .appendingPathComponent("CandidateFilter", isDirectory: true)
+            .appendingPathComponent("IDS", isDirectory: true)
+    }
+
+    private static func calculateCandidateFilterIDSSignature() -> [String] {
+        guard let directory = candidateFilterIDSDirectory(),
+              let files = try? FileManager.default.contentsOfDirectory(
+                  at: directory,
+                  includingPropertiesForKeys: [
+                      .contentModificationDateKey,
+                      .fileSizeKey
+                  ],
+                  options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+        let supportedExtensions = Set(["txt", "tsv", "ids"])
+        return files
+            .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { file in
+                let values = try? file.resourceValues(forKeys: [
+                    .contentModificationDateKey,
+                    .fileSizeKey
+                ])
+                return [
+                    file.lastPathComponent,
+                    String(values?.fileSize ?? 0),
+                    String(values?.contentModificationDate?.timeIntervalSince1970 ?? 0)
+                ].joined(separator: ":")
+            }
+    }
+
+    private static let candidateFilterIDSGuide = """
+    myim 候補フィルター用IDS構成要素データ
+
+    対応拡張子: .txt .tsv .ids
+    対応形式: U+XXXX<Tab>対象文字<Tab>IDS記述
+    例: U+4F11<Tab>休<Tab>⿰亻木
+
+    ファイルはアプリへコピーされず、このフォルダから直接読み込まれます
+    追加や変更は次にOption+Fで候補フィルターを開始したときに反映されます
+    データの取得と利用では配布元のライセンスに従ってください
+    """
 
     private static func loadMozcDictionaryEngine() -> IndexedDictionaryEngine {
         guard

@@ -1,5 +1,8 @@
 # 辞書ライセンス
 
+アプリへ同梱する辞書以外の第三者データを含む一覧は
+`THIRD_PARTY_NOTICES.md`を参照してください
+
 ## Mozc OSS辞書
 
 - 用途: 日本語のかな漢字変換候補
@@ -19,3 +22,14 @@ Mozc OSS辞書はIPAdic、沖縄辞書、Mozcで追加された語彙を含み�
 - ライセンス: CC0 1.0
 - 取得元: https://github.com/tkgally/je-dict-1
 - 同梱ライセンス: `Sources/MyIMEMacOS/Resources/basic-dictionary-LICENSE.txt`
+
+## 漢字フィルターデータ
+
+- 用途: 部首と画数による候補フィルター
+- 出典: Unicode Unihan 16.0.0
+- 使用プロパティ: `kRSUnicode`、`kTotalStrokes`
+- ライセンス: Unicode License v3、SPDX `Unicode-3.0`
+- 同梱ライセンス: `Sources/MyIMEMacOS/Resources/UNICODE-LICENSE.txt`
+- 生成情報: `Sources/MyIMEMacOS/Resources/kanji-filter-data-source.json`
+- CHISE-IDSとCJKVI-IDSは同梱していません
+- 利用者が任意に配置したIDSデータはアプリへ複製せず、配布元のライセンスを維持したまま読み込みます
