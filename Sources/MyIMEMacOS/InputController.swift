@@ -2432,6 +2432,11 @@ final class InputController: IMKInputController {
         emojiWindow.show(near: inputLocation(for: sender))
         Self.emojiPanelController = self
         updateEmojiSearchFromComposition()
+        if EmojiSearchActivationPolicy.startsInSelectionMode(
+            searchText: emojiWindow.searchText
+        ) {
+            emojiWindow.confirmSearch()
+        }
     }
 
     private func updateEmojiSearchFromComposition() {
