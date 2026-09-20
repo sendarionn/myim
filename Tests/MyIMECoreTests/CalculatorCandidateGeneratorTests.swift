@@ -29,6 +29,30 @@ struct CalculatorCandidateGeneratorTests {
     }
 
     @Test
+    func addsApproximationCandidatesAtMultiplePrecisions() {
+        #expect(
+            CalculatorCandidateGenerator.candidates(for: "1/3=")
+                == ["0.333333333333", "約0.3", "約0.33"]
+        )
+        #expect(
+            CalculatorCandidateGenerator.candidates(for: "10/3=")
+                == ["3.33333333333", "約3", "約3.3"]
+        )
+    }
+
+    @Test
+    func doesNotAddApproximationCandidatesForExactDecimals() {
+        #expect(
+            CalculatorCandidateGenerator.candidates(for: "1/8=")
+                == ["0.125"]
+        )
+        #expect(
+            CalculatorCandidateGenerator.candidates(for: "0.1+0.2=")
+                == ["0.3"]
+        )
+    }
+
+    @Test
     func ignoresWhitespaceInsideAndAfterExpression() {
         #expect(
             CalculatorCandidateGenerator.candidates(for: " 2 + 3 * 4 = ")

@@ -2992,18 +2992,31 @@ final class InputController: IMKInputController {
         nonLearnableGeneratedCandidates = []
         longVowelFilterProtectedCandidates = []
         updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
+        let extensionInput = inputBuffer
+        let scriptCandidates = suggestionSearchSession.query(
+            for: .javaScriptExtensions
+        ) == extensionInput
+            ? javaScriptExtensionCandidates
+            : []
+        defer {
+            updateJavaScriptExtensionCandidatesIfNeeded(for: extensionInput)
+        }
         let calculatorCandidates = CalculatorCandidateGenerator.candidates(
             for: inputBuffer
         )
         if !calculatorCandidates.isEmpty {
-            replaceCurrentCandidates(with: calculatorCandidates)
+            replaceCurrentCandidates(
+                with: calculatorCandidates + scriptCandidates
+            )
             showCandidateWindow(client: sender)
             return
         }
         let unitConversionCandidates = UnitConversionCandidateGenerator
             .candidates(for: inputBuffer)
         if !unitConversionCandidates.isEmpty {
-            replaceCurrentCandidates(with: unitConversionCandidates)
+            replaceCurrentCandidates(
+                with: unitConversionCandidates + scriptCandidates
+            )
             showCandidateWindow(client: sender)
             return
         }
@@ -3021,7 +3034,9 @@ final class InputController: IMKInputController {
                 ? postalAddressCandidates
                 : [])
         if !numericFormatCandidates.isEmpty {
-            replaceCurrentCandidates(with: numericFormatCandidates)
+            replaceCurrentCandidates(
+                with: numericFormatCandidates + scriptCandidates
+            )
             showCandidateWindow(client: sender)
             return
         }
@@ -3029,7 +3044,7 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !numberCandidates.isEmpty {
-            replaceCurrentCandidates(with: numberCandidates)
+            replaceCurrentCandidates(with: numberCandidates + scriptCandidates)
             showCandidateWindow(client: sender)
             return
         }
@@ -3037,7 +3052,7 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !symbolCandidates.isEmpty {
-            replaceCurrentCandidates(with: symbolCandidates)
+            replaceCurrentCandidates(with: symbolCandidates + scriptCandidates)
             showCandidateWindow(client: sender)
             showSymbolTipsForCurrentInput(client: sender)
             return
@@ -3046,7 +3061,6 @@ final class InputController: IMKInputController {
         let suggestionInput = conversionReading
         defer {
             updateOfficialCandidatesIfNeeded(for: suggestionInput)
-            updateJavaScriptExtensionCandidatesIfNeeded(for: suggestionInput)
         }
 
         let lookupReadings =
@@ -3084,11 +3098,6 @@ final class InputController: IMKInputController {
         let remoteCandidates = suggestionSearchSession.query(for: .official)
             == conversionReading
             ? officialCandidates
-            : []
-        let scriptCandidates = suggestionSearchSession.query(
-            for: .javaScriptExtensions
-        ) == conversionReading
-            ? javaScriptExtensionCandidates
             : []
         let numericPrefixCandidates = numericPrefixCandidates(
             for: conversionReading
@@ -3713,7 +3722,7 @@ final class InputController: IMKInputController {
             )
             guard !Task.isCancelled,
                   suggestionSearchSession.isCurrent(token),
-                  conversionReading == input else {
+                  inputBuffer == input else {
                 return
             }
             javaScriptExtensionCandidates = candidates

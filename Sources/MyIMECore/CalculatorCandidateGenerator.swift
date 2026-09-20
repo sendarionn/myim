@@ -20,9 +20,13 @@ public enum CalculatorCandidateGenerator {
         }
         let normalized = abs(value) < 1e-12 ? 0 : value
         let result = format(normalized)
-        return [result] + NumberGroupingCandidateGenerator.candidates(
+        let exactCandidates = [result] + NumberGroupingCandidateGenerator.candidates(
             for: result
         )
+        guard isRoundedForDisplay(normalized) else {
+            return exactCandidates
+        }
+        return exactCandidates + approximateCandidates(for: normalized)
     }
 
     private static func format(_ value: Double) -> String {
@@ -30,6 +34,31 @@ public enum CalculatorCandidateGenerator {
             return String(format: "%.0f", value)
         }
         return String(format: "%.12g", value)
+    }
+
+    private static func isRoundedForDisplay(_ value: Double) -> Bool {
+        String(format: "%.12g", value) != String(format: "%.15g", value)
+    }
+
+    private static func approximateCandidates(for value: Double) -> [String] {
+        var seen = Set<String>()
+        return [1, 2].compactMap { significantDigits in
+            let rounded = rounded(
+                value,
+                toSignificantDigits: significantDigits
+            )
+            let candidate = "約" + format(rounded)
+            return seen.insert(candidate).inserted ? candidate : nil
+        }
+    }
+
+    private static func rounded(
+        _ value: Double,
+        toSignificantDigits digits: Int
+    ) -> Double {
+        guard value != 0 else { return 0 }
+        let scale = pow(10, Double(digits - 1) - floor(log10(abs(value))))
+        return (value * scale).rounded() / scale
     }
 }
 
