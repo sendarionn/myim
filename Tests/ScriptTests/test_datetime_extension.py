@@ -48,6 +48,17 @@ process.stdout.write(JSON.stringify(candidates({{
             with self.subTest(reading=reading):
                 self.assertEqual(self.candidates(reading), [expected])
 
+    def test_parses_month_and_day_using_the_current_year(self):
+        self.assertEqual(self.candidates("9/1"), ["20260901", "9/1(火)"])
+        self.assertEqual(self.candidates("0906"), ["20260906", "9/6(日)"])
+
+    def test_parses_eight_digit_date_with_an_explicit_year(self):
+        self.assertEqual(self.candidates("20260906"), ["9/6(日)"])
+
+    def test_rejects_nonexistent_dates(self):
+        self.assertEqual(self.candidates("2/30"), [])
+        self.assertEqual(self.candidates("20260229"), [])
+
     def test_date_formats_are_defined_only_in_datetime_extension(self):
         datetime_source = (EXTENSIONS / "datetime.js").read_text()
         calendar_source = (EXTENSIONS / "calendar.js").read_text()

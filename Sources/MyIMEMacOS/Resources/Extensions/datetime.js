@@ -43,9 +43,15 @@ function candidates(context) {
     doyoubi: "土"
   }
   const now = new Date(context.timestamp)
+  const enteredDate = parseEnteredDate(input, now.getFullYear())
 
   if (input === "calendar") {
     return format(now, dateFormats)
+  }
+  if (enteredDate) {
+    return format(enteredDate, dateFormats).filter(function(candidate) {
+      return candidate !== context.input
+    })
   }
   if (Object.prototype.hasOwnProperty.call(dayOffsets, input)) {
     now.setDate(now.getDate() + dayOffsets[input])
@@ -58,6 +64,35 @@ function candidates(context) {
     return ["(" + weekdayReadings[input] + ")"]
   }
   return []
+}
+
+function parseEnteredDate(input, currentYear) {
+  let year
+  let month
+  let day
+  let match = input.match(/^(\d{1,2})\/(\d{1,2})$/)
+  if (match) {
+    year = currentYear
+    month = Number(match[1])
+    day = Number(match[2])
+  } else if (/^\d{4}$/.test(input)) {
+    year = currentYear
+    month = Number(input.slice(0, 2))
+    day = Number(input.slice(2, 4))
+  } else if (/^\d{8}$/.test(input)) {
+    year = Number(input.slice(0, 4))
+    month = Number(input.slice(4, 6))
+    day = Number(input.slice(6, 8))
+  } else {
+    return null
+  }
+  const date = new Date(year, month - 1, day)
+  if (date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day) {
+    return null
+  }
+  return date
 }
 
 function format(date, formats) {

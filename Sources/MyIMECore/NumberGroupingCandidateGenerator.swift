@@ -19,6 +19,7 @@ public enum NumberGroupingCandidateGenerator {
         guard parts.count <= 2,
               let integer = parts.first,
               integer.count >= 4,
+              integer.first != "0",
               integer.allSatisfy({ $0.isASCII && $0.isNumber }),
               parts.dropFirst().allSatisfy({
                   !$0.isEmpty && $0.allSatisfy { $0.isASCII && $0.isNumber }

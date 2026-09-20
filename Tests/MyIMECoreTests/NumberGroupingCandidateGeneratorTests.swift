@@ -18,6 +18,7 @@ struct NumberGroupingCandidateGeneratorTests {
     @Test
     func rejectsUnsupportedInput() {
         #expect(NumberGroupingCandidateGenerator.candidates(for: "999").isEmpty)
+        #expect(NumberGroupingCandidateGenerator.candidates(for: "0901").isEmpty)
         #expect(NumberGroupingCandidateGenerator.candidates(for: "1,000").isEmpty)
         #expect(NumberGroupingCandidateGenerator.candidates(for: "1234.").isEmpty)
         #expect(NumberGroupingCandidateGenerator.candidates(for: "12a4").isEmpty)
