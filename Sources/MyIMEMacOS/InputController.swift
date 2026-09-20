@@ -4336,6 +4336,7 @@ final class InputController: IMKInputController {
         commit(
             value,
             to: sender,
+            replacingMarkedText: true,
             recordsInputHistory: closingBracketTracker
                 .shouldRecordAsNextInput(value)
         )
@@ -4403,11 +4404,10 @@ final class InputController: IMKInputController {
             textClient,
             markedRange: markedRange
         )
-        let replacementRange = replacingMarkedText
-            && markedRange.location != NSNotFound
-            && markedRange.length > 0
-            ? markedRange
-            : NSRange(location: NSNotFound, length: NSNotFound)
+        let replacementRange = CandidateCommitReplacementRange.resolve(
+            markedRange: markedRange,
+            replacingMarkedText: replacingMarkedText
+        )
         textClient.insertText(
             value,
             replacementRange: replacementRange

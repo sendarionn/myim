@@ -10,3 +10,17 @@ public enum CandidateCommitNormalizer {
             .replacingOccurrences(of: "～", with: "")
     }
 }
+
+public enum CandidateCommitReplacementRange {
+    public static func resolve(
+        markedRange: NSRange,
+        replacingMarkedText: Bool
+    ) -> NSRange {
+        guard replacingMarkedText,
+              markedRange.location != NSNotFound,
+              markedRange.length > 0 else {
+            return NSRange(location: NSNotFound, length: NSNotFound)
+        }
+        return markedRange
+    }
+}

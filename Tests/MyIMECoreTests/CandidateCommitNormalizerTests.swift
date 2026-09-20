@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import MyIMECore
 
@@ -12,5 +13,19 @@ struct CandidateCommitNormalizerTests {
     @Test
     func keepsStandaloneWaveDash() {
         #expect(CandidateCommitNormalizer.value(from: "〜") == "〜")
+    }
+
+    @Test
+    func replacesTheExistingMarkedRangeWhenCommittingASelectedCandidate() {
+        let markedRange = NSRange(location: 12, length: 1)
+
+        #expect(CandidateCommitReplacementRange.resolve(
+            markedRange: markedRange,
+            replacingMarkedText: true
+        ) == markedRange)
+        #expect(CandidateCommitReplacementRange.resolve(
+            markedRange: markedRange,
+            replacingMarkedText: false
+        ).location == NSNotFound)
     }
 }
