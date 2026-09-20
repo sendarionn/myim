@@ -167,7 +167,8 @@ final class InputController: IMKInputController {
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var basicDictionaryStatus = "未確認"
     private let candidateWindow = CandidateWindowController()
-    private let candidateFilterWindow = CandidateWindowController()
+    private let candidateFilterDraftWindow = CandidateWindowController()
+    private var candidateFilterConditionWindows: [CandidateWindowController] = []
     private let calendarWindow = CalendarWindowController()
     private let emojiWindow = EmojiWindowController.shared
     private let translationStatusWindow = TranslationStatusWindowController()
@@ -461,13 +462,6 @@ final class InputController: IMKInputController {
 
         if isCandidateFilterShortcut(event) {
             return beginCandidateFilterInput(client: sender)
-        }
-
-        if shouldBeginAdditionalCandidateFilter(with: event) {
-            guard beginCandidateFilterInput(client: sender) else {
-                return false
-            }
-            return handleCandidateFilterInput(event, client: sender)
         }
 
         if interactionState == .registeringDictionary {
@@ -2686,22 +2680,6 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func shouldBeginAdditionalCandidateFilter(with event: NSEvent) -> Bool {
-        guard unfilteredCandidates != nil,
-              !candidateFilterConditions.isEmpty else {
-            return false
-        }
-        let flags = event.modifierFlags.intersection([.command, .control, .option])
-        guard flags.isEmpty,
-              let characters = event.characters,
-              !characters.isEmpty else {
-            return false
-        }
-        return characters.unicodeScalars.allSatisfy {
-            !CharacterSet.controlCharacters.contains($0)
-        }
-    }
-
     private func handleCandidateFilterInput(
         _ event: NSEvent,
         client sender: Any
@@ -2883,17 +2861,16 @@ final class InputController: IMKInputController {
         if !candidateWindow.isVisible {
             showCandidateWindow(client: sender)
         }
-        candidateFilterWindow.show(
+        candidateFilterDraftWindow.show(
             candidates: visibleChoices.map(\.label),
             selectedIndex: draft.selectedIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
-            isAccented: true
+            isAccented: true,
+            reservesEmptyRow: true,
+            minimumPanelText: draft.input.isEmpty ? "　" : draft.input
         )
-        candidateWindow.makeRoomOnRight(
-            width: candidateFilterWindow.frame.width,
-            spacing: 8
-        )
-        candidateFilterWindow.placeBeside(candidateWindow.frame)
+        showCandidateFilterConditionPanels(client: sender)
+        layoutCandidateFilterPanels()
     }
 
     private func applySelectedCandidateFilter(client sender: Any) -> Bool {
@@ -2967,27 +2944,61 @@ final class InputController: IMKInputController {
 
     private func showCandidateFilterSummary(client sender: Any) {
         guard !candidateFilterConditions.isEmpty else {
-            candidateFilterWindow.hide()
+            hideCandidateFilterConditionPanels()
             return
         }
-        candidateFilterWindow.show(
-            candidates: candidateFilterConditions.map(\.label),
-            selectedIndex: nil,
-            near: inputLocation(for: sender),
-            modeTitle: "絞り込み条件"
-        )
-        candidateWindow.makeRoomOnRight(
-            width: candidateFilterWindow.frame.width,
-            spacing: 8
-        )
-        candidateFilterWindow.placeBeside(candidateWindow.frame)
+        candidateFilterDraftWindow.hide()
+        showCandidateFilterConditionPanels(client: sender)
+        layoutCandidateFilterPanels()
+    }
+
+    private func showCandidateFilterConditionPanels(client sender: Any) {
+        while candidateFilterConditionWindows.count < candidateFilterConditions.count {
+            candidateFilterConditionWindows.append(CandidateWindowController())
+        }
+        while candidateFilterConditionWindows.count > candidateFilterConditions.count {
+            candidateFilterConditionWindows.removeLast().hide()
+        }
+        for (window, condition) in zip(
+            candidateFilterConditionWindows,
+            candidateFilterConditions
+        ) {
+            window.show(
+                candidates: [condition.label],
+                selectedIndex: nil,
+                near: inputLocation(for: sender)
+            )
+        }
+    }
+
+    private func layoutCandidateFilterPanels() {
+        let windows = candidateFilterConditionWindows
+            + (candidateFilterDraft == nil ? [] : [candidateFilterDraftWindow])
+        guard !windows.isEmpty else { return }
+        let spacing: CGFloat = 8
+        let requiredWidth = windows.reduce(0) { $0 + $1.frame.width }
+            + spacing * CGFloat(windows.count)
+        candidateWindow.makeRoomOnRight(width: requiredWidth, spacing: 0)
+        var offset = spacing
+        for window in windows {
+            window.placeBeside(candidateWindow.frame, spacing: offset)
+            offset += window.frame.width + spacing
+        }
+    }
+
+    private func hideCandidateFilterConditionPanels() {
+        for window in candidateFilterConditionWindows {
+            window.hide()
+        }
+        candidateFilterConditionWindows.removeAll(keepingCapacity: true)
     }
 
     private func resetCandidateFilters() {
         unfilteredCandidates = nil
         candidateFilterConditions = []
         candidateFilterDraft = nil
-        candidateFilterWindow.hide()
+        candidateFilterDraftWindow.hide()
+        hideCandidateFilterConditionPanels()
     }
 
     private func refreshCandidates(client sender: Any) {

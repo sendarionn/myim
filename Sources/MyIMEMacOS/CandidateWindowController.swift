@@ -329,7 +329,9 @@ final class CandidateWindowController: NSObject {
         guide: String? = nil,
         modeTitle: String? = nil,
         isAccented: Bool = false,
-        reservedRightWidth: CGFloat = 0
+        reservedRightWidth: CGFloat = 0,
+        reservesEmptyRow: Bool = false,
+        minimumPanelText: String? = nil
     ) {
         panel.contentView?.layer?.borderWidth = isAccented ? 2 : 0
         panel.contentView?.layer?.borderColor = isAccented
@@ -391,6 +393,8 @@ final class CandidateWindowController: NSObject {
             max(
                 measuredItemSizes.map(\.width).max()
                     ?? Self.minimumItemWidth,
+                minimumPanelText.map { itemSize(for: $0).width }
+                    ?? Self.minimumItemWidth,
                 hasModeHeader
                     ? ceil(modeLabel.attributedStringValue.size().width) + 20
                     : 0
@@ -400,7 +404,9 @@ final class CandidateWindowController: NSObject {
         itemSizes = candidates.map { _ in
             NSSize(width: panelWidth, height: Self.itemHeight)
         }
-        let visibleItemCount = min(candidates.count, Self.maximumRows)
+        let visibleItemCount = candidates.isEmpty && reservesEmptyRow
+            ? 1
+            : min(candidates.count, Self.maximumRows)
         let panelHeight = CGFloat(visibleItemCount) * Self.itemHeight
             + CGFloat(max(visibleItemCount - 1, 0)) * Self.itemSpacing
         let reservedPanelHeight = CGFloat(Self.maximumRows) * Self.itemHeight
