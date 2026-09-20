@@ -46,6 +46,29 @@ struct CandidateFilterTests {
     }
 
     @Test
+    func placesFilterPanelBesideCandidatePanelWithinTheScreen() {
+        let visibleFrame = CandidateFilterPanelRect(
+            x: 0, y: 0, width: 800, height: 600
+        )
+        #expect(CandidateFilterPanelPlacement.origin(
+            beside: CandidateFilterPanelRect(
+                x: 100, y: 200, width: 200, height: 160
+            ),
+            panelWidth: 180,
+            panelHeight: 120,
+            visibleFrame: visibleFrame
+        ) == CandidateFilterPanelPoint(x: 308, y: 240))
+        #expect(CandidateFilterPanelPlacement.origin(
+            beside: CandidateFilterPanelRect(
+                x: 650, y: 200, width: 140, height: 160
+            ),
+            panelWidth: 180,
+            panelHeight: 120,
+            visibleFrame: visibleFrame
+        ) == CandidateFilterPanelPoint(x: 462, y: 240))
+    }
+
+    @Test
     func filtersDirectStringAttributesWithAndConditions() {
         let result = CandidateFilter().filtered(
             ["構成", "こうせい", "コウセイ", "A構成"],

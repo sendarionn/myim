@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import MyIMECore
 
 enum CandidateNavigationDirection {
     case left
@@ -241,6 +242,10 @@ final class CandidateWindowController: NSObject {
         panel.frame
     }
 
+    var isVisible: Bool {
+        panel.isVisible
+    }
+
     var auxiliaryFrames: [NSRect] {
         guidePanel.isVisible ? [guidePanel.frame] : []
     }
@@ -283,6 +288,38 @@ final class CandidateWindowController: NSObject {
     func contains(screenPoint: NSPoint) -> Bool {
         (panel.isVisible && panel.frame.contains(screenPoint))
             || (guidePanel.isVisible && guidePanel.frame.contains(screenPoint))
+    }
+
+    func placeBeside(_ anchorFrame: NSRect, spacing: CGFloat = 8) {
+        let visibleFrame = screenContaining(anchorFrame)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        let origin = CandidateFilterPanelPlacement.origin(
+            beside: CandidateFilterPanelRect(
+                x: anchorFrame.minX,
+                y: anchorFrame.minY,
+                width: anchorFrame.width,
+                height: anchorFrame.height
+            ),
+            panelWidth: panel.frame.width,
+            panelHeight: panel.frame.height,
+            visibleFrame: CandidateFilterPanelRect(
+                x: visibleFrame.minX,
+                y: visibleFrame.minY,
+                width: visibleFrame.width,
+                height: visibleFrame.height
+            ),
+            spacing: spacing
+        )
+        let panelOrigin = NSPoint(x: origin.x, y: origin.y)
+        let deltaX = panelOrigin.x - panel.frame.minX
+        let deltaY = panelOrigin.y - panel.frame.minY
+        panel.setFrameOrigin(panelOrigin)
+        if guidePanel.isVisible {
+            guidePanel.setFrameOrigin(NSPoint(
+                x: guidePanel.frame.minX + deltaX,
+                y: guidePanel.frame.minY + deltaY
+            ))
+        }
     }
 
     func show(

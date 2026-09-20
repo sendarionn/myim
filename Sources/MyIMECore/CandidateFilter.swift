@@ -174,6 +174,56 @@ public enum CandidateFilterArrowNavigation {
     }
 }
 
+public struct CandidateFilterPanelRect: Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+    public let width: Double
+    public let height: Double
+
+    public init(x: Double, y: Double, width: Double, height: Double) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+}
+
+public struct CandidateFilterPanelPoint: Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
+}
+
+public enum CandidateFilterPanelPlacement {
+    public static func origin(
+        beside anchor: CandidateFilterPanelRect,
+        panelWidth: Double,
+        panelHeight: Double,
+        visibleFrame: CandidateFilterPanelRect,
+        spacing: Double = 8
+    ) -> CandidateFilterPanelPoint {
+        let anchorMaxX = anchor.x + anchor.width
+        let anchorMaxY = anchor.y + anchor.height
+        let visibleMaxX = visibleFrame.x + visibleFrame.width
+        let visibleMaxY = visibleFrame.y + visibleFrame.height
+        let rightX = anchorMaxX + spacing
+        let leftX = anchor.x - spacing - panelWidth
+        let x = rightX + panelWidth <= visibleMaxX
+            ? rightX
+            : max(leftX, visibleFrame.x)
+        let alignedY = anchorMaxY - panelHeight
+        let y = min(
+            max(alignedY, visibleFrame.y),
+            visibleMaxY - panelHeight
+        )
+        return CandidateFilterPanelPoint(x: x, y: y)
+    }
+}
+
 public enum CandidateFilterCondition: Equatable, Sendable {
     case characterCount(Int)
     case contains(String)

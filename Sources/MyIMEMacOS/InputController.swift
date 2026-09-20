@@ -167,6 +167,7 @@ final class InputController: IMKInputController {
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var basicDictionaryStatus = "未確認"
     private let candidateWindow = CandidateWindowController()
+    private let candidateFilterWindow = CandidateWindowController()
     private let calendarWindow = CalendarWindowController()
     private let emojiWindow = EmojiWindowController.shared
     private let translationStatusWindow = TranslationStatusWindowController()
@@ -2668,6 +2669,7 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
         selectedCandidateIndex = nil
+        showCandidateWindow(client: sender)
         candidateFilterDraft = CandidateFilterDraft()
         updateCandidateFilterChoices(client: sender)
         return true
@@ -2857,14 +2859,6 @@ final class InputController: IMKInputController {
 
     private func showCandidateFilterChoices(client sender: Any) {
         guard let draft = candidateFilterDraft else { return }
-        let chips = candidateFilterConditions.map {
-            "[\($0.label)]"
-        }.joined(separator: " ")
-        let input = draft.input.isEmpty ? "条件を入力" : draft.input
-        let stageTitle = draft.stage == .conversion ? "条件語を変換" : "条件を選択"
-        let title = (["候補フィルター（\(stageTitle)）: \(input)", chips]
-            .filter { !$0.isEmpty })
-            .joined(separator: "　")
         let selectedIndex = draft.selectedIndex ?? 0
         let pageStart = selectedIndex / Self.maximumCandidateCount
             * Self.maximumCandidateCount
@@ -2875,15 +2869,20 @@ final class InputController: IMKInputController {
         let visibleChoices = pageStart < pageEnd
             ? Array(draft.choices[pageStart..<pageEnd])
             : []
-        candidateWindow.show(
+        if !candidateWindow.isVisible {
+            showCandidateWindow(client: sender)
+        }
+        candidateFilterWindow.show(
             candidates: visibleChoices.map(\.label),
             selectedIndex: draft.selectedIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
-            guide: draft.stage == .conversion
-                ? "Tab / 矢印 選択　↩ 変換確定　Esc 戻る"
-                : "Tab / 矢印 選択　↩ 適用　Esc 変換へ戻る",
-            modeTitle: title
+            isAccented: true
         )
+        candidateWindow.makeRoomOnRight(
+            width: candidateFilterWindow.frame.width,
+            spacing: 8
+        )
+        candidateFilterWindow.placeBeside(candidateWindow.frame)
     }
 
     private func applySelectedCandidateFilter(client sender: Any) -> Bool {
@@ -2942,20 +2941,38 @@ final class InputController: IMKInputController {
                 candidates: ["一致する候補なし"],
                 selectedIndex: nil,
                 near: inputLocation(for: sender),
-                guide: "一致なし: ↩ 無効　Esc 最後の条件を解除",
-                modeTitle: candidateFilterConditions.map {
-                    "[\($0.label)]"
-                }.joined(separator: " ")
+                guide: "一致なし: ↩ 無効　Esc 最後の条件を解除"
             )
+            showCandidateFilterSummary(client: sender)
             return
         }
         showCandidateWindow(client: sender)
+        showCandidateFilterSummary(client: sender)
+    }
+
+    private func showCandidateFilterSummary(client sender: Any) {
+        guard !candidateFilterConditions.isEmpty else {
+            candidateFilterWindow.hide()
+            return
+        }
+        candidateFilterWindow.show(
+            candidates: candidateFilterConditions.map(\.label),
+            selectedIndex: nil,
+            near: inputLocation(for: sender),
+            modeTitle: "絞り込み条件"
+        )
+        candidateWindow.makeRoomOnRight(
+            width: candidateFilterWindow.frame.width,
+            spacing: 8
+        )
+        candidateFilterWindow.placeBeside(candidateWindow.frame)
     }
 
     private func resetCandidateFilters() {
         unfilteredCandidates = nil
         candidateFilterConditions = []
         candidateFilterDraft = nil
+        candidateFilterWindow.hide()
     }
 
     private func refreshCandidates(client sender: Any) {
@@ -3976,9 +3993,6 @@ final class InputController: IMKInputController {
             guide += "\n文字入力 次の条件を追加"
         }
 
-        let filterTitle = candidateFilterConditions.isEmpty
-            ? nil
-            : candidateFilterConditions.map { "[\($0.label)]" }.joined(separator: " ")
         candidateWindow.show(
             candidates: currentCandidates[pageStart..<pageEnd].map {
                 candidateDisplayValue($0)
@@ -3986,9 +4000,9 @@ final class InputController: IMKInputController {
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
             guide: guide,
-            modeTitle: filterTitle ?? (isDictionaryRegistration
+            modeTitle: isDictionaryRegistration
                 ? "登録したい文字列を入力"
-                : (isTranslationInput ? "翻訳する日本語" : nil)),
+                : (isTranslationInput ? "翻訳する日本語" : nil),
             isAccented: isTranslationInput,
             reservedRightWidth: fuzzySuggestionWindow.isVisible
                 ? fuzzySuggestionWindow.panelWidth
