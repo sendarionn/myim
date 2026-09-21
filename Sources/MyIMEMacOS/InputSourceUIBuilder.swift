@@ -17,30 +17,30 @@ enum InputSourceMenuBuilder {
         let menu = NSMenu()
         menu.autoenablesItems = false
         addAction(
-            title: "myim設定…",
+            title: "myim設定",
             selector: actions.openSettings,
             to: menu
         )
         menu.addItem(.separator())
         addAction(
-            title: "JavaScript拡張を管理…",
+            title: "JavaScript拡張を管理",
             selector: actions.manageJavaScriptExtensions,
             to: menu
         )
         addAction(
-            title: "JavaScript拡張フォルダを開く…",
+            title: "JavaScript拡張フォルダを開く",
             selector: actions.openJavaScriptExtensionDirectory,
             to: menu
         )
         menu.addItem(.separator())
         addAction(
-            title: "候補フィルターデータフォルダを開く…",
+            title: "候補フィルターデータフォルダを開く",
             selector: actions.openCandidateFilterIDSDirectory,
             to: menu
         )
         menu.addItem(.separator())
         addAction(
-            title: "状態を確認…",
+            title: "状態を確認",
             selector: actions.showStatus,
             to: menu
         )
@@ -150,13 +150,13 @@ enum SettingsWindowBuilder {
         ], target: target, to: stack)
         addSection("辞書管理", to: stack)
         addButtons([
-            ("表示するmacOS辞書…", actions.configureSystemDictionaries),
+            ("表示するmacOS辞書", actions.configureSystemDictionaries),
             ("TKGJE基本辞書を更新", actions.updateBasicDictionary)
         ], target: target, to: stack)
         addSection("候補フィルター", to: stack)
         addButtons([
             ("CJKVI IDSデータをダウンロード", actions.downloadCandidateFilterIDS),
-            ("データフォルダを開く…", actions.openCandidateFilterIDSDirectory)
+            ("データフォルダを開く", actions.openCandidateFilterIDSDirectory)
         ], target: target, to: stack)
         addSection("操作", to: stack)
         addButtons([
