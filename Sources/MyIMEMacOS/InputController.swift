@@ -9,7 +9,7 @@ final class InputController: IMKInputController {
         subsystem: "com.sendarionn.myim",
         category: "input-lifecycle"
     )
-    private static let transientDeactivationDelay: TimeInterval = 0.35
+    private static let transientDeactivationDelay: TimeInterval = 0.75
     private static weak var activeController: InputController?
     private static weak var emojiPanelController: InputController?
     private struct TabDictionaryRegistration {
@@ -181,6 +181,7 @@ final class InputController: IMKInputController {
     private var settingsWindow: NSWindow?
     private var activeInputClient: Any?
     private var pendingDeactivation: DispatchWorkItem?
+    private var pendingDeactivationStartedAt: TimeInterval?
     private var isServerActive = false
     private var lifecycleGeneration: UInt = 0
     private var transientCompositionGuard = TransientCompositionGuard()
@@ -1126,23 +1127,28 @@ final class InputController: IMKInputController {
 
     override func activateServer(_ sender: Any!) {
         let resumesTransientDeactivation = pendingDeactivation != nil
+        let now = ProcessInfo.processInfo.systemUptime
+        let deactivationDuration = pendingDeactivationStartedAt.map {
+            max(now - $0, 0)
+        }
         lifecycleGeneration &+= 1
         pendingDeactivation?.cancel()
         pendingDeactivation = nil
+        pendingDeactivationStartedAt = nil
         isServerActive = true
-        activatedAt = ProcessInfo.processInfo.systemUptime
+        activatedAt = now
         activeInputClient = sender
         transientCompositionGuard.recordActivation(
             resumingDeactivation: resumesTransientDeactivation,
             hasComposition: !inputBuffer.isEmpty,
-            now: ProcessInfo.processInfo.systemUptime,
+            now: now,
             gracePeriod: Self.transientDeactivationDelay
         )
         Self.activeController = self
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
         Self.lifecycleLogger.notice(
-            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
+            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(deactivationDuration ?? -1, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
         )
     }
 
@@ -1165,6 +1171,7 @@ final class InputController: IMKInputController {
             return
         }
         pendingDeactivation?.cancel()
+        pendingDeactivationStartedAt = ProcessInfo.processInfo.systemUptime
         let workItem = DispatchWorkItem { [weak self] in
             guard let self,
                   !self.isServerActive,
@@ -1181,6 +1188,7 @@ final class InputController: IMKInputController {
             )
             self.activeInputClient = nil
             self.pendingDeactivation = nil
+            self.pendingDeactivationStartedAt = nil
         }
         pendingDeactivation = workItem
         Self.lifecycleLogger.notice(
@@ -1198,9 +1206,13 @@ final class InputController: IMKInputController {
         let deactivationWasPending = pendingDeactivation != nil
         pendingDeactivation?.cancel()
         pendingDeactivation = nil
+        pendingDeactivationStartedAt = nil
         isServerActive = false
         transientCompositionGuard.reset()
         activeInputClient = nil
+        Self.lifecycleLogger.notice(
+            "input controller closing bufferLength=\(self.inputBuffer.count, privacy: .public) pendingDeactivation=\(deactivationWasPending, privacy: .public)"
+        )
         if previewWindow.shouldPreserveForExternalInteraction() {
             super.inputControllerWillClose()
             return

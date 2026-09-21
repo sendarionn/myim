@@ -20,9 +20,12 @@ public struct TransientCompositionGuard: Sendable {
         now: TimeInterval,
         hasComposition: Bool
     ) -> Bool {
-        defer { suppressionDeadline = nil }
         guard let suppressionDeadline else { return false }
-        return hasComposition && now <= suppressionDeadline
+        guard hasComposition, now <= suppressionDeadline else {
+            self.suppressionDeadline = nil
+            return false
+        }
+        return true
     }
 
     public mutating func reset() {

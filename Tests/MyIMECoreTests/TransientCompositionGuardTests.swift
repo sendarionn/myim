@@ -4,7 +4,7 @@ import Testing
 @Suite
 struct TransientCompositionGuardTests {
     @Test
-    func suppressesOneCommitAfterTransientReactivation() {
+    func suppressesRepeatedCommitsAfterTransientReactivation() {
         var guardState = TransientCompositionGuard()
         guardState.recordActivation(
             resumingDeactivation: true,
@@ -23,7 +23,7 @@ struct TransientCompositionGuardTests {
         )
 
         #expect(firstCommitIsSuppressed)
-        #expect(!secondCommitIsSuppressed)
+        #expect(secondCommitIsSuppressed)
     }
 
     @Test
