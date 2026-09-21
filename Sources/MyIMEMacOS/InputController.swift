@@ -2987,7 +2987,7 @@ final class InputController: IMKInputController {
             updateJavaScriptExtensionCandidatesIfNeeded(for: extensionInput)
         }
         if isCalculationExpressionDraft, !scriptCandidates.isEmpty {
-            replaceCurrentCandidates(
+            replaceCurrentCandidatesOrderedByRecency(
                 with: CalculationCandidateSet.visible(
                     generatedCandidates: scriptCandidates,
                     input: inputBuffer
@@ -2999,7 +2999,7 @@ final class InputController: IMKInputController {
         let unitConversionCandidates = UnitConversionCandidateGenerator
             .candidates(for: inputBuffer)
         if !unitConversionCandidates.isEmpty {
-            replaceCurrentCandidates(
+            replaceCurrentCandidatesOrderedByRecency(
                 with: unitConversionCandidates + scriptCandidates
             )
             showCandidateWindow(client: sender)
@@ -3019,7 +3019,7 @@ final class InputController: IMKInputController {
                 ? postalAddressCandidates
                 : [])
         if !numericFormatCandidates.isEmpty {
-            replaceCurrentCandidates(
+            replaceCurrentCandidatesOrderedByRecency(
                 with: numericFormatCandidates + scriptCandidates
             )
             showCandidateWindow(client: sender)
@@ -3029,7 +3029,9 @@ final class InputController: IMKInputController {
             for: inputBuffer
         )
         if !numberCandidates.isEmpty {
-            replaceCurrentCandidates(with: numberCandidates + scriptCandidates)
+            replaceCurrentCandidatesOrderedByRecency(
+                with: numberCandidates + scriptCandidates
+            )
             showCandidateWindow(client: sender)
             return
         }
@@ -4118,7 +4120,7 @@ final class InputController: IMKInputController {
         guard !nonLearnableGeneratedCandidates.contains(candidate) else {
             return
         }
-        let learnedReading = reading ?? conversionReading
+        let learnedReading = reading ?? candidateSelectionReading
         if learnableOfficialCandidates.contains(candidate),
            !learnedReading.isEmpty {
             do {
@@ -4149,8 +4151,21 @@ final class InputController: IMKInputController {
     ) -> [String] {
         CandidateRecencyOrderer.ordered(
             candidates,
-            ranks: candidateSelectionRanks(for: conversionReading)
+            ranks: candidateSelectionRanks(for: candidateSelectionReading)
         )
+    }
+
+    private var candidateSelectionReading: String {
+        CandidateSelectionReading.resolve(
+            conversionReading: conversionReading,
+            originalInput: inputBuffer
+        )
+    }
+
+    private func replaceCurrentCandidatesOrderedByRecency(
+        with candidates: [String]
+    ) {
+        replaceCurrentCandidates(with: candidatesOrderedByRecency(candidates))
     }
 
     private func candidateSelectionRanks(for reading: String) -> [String: Int] {

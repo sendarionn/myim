@@ -10,7 +10,7 @@ public enum JapaneseNumberConverter {
             return []
         }
 
-        var candidates = [input]
+        var candidates: [String] = []
         if let circled = Int(exactly: value).flatMap(circledNumber) {
             candidates.append(circled)
         }

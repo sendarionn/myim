@@ -12,6 +12,12 @@ SCRIPT = (
     / "Extensions"
     / "numeric-tools.js"
 )
+INPUT_CONTROLLER = (
+    Path(__file__).parents[2]
+    / "Sources"
+    / "MyIMEMacOS"
+    / "InputController.swift"
+)
 
 
 class NumericToolsExtensionTests(unittest.TestCase):
@@ -33,6 +39,21 @@ process.stdout.write(JSON.stringify(candidates({{ input: {json.dumps(value)} }})
         self.assertEqual(self.candidates("10"), ["1010"])
         self.assertEqual(self.candidates("+5"), ["101"])
         self.assertEqual(self.candidates("-5"), ["-101"])
+
+    def test_numeric_candidate_paths_apply_selection_history(self):
+        source = INPUT_CONTROLLER.read_text()
+        self.assertGreaterEqual(
+            source.count("replaceCurrentCandidatesOrderedByRecency("),
+            5,
+        )
+        self.assertIn(
+            "replaceCurrentCandidates(with: candidatesOrderedByRecency(candidates))",
+            source,
+        )
+        self.assertIn(
+            "let learnedReading = reading ?? candidateSelectionReading",
+            source,
+        )
 
     def test_calculates_expressions_with_precedence_and_parentheses(self):
         self.assertEqual(self.candidates("2+1="), ["3"])
