@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DefaultExtensionInstaller {
-    public static let markerName = ".myim-default-extensions-installed-v16"
+    public static let markerName = ".myim-default-extensions-installed-v17"
 
     public static func installIfNeeded(
         from sourceDirectory: URL,
@@ -46,8 +46,23 @@ public enum DefaultExtensionInstaller {
             to: destinationDirectory.appendingPathComponent("datetime.js"),
             fileManager: fileManager
         )
+        try removeDeprecatedCalendarEventExtension(
+            from: destinationDirectory.appendingPathComponent("calendar.js"),
+            fileManager: fileManager
+        )
 
         try Data().write(to: marker, options: .atomic)
+    }
+
+    private static func removeDeprecatedCalendarEventExtension(
+        from fileURL: URL,
+        fileManager: FileManager
+    ) throws {
+        guard fileManager.fileExists(atPath: fileURL.path),
+              let script = try? String(contentsOf: fileURL, encoding: .utf8),
+              script.contains("context.input === \"calendar-event\""),
+              script.contains("formatCalendarEvent") else { return }
+        try fileManager.removeItem(at: fileURL)
     }
 
     private static func addWeekdayTokenSupport(

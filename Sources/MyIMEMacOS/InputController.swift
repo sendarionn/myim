@@ -2595,7 +2595,7 @@ final class InputController: IMKInputController {
                 candidates: ["書式候補なし"],
                 selectedIndex: nil,
                 near: calendarInputLocation(for: sender),
-                guide: "calendar.jsを確認　Esc 中止",
+                guide: "datetime.jsを確認　Esc 中止",
                 modeTitle: "日付の書式を選択"
             )
             return
