@@ -79,11 +79,13 @@ class InstallMacOSIMTests(unittest.TestCase):
         self.assertLess(select_source, wait_for_server)
         self.assertLess(wait_for_server, success)
 
+    def test_does_not_launch_input_method_as_a_regular_application(self):
+        self.assertNotIn('open -gja "$app_destination"', self.script)
+
     def test_stops_every_bundled_process_before_replacing_the_app(self):
         self.assertIn("stop_process myim", self.script)
         self.assertIn("stop_process myim-external-browser", self.script)
         self.assertIn("stop_process myim-extension-host", self.script)
-
 
 if __name__ == "__main__":
     unittest.main()

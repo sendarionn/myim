@@ -180,7 +180,9 @@ if [[ "$was_selected" == "1" || "$was_registered" != "1" ]]; then
 fi
 
 if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
-    wait_for_running_server "$installed_executable"
+    if ! wait_for_running_server "$installed_executable"; then
+        echo "myimは入力欄へフォーカスした時点で起動します" >&2
+    fi
 fi
 
 trap - EXIT
