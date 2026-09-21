@@ -5,6 +5,29 @@ import Testing
 @Suite("DefaultExtensionInstallerTests")
 struct DefaultExtensionInstallerTests {
     @Test
+    func addsUnprefixedBinaryCandidateToInstalledExtension() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let destination = root.appendingPathComponent("destination", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let installed = destination.appendingPathComponent("numeric-tools.js")
+        try Data("""
+          const sign = value < 0 ? "-" : ""
+          return [sign + "0b" + Math.abs(value).toString(2)]
+        """.utf8).write(to: installed)
+
+        try DefaultExtensionInstaller.installIfNeeded(from: source, into: destination)
+
+        let migrated = try String(contentsOf: installed, encoding: .utf8)
+        #expect(migrated.contains(
+            "return [sign + digits]"
+        ))
+    }
+
+    @Test
     func removesDeprecatedCalendarEventExtension() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

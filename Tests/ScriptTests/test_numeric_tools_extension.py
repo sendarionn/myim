@@ -30,8 +30,9 @@ process.stdout.write(JSON.stringify(candidates({{ input: {json.dumps(value)} }})
         return json.loads(completed.stdout)
 
     def test_converts_integer_to_binary(self):
-        self.assertEqual(self.candidates("10"), ["0b1010"])
-        self.assertEqual(self.candidates("-5"), ["-0b101"])
+        self.assertEqual(self.candidates("10"), ["1010"])
+        self.assertEqual(self.candidates("+5"), ["101"])
+        self.assertEqual(self.candidates("-5"), ["-101"])
 
     def test_calculates_expressions_with_precedence_and_parentheses(self):
         self.assertEqual(self.candidates("2+1="), ["3"])

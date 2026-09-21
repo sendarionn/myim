@@ -139,7 +139,8 @@ function binaryCandidates(input) {
     return []
   }
   const sign = value < 0 ? "-" : ""
-  return [sign + "0b" + Math.abs(value).toString(2)]
+  const digits = Math.abs(value).toString(2)
+  return [sign + digits]
 }
 
 function imperialLengthCandidates(input) {
