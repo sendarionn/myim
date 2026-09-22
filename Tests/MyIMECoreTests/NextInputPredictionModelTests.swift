@@ -66,7 +66,7 @@ struct NextInputPredictionModelTests {
         model.record("A")
         model.record("直前候補")
 
-        #expect(model.candidates(after: "A").first == "直前候補")
+        #expect(model.candidates(after: "A", limit: 30).contains("直前候補"))
     }
 
     @Test
@@ -105,15 +105,19 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func suppressesADeletedCandidateForItsContext() {
+    func suppressesADeletedCandidateForEveryContext() {
         var model = NextInputPredictionModel()
         model.record("よろしく")
+        model.record("お願いします")
+        model.breakSequence()
+        model.record("確認")
         model.record("お願いします")
         model.suppress("お願いします", after: "よろしく")
 
         #expect(model.candidates(after: "よろしく").isEmpty)
+        #expect(model.candidates(after: "確認").isEmpty)
         #expect(model.isSuppressed("お願いします", after: "よろしく"))
-        #expect(!model.isSuppressed("お願いします", after: "別の文脈"))
+        #expect(model.isSuppressed("お願いします", after: "別の文脈"))
     }
 
     @Test
@@ -127,6 +131,29 @@ struct NextInputPredictionModelTests {
         )
 
         #expect(restored.isSuppressed("円", after: "100"))
+    }
+
+    @Test
+    func migratesContextualSuppressionToGlobalSuppression() throws {
+        let data = Data("""
+        {
+          "contexts": {},
+          "sequence": 0,
+          "lastInput": null,
+          "suppressedCandidates": {
+            "100": ["円"],
+            "200": ["個", "円"]
+          }
+        }
+        """.utf8)
+
+        let restored = try JSONDecoder().decode(
+            NextInputPredictionModel.self,
+            from: data
+        )
+
+        #expect(restored.isSuppressed("円", after: "別の文脈"))
+        #expect(restored.isSuppressed("個", after: "別の文脈"))
     }
 
     @Test

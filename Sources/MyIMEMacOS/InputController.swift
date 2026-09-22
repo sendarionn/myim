@@ -4406,7 +4406,17 @@ final class InputController: IMKInputController {
         }
         let candidate = nextInputCandidates[selectedNextInputIndex]
         nextInputPredictionModel.suppress(candidate, after: context)
-        nextInputPredictionWriter.schedule(nextInputPredictionModel)
+        do {
+            try nextInputPredictionWriter.writeImmediately(
+                nextInputPredictionModel
+            )
+        } catch {
+            NSLog(
+                "次入力候補の削除保存に失敗: %@",
+                error.localizedDescription
+            )
+            NSSound.beep()
+        }
         nextInputCandidates.remove(at: selectedNextInputIndex)
         self.selectedNextInputIndex = nil
         let pasteboard = NSPasteboard.general
