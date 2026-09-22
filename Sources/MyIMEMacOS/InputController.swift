@@ -1766,13 +1766,7 @@ final class InputController: IMKInputController {
               !source.isEmpty else {
             return true
         }
-        candidateWindow.show(
-            candidates: ["翻訳中…"],
-            selectedIndex: nil,
-            near: inputLocation(for: sender),
-            modeTitle: "\(target.name)へ翻訳",
-            isAccented: true
-        )
+        candidateWindow.hide()
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
 #if canImport(Translation)
@@ -2300,36 +2294,19 @@ final class InputController: IMKInputController {
                     registration.outputCandidate.map { "出力: \($0)" }
                 ].compactMap { $0 },
                 selectedIndex: nil,
-                near: inputLocation(for: sender),
-                guide: registration.isEnteringDisplayName
-                    ? "↩ 登録を確定　Esc 中止"
-                    : "↩ 登録を確定　\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 表示名も登録\nEsc 中止",
-                modeTitle: registration.isEnteringDisplayName
-                    ? "候補パネルの表示名を入力"
-                    : "登録したい文字列を入力"
+                near: inputLocation(for: sender)
             )
             return
         }
         let candidate = registration.pastedCandidate ?? inputBuffer.nilIfEmpty
-        let candidateDisplay = candidate == nil
-            ? "候補を入力 / ⌘Vで貼付"
-            : candidate!
         candidateWindow.show(
             candidates: [
                 "読み: \(registration.reading)",
                 registration.outputCandidate.map { "出力: \($0)" },
-                candidateDisplay
+                candidate
             ].compactMap { $0 },
             selectedIndex: nil,
-            near: inputLocation(for: sender),
-            guide: registration.isEnteringDisplayName
-                ? "↩ 表示名を確定　⌘V 貼付　Esc 中止"
-                : (candidate == nil
-                    ? "↩ 入力を追加　⌘V 貼付　Esc 中止"
-                    : "↩ 入力を追加　\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 表示名も登録\n⌘V 貼付　Esc 中止"),
-            modeTitle: registration.isEnteringDisplayName
-                ? "候補パネルの表示名を入力"
-                : "登録したい文字列を入力"
+            near: inputLocation(for: sender)
         )
     }
 
@@ -2517,13 +2494,7 @@ final class InputController: IMKInputController {
         calendarFormatTask?.cancel()
         calendarFormatCandidates = []
         selectedCalendarFormatIndex = nil
-        candidateWindow.show(
-            candidates: ["書式を読み込み中"],
-            selectedIndex: nil,
-            near: calendarInputLocation(for: sender),
-            guide: "Esc 中止",
-            modeTitle: "日付の書式を選択"
-        )
+        candidateWindow.hide()
         calendarFormatTask = Task { @MainActor [weak self] in
             let candidates = await Self.javaScriptExtensionClient
                 .calendarCandidates(for: date)
@@ -2644,13 +2615,7 @@ final class InputController: IMKInputController {
     private func showCalendarFormatCandidates(client sender: Any) {
         guard let candidates = calendarFormatCandidates else { return }
         guard !candidates.isEmpty else {
-            candidateWindow.show(
-                candidates: ["書式候補なし"],
-                selectedIndex: nil,
-                near: calendarInputLocation(for: sender),
-                guide: "datetime.jsを確認　Esc 中止",
-                modeTitle: "日付の書式を選択"
-            )
+            candidateWindow.hide()
             return
         }
         let selectedIndex = selectedCalendarFormatIndex ?? 0
@@ -2660,9 +2625,7 @@ final class InputController: IMKInputController {
         candidateWindow.show(
             candidates: Array(candidates[pageStart..<pageEnd]),
             selectedIndex: selectedCalendarFormatIndex.map { $0 - pageStart },
-            near: calendarInputLocation(for: sender),
-            guide: "Tab / 矢印 選択　↩ 入力　Esc 中止",
-            modeTitle: "日付の書式を選択"
+            near: calendarInputLocation(for: sender)
         )
     }
 
@@ -2953,12 +2916,7 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = nil
         updateMarkedText(in: sender)
         if currentCandidates.isEmpty {
-            candidateWindow.show(
-                candidates: ["一致する候補なし"],
-                selectedIndex: nil,
-                near: inputLocation(for: sender),
-                guide: "一致なし: ↩ 無効　Esc 最後の条件を解除"
-            )
+            candidateWindow.hide()
             showCandidateFilterSummary(client: sender)
             return
         }
@@ -4046,35 +4004,13 @@ final class InputController: IMKInputController {
             return
         }
 
-        let isDictionaryRegistration = tabDictionaryRegistration != nil
         let isTranslationInput = isTranslationSessionActive
-        var guide: String
-        if isDictionaryRegistration {
-            guide = "Tab / 矢印 選択・移動\n↩ 入力を追加　Esc 登録中止"
-        } else if isTranslationInput {
-            guide = "Tab / 矢印 選択・移動　Return 原文に追加\n原文確定後にもう一度Returnで翻訳　Esc 日本語で確定"
-        } else {
-            guide = "Tab / 矢印 選択・移動　↩ 確定　Esc 解除\n\(MyIMFeatureShortcut.dictionaryRegistration.shortcut.displayName) 辞書登録　⌘X 削除　\(MyIMFeatureShortcut.webSearch.shortcut.displayName) Web検索　\(MyIMFeatureShortcut.externalInformation.shortcut.displayName) 外部ページ"
-        }
-
-        if isFuzzySuggestionsEnabled && !isDictionaryRegistration {
-            guide += "\n←→ 通常 / もしかして切替　⇧Tab もしかして"
-        }
-
-        if !candidateFilterConditions.isEmpty {
-            guide += "\n文字入力 次の条件を追加"
-        }
-
         candidateWindow.show(
             candidates: currentCandidates[pageStart..<pageEnd].map {
                 candidateDisplayValue($0)
             },
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
-            guide: guide,
-            modeTitle: isDictionaryRegistration
-                ? "登録したい文字列を入力"
-                : (isTranslationInput ? "翻訳する日本語" : nil),
             isAccented: isTranslationInput,
             reservedRightWidth: fuzzySuggestionWindow.isVisible
                 ? fuzzySuggestionWindow.panelWidth
@@ -4783,9 +4719,6 @@ final class InputController: IMKInputController {
                 $0 - pageRange.lowerBound
             },
             near: inputLocation(for: sender),
-            guide: isTranslationSessionActive
-                ? "Tab 選択　Return 原文に追加\n候補未選択でReturn 翻訳　Esc 日本語で確定"
-                : "Tab 選択　Return / Esc 閉じる\n選択後はTab / 矢印 移動　Return 確定",
             isAccented: isTranslationSessionActive
         )
     }
