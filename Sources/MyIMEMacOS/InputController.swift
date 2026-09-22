@@ -12,6 +12,8 @@ final class InputController: IMKInputController {
     private static let transientDeactivationDelay: TimeInterval = 0.75
     private static weak var activeController: InputController?
     private static weak var emojiPanelController: InputController?
+    private static var lifecycleGenerationTracker =
+        InputLifecycleGenerationTracker()
     private struct TabDictionaryRegistration {
         let originalInput: String
         let reading: String
@@ -184,6 +186,8 @@ final class InputController: IMKInputController {
     private var pendingDeactivationStartedAt: TimeInterval?
     private var isServerActive = false
     private var lifecycleGeneration: UInt = 0
+    private var applicationLifecycleGeneration: UInt?
+    private var inputClientBundleIdentifier: String?
     private var transientCompositionGuard = TransientCompositionGuard()
 
     static func handleGlobalEmojiShortcut() {
@@ -1138,6 +1142,14 @@ final class InputController: IMKInputController {
         isServerActive = true
         activatedAt = now
         activeInputClient = sender
+        inputClientBundleIdentifier = (sender as? IMKTextInput)?
+            .bundleIdentifier()
+        if let inputClientBundleIdentifier {
+            applicationLifecycleGeneration = Self.lifecycleGenerationTracker
+                .recordActivation(for: inputClientBundleIdentifier)
+        } else {
+            applicationLifecycleGeneration = nil
+        }
         transientCompositionGuard.recordActivation(
             resumingDeactivation: resumesTransientDeactivation,
             hasComposition: !inputBuffer.isEmpty,
@@ -1148,13 +1160,15 @@ final class InputController: IMKInputController {
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
         Self.lifecycleLogger.notice(
-            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(deactivationDuration ?? -1, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
+            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(deactivationDuration ?? -1, privacy: .public) client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public) appGeneration=\(self.applicationLifecycleGeneration ?? 0, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
         )
     }
 
     override func deactivateServer(_ sender: Any!) {
         lifecycleGeneration &+= 1
         let deactivationGeneration = lifecycleGeneration
+        let deactivatingApplication = inputClientBundleIdentifier
+        let deactivatingApplicationGeneration = applicationLifecycleGeneration
         isServerActive = false
         EmojiGlobalHotKey.shared.deactivate()
         if Self.activeController === self {
@@ -1176,6 +1190,19 @@ final class InputController: IMKInputController {
             guard let self,
                   !self.isServerActive,
                   self.lifecycleGeneration == deactivationGeneration else {
+                return
+            }
+            if let deactivatingApplication,
+               let deactivatingApplicationGeneration,
+               !Self.lifecycleGenerationTracker.isCurrent(
+                    application: deactivatingApplication,
+                    generation: deactivatingApplicationGeneration
+               ) {
+                Self.lifecycleLogger.notice(
+                    "discarded stale deactivation client=\(deactivatingApplication, privacy: .public) appGeneration=\(deactivatingApplicationGeneration, privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
+                )
+                self.pendingDeactivation = nil
+                self.pendingDeactivationStartedAt = nil
                 return
             }
             Self.lifecycleLogger.notice(
