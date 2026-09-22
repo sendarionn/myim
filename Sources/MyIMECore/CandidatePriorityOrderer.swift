@@ -49,22 +49,16 @@ public enum CandidatePriorityOrderer {
             return result
         }
 
-        let availableCandidates = direct + kana + others
-        if let mostRecentCandidate = availableCandidates.max(by: {
-            (recencyRanks[$0] ?? Int.min) < (recencyRanks[$1] ?? Int.min)
-        }), recencyRanks[mostRecentCandidate] != nil {
-            appendUnique([mostRecentCandidate])
-        }
         appendUnique(CandidateRecencyOrderer.ordered(
-            direct.filter { !seen.contains($0) },
+            direct,
             ranks: recencyRanks
         ))
         appendUnique(CandidateRecencyOrderer.ordered(
-            kana.filter { !seen.contains($0) },
+            kana,
             ranks: recencyRanks
         ))
         appendUnique(orderedByContext(
-            others.filter { !seen.contains($0) }
+            others
         ))
         return result
     }

@@ -97,23 +97,15 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
                 }
             }
         }
-        guard !combinedStats.isEmpty,
-              let mostRecent = combinedStats.max(by: {
-                  $0.value.lastUsed < $1.value.lastUsed
-              }) else {
+        guard !combinedStats.isEmpty else {
             return [:]
         }
-        let ordered = [mostRecent] + combinedStats
-            .filter { $0.key != mostRecent.key }
-            .sorted {
-                if $0.value.count != $1.value.count {
-                    return $0.value.count > $1.value.count
-                }
-                if $0.value.lastUsed != $1.value.lastUsed {
-                    return $0.value.lastUsed > $1.value.lastUsed
-                }
-                return $0.key < $1.key
+        let ordered = combinedStats.sorted {
+            if $0.value.lastUsed != $1.value.lastUsed {
+                return $0.value.lastUsed > $1.value.lastUsed
             }
+            return $0.key < $1.key
+        }
         return Dictionary(uniqueKeysWithValues: ordered.enumerated().map {
             ($0.element.key, ordered.count - $0.offset)
         })

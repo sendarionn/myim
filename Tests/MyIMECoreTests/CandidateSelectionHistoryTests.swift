@@ -40,7 +40,7 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
-    func learnsRecencyAndFrequencyForEachReading() {
+    func ordersEachReadingOnlyByMostRecentUse() {
         var history = CandidateSelectionHistory()
         history.record("際", reading: "sai")
         history.record("歳", reading: "sai")
@@ -50,10 +50,22 @@ struct CandidateSelectionHistoryTests {
         history.record("歳", reading: "toshi")
 
         let saiRanks = history.ranks(for: "sai")
-        #expect(saiRanks["差異"]! > saiRanks["際"]!)
-        #expect(saiRanks["際"]! > saiRanks["再"]!)
-        #expect(saiRanks["歳"] != nil)
+        #expect(saiRanks["差異"]! > saiRanks["再"]!)
+        #expect(saiRanks["再"]! > saiRanks["際"]!)
+        #expect(saiRanks["際"]! > saiRanks["歳"]!)
         #expect(Set(history.ranks(for: "toshi").keys) == ["歳"])
+    }
+
+    @Test
+    func frequentOlderCandidateDoesNotBeatMoreRecentCandidate() {
+        var history = CandidateSelectionHistory()
+        history.record("頻出", reading: "kouho")
+        history.record("頻出", reading: "kouho")
+        history.record("頻出", reading: "kouho")
+        history.record("最新", reading: "kouho")
+
+        let ranks = history.ranks(for: "kouho")
+        #expect(ranks["最新"]! > ranks["頻出"]!)
     }
 
     @Test

@@ -28,7 +28,7 @@ struct CandidatePriorityOrdererTests {
     }
 
     @Test
-    func prioritizesDirectAndRecentCandidatesForLongInput() {
+    func keepsRecentOtherCandidateInsideOtherGroupForLongInput() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["きかい", "キカイ"],
             direct: ["機械", "機会"],
@@ -37,7 +37,7 @@ struct CandidatePriorityOrdererTests {
             prioritizeKana: false
         )
         #expect(result == [
-            "機械的", "機械", "機会", "きかい", "キカイ", "期間"
+            "機械", "機会", "きかい", "キカイ", "機械的", "期間"
         ])
     }
 
@@ -66,7 +66,7 @@ struct CandidatePriorityOrdererTests {
     }
 
     @Test
-    func selectedKanaCanMoveAheadOfDirectCandidateForLongInput() {
+    func keepsSelectedKanaInsideKanaGroupForLongInput() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["での", "デノ"],
             direct: ["出野"],
@@ -74,11 +74,11 @@ struct CandidatePriorityOrdererTests {
             recencyRanks: ["での": 12],
             prioritizeKana: false
         )
-        #expect(result == ["での", "出野", "デノ"])
+        #expect(result == ["出野", "での", "デノ"])
     }
 
     @Test
-    func prioritizesMostRecentSelectionBeforeCandidateUsedAfterPreviousInput() {
+    func keepsRecentSelectionInsideItsCandidateGroup() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["けいかく", "ケイカク"],
             direct: ["計画", "軽核"],
@@ -106,7 +106,7 @@ struct CandidatePriorityOrdererTests {
     }
 
     @Test
-    func prioritizesOnlyTheMostRecentCandidateBeforeCloserMatches() {
+    func keepsRecentCompletionInsideCompletionGroup() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["さい", "サイ"],
             direct: ["再", "際", "歳"],
@@ -115,6 +115,6 @@ struct CandidatePriorityOrdererTests {
             prioritizeKana: false
         )
 
-        #expect(result == ["再利用", "再", "際", "歳", "さい", "サイ", "最愛"])
+        #expect(result == ["再", "際", "歳", "さい", "サイ", "再利用", "最愛"])
     }
 }
