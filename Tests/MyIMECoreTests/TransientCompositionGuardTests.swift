@@ -61,4 +61,28 @@ struct TransientCompositionGuardTests {
 
         #expect(!commitIsSuppressed)
     }
+
+    @Test
+    func protectsImmediateSecondDeactivationAfterReactivation() {
+        var guardState = TransientCompositionGuard()
+        guardState.recordActivation(
+            resumingDeactivation: true,
+            hasComposition: true,
+            now: 10,
+            gracePeriod: 0.75
+        )
+        _ = guardState.consumeSystemCommitSuppression(
+            now: 10.001,
+            hasComposition: true
+        )
+
+        #expect(guardState.isProtectingTransientDeactivation(
+            now: 10.002,
+            hasComposition: true
+        ))
+        #expect(!guardState.isProtectingTransientDeactivation(
+            now: 10.8,
+            hasComposition: true
+        ))
+    }
 }

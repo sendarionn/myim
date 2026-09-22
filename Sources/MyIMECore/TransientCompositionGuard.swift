@@ -28,6 +28,14 @@ public struct TransientCompositionGuard: Sendable {
         return true
     }
 
+    public func isProtectingTransientDeactivation(
+        now: TimeInterval,
+        hasComposition: Bool
+    ) -> Bool {
+        guard let suppressionDeadline else { return false }
+        return hasComposition && now <= suppressionDeadline
+    }
+
     public mutating func reset() {
         suppressionDeadline = nil
     }

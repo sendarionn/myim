@@ -10,6 +10,10 @@ final class InputController: IMKInputController {
         category: "input-lifecycle"
     )
     private static let transientDeactivationDelay: TimeInterval = 0.75
+    private static let auxiliaryApplicationBundleIdentifiers: Set<String> = [
+        "io.github.sendarionn.inputmethod.myime",
+        "io.github.sendarionn.myim.external-browser"
+    ]
     private static weak var activeController: InputController?
     private static weak var emojiPanelController: InputController?
     private static var lifecycleGenerationTracker =
@@ -1165,10 +1169,16 @@ final class InputController: IMKInputController {
     }
 
     override func deactivateServer(_ sender: Any!) {
+        let deactivationStartedAt = ProcessInfo.processInfo.systemUptime
         lifecycleGeneration &+= 1
         let deactivationGeneration = lifecycleGeneration
         let deactivatingApplication = inputClientBundleIdentifier
         let deactivatingApplicationGeneration = applicationLifecycleGeneration
+        let protectsTransientDeactivation = transientCompositionGuard
+            .isProtectingTransientDeactivation(
+                now: deactivationStartedAt,
+                hasComposition: !inputBuffer.isEmpty
+            )
         isServerActive = false
         EmojiGlobalHotKey.shared.deactivate()
         if Self.activeController === self {
@@ -1204,6 +1214,22 @@ final class InputController: IMKInputController {
                 self.pendingDeactivation = nil
                 self.pendingDeactivationStartedAt = nil
                 return
+            }
+            if protectsTransientDeactivation,
+               let deactivatingApplication {
+                let frontmostApplication = NSWorkspace.shared
+                    .frontmostApplication?.bundleIdentifier
+                if frontmostApplication == deactivatingApplication
+                    || frontmostApplication.map(
+                        Self.auxiliaryApplicationBundleIdentifiers.contains
+                    ) == true {
+                    Self.lifecycleLogger.notice(
+                        "discarded transient follow-up deactivation client=\(deactivatingApplication, privacy: .public) frontmost=\(frontmostApplication ?? "unknown", privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
+                    )
+                    self.pendingDeactivation = nil
+                    self.pendingDeactivationStartedAt = nil
+                    return
+                }
             }
             Self.lifecycleLogger.notice(
                 "deactivation committed after grace period bufferLength=\(self.inputBuffer.count, privacy: .public)"
