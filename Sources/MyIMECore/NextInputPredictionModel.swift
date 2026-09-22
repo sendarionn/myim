@@ -57,30 +57,15 @@ public struct NextInputPredictionModel: Codable, Sendable {
         else {
             return []
         }
-        guard let mostRecent = context.candidates.max(by: {
-            if $0.value.lastUsed != $1.value.lastUsed {
-                return $0.value.lastUsed < $1.value.lastUsed
-            }
-            return $0.key > $1.key
-        }) else {
-            return []
-        }
         let suppressed = Set(suppressedCandidates)
-        let remaining = context.candidates
-            .filter { $0.key != mostRecent.key && !suppressed.contains($0.key) }
+        return context.candidates
+            .filter { !suppressed.contains($0.key) }
             .sorted {
-                if $0.value.count != $1.value.count {
-                    return $0.value.count > $1.value.count
-                }
                 if $0.value.lastUsed != $1.value.lastUsed {
                     return $0.value.lastUsed > $1.value.lastUsed
                 }
                 return $0.key < $1.key
             }
-        let ordered = suppressed.contains(mostRecent.key)
-            ? remaining
-            : [mostRecent] + remaining
-        return ordered
             .prefix(limit)
             .map(\.key)
     }
@@ -150,21 +135,12 @@ public struct NextInputPredictionModel: Codable, Sendable {
         limit: Int
     ) -> [String: CandidateStat] {
         guard candidates.count > limit else { return candidates }
-        guard let mostRecent = candidates.max(by: {
-            $0.value.lastUsed < $1.value.lastUsed
-        }) else { return [:] }
-        let retained = [mostRecent] + candidates
-            .filter { $0.key != mostRecent.key }
-            .sorted {
-                if $0.value.count != $1.value.count {
-                    return $0.value.count > $1.value.count
-                }
-                if $0.value.lastUsed != $1.value.lastUsed {
-                    return $0.value.lastUsed > $1.value.lastUsed
-                }
-                return $0.key < $1.key
+        let retained = candidates.sorted {
+            if $0.value.lastUsed != $1.value.lastUsed {
+                return $0.value.lastUsed > $1.value.lastUsed
             }
-            .prefix(max(0, limit - 1))
+            return $0.key < $1.key
+        }.prefix(limit)
         return Dictionary(uniqueKeysWithValues: retained.map {
             ($0.key, $0.value)
         })

@@ -29,7 +29,7 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func prioritizesMostRecentFollowerBeforeFrequency() {
+    func prioritizesMostRecentFollower() {
         var model = NextInputPredictionModel()
         model.record("A")
         model.record("B")
@@ -42,9 +42,9 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func keepsFrequencyOrderAfterMostRecentFollower() {
+    func ordersEveryCandidateByMostRecentUse() {
         var model = NextInputPredictionModel()
-        for follower in ["B", "D", "B", "D", "C"] {
+        for follower in ["B", "B", "B", "D", "C"] {
             model.record("A")
             model.record(follower)
             model.breakSequence()
