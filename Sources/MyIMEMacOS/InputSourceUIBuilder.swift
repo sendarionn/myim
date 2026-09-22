@@ -67,6 +67,11 @@ enum InputSourceMenuBuilder {
 }
 
 enum SettingsWindowBuilder {
+    struct ImportedDictionaryState {
+        let filename: String
+        let isEnabled: Bool
+    }
+
     struct FeatureStates {
         let englishCompletion: Bool
         let wikipediaSuggestions: Bool
@@ -78,6 +83,7 @@ enum SettingsWindowBuilder {
         let externalInformationPanel: Bool
         let systemDictionaryPreview: Bool
         let webSearch: Bool
+        let importedDictionaries: [ImportedDictionaryState]
     }
 
     struct Actions {
@@ -94,6 +100,8 @@ enum SettingsWindowBuilder {
         let configureSystemDictionaries: Selector
         let toggleWebSearch: Selector
         let configureShortcuts: Selector
+        let importSKKDictionary: Selector
+        let toggleImportedDictionary: Selector
         let updateBasicDictionary: Selector
         let downloadCandidateFilterIDS: Selector
         let openCandidateFilterIDSDirectory: Selector
@@ -151,8 +159,24 @@ enum SettingsWindowBuilder {
         addSection("辞書管理", to: stack)
         addButtons([
             ("表示するmacOS辞書", actions.configureSystemDictionaries),
+            ("SKK辞書をインポート", actions.importSKKDictionary),
             ("TKGJE基本辞書を更新", actions.updateBasicDictionary)
         ], target: target, to: stack)
+        for dictionary in states.importedDictionaries {
+            let title = dictionary.filename.hasSuffix(".tsv")
+                ? String(dictionary.filename.dropLast(4))
+                : dictionary.filename
+            let button = NSButton(
+                checkboxWithTitle: title,
+                target: target,
+                action: actions.toggleImportedDictionary
+            )
+            button.state = dictionary.isEnabled ? .on : .off
+            button.identifier = NSUserInterfaceItemIdentifier(
+                dictionary.filename
+            )
+            stack.addArrangedSubview(button)
+        }
         addSection("候補フィルター", to: stack)
         addButtons([
             ("CJKVI IDSデータをダウンロード", actions.downloadCandidateFilterIDS),

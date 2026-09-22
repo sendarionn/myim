@@ -74,6 +74,8 @@ final class InputController: IMKInputController {
         "FuzzySuggestionsEnabled"
     private static let dateTimeCandidatesEnabledDefaultsKey =
         "DateTimeCandidatesEnabled"
+    private static let disabledImportedDictionariesDefaultsKey =
+        "DisabledImportedDictionaries"
     private static let maximumCandidateCount = 4
     private static let initialFuzzySuggestionCount = 4
     private static let fuzzySuggestionDisplayDelay = Duration.milliseconds(120)
@@ -132,6 +134,7 @@ final class InputController: IMKInputController {
     private var fuzzySuggestions: [FuzzySuggestion] = []
     private var selectedFuzzySuggestionIndex: Int?
     private var userEntries: [DictionaryEntry]
+    private var importedDictionaryLayers: [[DictionaryEntry]]
     private var basicEntries: [DictionaryEntry]
     private var userConversionEngine: ConversionEngine
     private var basicConversionEngine: ConversionEngine
@@ -255,12 +258,14 @@ final class InputController: IMKInputController {
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let cachedUserEntries = Self.loadUserEntries()
+        let importedLayers = Self.loadEnabledImportedDictionaryLayers()
         let bundledEntries = Self.sharedBasicEntries
         let indexedMozcEngine = Self.sharedMozcConversionEngine
         let selectionHistory = Self.loadCandidateSelectionHistory()
         let nextInputModel = Self.loadNextInputPredictionModel()
 
         userEntries = cachedUserEntries
+        importedDictionaryLayers = importedLayers
         basicEntries = bundledEntries
         candidateSelectionHistory = selectionHistory
         candidateSelectionHistoryWriter = DeferredJSONFileWriter(
@@ -284,14 +289,18 @@ final class InputController: IMKInputController {
                 )
             }
         )
-        userConversionEngine = ConversionEngine(entries: cachedUserEntries)
+        userConversionEngine = ConversionEngine(
+            layers: [cachedUserEntries] + importedLayers
+        )
         basicConversionEngine = Self.sharedBasicConversionEngine
         mozcConversionEngine = indexedMozcEngine
         verbInflectionGenerator = Self.sharedVerbInflectionGenerator
         compoundDictionaryCandidateGenerator =
             Self.sharedBasicCompoundGenerator
         userDictionaryContinuationGenerator =
-            DictionaryContinuationCandidateGenerator(entries: cachedUserEntries)
+            DictionaryContinuationCandidateGenerator(
+                entries: cachedUserEntries + importedLayers.flatMap { $0 }
+            )
         basicDictionaryContinuationGenerator =
             DictionaryContinuationCandidateGenerator(entries: bundledEntries)
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
@@ -851,7 +860,15 @@ final class InputController: IMKInputController {
             dateTimeCandidates: isDateTimeCandidatesEnabled,
             externalInformationPanel: isExternalInformationPanelEnabled,
             systemDictionaryPreview: isSystemDictionaryPreviewEnabled,
-            webSearch: isWebSearchEnabled
+            webSearch: isWebSearchEnabled,
+            importedDictionaries: Self.importedDictionaryStore
+                .loadDictionaries().map {
+                    SettingsWindowBuilder.ImportedDictionaryState(
+                        filename: $0.fileURL.lastPathComponent,
+                        isEnabled: !Self.disabledImportedDictionaryFilenames
+                            .contains($0.fileURL.lastPathComponent)
+                    )
+                }
         )
     }
 
@@ -870,6 +887,8 @@ final class InputController: IMKInputController {
             configureSystemDictionaries: #selector(configureSystemDictionaries(_:)),
             toggleWebSearch: #selector(toggleWebSearch(_:)),
             configureShortcuts: #selector(configureShortcuts(_:)),
+            importSKKDictionary: #selector(importSKKDictionary(_:)),
+            toggleImportedDictionary: #selector(toggleImportedDictionary(_:)),
             updateBasicDictionary: #selector(updateBasicDictionaryIfNeeded(_:)),
             downloadCandidateFilterIDS: #selector(downloadCandidateFilterIDS(_:)),
             openCandidateFilterIDSDirectory: #selector(
@@ -881,6 +900,62 @@ final class InputController: IMKInputController {
     @objc
     private func configureShortcuts(_ sender: Any?) {
         shortcutSettingsController.show()
+    }
+
+    @objc
+    private func importSKKDictionary(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.title = "SKK辞書をインポート"
+        panel.prompt = "インポート"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+
+        let completion: (NSApplication.ModalResponse) -> Void = {
+            [weak self] response in
+            guard response == .OK, let self else { return }
+            do {
+                var readingCount = 0
+                var candidateCount = 0
+                var skippedCount = 0
+                for url in panel.urls {
+                    let summary = try Self.importedDictionaryStore.importSKK(
+                        data: Data(contentsOf: url),
+                        sourceFilename: url.lastPathComponent
+                    )
+                    readingCount += summary.readingCount
+                    candidateCount += summary.candidateCount
+                    skippedCount += summary.skippedEntryCount
+                    Self.setImportedDictionary(
+                        summary.fileURL.lastPathComponent,
+                        enabled: true
+                    )
+                }
+                importedDictionaryLayers = Self.loadEnabledImportedDictionaryLayers()
+                rebuildConversionEngine()
+                let alert = NSAlert()
+                alert.messageText = "SKK辞書をインポートしました"
+                alert.informativeText = "読み \(readingCount)件、候補 \(candidateCount)件、対象外 \(skippedCount)件"
+                alert.runModal()
+            } catch {
+                let alert = NSAlert(error: error)
+                alert.messageText = "SKK辞書をインポートできません"
+                alert.runModal()
+            }
+        }
+        if let settingsWindow {
+            panel.beginSheetModal(for: settingsWindow, completionHandler: completion)
+        } else {
+            completion(panel.runModal())
+        }
+    }
+
+    @objc
+    private func toggleImportedDictionary(_ sender: NSButton) {
+        guard let filename = sender.identifier?.rawValue else { return }
+        Self.setImportedDictionary(filename, enabled: sender.state == .on)
+        importedDictionaryLayers = Self.loadEnabledImportedDictionaryLayers()
+        rebuildConversionEngine()
     }
 
     @objc
@@ -5043,9 +5118,13 @@ final class InputController: IMKInputController {
     private func rebuildConversionEngine(
         basicDictionaryChanged: Bool = false
     ) {
-        userConversionEngine = ConversionEngine(entries: userEntries)
+        userConversionEngine = ConversionEngine(
+            layers: [userEntries] + importedDictionaryLayers
+        )
         userDictionaryContinuationGenerator =
-            DictionaryContinuationCandidateGenerator(entries: userEntries)
+            DictionaryContinuationCandidateGenerator(
+                entries: userEntries + importedDictionaryLayers.flatMap { $0 }
+            )
         if basicDictionaryChanged {
             basicConversionEngine = ConversionEngine(entries: basicEntries)
             basicDictionaryContinuationGenerator =
@@ -5063,7 +5142,9 @@ final class InputController: IMKInputController {
         let storedEntries = Self.loadUserEntries()
         guard storedEntries != userEntries else { return }
         userEntries = storedEntries
-        userConversionEngine = ConversionEngine(entries: storedEntries)
+        userConversionEngine = ConversionEngine(
+            layers: [storedEntries] + importedDictionaryLayers
+        )
         rebuildFuzzyConversionEngine()
     }
 
@@ -5443,6 +5524,44 @@ final class InputController: IMKInputController {
             return []
         }
         return loadEntries(from: cache) ?? []
+    }
+
+    private static var importedDictionaryStore: ImportedDictionaryStore {
+        ImportedDictionaryStore(
+            directoryURL: userDataURL(fileName: "imported-dictionaries")
+        )
+    }
+
+    private static var disabledImportedDictionaryFilenames: Set<String> {
+        Set(UserDefaults.standard.stringArray(
+            forKey: disabledImportedDictionariesDefaultsKey
+        ) ?? [])
+    }
+
+    private static func setImportedDictionary(
+        _ filename: String,
+        enabled: Bool
+    ) {
+        var disabled = disabledImportedDictionaryFilenames
+        if enabled {
+            disabled.remove(filename)
+        } else {
+            disabled.insert(filename)
+        }
+        UserDefaults.standard.set(
+            disabled.sorted(),
+            forKey: disabledImportedDictionariesDefaultsKey
+        )
+    }
+
+    private static func loadEnabledImportedDictionaryLayers()
+        -> [[DictionaryEntry]] {
+        let disabled = disabledImportedDictionaryFilenames
+        return importedDictionaryStore.loadDictionaries().compactMap {
+            disabled.contains($0.fileURL.lastPathComponent)
+                ? nil
+                : $0.entries
+        }
     }
 
     private static func bundledBasicDictionaryRevision() -> String? {

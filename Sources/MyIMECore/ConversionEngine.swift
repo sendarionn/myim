@@ -61,9 +61,15 @@ public struct ConversionEngine: Sendable {
             return DictionaryCandidateGroups()
         }
 
-        let lookupInputs = RomajiCanonicalizer.exactLookupInputs(
+        var lookupInputs = RomajiCanonicalizer.exactLookupInputs(
             from: rawInput
         )
+        for input in lookupInputs {
+            if let hiragana = RomajiConverter().hiragana(from: input),
+               !lookupInputs.contains(hiragana) {
+                lookupInputs.append(hiragana)
+            }
+        }
         var seen = Set<String>()
         var exact: [String] = []
         var prefix: [String] = []
