@@ -6,8 +6,10 @@ import Testing
 struct CandidateReadingLookupTests {
     @Test
     func combinesReadingsFromAllDictionarySourcesWithoutDuplicates() async {
-        let user = ConversionEngine(entries: [
-            DictionaryEntry(reading: "kouho", candidates: ["候補"])
+        let user = LayeredConversionEngine(engines: [
+            ConversionEngine(entries: [
+                DictionaryEntry(reading: "kouho", candidates: ["候補"])
+            ])
         ])
         let basic = ConversionEngine(entries: [
             DictionaryEntry(reading: "こうほ", candidates: ["候補"])

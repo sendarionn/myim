@@ -1,7 +1,7 @@
 public enum CandidateReadingLookup {
     public static func resolve(
         candidate: String,
-        userEngine: ConversionEngine,
+        userEngine: LayeredConversionEngine,
         basicEngine: ConversionEngine,
         indexedEngine: IndexedDictionaryEngine
     ) async -> [String] {

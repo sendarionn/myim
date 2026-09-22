@@ -134,16 +134,19 @@ final class InputController: IMKInputController {
     private var fuzzySuggestions: [FuzzySuggestion] = []
     private var selectedFuzzySuggestionIndex: Int?
     private var userEntries: [DictionaryEntry]
-    private var importedDictionaryLayers: [[DictionaryEntry]]
+    private var importedDictionaries: [ImportedDictionary]
+    private var importedConversionEngines: [String: ConversionEngine]
+    private var importedContinuationGenerators:
+        [String: DictionaryContinuationCandidateGenerator]
     private var basicEntries: [DictionaryEntry]
-    private var userConversionEngine: ConversionEngine
+    private var userConversionEngine: LayeredConversionEngine
     private var basicConversionEngine: ConversionEngine
     private let mozcConversionEngine: IndexedDictionaryEngine
     private var verbInflectionGenerator: VerbInflectionCandidateGenerator
     private var compoundDictionaryCandidateGenerator:
         CompoundDictionaryCandidateGenerator
     private var userDictionaryContinuationGenerator:
-        DictionaryContinuationCandidateGenerator
+        LayeredDictionaryContinuationCandidateGenerator
     private var basicDictionaryContinuationGenerator:
         DictionaryContinuationCandidateGenerator
     private var fuzzyEngineBuildTask: Task<Void, Never>?
@@ -258,14 +261,30 @@ final class InputController: IMKInputController {
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let cachedUserEntries = Self.loadUserEntries()
-        let importedLayers = Self.loadEnabledImportedDictionaryLayers()
+        let importedDictionaries = Self.importedDictionaryStore.loadDictionaries()
+        let disabledImportedDictionaries = Self.disabledImportedDictionaryFilenames
+        let importedConversionEngines = Dictionary(uniqueKeysWithValues:
+            importedDictionaries.map {
+                ($0.fileURL.lastPathComponent, ConversionEngine(entries: $0.entries))
+            }
+        )
+        let importedContinuationGenerators = Dictionary(uniqueKeysWithValues:
+            importedDictionaries.map {
+                ($0.fileURL.lastPathComponent,
+                 DictionaryContinuationCandidateGenerator(entries: $0.entries))
+            }
+        )
+        let enabledImportedNames = importedDictionaries.map(\.fileURL.lastPathComponent)
+            .filter { !disabledImportedDictionaries.contains($0) }
         let bundledEntries = Self.sharedBasicEntries
         let indexedMozcEngine = Self.sharedMozcConversionEngine
         let selectionHistory = Self.loadCandidateSelectionHistory()
         let nextInputModel = Self.loadNextInputPredictionModel()
 
         userEntries = cachedUserEntries
-        importedDictionaryLayers = importedLayers
+        self.importedDictionaries = importedDictionaries
+        self.importedConversionEngines = importedConversionEngines
+        self.importedContinuationGenerators = importedContinuationGenerators
         basicEntries = bundledEntries
         candidateSelectionHistory = selectionHistory
         candidateSelectionHistoryWriter = DeferredJSONFileWriter(
@@ -289,8 +308,9 @@ final class InputController: IMKInputController {
                 )
             }
         )
-        userConversionEngine = ConversionEngine(
-            layers: [cachedUserEntries] + importedLayers
+        userConversionEngine = LayeredConversionEngine(
+            engines: [ConversionEngine(entries: cachedUserEntries)]
+                + enabledImportedNames.compactMap { importedConversionEngines[$0] }
         )
         basicConversionEngine = Self.sharedBasicConversionEngine
         mozcConversionEngine = indexedMozcEngine
@@ -298,8 +318,12 @@ final class InputController: IMKInputController {
         compoundDictionaryCandidateGenerator =
             Self.sharedBasicCompoundGenerator
         userDictionaryContinuationGenerator =
-            DictionaryContinuationCandidateGenerator(
-                entries: cachedUserEntries + importedLayers.flatMap { $0 }
+            LayeredDictionaryContinuationCandidateGenerator(
+                generators: [DictionaryContinuationCandidateGenerator(
+                    entries: cachedUserEntries
+                )] + enabledImportedNames.compactMap {
+                    importedContinuationGenerators[$0]
+                }
             )
         basicDictionaryContinuationGenerator =
             DictionaryContinuationCandidateGenerator(entries: bundledEntries)
@@ -861,8 +885,7 @@ final class InputController: IMKInputController {
             externalInformationPanel: isExternalInformationPanelEnabled,
             systemDictionaryPreview: isSystemDictionaryPreviewEnabled,
             webSearch: isWebSearchEnabled,
-            importedDictionaries: Self.importedDictionaryStore
-                .loadDictionaries().map {
+            importedDictionaries: importedDictionaries.map {
                     SettingsWindowBuilder.ImportedDictionaryState(
                         filename: $0.fileURL.lastPathComponent,
                         isEnabled: !Self.disabledImportedDictionaryFilenames
@@ -931,7 +954,9 @@ final class InputController: IMKInputController {
                         enabled: true
                     )
                 }
-                importedDictionaryLayers = Self.loadEnabledImportedDictionaryLayers()
+                importedDictionaries = Self.importedDictionaryStore
+                    .loadDictionaries()
+                rebuildImportedDictionaryCaches()
                 rebuildConversionEngine()
                 let alert = NSAlert()
                 alert.messageText = "SKK辞書をインポートしました"
@@ -954,7 +979,6 @@ final class InputController: IMKInputController {
     private func toggleImportedDictionary(_ sender: NSButton) {
         guard let filename = sender.identifier?.rawValue else { return }
         Self.setImportedDictionary(filename, enabled: sender.state == .on)
-        importedDictionaryLayers = Self.loadEnabledImportedDictionaryLayers()
         rebuildConversionEngine()
     }
 
@@ -5118,12 +5142,18 @@ final class InputController: IMKInputController {
     private func rebuildConversionEngine(
         basicDictionaryChanged: Bool = false
     ) {
-        userConversionEngine = ConversionEngine(
-            layers: [userEntries] + importedDictionaryLayers
+        let enabledNames = enabledImportedDictionaryNames
+        userConversionEngine = LayeredConversionEngine(
+            engines: [ConversionEngine(entries: userEntries)]
+                + enabledNames.compactMap { importedConversionEngines[$0] }
         )
         userDictionaryContinuationGenerator =
-            DictionaryContinuationCandidateGenerator(
-                entries: userEntries + importedDictionaryLayers.flatMap { $0 }
+            LayeredDictionaryContinuationCandidateGenerator(
+                generators: [DictionaryContinuationCandidateGenerator(
+                    entries: userEntries
+                )] + enabledNames.compactMap {
+                    importedContinuationGenerators[$0]
+                }
             )
         if basicDictionaryChanged {
             basicConversionEngine = ConversionEngine(entries: basicEntries)
@@ -5142,10 +5172,28 @@ final class InputController: IMKInputController {
         let storedEntries = Self.loadUserEntries()
         guard storedEntries != userEntries else { return }
         userEntries = storedEntries
-        userConversionEngine = ConversionEngine(
-            layers: [storedEntries] + importedDictionaryLayers
+        rebuildConversionEngine()
+    }
+
+    private var enabledImportedDictionaryNames: [String] {
+        let disabled = Self.disabledImportedDictionaryFilenames
+        return importedDictionaries.map(\.fileURL.lastPathComponent).filter {
+            !disabled.contains($0)
+        }
+    }
+
+    private func rebuildImportedDictionaryCaches() {
+        importedConversionEngines = Dictionary(uniqueKeysWithValues:
+            importedDictionaries.map {
+                ($0.fileURL.lastPathComponent, ConversionEngine(entries: $0.entries))
+            }
         )
-        rebuildFuzzyConversionEngine()
+        importedContinuationGenerators = Dictionary(uniqueKeysWithValues:
+            importedDictionaries.map {
+                ($0.fileURL.lastPathComponent,
+                 DictionaryContinuationCandidateGenerator(entries: $0.entries))
+            }
+        )
     }
 
     private func rebuildFuzzyConversionEngine() {
@@ -5552,16 +5600,6 @@ final class InputController: IMKInputController {
             disabled.sorted(),
             forKey: disabledImportedDictionariesDefaultsKey
         )
-    }
-
-    private static func loadEnabledImportedDictionaryLayers()
-        -> [[DictionaryEntry]] {
-        let disabled = disabledImportedDictionaryFilenames
-        return importedDictionaryStore.loadDictionaries().compactMap {
-            disabled.contains($0.fileURL.lastPathComponent)
-                ? nil
-                : $0.entries
-        }
     }
 
     private static func bundledBasicDictionaryRevision() -> String? {
