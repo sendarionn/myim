@@ -1960,10 +1960,7 @@ final class InputController: IMKInputController {
                 self.meaningSearchResultsActive = true
                 self.meaningSearchTask = nil
                 self.showCandidateWindow(client: sender)
-                self.meaningStatusWindow.show(
-                    title: "意味検索",
-                    near: self.inputLocation(for: sender)
-                )
+                self.meaningStatusWindow.hide()
             } catch is CancellationError {
                 return
             } catch {
