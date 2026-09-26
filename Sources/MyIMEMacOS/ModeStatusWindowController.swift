@@ -1,5 +1,16 @@
 @preconcurrency import AppKit
 
+private final class VerticallyCenteredTextFieldCell: NSTextFieldCell {
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        var drawingRect = super.drawingRect(forBounds: rect)
+        let textHeight = cellSize(forBounds: rect).height
+        guard textHeight < rect.height else { return drawingRect }
+        drawingRect.origin.y = floor(rect.midY - textHeight / 2)
+        drawingRect.size.height = textHeight
+        return drawingRect
+    }
+}
+
 final class TranslationStatusWindowController: NSObject {
     private static let horizontalPadding: CGFloat = 14
     private static let verticalPadding: CGFloat = 9
@@ -20,6 +31,11 @@ final class TranslationStatusWindowController: NSObject {
 
         panel.animationBehavior = .none
         panel.becomesKeyOnlyIfNeeded = true
+        label.cell = VerticallyCenteredTextFieldCell(textCell: "")
+        label.isBezeled = false
+        label.drawsBackground = false
+        label.isEditable = false
+        label.isSelectable = false
         label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         label.alignment = .center
         label.lineBreakMode = .byClipping
@@ -52,11 +68,10 @@ final class TranslationStatusWindowController: NSObject {
         )
         panel.setContentSize(panelSize)
         label.frame = NSRect(
-            x: Self.horizontalPadding,
-            y: Self.verticalPadding,
-            width: ceil(textSize.width),
-            height: ceil(textSize.height)
+            origin: .zero,
+            size: panelSize
         )
+        label.autoresizingMask = [.width, .height]
 
         let resolvedAnchor = anchorFrame == .zero
             ? NSRect(origin: NSEvent.mouseLocation, size: .zero)

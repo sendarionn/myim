@@ -9,6 +9,10 @@ final class InputController: IMKInputController {
         subsystem: "com.sendarionn.myim",
         category: "input-lifecycle"
     )
+    private static let meaningSearchLogger = Logger(
+        subsystem: "com.sendarionn.myim",
+        category: "meaning-search"
+    )
     private static let transientDeactivationDelay: TimeInterval = 0.75
     private static let auxiliaryApplicationBundleIdentifiers: Set<String> = [
         "io.github.sendarionn.inputmethod.myime",
@@ -116,6 +120,10 @@ final class InputController: IMKInputController {
     private var translationDraftCursor = 0
     private var translationTargetLanguage: TranslationTargetLanguage?
     private var translationTask: Task<Void, Never>?
+    private var meaningInputDraft: String?
+    private var meaningSearchTask: Task<Void, Never>?
+    private var meaningSearchResultsActive = false
+    private var meaningCandidateReadings: [String: [String]] = [:]
     private var recentCommittedContext = ""
     private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
@@ -184,6 +192,7 @@ final class InputController: IMKInputController {
     private let calendarWindow = CalendarWindowController()
     private let emojiWindow = EmojiWindowController.shared
     private let translationStatusWindow = TranslationStatusWindowController()
+    private let meaningStatusWindow = TranslationStatusWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
     private let symbolTipsWindow = SymbolTipsWindowController()
@@ -367,6 +376,15 @@ final class InputController: IMKInputController {
         if isEmojiShortcut(event) {
             toggleEmojiWindow(client: sender)
             return true
+        }
+
+        if isMeaningInputShortcut(event) {
+            toggleMeaningInput(client: sender)
+            return true
+        }
+
+        if meaningSearchResultsActive {
+            return handleMeaningSearchResults(event, client: sender)
         }
 
         if emojiWindow.isVisible {
@@ -579,6 +597,12 @@ final class InputController: IMKInputController {
             return handleTab(event, client: sender)
         case 49:
             let space = isFullWidthSpaceShortcut(event) ? "　" : " "
+            if meaningInputDraft != nil {
+                return appendCurrentInputToMeaningDraft(
+                    suffix: space,
+                    client: sender
+                )
+            }
             if beginTranslationFromPrefixIfPossible(
                 separator: Character(space),
                 client: sender
@@ -638,6 +662,9 @@ final class InputController: IMKInputController {
                 ? false
                 : moveCandidate(.up, client: sender)
         case 36, 76:
+            if meaningInputDraft != nil {
+                return submitMeaningSearch(client: sender)
+            }
             if isTranslationSessionActive {
                 return handleTranslationReturn(client: sender)
             }
@@ -665,6 +692,12 @@ final class InputController: IMKInputController {
             }
             return commitFirstCandidateOrInput(to: sender)
         case 51:
+            if meaningInputDraft != nil {
+                return deleteBackwardFromMeaningInput(
+                    client: sender,
+                    unit: deletionUnit(for: event)
+                )
+            }
             if isTranslationSessionActive,
                inputBuffer.isEmpty,
                translationDraft == nil {
@@ -676,6 +709,10 @@ final class InputController: IMKInputController {
                 unit: deletionUnit(for: event)
             )
         case 53:
+            if meaningInputDraft != nil {
+                cancelMeaningInput(client: sender)
+                return true
+            }
             if isTranslationSessionActive {
                 finishTranslationDraftAsJapanese(client: sender)
                 return true
@@ -701,7 +738,12 @@ final class InputController: IMKInputController {
         }
 
         if let selectedValue = selectedCandidateValue {
-            if isTranslationSessionActive {
+            if meaningInputDraft != nil {
+                _ = appendCurrentInputToMeaningDraft(
+                    suffix: "",
+                    client: sender
+                )
+            } else if isTranslationSessionActive {
                 appendCurrentInputToTranslationDraft(
                     suffix: "",
                     client: sender
@@ -1222,6 +1264,10 @@ final class InputController: IMKInputController {
             showTabDictionaryRegistration(client: sender)
             return
         }
+        if meaningInputDraft != nil {
+            updateMarkedText(in: sender)
+            return
+        }
         if reconversionOriginal != nil {
             restoreReconversionOriginal(client: sender)
             return
@@ -1722,6 +1768,262 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func toggleMeaningInput(client sender: Any) {
+        if meaningInputDraft != nil {
+            cancelMeaningInput(client: sender)
+            return
+        }
+        dismissNextInputSuggestions(clearMarkedTextIn: nil)
+        meaningSearchTask?.cancel()
+        meaningInputDraft = ""
+        meaningSearchResultsActive = false
+        meaningCandidateReadings = [:]
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        fuzzySuggestions = []
+        selectedFuzzySuggestionIndex = nil
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        updateMarkedText(in: sender)
+        updateEmptyModeStatus(client: sender)
+    }
+
+    @discardableResult
+    private func appendCurrentInputToMeaningDraft(
+        suffix: String,
+        client sender: Any
+    ) -> Bool {
+        guard meaningInputDraft != nil else { return false }
+        let value = selectedCandidateValue ?? inputBuffer
+        guard !value.isEmpty || !suffix.isEmpty else { return true }
+        meaningInputDraft = (meaningInputDraft ?? "") + value + suffix
+        meaningStatusWindow.hide()
+        inputBuffer = ""
+        inputCursor = 0
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        fuzzySuggestions = []
+        selectedFuzzySuggestionIndex = nil
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        updateMarkedText(in: sender)
+        return true
+    }
+
+    private func submitMeaningSearch(client sender: Any) -> Bool {
+        guard meaningInputDraft != nil else { return false }
+        let action = MeaningInputReturnPolicy.action(
+            hasCurrentInput: !inputBuffer.isEmpty,
+            hasConfirmedDraft: meaningInputDraft?.isEmpty == false
+        )
+        if action == .confirmCurrentInput {
+            let handled = appendCurrentInputToMeaningDraft(
+                suffix: "",
+                client: sender
+            )
+            meaningStatusWindow.show(
+                title: "意味検索",
+                near: inputLocation(for: sender)
+            )
+            return handled
+        }
+        guard action == .search else { return true }
+        guard let description = meaningInputDraft?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !description.isEmpty else {
+            return true
+        }
+        meaningSearchTask?.cancel()
+        meaningStatusWindow.show(
+            title: "検索中",
+            near: inputLocation(for: sender)
+        )
+        let task = Task { @MainActor [weak self] in
+            do {
+                let candidates = try await FoundationModelsMeaningSearcher
+                    .candidates(for: description)
+                try Task.checkCancellation()
+                guard let self, self.meaningInputDraft != nil else { return }
+                var matches = await self.dictionaryMeaningCandidates(
+                    from: candidates
+                )
+                try Task.checkCancellation()
+                Self.meaningSearchLogger.notice(
+                    "first pass generated=\(candidates.count, privacy: .public) matched=\(matches.candidates.count, privacy: .public)"
+                )
+                if matches.candidates.isEmpty {
+                    let retryCandidates = try await FoundationModelsMeaningSearcher
+                        .candidates(
+                            for: description,
+                            excluding: candidates
+                        )
+                    try Task.checkCancellation()
+                    matches = await self.dictionaryMeaningCandidates(
+                        from: retryCandidates
+                    )
+                    try Task.checkCancellation()
+                    Self.meaningSearchLogger.notice(
+                        "retry generated=\(retryCandidates.count, privacy: .public) matched=\(matches.candidates.count, privacy: .public)"
+                    )
+                }
+                guard !matches.candidates.isEmpty else {
+                    throw FoundationModelsMeaningSearchError.noCandidates
+                }
+                self.meaningCandidateReadings = matches.readings
+                self.currentCandidates = Array(
+                    CandidateRecencyOrderer.ordered(
+                        matches.candidates,
+                        ranks: self.candidateSelectionHistory.ranks(
+                            for: description
+                        )
+                    ).prefix(8)
+                )
+                self.selectedCandidateIndex = nil
+                self.meaningSearchResultsActive = true
+                self.meaningSearchTask = nil
+                self.showCandidateWindow(client: sender)
+                self.meaningStatusWindow.show(
+                    title: "意味検索",
+                    near: self.inputLocation(for: sender)
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self, self.meaningInputDraft != nil else { return }
+                self.meaningSearchTask = nil
+                self.meaningStatusWindow.show(
+                    title: error.localizedDescription,
+                    near: self.inputLocation(for: sender)
+                )
+            }
+        }
+        meaningSearchTask = task
+        return true
+    }
+
+    private func handleMeaningSearchResults(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        switch event.keyCode {
+        case 48:
+            guard !currentCandidates.isEmpty else { return true }
+            meaningStatusWindow.hide()
+            let index = ((selectedCandidateIndex ?? -1) + 1)
+                % currentCandidates.count
+            return selectCandidate(index: index, client: sender)
+        case 125:
+            meaningStatusWindow.hide()
+            return moveCandidate(.down, client: sender)
+        case 126:
+            meaningStatusWindow.hide()
+            return moveCandidate(.up, client: sender)
+        case 36, 76:
+            guard let selectedCandidateIndex,
+                  currentCandidates.indices.contains(selectedCandidateIndex) else {
+                return true
+            }
+            let value = currentCandidates[selectedCandidateIndex]
+            recordMeaningCandidateSelection(
+                value,
+                description: meaningInputDraft ?? ""
+            )
+            meaningInputDraft = nil
+            meaningSearchResultsActive = false
+            meaningSearchTask = nil
+            meaningCandidateReadings = [:]
+            meaningStatusWindow.hide()
+            commit(
+                value,
+                to: sender,
+                replacingMarkedText: true
+            )
+            return true
+        case 53:
+            restoreMeaningInputAfterSearch(client: sender)
+            return true
+        case 51:
+            restoreMeaningInputAfterSearch(client: sender)
+            return true
+        default:
+            return true
+        }
+    }
+
+    private func restoreMeaningInputAfterSearch(client sender: Any) {
+        meaningSearchTask?.cancel()
+        meaningSearchTask = nil
+        meaningSearchResultsActive = false
+        meaningCandidateReadings = [:]
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        updateMarkedText(in: sender)
+        meaningStatusWindow.show(
+            title: "意味検索",
+            near: inputLocation(for: sender)
+        )
+    }
+
+    private func cancelMeaningInput(client sender: Any) {
+        meaningSearchTask?.cancel()
+        meaningSearchTask = nil
+        meaningInputDraft = nil
+        meaningSearchResultsActive = false
+        meaningCandidateReadings = [:]
+        inputBuffer = ""
+        inputCursor = 0
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        meaningStatusWindow.hide()
+        setMarkedText("", in: sender)
+    }
+
+    private func dictionaryMeaningCandidates(
+        from candidates: [String]
+    ) async -> (candidates: [String], readings: [String: [String]]) {
+        let userEngine = userConversionEngine
+        let basicEngine = basicConversionEngine
+        let indexedEngine = mozcConversionEngine
+        return await Task.detached(priority: .userInitiated) {
+            let indexedReadings = indexedEngine.readings(for: candidates)
+            var matchedCandidates: [String] = []
+            var readingsByCandidate: [String: [String]] = [:]
+
+            for candidate in candidates {
+                var seen = Set<String>()
+                let readings = (
+                    userEngine.readings(for: candidate)
+                    + basicEngine.readings(for: candidate)
+                    + (indexedReadings[candidate] ?? [])
+                ).filter { seen.insert($0).inserted }
+                guard !readings.isEmpty else { continue }
+                matchedCandidates.append(candidate)
+                readingsByCandidate[candidate] = readings
+            }
+            return (matchedCandidates, readingsByCandidate)
+        }.value
+    }
+
+    private func recordMeaningCandidateSelection(
+        _ candidate: String,
+        description: String
+    ) {
+        var seen = Set<String>()
+        let readings = ([description] + (meaningCandidateReadings[candidate] ?? []))
+            .flatMap { RomajiCanonicalizer.dictionaryLookupInputs(from: $0) }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+        candidateSelectionHistory.record(candidate, readings: readings)
+        candidateSelectionHistoryWriter.schedule(candidateSelectionHistory)
+    }
+
     private func handleTranslationSpace(
         space: String,
         client sender: Any
@@ -1767,10 +2069,7 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
         setMarkedText("", in: sender)
-        translationStatusWindow.show(
-            title: "\(language.name)に翻訳",
-            near: inputLocation(for: sender)
-        )
+        updateEmptyModeStatus(client: sender)
         return true
 #else
         return false
@@ -2515,6 +2814,10 @@ final class InputController: IMKInputController {
 
     private func isCalendarShortcut(_ event: NSEvent) -> Bool {
         MyIMFeatureShortcut.calendar.shortcut.matches(event)
+    }
+
+    private func isMeaningInputShortcut(_ event: NSEvent) -> Bool {
+        MyIMFeatureShortcut.meaningInput.shortcut.matches(event)
     }
 
     private func isEmojiShortcut(_ event: NSEvent) -> Bool {
@@ -3547,6 +3850,10 @@ final class InputController: IMKInputController {
             return returnToNormalCandidateSelection(client: sender)
         case 53:
             return returnToNormalCandidateSelection(client: sender)
+        case 51:
+            self.selectedFuzzySuggestionIndex = nil
+            fuzzySuggestionWindow.hide()
+            return nil
         default:
             let flags = event.modifierFlags.intersection([
                 .command, .control, .option
@@ -4139,7 +4446,8 @@ final class InputController: IMKInputController {
         }
 
         let isAccentedInput = CandidatePanelAccentPolicy.isAccented(
-            isTranslationInput: isTranslationSessionActive,
+            isTranslationInput: isTranslationSessionActive
+                || meaningInputDraft != nil,
             isDictionaryRegistration: tabDictionaryRegistration != nil
         )
         candidateWindow.show(
@@ -4456,6 +4764,7 @@ final class InputController: IMKInputController {
             selectionOffset: compositionPrefix.utf16.count + inputCursor
         )
         refreshCandidates(client: sender)
+        updateEmptyModeStatus(client: sender)
         return true
     }
 
@@ -4487,7 +4796,74 @@ final class InputController: IMKInputController {
         } else {
             showTranslationDraft(client: sender)
         }
+        updateEmptyModeStatus(client: sender)
         return true
+    }
+
+    private func deleteBackwardFromMeaningInput(
+        client sender: Any,
+        unit: InputBufferDeletionUnit
+    ) -> Bool {
+        guard let draft = meaningInputDraft else { return false }
+
+        if meaningSearchTask != nil {
+            meaningSearchTask?.cancel()
+            meaningSearchTask = nil
+            meaningStatusWindow.hide()
+        }
+
+        if !inputBuffer.isEmpty {
+            return deleteBackward(from: sender, unit: unit)
+        }
+        guard !draft.isEmpty else {
+            cancelMeaningInput(client: sender)
+            return true
+        }
+
+        meaningInputDraft = InputBufferDeletion.deletingBackward(
+            from: draft,
+            unit: unit
+        )
+        selectedCandidateIndex = nil
+        currentCandidates = []
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
+        updateMarkedText(in: sender)
+        updateEmptyModeStatus(client: sender)
+        return true
+    }
+
+    private func updateEmptyModeStatus(client sender: Any) {
+        let anchor = inputLocation(for: sender)
+        if let meaningInputDraft {
+            if EmptyInputModeStatusPolicy.shouldShow(
+                isModeActive: true,
+                isInputEmpty: meaningInputDraft.isEmpty && inputBuffer.isEmpty,
+                isBusy: meaningSearchTask != nil,
+                hasPresentedResults: meaningSearchResultsActive
+            ) {
+                meaningStatusWindow.show(title: "意味検索", near: anchor)
+            } else {
+                meaningStatusWindow.hide()
+            }
+            return
+        }
+
+        if let translationTargetLanguage {
+            if EmptyInputModeStatusPolicy.shouldShow(
+                isModeActive: true,
+                isInputEmpty: translationDraft == nil && inputBuffer.isEmpty,
+                isBusy: translationTask != nil
+            ) {
+                translationStatusWindow.show(
+                    title: "\(translationTargetLanguage.name)に翻訳",
+                    near: anchor
+                )
+            } else {
+                translationStatusWindow.hide()
+            }
+        }
     }
 
     private func cancelInput(in sender: Any) -> Bool {
@@ -4679,6 +5055,12 @@ final class InputController: IMKInputController {
     }
 
     private func resetTransientInteractionState() {
+        meaningSearchTask?.cancel()
+        meaningSearchTask = nil
+        meaningInputDraft = nil
+        meaningSearchResultsActive = false
+        meaningCandidateReadings = [:]
+        meaningStatusWindow.hide()
         translationTask?.cancel()
         translationTask = nil
         calendarFormatTask?.cancel()
@@ -4971,6 +5353,9 @@ final class InputController: IMKInputController {
         if let confirmedCandidate = tabDictionaryRegistration?.confirmedCandidate {
             return confirmedCandidate
         }
+        if let meaningInputDraft {
+            return meaningInputDraft
+        }
         guard let translationDraft else { return "" }
         let cursor = min(translationDraftCursor, translationDraft.count)
         let index = translationDraft.index(
@@ -5017,6 +5402,7 @@ final class InputController: IMKInputController {
 
     private func insertIntoInputBuffer(_ text: String) {
         translationStatusWindow.hide()
+        meaningStatusWindow.hide()
         resetCandidateFilters()
         var editor = InputBufferEditor(
             value: inputBuffer,

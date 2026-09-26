@@ -53,6 +53,37 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
         return result
     }
 
+    public func readings(
+        for candidates: [String],
+        limitPerCandidate: Int = 8
+    ) -> [String: [String]] {
+        guard !candidates.isEmpty, limitPerCandidate > 0 else { return [:] }
+        let targets = Set(candidates.filter { !$0.isEmpty })
+        guard !targets.isEmpty else { return [:] }
+        var result: [String: [String]] = [:]
+
+        for index in readingOffsets.indices {
+            guard let reading = String(
+                data: reading(at: index),
+                encoding: .utf8
+            ) else { continue }
+            for candidate in self.candidates(at: index, limit: .max)
+            where targets.contains(candidate) {
+                var readings = result[candidate] ?? []
+                if readings.count < limitPerCandidate,
+                   !readings.contains(reading) {
+                    readings.append(reading)
+                    result[candidate] = readings
+                }
+            }
+            if result.count == targets.count,
+               result.values.allSatisfy({ $0.count >= limitPerCandidate }) {
+                break
+            }
+        }
+        return result
+    }
+
     private func containsCandidate(_ target: Data, at index: Int) -> Bool {
         let expectedReading = reading(at: index)
         var position = readingOffsets[index]

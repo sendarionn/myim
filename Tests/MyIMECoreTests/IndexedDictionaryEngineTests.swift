@@ -55,4 +55,12 @@ struct IndexedDictionaryEngineTests {
         #expect(engine.readings(for: "愛") == ["あい"])
         #expect(engine.readings(for: "未登録").isEmpty)
     }
+
+    @Test
+    func findsReadingsForMultipleCandidatesInOneScan() {
+        #expect(engine.readings(for: ["亜", "愛", "未登録"]) == [
+            "亜": ["あ"],
+            "愛": ["あい"]
+        ])
+    }
 }
