@@ -4957,7 +4957,17 @@ final class InputController: IMKInputController {
         }
 
         let inputHistoryValue = historyValue ?? value
-        let shouldRecordInputHistory = recordsInputHistory
+        let isPendingClosingBracket = !closingBracketTracker
+            .shouldRecordAsNextInput(inputHistoryValue)
+        if isPendingClosingBracket {
+            nextInputPredictionModel.forgetLearnedCandidate(inputHistoryValue)
+            nextInputPredictionWriter.schedule(nextInputPredictionModel)
+        }
+        let shouldRecordInputHistory = closingBracketTracker
+            .shouldRecordCommittedInput(
+                inputHistoryValue,
+                requested: recordsInputHistory
+            )
             && !nonLearnableGeneratedCandidates.contains(inputHistoryValue)
 
         let markedRange = textClient.markedRange()

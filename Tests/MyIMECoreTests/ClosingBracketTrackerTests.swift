@@ -7,7 +7,10 @@ struct ClosingBracketTrackerTests {
         tracker.consume("（")
 
         #expect(!tracker.shouldRecordAsNextInput("）"))
+        #expect(!tracker.shouldRecordCommittedInput("）", requested: true))
         #expect(tracker.shouldRecordAsNextInput("続き"))
+        #expect(tracker.shouldRecordCommittedInput("続き", requested: true))
+        #expect(!tracker.shouldRecordCommittedInput("続き", requested: false))
     }
 
     @Test func keepsClosingBracketUntilItIsEntered() {

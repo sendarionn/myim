@@ -187,4 +187,19 @@ struct NextInputPredictionModelTests {
         #expect(model.candidates(after: "改行前").isEmpty)
         #expect(model.lastInput == "次の行")
     }
+
+    @Test
+    func forgetsAClosingBracketWithoutSuppressingStructuralSuggestion() {
+        var model = NextInputPredictionModel()
+        model.record("本文")
+        model.record("）")
+        model.breakSequence()
+
+        #expect(model.candidates(after: "本文") == ["）"])
+
+        model.forgetLearnedCandidate("）")
+
+        #expect(model.candidates(after: "本文").isEmpty)
+        #expect(!model.isSuppressed("）", after: "本文"))
+    }
 }

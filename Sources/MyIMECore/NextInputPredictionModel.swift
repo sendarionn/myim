@@ -83,6 +83,13 @@ public struct NextInputPredictionModel: Codable, Sendable {
         )
     }
 
+    public mutating func forgetLearnedCandidate(_ candidate: String) {
+        guard let candidate = Self.normalizedValue(candidate) else { return }
+        for context in contexts.keys {
+            contexts[context]?.candidates.removeValue(forKey: candidate)
+        }
+    }
+
     public func isSuppressed(_ candidate: String, after value: String) -> Bool {
         guard Self.normalizedValue(value) != nil,
               let candidate = Self.normalizedValue(candidate) else {

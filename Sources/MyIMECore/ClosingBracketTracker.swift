@@ -18,6 +18,13 @@ public struct ClosingBracketTracker: Equatable, Sendable {
         value != candidate
     }
 
+    public func shouldRecordCommittedInput(
+        _ value: String,
+        requested: Bool
+    ) -> Bool {
+        requested && shouldRecordAsNextInput(value)
+    }
+
     public mutating func consume(_ text: String) {
         for character in text {
             if let closing = Self.pairs[character] {
