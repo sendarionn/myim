@@ -126,6 +126,24 @@ struct RomajiConverterTests {
     }
 
     @Test
+    func preservesExactSymbolCandidateForHyphenatedReading() {
+        #expect(
+            LongVowelNotationCandidateFilter.candidates(
+                ["おーむ", "オーム", "Ω"],
+                for: "o-mu",
+                preserving: ["Ω"]
+            ) == ["おーむ", "オーム", "Ω"]
+        )
+        #expect(
+            LongVowelNotationCandidateFilter.candidates(
+                ["にゅー", "ニュー", "ν"],
+                for: "nyu-",
+                preserving: ["ν"]
+            ) == ["にゅー", "ニュー", "ν"]
+        )
+    }
+
+    @Test
     func expandsTypedLongVowelsForDictionaryLookup() {
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "re-beru")

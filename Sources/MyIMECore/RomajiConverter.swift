@@ -357,7 +357,9 @@ public enum LongVowelNotationCandidateFilter {
             return candidates
         }
         if normalized.contains("-") {
-            return candidates.filter { $0.contains("ー") }
+            return candidates.filter {
+                $0.contains("ー") || preservedCandidates.contains($0)
+            }
         }
         return candidates.filter {
             !$0.contains("ー") || preservedCandidates.contains($0)
