@@ -35,11 +35,15 @@ public struct TranslationTargetLanguage: Equatable, Sendable {
         return available.first { $0.prefix == normalized }
     }
 
+    public static func language(forIdentifier identifier: String) -> Self? {
+        available.first { $0.identifier == identifier }
+    }
+
     public static func language(
         forPrefix prefix: String,
         terminatedBy separator: Character
     ) -> Self? {
-        guard separator == " " || separator == "　"
+        guard separator == " " || separator == "　" || separator == "\t"
         else {
             return nil
         }

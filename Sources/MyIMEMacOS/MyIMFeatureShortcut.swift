@@ -6,6 +6,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
     case emoji
     case dictionaryRegistration
     case meaningInput
+    case translation
     case webSearch
     case externalInformation
 
@@ -16,6 +17,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .emoji: "絵文字パネル"
         case .dictionaryRegistration: "辞書登録"
         case .meaningInput: "意味検索"
+        case .translation: "翻訳モード"
         case .webSearch: "Web検索"
         case .externalInformation: "外部ページ"
         }
@@ -28,6 +30,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .emoji: MyIMShortcut(modifiers: [.option], key: "e")
         case .dictionaryRegistration: MyIMShortcut(modifiers: [.option], key: "d")
         case .meaningInput: MyIMShortcut(modifiers: [.option], key: "s")
+        case .translation: MyIMShortcut(modifiers: [.option], key: "t")
         case .webSearch: MyIMShortcut(modifiers: [.option], key: "w")
         case .externalInformation: MyIMShortcut(modifiers: [.option], key: "o")
         }

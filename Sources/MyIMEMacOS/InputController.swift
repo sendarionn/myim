@@ -67,6 +67,8 @@ final class InputController: IMKInputController {
         "GoogleJapaneseInputEnabled"
     private static let appleTranslationEnabledDefaultsKey =
         "AppleTranslationEnabled"
+    private static let defaultTranslationLanguageDefaultsKey =
+        "DefaultTranslationLanguage"
     private static let webSearchEnabledDefaultsKey = "WebSearchEnabled"
     private static let externalInformationPanelEnabledDefaultsKey =
         "ExternalInformationPanelEnabled"
@@ -382,6 +384,11 @@ final class InputController: IMKInputController {
 
         if isMeaningInputShortcut(event) {
             toggleMeaningInput(client: sender)
+            return true
+        }
+
+        if isTranslationShortcut(event) {
+            toggleTranslationMode(client: sender)
             return true
         }
 
@@ -937,6 +944,8 @@ final class InputController: IMKInputController {
             wikipediaSuggestions: isWikipediaSuggestionsEnabled,
             googleJapaneseInput: isGoogleJapaneseInputEnabled,
             appleTranslation: isAppleTranslationEnabled,
+            defaultTranslationLanguageIdentifier:
+                defaultTranslationTargetLanguage.identifier,
             nextInputPrediction: isNextInputPredictionEnabled,
             fuzzySuggestions: isFuzzySuggestionsEnabled,
             dateTimeCandidates: isDateTimeCandidatesEnabled,
@@ -959,6 +968,9 @@ final class InputController: IMKInputController {
             toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
             toggleGoogleJapaneseInput: #selector(toggleGoogleJapaneseInput(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
+            selectDefaultTranslationLanguage: #selector(
+                selectDefaultTranslationLanguage(_:)
+            ),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
@@ -1614,6 +1626,21 @@ final class InputController: IMKInputController {
     }
 
     @objc
+    private func selectDefaultTranslationLanguage(_ sender: Any?) {
+        guard let popup = sender as? NSPopUpButton,
+              let identifier = popup.selectedItem?.representedObject as? String,
+              TranslationTargetLanguage.language(forIdentifier: identifier)
+                != nil else {
+            return
+        }
+        UserDefaults.standard.set(
+            identifier,
+            forKey: Self.defaultTranslationLanguageDefaultsKey
+        )
+        UserDefaults.standard.synchronize()
+    }
+
+    @objc
     private func toggleWebSearch(_ sender: Any?) {
         UserDefaults.standard.set(
             checkboxValue(sender, current: isWebSearchEnabled),
@@ -2085,6 +2112,24 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func toggleTranslationMode(client sender: Any) {
+#if canImport(Translation)
+        guard #available(macOS 15.0, *) else {
+            NSSound.beep()
+            return
+        }
+        if isTranslationSessionActive {
+            finishTranslationDraftAsJapanese(client: sender)
+            return
+        }
+        translationTargetLanguage = defaultTranslationTargetLanguage
+        translationStatusWindow.hide()
+        updateEmptyModeStatus(client: sender)
+#else
+        NSSound.beep()
+#endif
+    }
+
     private func beginTranslationFromPrefixIfPossible(
         separator: Character,
         client sender: Any
@@ -2092,7 +2137,7 @@ final class InputController: IMKInputController {
 #if canImport(Translation)
         guard #available(macOS 15.0, *) else { return false }
         guard inputCursor == inputBuffer.count,
-              translationTargetLanguage == nil,
+              translationTargetLanguage != nil,
               translationDraft == nil,
               let language = TranslationTargetLanguage.language(
                 forPrefix: inputBuffer,
@@ -2363,6 +2408,14 @@ final class InputController: IMKInputController {
             [.command, .control, .option, .shift]
         )
         if flags == [.shift] {
+            return true
+        }
+        if flags.isEmpty,
+           isTranslationSessionActive,
+           beginTranslationFromPrefixIfPossible(
+               separator: "\t",
+               client: sender
+           ) {
             return true
         }
         if inputBuffer.isEmpty {
@@ -2843,6 +2896,10 @@ final class InputController: IMKInputController {
 
     private func isMeaningInputShortcut(_ event: NSEvent) -> Bool {
         MyIMFeatureShortcut.meaningInput.shortcut.matches(event)
+    }
+
+    private func isTranslationShortcut(_ event: NSEvent) -> Bool {
+        MyIMFeatureShortcut.translation.shortcut.matches(event)
     }
 
     private func isEmojiShortcut(_ event: NSEvent) -> Bool {
@@ -5914,6 +5971,15 @@ final class InputController: IMKInputController {
         }
 #endif
         return false
+    }
+
+    private var defaultTranslationTargetLanguage: TranslationTargetLanguage {
+        let identifier = UserDefaults.standard.string(
+            forKey: Self.defaultTranslationLanguageDefaultsKey
+        )
+        return identifier.flatMap(
+            TranslationTargetLanguage.language(forIdentifier:)
+        ) ?? TranslationTargetLanguage.available[0]
     }
 
     private var isWebSearchEnabled: Bool {

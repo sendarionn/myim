@@ -30,6 +30,18 @@ struct TranslationTargetLanguageTests {
     }
 
     @Test
+    func resolvesStoredLanguageIdentifier() {
+        #expect(
+            TranslationTargetLanguage.language(forIdentifier: "zh-Hant")?
+                .prefix == "zht"
+        )
+        #expect(
+            TranslationTargetLanguage.language(forIdentifier: "unknown")
+                == nil
+        )
+    }
+
+    @Test
     func acceptsOnlyTranslationDirectiveSeparators() {
         #expect(
             TranslationTargetLanguage.language(
@@ -47,7 +59,7 @@ struct TranslationTargetLanguageTests {
             TranslationTargetLanguage.language(
                 forPrefix: "ko",
                 terminatedBy: "\t"
-            ) == nil
+            )?.identifier == "ko"
         )
         #expect(
             TranslationTargetLanguage.language(

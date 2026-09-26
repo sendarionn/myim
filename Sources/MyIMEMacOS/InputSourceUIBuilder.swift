@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import MyIMECore
 
 private final class TopAlignedSettingsStackView: NSStackView {
     override var isFlipped: Bool { true }
@@ -77,6 +78,7 @@ enum SettingsWindowBuilder {
         let wikipediaSuggestions: Bool
         let googleJapaneseInput: Bool
         let appleTranslation: Bool
+        let defaultTranslationLanguageIdentifier: String
         let nextInputPrediction: Bool
         let fuzzySuggestions: Bool
         let dateTimeCandidates: Bool
@@ -91,6 +93,7 @@ enum SettingsWindowBuilder {
         let toggleWikipediaSuggestions: Selector
         let toggleGoogleJapaneseInput: Selector
         let toggleAppleTranslation: Selector
+        let selectDefaultTranslationLanguage: Selector
         let toggleNextInputPrediction: Selector
         let toggleFuzzySuggestions: Selector
         let toggleDateTimeCandidates: Selector
@@ -146,6 +149,12 @@ enum SettingsWindowBuilder {
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)
+        addTranslationLanguagePicker(
+            selectedIdentifier: states.defaultTranslationLanguageIdentifier,
+            action: actions.selectDefaultTranslationLanguage,
+            target: target,
+            to: stack
+        )
         addButtons([
             ("次入力履歴を削除", actions.clearNextInputHistory)
         ], target: target, to: stack)
@@ -231,5 +240,39 @@ enum SettingsWindowBuilder {
                 NSButton(title: title, target: target, action: selector)
             )
         }
+    }
+
+    private static func addTranslationLanguagePicker(
+        selectedIdentifier: String,
+        action: Selector,
+        target: AnyObject,
+        to stack: NSStackView
+    ) {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+        row.addArrangedSubview(NSTextField(
+            labelWithString: "デフォルトの翻訳先"
+        ))
+        let popup = NSPopUpButton()
+        popup.target = target
+        popup.action = action
+        for language in TranslationTargetLanguage.available {
+            let item = NSMenuItem(
+                title: language.name,
+                action: nil,
+                keyEquivalent: ""
+            )
+            item.representedObject = language.identifier
+            popup.menu?.addItem(item)
+        }
+        if let index = popup.itemArray.firstIndex(where: {
+            $0.representedObject as? String == selectedIdentifier
+        }) {
+            popup.selectItem(at: index)
+        }
+        row.addArrangedSubview(popup)
+        stack.addArrangedSubview(row)
     }
 }
