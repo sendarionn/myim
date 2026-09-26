@@ -207,6 +207,7 @@ final class InputController: IMKInputController {
     private var isServerActive = false
     private var lifecycleGeneration: UInt = 0
     private var applicationLifecycleGeneration: UInt?
+    private var globalLifecycleGeneration: UInt?
     private var inputClientBundleIdentifier: String?
     private var transientCompositionGuard = TransientCompositionGuard()
 
@@ -1315,10 +1316,20 @@ final class InputController: IMKInputController {
         inputClientBundleIdentifier = (sender as? IMKTextInput)?
             .bundleIdentifier()
         if let inputClientBundleIdentifier {
+            let isAuxiliaryApplication = Self
+                .auxiliaryApplicationBundleIdentifiers
+                .contains(inputClientBundleIdentifier)
             applicationLifecycleGeneration = Self.lifecycleGenerationTracker
-                .recordActivation(for: inputClientBundleIdentifier)
+                .recordActivation(
+                    for: inputClientBundleIdentifier,
+                    supersedesOtherApplications: !isAuxiliaryApplication
+                )
+            globalLifecycleGeneration = Self.lifecycleGenerationTracker
+                .globalGeneration
         } else {
             applicationLifecycleGeneration = nil
+            globalLifecycleGeneration = Self.lifecycleGenerationTracker
+                .recordAnonymousActivation()
         }
         transientCompositionGuard.recordActivation(
             resumingDeactivation: resumesTransientDeactivation,
@@ -1330,7 +1341,7 @@ final class InputController: IMKInputController {
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
         Self.lifecycleLogger.notice(
-            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(deactivationDuration ?? -1, privacy: .public) client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public) appGeneration=\(self.applicationLifecycleGeneration ?? 0, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
+            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(deactivationDuration ?? -1, privacy: .public) client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public) appGeneration=\(self.applicationLifecycleGeneration ?? 0, privacy: .public) globalGeneration=\(self.globalLifecycleGeneration ?? 0, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
         )
     }
 
@@ -1340,6 +1351,8 @@ final class InputController: IMKInputController {
         let deactivationGeneration = lifecycleGeneration
         let deactivatingApplication = inputClientBundleIdentifier
         let deactivatingApplicationGeneration = applicationLifecycleGeneration
+        let deactivatingGlobalGeneration = globalLifecycleGeneration
+            ?? Self.lifecycleGenerationTracker.globalGeneration
         let protectsTransientDeactivation = transientCompositionGuard
             .isProtectingTransientDeactivation(
                 now: deactivationStartedAt,
@@ -1375,14 +1388,26 @@ final class InputController: IMKInputController {
                   self.lifecycleGeneration == deactivationGeneration else {
                 return
             }
+            let globalSessionWasSuperseded = Self.lifecycleGenerationTracker
+                .shouldRetireController(
+                    globalGeneration: deactivatingGlobalGeneration
+                )
+            let applicationSessionWasSuperseded: Bool
             if let deactivatingApplication,
-               let deactivatingApplicationGeneration,
-               Self.lifecycleGenerationTracker.shouldRetireController(
-                   application: deactivatingApplication,
-                   generation: deactivatingApplicationGeneration
-               ) {
+               let deactivatingApplicationGeneration {
+                applicationSessionWasSuperseded = Self
+                    .lifecycleGenerationTracker.shouldRetireController(
+                        application: deactivatingApplication,
+                        generation: deactivatingApplicationGeneration,
+                        globalGeneration: deactivatingGlobalGeneration
+                    )
+            } else {
+                applicationSessionWasSuperseded = false
+            }
+            if globalSessionWasSuperseded
+                || applicationSessionWasSuperseded {
                 Self.lifecycleLogger.notice(
-                    "discarded stale deactivation client=\(deactivatingApplication, privacy: .public) appGeneration=\(deactivatingApplicationGeneration, privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
+                    "discarded stale deactivation client=\(deactivatingApplication ?? "unknown", privacy: .public) appGeneration=\(deactivatingApplicationGeneration ?? 0, privacy: .public) globalGeneration=\(deactivatingGlobalGeneration, privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
                 )
                 self.retireSupersededControllerUI()
                 return
