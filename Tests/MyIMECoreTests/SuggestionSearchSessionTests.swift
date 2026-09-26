@@ -28,6 +28,17 @@ struct SuggestionSearchSessionTests {
     }
 
     @Test
+    func cancellingFuzzySearchPreventsDelayedResultFromBecomingCurrent() {
+        let session = SuggestionSearchSession()
+        let fuzzy = session.begin(.fuzzy, query: "remaining-panel")
+
+        session.cancel(.fuzzy)
+
+        #expect(!session.isCurrent(fuzzy))
+        #expect(session.query(for: .fuzzy) == nil)
+    }
+
+    @Test
     func cancelAllInvalidatesEveryToken() {
         let session = SuggestionSearchSession()
         let official = session.begin(.official, query: "official")

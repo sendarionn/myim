@@ -1350,7 +1350,14 @@ final class InputController: IMKInputController {
         if Self.activeController === self {
             Self.activeController = nil
         }
-        if previewWindow.shouldPreserveForExternalInteraction() {
+        let preservesExternalInformation = previewWindow
+            .shouldPreserveForExternalInteraction()
+        let panelPolicy = InputPanelDismissalPolicy.deactivation(
+            isExternalInformationInteractionActive: preservesExternalInformation,
+            isCalendarInteractionActive: calendarSessionActive
+        )
+        dismissInputSessionPanels(using: panelPolicy)
+        if preservesExternalInformation {
             activeInputClient = nil
             super.deactivateServer(sender)
             return
@@ -1432,6 +1439,10 @@ final class InputController: IMKInputController {
             "input controller closing bufferLength=\(self.inputBuffer.count, privacy: .public) pendingDeactivation=\(deactivationWasPending, privacy: .public)"
         )
         if previewWindow.shouldPreserveForExternalInteraction() {
+            dismissInputSessionPanels(using: .deactivation(
+                isExternalInformationInteractionActive: true,
+                isCalendarInteractionActive: false
+            ))
             super.inputControllerWillClose()
             return
         }
@@ -1797,7 +1808,7 @@ final class InputController: IMKInputController {
             cancelMeaningInput(client: sender)
             return
         }
-        dismissNextInputSuggestions(clearMarkedTextIn: nil)
+        clearNextInputSuggestionState()
         meaningSearchTask?.cancel()
         meaningInputDraft = ""
         meaningSearchResultsActive = false
@@ -3391,6 +3402,13 @@ final class InputController: IMKInputController {
     }
 
     private func refreshCandidates(client sender: Any) {
+        guard !inputBuffer.isEmpty else {
+            generatedParticleCandidates = []
+            longVowelFilterProtectedCandidates = []
+            clearCandidateState(includingFuzzy: true)
+            dismissInputSessionPanels(using: .inputBecameEmpty)
+            return
+        }
         reloadUserDictionaryFromDiskIfNeeded()
         generatedParticleCandidates = []
         longVowelFilterProtectedCandidates = []
@@ -5078,6 +5096,41 @@ final class InputController: IMKInputController {
         suggestionSearchSession.cancel(.fuzzy)
     }
 
+    private func dismissFuzzySuggestions() {
+        suggestionSearchSession.cancel(.fuzzy)
+        fuzzySuggestions = []
+        selectedFuzzySuggestionIndex = nil
+        fuzzySuggestionWindow.hide()
+    }
+
+    private func dismissInputSessionPanels(
+        using policy: InputPanelDismissalPolicy
+    ) {
+        suggestionSearchSession.cancelAll()
+        dictionaryDefinitionTask?.cancel()
+        dictionaryDefinitionTask = nil
+        translationTask?.cancel()
+        translationTask = nil
+        meaningSearchTask?.cancel()
+        meaningSearchTask = nil
+        calendarFormatTask?.cancel()
+        calendarFormatTask = nil
+        candidateWindow.hide()
+        dismissFuzzySuggestions()
+        emojiWindow.hide()
+        symbolTipsWindow.hide()
+        translationStatusWindow.hide()
+        meaningStatusWindow.hide()
+        resetCandidateFilters()
+        if !policy.preservesExternalInformation {
+            previewWindow.hide()
+        }
+        if !policy.preservesCalendar {
+            clearCalendarSelection()
+        }
+        dismissNextInputSuggestions(clearMarkedTextIn: nil)
+    }
+
     private func cancelAuxiliarySuggestionSearches() {
         suggestionSearchSession.cancel(.fuzzy)
     }
@@ -5276,10 +5329,6 @@ final class InputController: IMKInputController {
     private func dismissNextInputSuggestions(
         clearMarkedTextIn sender: Any?
     ) {
-        nextInputExtensionGeneration &+= 1
-        stopNextInputOutsideClickMonitoring()
-        nextInputDismissTimer?.invalidate()
-        nextInputDismissTimer = nil
         if selectedNextInputIndex != nil, let sender {
             if translationDraft != nil {
                 updateMarkedText(in: sender)
@@ -5287,11 +5336,19 @@ final class InputController: IMKInputController {
                 setMarkedText("", in: sender)
             }
         }
+        clearNextInputSuggestionState()
+        candidateWindow.hide()
+        previewWindow.hide()
+    }
+
+    private func clearNextInputSuggestionState() {
+        nextInputExtensionGeneration &+= 1
+        stopNextInputOutsideClickMonitoring()
+        nextInputDismissTimer?.invalidate()
+        nextInputDismissTimer = nil
         nextInputCandidates = []
         nextInputContext = nil
         selectedNextInputIndex = nil
-        candidateWindow.hide()
-        previewWindow.hide()
     }
 
     private func startNextInputOutsideClickMonitoring() {
