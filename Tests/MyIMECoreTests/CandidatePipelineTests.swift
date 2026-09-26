@@ -188,4 +188,21 @@ struct CandidatePipelineTests {
 
         #expect(candidates == ["公募を", "こうほを", "コウホヲ", "候補を"])
     }
+
+    @Test
+    func hidesAutomaticKanaButKeepsDictionaryKana() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["みる", "ミル"],
+                direct: ["見る", "ミル"],
+                other: [],
+                recencyRanks: [:],
+                prioritizeKana: false,
+                includeAutomaticKanaCandidates: false
+            )
+        )
+
+        #expect(candidates == ["見る", "ミル"])
+        #expect(!candidates.contains("みる"))
+    }
 }

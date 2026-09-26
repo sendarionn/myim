@@ -3294,7 +3294,8 @@ final class InputController: IMKInputController {
                     for: conversionReading
                 ),
                 contextualCandidates: contextualCandidates,
-                prioritizeKana: kanaCandidates.first?.count == 1
+                prioritizeKana: kanaCandidates.first?.count == 1,
+                includeAutomaticKanaCandidates: false
             )
         )
         replaceCurrentCandidates(with: orderedCandidates)

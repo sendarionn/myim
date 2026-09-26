@@ -9,6 +9,7 @@ public struct CandidatePipeline: Sendable {
         public let recencyRanks: [String: Int]
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
+        public let includeAutomaticKanaCandidates: Bool
 
         public init(
             kana: [String],
@@ -19,7 +20,8 @@ public struct CandidatePipeline: Sendable {
             trailing: [String] = [],
             recencyRanks: [String: Int],
             contextualCandidates: [String] = [],
-            prioritizeKana: Bool
+            prioritizeKana: Bool,
+            includeAutomaticKanaCandidates: Bool = true
         ) {
             self.kana = kana
             self.direct = direct
@@ -30,17 +32,20 @@ public struct CandidatePipeline: Sendable {
             self.recencyRanks = recencyRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
+            self.includeAutomaticKanaCandidates = includeAutomaticKanaCandidates
         }
     }
 
     public init() {}
 
     public func candidates(from input: Input) -> [String] {
-        let kana = orderedKanaCandidates(
-            input.kana,
-            matching: input.direct,
-            recencyRanks: input.recencyRanks
-        )
+        let kana = input.includeAutomaticKanaCandidates
+            ? orderedKanaCandidates(
+                input.kana,
+                matching: input.direct,
+                recencyRanks: input.recencyRanks
+            )
+            : []
         let candidates = CandidatePriorityOrderer.ordered(
             kana: kana,
             direct: input.direct,
@@ -48,7 +53,8 @@ public struct CandidatePipeline: Sendable {
             others: input.other + input.english,
             recencyRanks: input.recencyRanks,
             contextualCandidates: input.contextualCandidates,
-            prioritizeKana: input.prioritizeKana
+            prioritizeKana: input.includeAutomaticKanaCandidates
+                && input.prioritizeKana
         )
         let prioritized = candidates.movingEnglishCandidatesAfterCloseJapaneseCandidates(
             english: input.english,
