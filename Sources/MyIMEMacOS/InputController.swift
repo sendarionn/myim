@@ -5322,7 +5322,10 @@ final class InputController: IMKInputController {
             || !JapaneseSymbolConverter.candidates(for: inputBuffer).isEmpty {
             return ""
         }
-        return String(inputBuffer.dropFirst(conversionReading.count))
+        return ConversionReadingSuffix.resolve(
+            conversionReading: conversionReading,
+            originalInput: inputBuffer
+        )
     }
 
     private var isCalculationExpressionDraft: Bool {

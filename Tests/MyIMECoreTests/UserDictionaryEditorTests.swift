@@ -4,6 +4,14 @@ import Testing
 @Suite
 struct UserDictionaryEditorTests {
     @Test
+    func symbolOnlyDictionaryReadingDoesNotBecomeAConversionSuffix() {
+        #expect(ConversionReadingSuffix.resolve(
+            conversionReading: "",
+            originalInput: "///"
+        ) == "")
+    }
+
+    @Test
     func acceptsPrintableSymbolsFromOptionKeyInput() {
         for symbol in ["•", "±", "©", "･", "→"] {
             #expect(UserDictionaryInputPolicy.accepts(

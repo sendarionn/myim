@@ -49,6 +49,16 @@ public enum UserDictionaryLookupReading {
     }
 }
 
+public enum ConversionReadingSuffix {
+    public static func resolve(
+        conversionReading: String,
+        originalInput: String
+    ) -> String {
+        guard !conversionReading.isEmpty else { return "" }
+        return String(originalInput.dropFirst(conversionReading.count))
+    }
+}
+
 public enum UserDictionaryEditor {
     public static func adding(
         reading: String,
