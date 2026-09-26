@@ -108,6 +108,12 @@ cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary-source.json" \
     "$resources_directory/basic-dictionary-source.json"
 cp \
+    "Sources/MyIMEMacOS/Resources/symbol-dictionary.tsv" \
+    "$resources_directory/symbol-dictionary.tsv"
+cp \
+    "Sources/MyIMEMacOS/Resources/symbol-dictionary-source.json" \
+    "$resources_directory/symbol-dictionary-source.json"
+cp \
     "Sources/MyIMEMacOS/Resources/mozc-dictionary.tsv" \
     "$resources_directory/mozc-dictionary.tsv"
 cp \

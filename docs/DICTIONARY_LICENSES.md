@@ -33,3 +33,15 @@ Mozc OSS辞書はIPAdic、沖縄辞書、Mozcで追加された語彙を含み�
 - 生成情報: `Sources/MyIMEMacOS/Resources/kanji-filter-data-source.json`
 - CHISE-IDSとCJKVI-IDSは同梱していません
 - 利用者が任意に配置したIDSデータはアプリへ複製せず、配布元のライセンスを維持したまま読み込みます
+
+## 記号辞書
+
+- 用途: 記号名のローマ字入力から記号候補を生成
+- 文字名称とコードポイントの確認元: Unicode Character Database 16.0.0 `NamesList.txt`
+- 取得元: https://www.unicode.org/Public/16.0.0/ucd/NamesList.txt
+- ライセンス: Unicode License v3、SPDX `Unicode-3.0`
+- 同梱ライセンス: `Sources/MyIMEMacOS/Resources/UNICODE-LICENSE.txt`
+- 生成情報: `Sources/MyIMEMacOS/Resources/symbol-dictionary-source.json`
+- 日本語読みとローマ字入力の対応付け: myim独自データ
+
+GPLのSKK-JISYO.Lは生成元として使用していません

@@ -23,6 +23,17 @@ CHISE-IDSとCJKVI-IDSのデータは同梱していません
 - ライセンス: Unicode License v3、SPDX `Unicode-3.0`
 - 同梱ライセンス: `Emoji/CLDR-LICENSE.txt`
 
+## Unicode Character Database
+
+- 用途: 記号辞書に収録する文字の正式名称とコードポイントの確認
+- 版: Unicode 16.0.0
+- ライセンス: Unicode License v3、SPDX `Unicode-3.0`
+- 取得元: https://www.unicode.org/Public/16.0.0/ucd/NamesList.txt
+- 同梱ライセンス: `UNICODE-LICENSE.txt`
+- 生成情報: `symbol-dictionary-source.json`
+
+記号辞書の日本語読みとローマ字入力はmyim独自の対応付けです
+
 ## Noto Emoji
 
 - 用途: Androidでの絵文字表示

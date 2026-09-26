@@ -89,6 +89,9 @@ final class InputController: IMKInputController {
     private static let sharedBasicConversionEngine = ConversionEngine(
         entries: sharedBasicEntries
     )
+    private static let sharedSymbolConversionEngine = ConversionEngine(
+        entries: loadBundledEntries(resource: "symbol-dictionary")
+    )
     private static let sharedMozcConversionEngine = loadMozcDictionaryEngine()
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
@@ -3490,6 +3493,12 @@ final class InputController: IMKInputController {
             lookup: { basicConversionEngine.candidateGroups(matching: $0) },
             readings: lookupReadings
         )
+        let dictionarySymbolCandidates = mergedCandidateGroups(
+            lookup: {
+                Self.sharedSymbolConversionEngine.candidateGroups(matching: $0)
+            },
+            readings: lookupReadings
+        )
         let imeCandidates = mergedCandidateGroups(
             lookup: {
                 mozcConversionEngine.candidateGroups(
@@ -3553,6 +3562,7 @@ final class InputController: IMKInputController {
             + dateTimeCandidates
             + numericPrefixCandidates
             + scriptCandidates
+            + dictionarySymbolCandidates.exact
             + basicCandidates.exact
             + imeCandidates.exact
             + inflectionCandidates
@@ -3562,6 +3572,7 @@ final class InputController: IMKInputController {
                 limit: Self.maximumCandidateCount * 2
             )
             + remoteCandidates
+            + dictionarySymbolCandidates.prefix
             + imeCandidates.prefix
             + basicCandidates.prefix
         let contextualCandidates = isNextInputPredictionEnabled
@@ -3570,7 +3581,8 @@ final class InputController: IMKInputController {
             )
             : []
         longVowelFilterProtectedCandidates = Set(
-            userCandidates.exact + basicCandidates.exact + imeCandidates.exact
+            userCandidates.exact + dictionarySymbolCandidates.exact
+                + basicCandidates.exact + imeCandidates.exact
         )
         let orderedCandidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
@@ -5881,6 +5893,14 @@ final class InputController: IMKInputController {
                 to: cachedEntries,
                 bundledEntries: entries
             )
+        }
+        return entries
+    }
+
+    private static func loadBundledEntries(resource: String) -> [DictionaryEntry] {
+        guard let text = loadBundledText(resource: resource),
+              let entries = try? DictionaryParser().parse(text) else {
+            return []
         }
         return entries
     }

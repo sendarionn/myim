@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DefaultExtensionInstaller {
-    public static let markerName = ".myim-default-extensions-installed-v21"
+    public static let markerName = ".myim-default-extensions-installed-v22"
 
     public static func installIfNeeded(
         from sourceDirectory: URL,
@@ -54,8 +54,38 @@ public enum DefaultExtensionInstaller {
             to: destinationDirectory.appendingPathComponent("numeric-tools.js"),
             fileManager: fileManager
         )
+        try removeDeprecatedSymbolsExtension(
+            from: destinationDirectory.appendingPathComponent("symbols.js"),
+            fileManager: fileManager
+        )
 
         try Data().write(to: marker, options: .atomic)
+    }
+
+    private static func removeDeprecatedSymbolsExtension(
+        from fileURL: URL,
+        fileManager: FileManager
+    ) throws {
+        guard fileManager.fileExists(atPath: fileURL.path),
+              let script = try? String(contentsOf: fileURL, encoding: .utf8)
+        else { return }
+        let previousDefault = """
+        function candidates(context) {
+          const input = context.input.toLowerCase()
+          return symbolNames[input] || []
+        }
+
+        const symbolNames = {
+          "ongusutoro-mu": ["Å"],
+          "ongusutoroomu": ["Å"],
+          "be-ta": ["β"],
+          "beeta": ["β"]
+        }
+        """
+        guard script.trimmingCharacters(in: .whitespacesAndNewlines)
+            == previousDefault.trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return }
+        try fileManager.removeItem(at: fileURL)
     }
 
     private static func addUnprefixedBinaryCandidate(

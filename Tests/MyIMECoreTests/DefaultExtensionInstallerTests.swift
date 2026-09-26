@@ -5,6 +5,52 @@ import Testing
 @Suite("DefaultExtensionInstallerTests")
 struct DefaultExtensionInstallerTests {
     @Test
+    func removesDeprecatedDefaultSymbolsExtension() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let destination = root.appendingPathComponent("destination", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let installed = destination.appendingPathComponent("symbols.js")
+        try Data("""
+        function candidates(context) {
+          const input = context.input.toLowerCase()
+          return symbolNames[input] || []
+        }
+
+        const symbolNames = {
+          "ongusutoro-mu": ["Å"],
+          "ongusutoroomu": ["Å"],
+          "be-ta": ["β"],
+          "beeta": ["β"]
+        }
+        """.utf8).write(to: installed)
+
+        try DefaultExtensionInstaller.installIfNeeded(from: source, into: destination)
+
+        #expect(!FileManager.default.fileExists(atPath: installed.path))
+    }
+
+    @Test
+    func preservesCustomizedSymbolsExtension() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let destination = root.appendingPathComponent("destination", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let installed = destination.appendingPathComponent("symbols.js")
+        try Data("function candidates() { return [\"custom\"] }".utf8).write(to: installed)
+
+        try DefaultExtensionInstaller.installIfNeeded(from: source, into: destination)
+
+        #expect(FileManager.default.fileExists(atPath: installed.path))
+    }
+
+    @Test
     func addsUnprefixedBinaryCandidateToInstalledExtension() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

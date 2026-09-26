@@ -1,0 +1,9 @@
+{
+  "name": "myim symbol dictionary",
+  "unicodeVersion": "16.0.0",
+  "characterReference": "https://www.unicode.org/Public/16.0.0/ucd/NamesList.txt",
+  "characterReferenceLicense": "Unicode-3.0",
+  "readingAliases": "myim-authored",
+  "generated": "2026-09-27",
+  "excludes": ["SKK-JISYO.L"]
+}
