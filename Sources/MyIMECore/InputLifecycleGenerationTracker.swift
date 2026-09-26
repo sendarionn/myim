@@ -15,4 +15,11 @@ public struct InputLifecycleGenerationTracker: Sendable {
     ) -> Bool {
         generations[application] == generation
     }
+
+    public func shouldRetireController(
+        application: String,
+        generation: UInt
+    ) -> Bool {
+        !isCurrent(application: application, generation: generation)
+    }
 }

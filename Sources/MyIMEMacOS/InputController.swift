@@ -1370,15 +1370,14 @@ final class InputController: IMKInputController {
             }
             if let deactivatingApplication,
                let deactivatingApplicationGeneration,
-               !Self.lifecycleGenerationTracker.isCurrent(
-                    application: deactivatingApplication,
-                    generation: deactivatingApplicationGeneration
+               Self.lifecycleGenerationTracker.shouldRetireController(
+                   application: deactivatingApplication,
+                   generation: deactivatingApplicationGeneration
                ) {
                 Self.lifecycleLogger.notice(
                     "discarded stale deactivation client=\(deactivatingApplication, privacy: .public) appGeneration=\(deactivatingApplicationGeneration, privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
                 )
-                self.pendingDeactivation = nil
-                self.pendingDeactivationStartedAt = nil
+                self.retireSupersededControllerUI()
                 return
             }
             if protectsTransientDeactivation,
@@ -1470,6 +1469,16 @@ final class InputController: IMKInputController {
             fuzzyEngineBuildTask?.cancel()
             fuzzyEngineBuildTask = nil
         }
+        flushPendingHistoryWrites()
+    }
+
+    private func retireSupersededControllerUI() {
+        pendingDeactivation = nil
+        pendingDeactivationStartedAt = nil
+        activeInputClient = nil
+        resetTransientInteractionState()
+        translationStatusWindow.hide()
+        symbolTipsWindow.hide()
         flushPendingHistoryWrites()
     }
 
@@ -5042,6 +5051,7 @@ final class InputController: IMKInputController {
         meaningSearchResultsActive = false
         meaningCandidateReadings = [:]
         meaningStatusWindow.hide()
+        translationStatusWindow.hide()
         translationTask?.cancel()
         translationTask = nil
         calendarFormatTask?.cancel()
@@ -5052,6 +5062,7 @@ final class InputController: IMKInputController {
         fuzzySuggestionWindow.hide()
         emojiWindow.hide()
         previewWindow.hide()
+        symbolTipsWindow.hide()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
         nextInputCandidates = []

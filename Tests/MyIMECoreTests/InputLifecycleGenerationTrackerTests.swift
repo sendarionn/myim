@@ -13,7 +13,15 @@ struct InputLifecycleGenerationTrackerTests {
             application: "com.microsoft.VSCode",
             generation: oldGeneration
         ))
+        #expect(tracker.shouldRetireController(
+            application: "com.microsoft.VSCode",
+            generation: oldGeneration
+        ))
         #expect(tracker.isCurrent(
+            application: "com.microsoft.VSCode",
+            generation: newGeneration
+        ))
+        #expect(!tracker.shouldRetireController(
             application: "com.microsoft.VSCode",
             generation: newGeneration
         ))
