@@ -1172,7 +1172,7 @@ final class InputController: IMKInputController {
         let storedCandidate = currentCandidates.first {
             candidateDisplayValue($0) == candidate
         } ?? candidate
-        recordCandidateSelection(storedCandidate)
+        recordCandidateSelectionForCurrentInput(storedCandidate)
         if emojiWindow.isVisible {
             selectedCandidateIndex = currentCandidates.firstIndex {
                 candidateDisplayValue($0) == candidate
@@ -1190,9 +1190,15 @@ final class InputController: IMKInputController {
             )
             return
         }
+        let historyValue = CalculationInputHistory.value(
+            input: inputBuffer,
+            selectedCandidate: storedCandidate,
+            generatedCandidates: cachedJavaScriptCalculationCandidates
+        )
         commit(
             candidateValueForCommit(storedCandidate) + conversionSuffix,
-            to: client() as Any
+            to: client() as Any,
+            historyValue: historyValue
         )
     }
 
@@ -3106,6 +3112,20 @@ final class InputController: IMKInputController {
             showCandidateWindow(client: sender)
             return
         }
+        let calculationHistoryCandidates = CalculationInputHistory
+            .completionCandidates(
+                input: inputBuffer,
+                historyCandidates: candidateSelectionHistory.completions(
+                    for: inputBuffer
+                )
+            )
+        if !calculationHistoryCandidates.isEmpty {
+            replaceCurrentCandidatesOrderedByRecency(
+                with: calculationHistoryCandidates
+            )
+            showCandidateWindow(client: sender)
+            return
+        }
         let unitConversionCandidates = UnitConversionCandidateGenerator
             .candidates(for: inputBuffer)
         if !unitConversionCandidates.isEmpty {
@@ -4159,14 +4179,25 @@ final class InputController: IMKInputController {
             return true
         }
 
+        let selectedCandidate = selectedCandidateIndex.flatMap {
+            currentCandidates.indices.contains($0) ? currentCandidates[$0] : nil
+        }
         let value = selectedCandidateValue ?? inputBuffer
         let calculatorNextInputCandidates = selectedCandidateIndex == nil
             ? cachedJavaScriptCalculationCandidates
             : []
+        let historyValue = selectedCandidate.flatMap {
+            CalculationInputHistory.value(
+                input: inputBuffer,
+                selectedCandidate: $0,
+                generatedCandidates: cachedJavaScriptCalculationCandidates
+            )
+        }
         recordSelectedCandidate()
         commit(
             value,
             to: sender,
+            historyValue: historyValue,
             preferredNextInputCandidates: calculatorNextInputCandidates
         )
         return true
@@ -4179,7 +4210,23 @@ final class InputController: IMKInputController {
         else {
             return
         }
-        recordCandidateSelection(currentCandidates[selectedCandidateIndex])
+        recordCandidateSelectionForCurrentInput(
+            currentCandidates[selectedCandidateIndex]
+        )
+    }
+
+    private func recordCandidateSelectionForCurrentInput(
+        _ candidate: String
+    ) {
+        if let expression = CalculationInputHistory.value(
+            input: inputBuffer,
+            selectedCandidate: candidate,
+            generatedCandidates: cachedJavaScriptCalculationCandidates
+        ) {
+            recordCandidateSelection(expression, reading: expression)
+        } else {
+            recordCandidateSelection(candidate)
+        }
     }
 
     private func recordTranslationSourceInput(
