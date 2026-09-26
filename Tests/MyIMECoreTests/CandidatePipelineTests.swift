@@ -205,4 +205,19 @@ struct CandidatePipelineTests {
         #expect(candidates == ["見る", "ミル"])
         #expect(!candidates.contains("みる"))
     }
+
+    @Test
+    func includesGeneratedHiraganaAndKatakanaByDefault() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["みる", "ミル"],
+                direct: ["見る"],
+                other: [],
+                recencyRanks: [:],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates == ["見る", "みる", "ミル"])
+    }
 }
