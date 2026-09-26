@@ -11,7 +11,7 @@ private final class VerticallyCenteredTextFieldCell: NSTextFieldCell {
     }
 }
 
-final class TranslationStatusWindowController: NSObject {
+final class ModeStatusWindowController: NSObject {
     private static let horizontalPadding: CGFloat = 14
     private static let verticalPadding: CGFloat = 9
     private static let anchorSpacing: CGFloat = 8

@@ -191,8 +191,8 @@ final class InputController: IMKInputController {
     private var candidateFilterConditionWindows: [CandidateWindowController] = []
     private let calendarWindow = CalendarWindowController()
     private let emojiWindow = EmojiWindowController.shared
-    private let translationStatusWindow = TranslationStatusWindowController()
-    private let meaningStatusWindow = TranslationStatusWindowController()
+    private let translationStatusWindow = ModeStatusWindowController()
+    private let meaningStatusWindow = ModeStatusWindowController()
     private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
     private let previewWindow = ExternalInformationWindowController()
     private let symbolTipsWindow = SymbolTipsWindowController()
@@ -1778,13 +1778,8 @@ final class InputController: IMKInputController {
         meaningInputDraft = ""
         meaningSearchResultsActive = false
         meaningCandidateReadings = [:]
-        currentCandidates = []
-        selectedCandidateIndex = nil
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        clearCandidateState(includingFuzzy: true)
+        hideConversionPanels()
         updateMarkedText(in: sender)
         updateEmptyModeStatus(client: sender)
     }
@@ -1799,15 +1794,9 @@ final class InputController: IMKInputController {
         guard !value.isEmpty || !suffix.isEmpty else { return true }
         meaningInputDraft = (meaningInputDraft ?? "") + value + suffix
         meaningStatusWindow.hide()
-        inputBuffer = ""
-        inputCursor = 0
-        currentCandidates = []
-        selectedCandidateIndex = nil
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        clearInputBuffer()
+        clearCandidateState(includingFuzzy: true)
+        hideConversionPanels()
         updateMarkedText(in: sender)
         return true
     }
@@ -1957,11 +1946,8 @@ final class InputController: IMKInputController {
         meaningSearchTask = nil
         meaningSearchResultsActive = false
         meaningCandidateReadings = [:]
-        currentCandidates = []
-        selectedCandidateIndex = nil
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        clearCandidateState()
+        hideConversionPanels()
         updateMarkedText(in: sender)
         meaningStatusWindow.show(
             title: "意味検索",
@@ -1975,13 +1961,9 @@ final class InputController: IMKInputController {
         meaningInputDraft = nil
         meaningSearchResultsActive = false
         meaningCandidateReadings = [:]
-        inputBuffer = ""
-        inputCursor = 0
-        currentCandidates = []
-        selectedCandidateIndex = nil
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        clearInputBuffer()
+        clearCandidateState()
+        hideConversionPanels()
         meaningStatusWindow.hide()
         setMarkedText("", in: sender)
     }
@@ -2059,15 +2041,9 @@ final class InputController: IMKInputController {
             return false
         }
         translationTargetLanguage = language
-        inputBuffer = ""
-        inputCursor = 0
-        currentCandidates = []
-        selectedCandidateIndex = nil
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        clearInputBuffer()
+        clearCandidateState(includingFuzzy: true)
+        hideConversionPanels()
         setMarkedText("", in: sender)
         updateEmptyModeStatus(client: sender)
         return true
@@ -2081,9 +2057,7 @@ final class InputController: IMKInputController {
         translationTask = nil
         translationTargetLanguage = nil
         translationStatusWindow.hide()
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        hideConversionPanels()
         setMarkedText("", in: sender)
     }
 
@@ -2132,12 +2106,8 @@ final class InputController: IMKInputController {
         }
         recordSelectedCandidate()
         insertIntoTranslationDraft(value + suffix)
-        inputBuffer = ""
-        inputCursor = 0
-        currentCandidates = []
-        selectedCandidateIndex = nil
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
+        clearInputBuffer()
+        clearCandidateState(includingFuzzy: true)
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
         updateMarkedText(in: sender)
@@ -2423,10 +2393,8 @@ final class InputController: IMKInputController {
             reading: reading
         )
         tabDictionaryRegistration = registration
-        inputBuffer = ""
-        inputCursor = 0
-        currentCandidates = []
-        selectedCandidateIndex = nil
+        clearInputBuffer()
+        clearCandidateState()
         previewWindow.hide()
         setMarkedText("", in: sender)
         showTabDictionaryRegistration(client: sender)
@@ -2482,10 +2450,8 @@ final class InputController: IMKInputController {
                 + " "
             registration.pastedCandidate = nil
             tabDictionaryRegistration = registration
-            inputBuffer = ""
-            inputCursor = 0
-            currentCandidates = []
-            selectedCandidateIndex = nil
+            clearInputBuffer()
+            clearCandidateState()
             setMarkedText(registration.confirmedCandidate ?? "", in: sender)
             showTabDictionaryRegistration(client: sender)
             return true
@@ -2552,10 +2518,8 @@ final class InputController: IMKInputController {
                 )
             registration.pastedCandidate = pasted
             tabDictionaryRegistration = registration
-            inputBuffer = ""
-            inputCursor = 0
-            currentCandidates = []
-            selectedCandidateIndex = nil
+            clearInputBuffer()
+            clearCandidateState()
             setMarkedText(
                 (registration.confirmedCandidate ?? "") + pasted,
                 in: sender
@@ -2582,10 +2546,8 @@ final class InputController: IMKInputController {
             recordSelectedCandidate()
             registration.confirmedCandidate =
                 (registration.confirmedCandidate ?? "") + selectedValue
-            inputBuffer = ""
-            inputCursor = 0
-            currentCandidates = []
-            selectedCandidateIndex = nil
+            clearInputBuffer()
+            clearCandidateState()
         }
         tabDictionaryRegistration = registration
         insertIntoInputBuffer(characters)
@@ -2642,10 +2604,8 @@ final class InputController: IMKInputController {
             (registration.confirmedCandidate ?? "") + currentCandidate
         registration.pastedCandidate = nil
         tabDictionaryRegistration = registration
-        inputBuffer = ""
-        inputCursor = 0
-        currentCandidates = []
-        selectedCandidateIndex = nil
+        clearInputBuffer()
+        clearCandidateState()
         setMarkedText(registration.confirmedCandidate ?? "", in: sender)
         showTabDictionaryRegistration(client: sender)
         return true
@@ -2656,8 +2616,7 @@ final class InputController: IMKInputController {
         tabDictionaryRegistration = nil
         inputBuffer = registration.originalInput
         inputCursor = inputBuffer.count
-        currentCandidates = []
-        selectedCandidateIndex = nil
+        clearCandidateState()
         updateMarkedText(in: sender)
         refreshCandidates(client: sender)
     }
@@ -2683,10 +2642,8 @@ final class InputController: IMKInputController {
         registration.confirmedCandidate = nil
         registration.pastedCandidate = nil
         tabDictionaryRegistration = registration
-        inputBuffer = ""
-        inputCursor = 0
-        currentCandidates = []
-        selectedCandidateIndex = nil
+        clearInputBuffer()
+        clearCandidateState()
         setMarkedText("", in: sender)
         showTabDictionaryRegistration(client: sender)
         return true
@@ -2871,9 +2828,7 @@ final class InputController: IMKInputController {
         } ?? inputBuffer
         emojiWindow.updateSearchText(searchText)
         setMarkedText(searchText, in: sender)
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        hideConversionPanels()
         emojiWindow.confirmSearch()
     }
 
@@ -3948,12 +3903,8 @@ final class InputController: IMKInputController {
             return true
         }
         insertIntoTranslationDraft(value + suffix)
-        inputBuffer = ""
-        inputCursor = 0
-        currentCandidates = []
-        selectedCandidateIndex = nil
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
+        clearInputBuffer()
+        clearCandidateState(includingFuzzy: true)
         fuzzySuggestionWindow.hide()
         updateMarkedText(in: sender)
         showTranslationDraft(client: sender)
@@ -4361,18 +4312,12 @@ final class InputController: IMKInputController {
             selectionRange: NSRange(location: 0, length: 0),
             replacementRange: NSRange(location: NSNotFound, length: NSNotFound)
         )
-        inputBuffer = ""
-        inputCursor = 0
+        clearInputBuffer()
         reconversionOriginal = nil
         tabDictionaryRegistration = nil
-        currentCandidates = []
-        selectedCandidateIndex = nil
+        clearCandidateState(includingFuzzy: true)
         suggestionSearchSession.cancelAll()
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        hideConversionPanels()
     }
 
     private func beginSecureInputPassthroughIfNeeded(client sender: Any) {
@@ -4824,11 +4769,8 @@ final class InputController: IMKInputController {
             from: draft,
             unit: unit
         )
-        selectedCandidateIndex = nil
-        currentCandidates = []
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        previewWindow.hide()
+        clearCandidateState()
+        hideConversionPanels()
         updateMarkedText(in: sender)
         updateEmptyModeStatus(client: sender)
         return true
@@ -4999,18 +4941,12 @@ final class InputController: IMKInputController {
             (recentCommittedContext + value).suffix(256)
         )
         suggestionSearchSession.cancelAll()
-        inputBuffer = ""
-        inputCursor = 0
+        clearInputBuffer()
         reconversionOriginal = nil
         tabDictionaryRegistration = nil
-        currentCandidates = []
-        selectedCandidateIndex = nil
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
+        clearCandidateState(includingFuzzy: true)
+        hideConversionPanels()
         emojiWindow.hide()
-        previewWindow.hide()
         symbolTipsWindow.hide()
         clearCalendarSelection()
         resetCandidateFilters()
@@ -5398,6 +5334,25 @@ final class InputController: IMKInputController {
             ),
             replacementRange: replacementRange
         )
+    }
+
+    private func clearInputBuffer() {
+        inputBuffer = ""
+        inputCursor = 0
+    }
+
+    private func clearCandidateState(includingFuzzy: Bool = false) {
+        currentCandidates = []
+        selectedCandidateIndex = nil
+        guard includingFuzzy else { return }
+        fuzzySuggestions = []
+        selectedFuzzySuggestionIndex = nil
+    }
+
+    private func hideConversionPanels() {
+        candidateWindow.hide()
+        fuzzySuggestionWindow.hide()
+        previewWindow.hide()
     }
 
     private func insertIntoInputBuffer(_ text: String) {
