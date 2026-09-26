@@ -91,7 +91,7 @@ public enum JapaneseParticleCandidateGenerator {
         return results
     }
 
-    public static func nonLearnableCandidates(
+    public static func generatedOnlyCandidates(
         generated: [String],
         exactDictionaryCandidates: [String]
     ) -> Set<String> {

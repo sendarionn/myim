@@ -38,12 +38,33 @@ struct JapaneseParticleCandidateGeneratorTests {
     }
 
     @Test
-    func excludesOnlyGeneratedCandidatesFromLearning() {
+    func identifiesCandidatesThatExistOnlyAsParticleCompositions() {
         #expect(
-            JapaneseParticleCandidateGenerator.nonLearnableCandidates(
+            JapaneseParticleCandidateGenerator.generatedOnlyCandidates(
                 generated: ["候補を", "候補につき"],
                 exactDictionaryCandidates: ["候補を"]
             ) == ["候補につき"]
+        )
+    }
+
+    @Test
+    func selectedCompositionCanBecomeAnExactUserDictionaryCandidate() throws {
+        let candidate = try #require(candidates(for: "kouhowo").first)
+        let entries = UserDictionaryEditor.adding(
+            reading: "kouhowo",
+            candidate: candidate,
+            to: []
+        )
+
+        #expect(
+            ConversionEngine(entries: entries).candidates(for: "kouhowo")
+                == ["候補を"]
+        )
+        #expect(
+            JapaneseParticleCandidateGenerator.generatedOnlyCandidates(
+                generated: [candidate],
+                exactDictionaryCandidates: [candidate]
+            ).isEmpty
         )
     }
 

@@ -173,7 +173,7 @@ final class InputController: IMKInputController {
         DeferredJSONFileWriter<NextInputPredictionModel>
     private var nextInputCandidates: [String] = []
     private var nextInputContext: String?
-    private var nonLearnableGeneratedCandidates = Set<String>()
+    private var generatedParticleCandidates = Set<String>()
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
     private var nextInputExtensionGeneration: UInt = 0
@@ -3383,7 +3383,7 @@ final class InputController: IMKInputController {
 
     private func refreshCandidates(client sender: Any) {
         reloadUserDictionaryFromDiskIfNeeded()
-        nonLearnableGeneratedCandidates = []
+        generatedParticleCandidates = []
         longVowelFilterProtectedCandidates = []
         updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
         let extensionInput = inputBuffer
@@ -3521,8 +3521,8 @@ final class InputController: IMKInputController {
         let particleCandidates = particleBoundaryCandidates(
             for: conversionReading
         )
-        nonLearnableGeneratedCandidates = JapaneseParticleCandidateGenerator
-            .nonLearnableCandidates(
+        generatedParticleCandidates = JapaneseParticleCandidateGenerator
+            .generatedOnlyCandidates(
                 generated: particleCandidates,
                 exactDictionaryCandidates: userCandidates.exact
                     + basicCandidates.exact
@@ -3545,7 +3545,7 @@ final class InputController: IMKInputController {
         let learnedExactCandidates = candidateSelectionHistory.candidates(
             for: lookupReadings
         ).filter {
-            !nonLearnableGeneratedCandidates.contains($0)
+            !generatedParticleCandidates.contains($0)
         }
         var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(
@@ -4560,11 +4560,9 @@ final class InputController: IMKInputController {
         _ candidate: String,
         reading: String? = nil
     ) {
-        guard !nonLearnableGeneratedCandidates.contains(candidate) else {
-            return
-        }
         let learnedReading = reading ?? candidateSelectionReading
-        if learnableOfficialCandidates.contains(candidate),
+        if (generatedParticleCandidates.contains(candidate)
+                || learnableOfficialCandidates.contains(candidate)),
            !learnedReading.isEmpty {
             do {
                 try saveUserDictionaryEntry(
@@ -4573,7 +4571,7 @@ final class InputController: IMKInputController {
                 )
             } catch {
                 NSLog(
-                    "外部API候補のユーザー辞書登録に失敗: %@",
+                    "選択候補のユーザー辞書登録に失敗: %@",
                     error.localizedDescription
                 )
             }
@@ -4884,7 +4882,7 @@ final class InputController: IMKInputController {
 
     private func recordNextInputCandidateSelection(_ candidate: String) {
         guard closingBracketTracker.shouldRecordAsNextInput(candidate),
-              !nonLearnableGeneratedCandidates.contains(candidate) else {
+              !generatedParticleCandidates.contains(candidate) else {
             return
         }
         let userEngine = userConversionEngine
@@ -4968,7 +4966,7 @@ final class InputController: IMKInputController {
                 inputHistoryValue,
                 requested: recordsInputHistory
             )
-            && !nonLearnableGeneratedCandidates.contains(inputHistoryValue)
+            && !generatedParticleCandidates.contains(inputHistoryValue)
 
         let markedRange = textClient.markedRange()
         let beginsAfterLineBreak = inputBeginsAfterLineBreak(
