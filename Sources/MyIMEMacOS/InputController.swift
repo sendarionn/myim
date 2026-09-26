@@ -1908,20 +1908,20 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool {
-        switch event.keyCode {
-        case 48:
+        switch InputKey(keyCode: event.keyCode) {
+        case .tab:
             guard !currentCandidates.isEmpty else { return true }
             meaningStatusWindow.hide()
             let index = ((selectedCandidateIndex ?? -1) + 1)
                 % currentCandidates.count
             return selectCandidate(index: index, client: sender)
-        case 125:
+        case .rightArrow, .downArrow:
             meaningStatusWindow.hide()
-            return moveCandidate(.down, client: sender)
-        case 126:
+            return moveDisplayedCandidate(.down, client: sender)
+        case .leftArrow, .upArrow:
             meaningStatusWindow.hide()
-            return moveCandidate(.up, client: sender)
-        case 36, 76:
+            return moveDisplayedCandidate(.up, client: sender)
+        case .returnKey:
             guard let selectedCandidateIndex,
                   currentCandidates.indices.contains(selectedCandidateIndex) else {
                 return true
@@ -1942,13 +1942,13 @@ final class InputController: IMKInputController {
                 replacingMarkedText: true
             )
             return true
-        case 53:
+        case .escape:
             restoreMeaningInputAfterSearch(client: sender)
             return true
-        case 51:
+        case .delete:
             restoreMeaningInputAfterSearch(client: sender)
             return true
-        default:
+        case .space, .inputFormFunction, .other:
             return true
         }
     }
@@ -2715,6 +2715,14 @@ final class InputController: IMKInputController {
         guard !inputBuffer.isEmpty else {
             return moveNextInputCandidate(direction, client: sender)
         }
+
+        return moveDisplayedCandidate(direction, client: sender)
+    }
+
+    private func moveDisplayedCandidate(
+        _ direction: CandidateNavigationDirection,
+        client sender: Any
+    ) -> Bool {
 
         guard !currentCandidates.isEmpty else {
             return true
@@ -3580,7 +3588,12 @@ final class InputController: IMKInputController {
                 includeAutomaticKanaCandidates: false
             )
         )
-        replaceCurrentCandidates(with: orderedCandidates)
+        replaceCurrentCandidates(with:
+            SingleLetterDictionaryCandidateFilter.candidates(
+                orderedCandidates,
+                for: conversionReading
+            )
+        )
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil

@@ -69,4 +69,18 @@ struct LinearCandidateNavigatorTests {
             candidateCount: 8
         ) == 7)
     }
+
+    @Test
+    func movesMeaningSearchResultsWithoutACompositionIndex() {
+        #expect(LinearCandidateNavigator.index(
+            from: nil,
+            offset: 1,
+            candidateCount: 4
+        ) == 0)
+        #expect(LinearCandidateNavigator.index(
+            from: nil,
+            offset: -1,
+            candidateCount: 4
+        ) == 3)
+    }
 }
