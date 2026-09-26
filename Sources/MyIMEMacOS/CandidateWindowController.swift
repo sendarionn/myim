@@ -1,7 +1,7 @@
 @preconcurrency import AppKit
 import MyIMECore
 
-enum CandidateNavigationDirection {
+enum CandidateNavigationDirection: Equatable {
     case left
     case right
     case up
@@ -19,6 +19,11 @@ enum PanelShortcutGuideStyle {
 
 enum CandidatePanelItemStyle {
     static let font = NSFont.systemFont(ofSize: NSFont.systemFontSize)
+    static let minimumWidth: CGFloat = 32
+    static let maximumWidth: CGFloat = 240
+    static let maximumPanelWidth: CGFloat = 360
+    static let spacing: CGFloat = 2
+    static let maximumVisibleCount = 4
     static let horizontalPadding: CGFloat = 9
     static let verticalPadding: CGFloat = 9
     static let height = ceil(
@@ -118,11 +123,7 @@ final class CandidateWindowController: NSObject {
         "candidateItem"
     )
     private static let itemHeight = CandidatePanelItemStyle.height
-    private static let minimumItemWidth: CGFloat = 32
-    private static let maximumItemWidth: CGFloat = 240
-    private static let maximumPanelWidth: CGFloat = 360
     private static let maximumRows = 4
-    private static let itemSpacing: CGFloat = 2
     private static let anchorSpacing: CGFloat = 8
     private static let guideSpacing: CGFloat = 4
     private static let minimumGuideWidth: CGFloat = 180
@@ -157,12 +158,12 @@ final class CandidateWindowController: NSObject {
 
         super.init()
 
-        panel.animationBehavior = .none
-        guidePanel.animationBehavior = .none
+        panel.applyInputPanelStyle()
+        guidePanel.applyInputPanelStyle()
         panel.becomesKeyOnlyIfNeeded = true
         guidePanel.becomesKeyOnlyIfNeeded = true
-        layout.minimumInteritemSpacing = Self.itemSpacing
-        layout.minimumLineSpacing = Self.itemSpacing
+        layout.minimumInteritemSpacing = CandidatePanelItemStyle.spacing
+        layout.minimumLineSpacing = CandidatePanelItemStyle.spacing
         layout.scrollDirection = .vertical
         collectionView.collectionViewLayout = layout
         collectionView.dataSource = self
@@ -198,22 +199,10 @@ final class CandidateWindowController: NSObject {
         contentView.wantsLayer = true
         contentView.addSubview(scrollView)
         panel.contentView = contentView
-        panel.backgroundColor = .windowBackgroundColor
-        panel.hasShadow = true
-        panel.hidesOnDeactivate = false
-        panel.level = .popUpMenu
-        panel.isOpaque = true
-        panel.isReleasedWhenClosed = false
 
         let guideContentView = NSView()
         guideContentView.addSubview(guideLabel)
         guidePanel.contentView = guideContentView
-        guidePanel.backgroundColor = .windowBackgroundColor
-        guidePanel.hasShadow = true
-        guidePanel.hidesOnDeactivate = false
-        guidePanel.level = .popUpMenu
-        guidePanel.isOpaque = true
-        guidePanel.isReleasedWhenClosed = false
     }
 
     var frame: NSRect {
@@ -317,9 +306,7 @@ final class CandidateWindowController: NSObject {
         self.candidates = candidates
         let measuredItemSizes = candidates.map { itemSize(for: $0) }
 
-        let screen = NSScreen.screens.first {
-            $0.frame.intersects(anchorFrame)
-        } ?? NSScreen.main
+        let screen = NSScreen.inputScreen(containing: anchorFrame)
         let visibleFrame = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
 
@@ -337,7 +324,7 @@ final class CandidateWindowController: NSObject {
         ))
         guideLabel.isHidden = !hasGuide
         let maximumPanelWidth = min(
-            Self.maximumPanelWidth,
+            CandidatePanelItemStyle.maximumPanelWidth,
             visibleFrame.width
         )
         let measuredGuideWidth = hasGuide
@@ -363,9 +350,9 @@ final class CandidateWindowController: NSObject {
         let panelWidth = min(
             max(
                 measuredItemSizes.map(\.width).max()
-                    ?? Self.minimumItemWidth,
+                    ?? CandidatePanelItemStyle.minimumWidth,
                 minimumPanelText.map { itemSize(for: $0).width }
-                    ?? Self.minimumItemWidth
+                    ?? CandidatePanelItemStyle.minimumWidth
             ),
             maximumPanelWidth
         )
@@ -376,9 +363,10 @@ final class CandidateWindowController: NSObject {
             ? 1
             : min(candidates.count, Self.maximumRows)
         let panelHeight = CGFloat(visibleItemCount) * Self.itemHeight
-            + CGFloat(max(visibleItemCount - 1, 0)) * Self.itemSpacing
+            + CGFloat(max(visibleItemCount - 1, 0))
+                * CandidatePanelItemStyle.spacing
         let reservedPanelHeight = CGFloat(Self.maximumRows) * Self.itemHeight
-            + CGFloat(Self.maximumRows - 1) * Self.itemSpacing
+            + CGFloat(Self.maximumRows - 1) * CandidatePanelItemStyle.spacing
         let guideContentWidth = max(
             guideWidth - PanelShortcutGuideStyle.horizontalPadding * 2,
             1
@@ -551,9 +539,9 @@ final class CandidateWindowController: NSObject {
             width: min(
                 max(
                     textWidth + CandidatePanelItemStyle.horizontalPadding * 2,
-                    Self.minimumItemWidth
+                    CandidatePanelItemStyle.minimumWidth
                 ),
-                Self.maximumItemWidth
+                CandidatePanelItemStyle.maximumWidth
             ),
             height: Self.itemHeight
         )
@@ -601,7 +589,7 @@ final class CandidateWindowController: NSObject {
     }
 
     private func screenContaining(_ frame: NSRect) -> NSScreen? {
-        NSScreen.screens.first { $0.frame.intersects(frame) } ?? NSScreen.main
+        NSScreen.inputScreen(containing: frame)
     }
 }
 
@@ -638,7 +626,7 @@ extension CandidateWindowController: NSCollectionViewDelegateFlowLayout {
     ) -> NSSize {
         guard itemSizes.indices.contains(indexPath.item) else {
             return NSSize(
-                width: Self.minimumItemWidth,
+                width: CandidatePanelItemStyle.minimumWidth,
                 height: Self.itemHeight
             )
         }

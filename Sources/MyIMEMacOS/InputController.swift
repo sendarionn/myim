@@ -127,9 +127,8 @@ final class InputController: IMKInputController {
     private var recentCommittedContext = ""
     private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
-    private var currentCandidates: [String] = []
+    private var candidateSelection = CandidateSelectionState<String>()
     private var longVowelFilterProtectedCandidates = Set<String>()
-    private var selectedCandidateIndex: Int?
     private var unfilteredCandidates: [String]?
     private var candidateFilterConditions: [CandidateFilterCondition] = []
     private var candidateFilterDraft: CandidateFilterDraft?
@@ -139,8 +138,7 @@ final class InputController: IMKInputController {
     private var calendarSessionActive = false
     private var calendarAnchorFrame: NSRect?
     private var calendarReturnApplication: NSRunningApplication?
-    private var fuzzySuggestions: [FuzzySuggestion] = []
-    private var selectedFuzzySuggestionIndex: Int?
+    private var fuzzySelection = CandidateSelectionState<FuzzySuggestion>()
     private var userEntries: [DictionaryEntry]
     private var importedDictionaries: [ImportedDictionary]
     private var importedConversionEngines: [String: ConversionEngine]
@@ -388,83 +386,7 @@ final class InputController: IMKInputController {
         }
 
         if emojiWindow.isVisible {
-            switch event.keyCode {
-            case 48:
-                if !emojiWindow.isSearchConfirmed {
-                    _ = handleTab(event, client: sender)
-                    updateEmojiSearchFromComposition()
-                }
-            case 123:
-                if emojiWindow.canSelectEmoji {
-                    emojiWindow.moveSelection(.left)
-                }
-            case 124:
-                if emojiWindow.canSelectEmoji {
-                    emojiWindow.moveSelection(.right)
-                }
-            case 125:
-                if emojiWindow.canSelectEmoji {
-                    emojiWindow.moveSelection(.down)
-                }
-            case 126:
-                if emojiWindow.canSelectEmoji {
-                    emojiWindow.moveSelection(.up)
-                }
-            case 36, 76:
-                if let emoji = emojiWindow.selectedEmoji {
-                    emojiWindow.recordUsage(emoji)
-                    emojiWindow.hide()
-                    commit(emoji, to: sender, replacingMarkedText: true)
-                    return true
-                }
-                guard emojiWindow.isSearchConfirmed else {
-                    confirmEmojiSearch(client: sender)
-                    return true
-                }
-                return true
-            case 53:
-                clearCompositionForSystemPaste(in: sender)
-                emojiWindow.hide()
-            case 51:
-                if inputBuffer.isEmpty {
-                    emojiWindow.hide()
-                    Self.emojiPanelController = nil
-                    return true
-                }
-                if !emojiWindow.isSearchConfirmed {
-                    _ = deleteBackward(
-                        from: sender,
-                        unit: deletionUnit(for: event)
-                    )
-                    updateEmojiSearchFromComposition()
-                }
-            case 97, 98, 100, 101, 109:
-                if !emojiWindow.isSearchConfirmed {
-                    _ = handleInputFormFunctionKey(
-                        event,
-                        client: sender,
-                        preservesEmojiWindow: true
-                    )
-                    updateEmojiSearchFromComposition()
-                }
-            default:
-                let modifiers = event.modifierFlags.intersection(
-                    [.command, .control, .option]
-                )
-                if !emojiWindow.isSearchConfirmed,
-                   modifiers.isEmpty,
-                   let characters = event.characters,
-                   !characters.isEmpty {
-                    insertIntoInputBuffer(characters)
-                    selectedCandidateIndex = nil
-                    previewWindow.hide()
-                    updateMarkedText(in: sender)
-                    refreshCandidates(client: sender)
-                    updateEmojiSearchFromComposition()
-                }
-                return true
-            }
-            return true
+            return handleEmojiPanelEvent(event, client: sender)
         }
 
         if previewWindow.isInteractionActive {
@@ -592,138 +514,8 @@ final class InputController: IMKInputController {
             return selectFuzzySuggestion(index: 0, client: sender)
         }
 
-        switch event.keyCode {
-        case 48:
-            return handleTab(event, client: sender)
-        case 49:
-            let space = isFullWidthSpaceShortcut(event) ? "　" : " "
-            if meaningInputDraft != nil {
-                return appendCurrentInputToMeaningDraft(
-                    suffix: space,
-                    client: sender
-                )
-            }
-            if beginTranslationFromPrefixIfPossible(
-                separator: Character(space),
-                client: sender
-            ) {
-                return true
-            }
-            if space == " ", inputBuffer.isEmpty,
-               shouldSuppressActivationSpace(event) {
-                activatedAt = nil
-                return true
-            }
-            return isTranslationSessionActive
-                ? handleTranslationSpace(space: space, client: sender)
-                : handleSpace(space: space, client: sender)
-        case 123:
-            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
-                guard selectedNextInputIndex != nil else {
-                    dismissNextInputSuggestions(clearMarkedTextIn: nil)
-                    return false
-                }
-                return moveNextInputCandidate(.left, client: sender)
-            }
-            return selectedCandidateIndex == nil
-                ? moveInputCursor(by: -1, client: sender)
-                : enterFuzzySuggestionsOrConsumeArrow(client: sender)
-        case 124:
-            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
-                guard selectedNextInputIndex != nil else {
-                    dismissNextInputSuggestions(clearMarkedTextIn: nil)
-                    return false
-                }
-                return moveNextInputCandidate(.right, client: sender)
-            }
-            return selectedCandidateIndex == nil
-                ? moveInputCursor(by: 1, client: sender)
-                : enterFuzzySuggestionsOrConsumeArrow(client: sender)
-        case 125:
-            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
-                guard selectedNextInputIndex != nil else {
-                    dismissNextInputSuggestions(clearMarkedTextIn: nil)
-                    return false
-                }
-                return moveNextInputCandidate(.down, client: sender)
-            }
-            return selectedCandidateIndex == nil
-                ? false
-                : moveCandidate(.down, client: sender)
-        case 126:
-            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
-                guard selectedNextInputIndex != nil else {
-                    dismissNextInputSuggestions(clearMarkedTextIn: nil)
-                    return false
-                }
-                return moveNextInputCandidate(.up, client: sender)
-            }
-            return selectedCandidateIndex == nil
-                ? false
-                : moveCandidate(.up, client: sender)
-        case 36, 76:
-            if meaningInputDraft != nil {
-                return submitMeaningSearch(client: sender)
-            }
-            if isTranslationSessionActive {
-                return handleTranslationReturn(client: sender)
-            }
-            if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
-                if let selectedNextInputIndex,
-                   nextInputCandidates.indices.contains(selectedNextInputIndex) {
-                    commitNextInputCandidate(
-                        nextInputCandidates[selectedNextInputIndex],
-                        to: sender
-                    )
-                    return true
-                }
-                dismissNextInputSuggestions(clearMarkedTextIn: sender)
-                return true
-            }
-            if inputBuffer.isEmpty {
-                nextInputPredictionModel.breakSequence()
-                recentCommittedContext = String(
-                    (recentCommittedContext + "\n").suffix(256)
-                )
-                return false
-            }
-            if unfilteredCandidates != nil, currentCandidates.isEmpty {
-                return true
-            }
-            return commitFirstCandidateOrInput(to: sender)
-        case 51:
-            if meaningInputDraft != nil {
-                return deleteBackwardFromMeaningInput(
-                    client: sender,
-                    unit: deletionUnit(for: event)
-                )
-            }
-            if isTranslationSessionActive,
-               inputBuffer.isEmpty,
-               translationDraft == nil {
-                cancelEmptyTranslationSession(client: sender)
-                return true
-            }
-            return deleteBackward(
-                from: sender,
-                unit: deletionUnit(for: event)
-            )
-        case 53:
-            if meaningInputDraft != nil {
-                cancelMeaningInput(client: sender)
-                return true
-            }
-            if isTranslationSessionActive {
-                finishTranslationDraftAsJapanese(client: sender)
-                return true
-            }
-            if unfilteredCandidates != nil {
-                removeLastCandidateFilter(client: sender)
-                return true
-            }
-            return cancelInput(in: sender)
-        default:
-            break
+        if let handled = handleStandardKeyEvent(event, client: sender) {
+            return handled
         }
 
         guard
@@ -769,6 +561,226 @@ final class InputController: IMKInputController {
         previewWindow.hide()
         updateMarkedText(in: sender)
         refreshCandidates(client: sender)
+        return true
+    }
+
+    private func handleStandardKeyEvent(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool? {
+        switch InputKey(keyCode: event.keyCode) {
+        case .tab:
+            return handleTab(event, client: sender)
+        case .space:
+            let space = isFullWidthSpaceShortcut(event) ? "　" : " "
+            if meaningInputDraft != nil {
+                return appendCurrentInputToMeaningDraft(
+                    suffix: space,
+                    client: sender
+                )
+            }
+            if beginTranslationFromPrefixIfPossible(
+                separator: Character(space),
+                client: sender
+            ) {
+                return true
+            }
+            if space == " ", inputBuffer.isEmpty,
+               shouldSuppressActivationSpace(event) {
+                activatedAt = nil
+                return true
+            }
+            return isTranslationSessionActive
+                ? handleTranslationSpace(space: space, client: sender)
+                : handleSpace(space: space, client: sender)
+        case .leftArrow:
+            return handleHorizontalArrow(.left, client: sender)
+        case .rightArrow:
+            return handleHorizontalArrow(.right, client: sender)
+        case .downArrow:
+            return handleVerticalArrow(.down, client: sender)
+        case .upArrow:
+            return handleVerticalArrow(.up, client: sender)
+        case .returnKey:
+            return handleReturnKey(client: sender)
+        case .delete:
+            if meaningInputDraft != nil {
+                return deleteBackwardFromMeaningInput(
+                    client: sender,
+                    unit: deletionUnit(for: event)
+                )
+            }
+            if isTranslationSessionActive,
+               inputBuffer.isEmpty,
+               translationDraft == nil {
+                cancelEmptyTranslationSession(client: sender)
+                return true
+            }
+            return deleteBackward(
+                from: sender,
+                unit: deletionUnit(for: event)
+            )
+        case .escape:
+            if meaningInputDraft != nil {
+                cancelMeaningInput(client: sender)
+                return true
+            }
+            if isTranslationSessionActive {
+                finishTranslationDraftAsJapanese(client: sender)
+                return true
+            }
+            if unfilteredCandidates != nil {
+                removeLastCandidateFilter(client: sender)
+                return true
+            }
+            return cancelInput(in: sender)
+        case .inputFormFunction, .other:
+            return nil
+        }
+    }
+
+    private func handleHorizontalArrow(
+        _ direction: CandidateNavigationDirection,
+        client sender: Any
+    ) -> Bool {
+        if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+            guard selectedNextInputIndex != nil else {
+                dismissNextInputSuggestions(clearMarkedTextIn: nil)
+                return false
+            }
+            return moveNextInputCandidate(direction, client: sender)
+        }
+        let offset = direction == .left ? -1 : 1
+        return selectedCandidateIndex == nil
+            ? moveInputCursor(by: offset, client: sender)
+            : enterFuzzySuggestionsOrConsumeArrow(client: sender)
+    }
+
+    private func handleVerticalArrow(
+        _ direction: CandidateNavigationDirection,
+        client sender: Any
+    ) -> Bool {
+        if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+            guard selectedNextInputIndex != nil else {
+                dismissNextInputSuggestions(clearMarkedTextIn: nil)
+                return false
+            }
+            return moveNextInputCandidate(direction, client: sender)
+        }
+        return selectedCandidateIndex == nil
+            ? false
+            : moveCandidate(direction, client: sender)
+    }
+
+    private func handleReturnKey(client sender: Any) -> Bool {
+        if meaningInputDraft != nil {
+            return submitMeaningSearch(client: sender)
+        }
+        if isTranslationSessionActive {
+            return handleTranslationReturn(client: sender)
+        }
+        if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
+            if let selectedNextInputIndex,
+               nextInputCandidates.indices.contains(selectedNextInputIndex) {
+                commitNextInputCandidate(
+                    nextInputCandidates[selectedNextInputIndex],
+                    to: sender
+                )
+                return true
+            }
+            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+            return true
+        }
+        if inputBuffer.isEmpty {
+            nextInputPredictionModel.breakSequence()
+            recentCommittedContext = String(
+                (recentCommittedContext + "\n").suffix(256)
+            )
+            return false
+        }
+        if unfilteredCandidates != nil, currentCandidates.isEmpty {
+            return true
+        }
+        return commitFirstCandidateOrInput(to: sender)
+    }
+
+    private func handleEmojiPanelEvent(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        switch InputKey(keyCode: event.keyCode) {
+        case .tab:
+            if !emojiWindow.isSearchConfirmed {
+                _ = handleTab(event, client: sender)
+                updateEmojiSearchFromComposition()
+            }
+        case .leftArrow:
+            if emojiWindow.canSelectEmoji {
+                emojiWindow.moveSelection(.left)
+            }
+        case .rightArrow:
+            if emojiWindow.canSelectEmoji {
+                emojiWindow.moveSelection(.right)
+            }
+        case .downArrow:
+            if emojiWindow.canSelectEmoji {
+                emojiWindow.moveSelection(.down)
+            }
+        case .upArrow:
+            if emojiWindow.canSelectEmoji {
+                emojiWindow.moveSelection(.up)
+            }
+        case .returnKey:
+            if let emoji = emojiWindow.selectedEmoji {
+                emojiWindow.recordUsage(emoji)
+                emojiWindow.hide()
+                commit(emoji, to: sender, replacingMarkedText: true)
+                return true
+            }
+            if !emojiWindow.isSearchConfirmed {
+                confirmEmojiSearch(client: sender)
+            }
+        case .escape:
+            clearCompositionForSystemPaste(in: sender)
+            emojiWindow.hide()
+        case .delete:
+            if inputBuffer.isEmpty {
+                emojiWindow.hide()
+                Self.emojiPanelController = nil
+                return true
+            }
+            if !emojiWindow.isSearchConfirmed {
+                _ = deleteBackward(
+                    from: sender,
+                    unit: deletionUnit(for: event)
+                )
+                updateEmojiSearchFromComposition()
+            }
+        case .inputFormFunction:
+            if !emojiWindow.isSearchConfirmed {
+                _ = handleInputFormFunctionKey(
+                    event,
+                    client: sender,
+                    preservesEmojiWindow: true
+                )
+                updateEmojiSearchFromComposition()
+            }
+        case .space, .other:
+            let modifiers = event.modifierFlags.intersection(
+                [.command, .control, .option]
+            )
+            if !emojiWindow.isSearchConfirmed,
+               modifiers.isEmpty,
+               let characters = event.characters,
+               !characters.isEmpty {
+                insertIntoInputBuffer(characters)
+                selectedCandidateIndex = nil
+                previewWindow.hide()
+                updateMarkedText(in: sender)
+                refreshCandidates(client: sender)
+                updateEmojiSearchFromComposition()
+            }
+        }
         return true
     }
 
@@ -5342,11 +5354,9 @@ final class InputController: IMKInputController {
     }
 
     private func clearCandidateState(includingFuzzy: Bool = false) {
-        currentCandidates = []
-        selectedCandidateIndex = nil
+        candidateSelection.reset()
         guard includingFuzzy else { return }
-        fuzzySuggestions = []
-        selectedFuzzySuggestionIndex = nil
+        fuzzySelection.reset()
     }
 
     private func hideConversionPanels() {
@@ -5683,15 +5693,30 @@ final class InputController: IMKInputController {
     }
 
     private var selectedCandidateValue: String? {
-        selectedCandidateIndex
-            .flatMap {
-                currentCandidates.indices.contains($0)
-                    ? currentCandidates[$0]
-                    : nil
-            }
+        candidateSelection.selectedValue
             .map {
                 candidateValueForCommit($0) + conversionSuffix
             }
+    }
+
+    private var currentCandidates: [String] {
+        get { candidateSelection.values }
+        set { candidateSelection.values = newValue }
+    }
+
+    private var selectedCandidateIndex: Int? {
+        get { candidateSelection.selectedIndex }
+        set { candidateSelection.selectedIndex = newValue }
+    }
+
+    private var fuzzySuggestions: [FuzzySuggestion] {
+        get { fuzzySelection.values }
+        set { fuzzySelection.values = newValue }
+    }
+
+    private var selectedFuzzySuggestionIndex: Int? {
+        get { fuzzySelection.selectedIndex }
+        set { fuzzySelection.selectedIndex = newValue }
     }
 
     private var isNextInputPredictionEnabled: Bool {

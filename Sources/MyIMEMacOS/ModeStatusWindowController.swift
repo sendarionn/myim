@@ -29,7 +29,10 @@ final class ModeStatusWindowController: NSObject {
         )
         super.init()
 
-        panel.animationBehavior = .none
+        panel.applyInputPanelStyle(
+            backgroundColor: .clear,
+            isOpaque: false
+        )
         panel.becomesKeyOnlyIfNeeded = true
         label.cell = VerticallyCenteredTextFieldCell(textCell: "")
         label.isBezeled = false
@@ -48,13 +51,7 @@ final class ModeStatusWindowController: NSObject {
         contentView.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
         contentView.addSubview(label)
         panel.contentView = contentView
-        panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.hidesOnDeactivate = false
         panel.ignoresMouseEvents = true
-        panel.isOpaque = false
-        panel.isReleasedWhenClosed = false
-        panel.level = .popUpMenu
     }
 
     func show(title: String, near anchorFrame: NSRect) {
@@ -76,9 +73,7 @@ final class ModeStatusWindowController: NSObject {
         let resolvedAnchor = anchorFrame == .zero
             ? NSRect(origin: NSEvent.mouseLocation, size: .zero)
             : anchorFrame
-        let screen = NSScreen.screens.first {
-            $0.frame.contains(resolvedAnchor.origin)
-        } ?? NSScreen.main
+        let screen = NSScreen.inputScreen(containing: resolvedAnchor)
         let visibleFrame = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         let preferredY = resolvedAnchor.minY

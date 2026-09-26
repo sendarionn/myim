@@ -371,7 +371,7 @@ final class ExternalInformationWindowController: NSObject {
     }
 
     private func visibleFrame(near candidateFrame: NSRect) -> NSRect {
-        let screen = NSScreen.screens.first { $0.frame.intersects(candidateFrame) } ?? NSScreen.main
+        let screen = NSScreen.inputScreen(containing: candidateFrame)
         return screen?.visibleFrame ?? candidateFrame
     }
 

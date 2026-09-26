@@ -20,11 +20,6 @@ final class FuzzySuggestionWindowController {
     private static let spacing: CGFloat = 6
     private static let guideSpacing: CGFloat = 4
     private static let itemHeight = CandidatePanelItemStyle.height
-    private static let minimumItemWidth: CGFloat = 32
-    private static let maximumItemWidth: CGFloat = 240
-    private static let maximumPanelWidth: CGFloat = 360
-    private static let itemSpacing: CGFloat = 2
-    private static let maximumVisibleSuggestionCount = 4
     private let panel: NSPanel
     private let guidePanel: NSPanel
     private let stackView: NSStackView
@@ -56,15 +51,15 @@ final class FuzzySuggestionWindowController {
         )
         stackView = NSStackView()
         guideLabel = NSTextField(labelWithString: "")
-        panel.animationBehavior = .none
-        guidePanel.animationBehavior = .none
+        panel.applyInputPanelStyle()
+        guidePanel.applyInputPanelStyle()
         panel.becomesKeyOnlyIfNeeded = true
         guidePanel.becomesKeyOnlyIfNeeded = true
         stackView.wantsLayer = true
         stackView.layer?.cornerRadius = 0
         stackView.orientation = .vertical
         stackView.alignment = .leading
-        stackView.spacing = Self.itemSpacing
+        stackView.spacing = CandidatePanelItemStyle.spacing
         stackView.edgeInsets = NSEdgeInsets(
             top: 0,
             left: 0,
@@ -72,12 +67,6 @@ final class FuzzySuggestionWindowController {
             right: 0
         )
         panel.contentView = stackView
-        panel.backgroundColor = .windowBackgroundColor
-        panel.hasShadow = true
-        panel.hidesOnDeactivate = false
-        panel.level = .popUpMenu
-        panel.isOpaque = true
-        panel.isReleasedWhenClosed = false
 
         guideLabel.font = PanelShortcutGuideStyle.font
         guideLabel.textColor = PanelShortcutGuideStyle.color
@@ -85,12 +74,6 @@ final class FuzzySuggestionWindowController {
         let guideContentView = NSView()
         guideContentView.addSubview(guideLabel)
         guidePanel.contentView = guideContentView
-        guidePanel.backgroundColor = .windowBackgroundColor
-        guidePanel.hasShadow = true
-        guidePanel.hidesOnDeactivate = false
-        guidePanel.level = .popUpMenu
-        guidePanel.isOpaque = true
-        guidePanel.isReleasedWhenClosed = false
     }
 
     func show(
@@ -105,17 +88,16 @@ final class FuzzySuggestionWindowController {
         stackView.layer?.borderColor = isAccented
             ? NSColor.controlAccentColor.cgColor
             : NSColor.clear.cgColor
-        let screen = NSScreen.screens.first {
-            $0.frame.intersects(anchorFrame)
-        } ?? NSScreen.main
+        let screen = NSScreen.inputScreen(containing: anchorFrame)
         let visibleFrame = screen?.visibleFrame ?? anchorFrame
         let visibleSuggestions = Array(
-            suggestions.prefix(Self.maximumVisibleSuggestionCount)
+            suggestions.prefix(CandidatePanelItemStyle.maximumVisibleCount)
         )
 
         let itemWidths = visibleSuggestions.map(itemWidth)
         let availableWidth = min(
-            Self.maximumPanelWidth - stackView.edgeInsets.left
+            CandidatePanelItemStyle.maximumPanelWidth
+                - stackView.edgeInsets.left
                 - stackView.edgeInsets.right,
             visibleFrame.width
         )
@@ -135,7 +117,10 @@ final class FuzzySuggestionWindowController {
         stackView.layoutSubtreeIfNeeded()
         let fittingSize = stackView.fittingSize
         panel.setContentSize(NSSize(
-            width: min(fittingSize.width, Self.maximumPanelWidth),
+            width: min(
+                fittingSize.width,
+                CandidatePanelItemStyle.maximumPanelWidth
+            ),
             height: fittingSize.height
         ))
 
@@ -163,9 +148,9 @@ final class FuzzySuggestionWindowController {
         return min(
             max(
                 textWidth + CandidatePanelItemStyle.horizontalPadding * 2,
-                Self.minimumItemWidth
+                CandidatePanelItemStyle.minimumWidth
             ),
-            Self.maximumItemWidth
+            CandidatePanelItemStyle.maximumWidth
         )
     }
 
@@ -173,10 +158,12 @@ final class FuzzySuggestionWindowController {
         itemWidths: [CGFloat],
         availableWidth: CGFloat
     ) -> CGFloat {
-        guard !itemWidths.isEmpty else { return Self.minimumItemWidth }
+        guard !itemWidths.isEmpty else {
+            return CandidatePanelItemStyle.minimumWidth
+        }
         return min(
             availableWidth,
-            itemWidths.max() ?? Self.minimumItemWidth
+            itemWidths.max() ?? CandidatePanelItemStyle.minimumWidth
         )
     }
 
@@ -214,9 +201,7 @@ final class FuzzySuggestionWindowController {
         avoidingFrames: [NSRect] = []
     ) {
         guard panel.isVisible else { return }
-        let screen = NSScreen.screens.first {
-            $0.frame.intersects(anchorFrame)
-        } ?? NSScreen.main
+        let screen = NSScreen.inputScreen(containing: anchorFrame)
         positionPanels(
             near: anchorFrame,
             visibleFrame: screen?.visibleFrame ?? anchorFrame,

@@ -194,9 +194,7 @@ final class EmojiWindowController: NSObject {
         let resolvedAnchor = anchor == .zero
             ? NSRect(origin: NSEvent.mouseLocation, size: .zero)
             : anchor
-        let screen = NSScreen.screens.first {
-            $0.frame.contains(resolvedAnchor.origin)
-        } ?? NSScreen.main
+        let screen = NSScreen.inputScreen(containing: resolvedAnchor)
         let visible = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
         presentationAnchor = resolvedAnchor
@@ -402,12 +400,7 @@ final class EmojiWindowController: NSObject {
 
     private func configurePanels() {
         for value in [panel, comparisonPanel] {
-            value.backgroundColor = .windowBackgroundColor
-            value.hasShadow = true
-            value.hidesOnDeactivate = false
-            value.level = .popUpMenu
-            value.isOpaque = true
-            value.isReleasedWhenClosed = false
+            value.applyInputPanelStyle()
         }
         comparisonStack.orientation = .horizontal
         comparisonStack.alignment = .top

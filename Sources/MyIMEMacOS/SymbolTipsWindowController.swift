@@ -19,14 +19,8 @@ final class SymbolTipsWindowController {
             backing: .buffered,
             defer: true
         )
-        panel.animationBehavior = .none
+        panel.applyInputPanelStyle()
         panel.becomesKeyOnlyIfNeeded = true
-        panel.backgroundColor = .windowBackgroundColor
-        panel.hasShadow = true
-        panel.hidesOnDeactivate = false
-        panel.level = .popUpMenu
-        panel.isOpaque = true
-        panel.isReleasedWhenClosed = false
         text.font = .systemFont(ofSize: 12)
         text.maximumNumberOfLines = 3
         text.lineBreakMode = .byWordWrapping
@@ -47,8 +41,7 @@ final class SymbolTipsWindowController {
             tips.unicodeName
         ].joined(separator: "\n")
         resizePanelToFitText()
-        let screen = NSScreen.screens.first { $0.frame.intersects(anchor) }
-            ?? NSScreen.main
+        let screen = NSScreen.inputScreen(containing: anchor)
         let visible = screen?.visibleFrame ?? anchor
         let size = panel.frame.size
         let above = anchor.maxY + Self.spacing
