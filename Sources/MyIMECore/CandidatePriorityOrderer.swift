@@ -61,11 +61,11 @@ public enum CandidatePriorityOrderer {
             ranks: recencyRanks
         ))
         appendUnique(CandidateRecencyOrderer.ordered(
-            kana,
+            secondary.filter { !seen.contains($0) },
             ranks: recencyRanks
         ))
         appendUnique(CandidateRecencyOrderer.ordered(
-            secondary.filter { !seen.contains($0) },
+            kana.filter { !seen.contains($0) },
             ranks: recencyRanks
         ))
         appendUnique(orderedByContext(

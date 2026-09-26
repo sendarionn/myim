@@ -2246,6 +2246,10 @@ final class InputController: IMKInputController {
             return true
         }
         candidateWindow.hide()
+        translationStatusWindow.show(
+            title: "翻訳中",
+            near: inputLocation(for: sender)
+        )
         translationTask = Task { @MainActor [weak self] in
             guard let self else { return }
 #if canImport(Translation)
@@ -2258,6 +2262,7 @@ final class InputController: IMKInputController {
                 guard !Task.isCancelled,
                       self.translationDraft == source else {
                     self.translationTask = nil
+                    self.translationStatusWindow.hide()
                     return
                 }
                 if let translated {
@@ -2282,6 +2287,7 @@ final class InputController: IMKInputController {
             }
 #endif
             self.translationTask = nil
+            self.translationStatusWindow.hide()
             self.showTranslationDraft(client: sender)
             NSSound.beep()
         }

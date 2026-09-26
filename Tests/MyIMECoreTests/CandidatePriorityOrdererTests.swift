@@ -117,4 +117,18 @@ struct CandidatePriorityOrdererTests {
 
         #expect(result == ["再", "際", "歳", "さい", "サイ", "再利用", "最愛"])
     }
+
+    @Test
+    func keepsSecondaryCandidatesAheadOfGeneratedKanaForLongInput() {
+        let result = CandidatePriorityOrderer.ordered(
+            kana: ["こうほを", "コウホヲ"],
+            direct: ["公募を"],
+            secondary: ["候補を"],
+            others: [],
+            recencyRanks: [:],
+            prioritizeKana: false
+        )
+
+        #expect(result == ["公募を", "候補を", "こうほを", "コウホヲ"])
+    }
 }

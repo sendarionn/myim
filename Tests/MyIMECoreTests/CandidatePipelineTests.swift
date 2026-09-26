@@ -174,7 +174,7 @@ struct CandidatePipelineTests {
     }
 
     @Test
-    func keepsDirectCandidateAheadOfRecentParticleComposition() {
+    func keepsDirectCandidateAheadOfParticleAndParticleAheadOfGeneratedKana() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
                 kana: ["こうほを", "コウホヲ"],
@@ -186,7 +186,23 @@ struct CandidatePipelineTests {
             )
         )
 
-        #expect(candidates == ["公募を", "こうほを", "コウホヲ", "候補を"])
+        #expect(candidates == ["公募を", "候補を", "こうほを", "コウホヲ"])
+    }
+
+    @Test
+    func prioritizesParticleCompositionOverGeneratedKana() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["こうほを", "コウホヲ"],
+                direct: [],
+                secondary: ["候補を"],
+                other: [],
+                recencyRanks: [:],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates == ["候補を", "こうほを", "コウホヲ"])
     }
 
     @Test
