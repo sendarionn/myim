@@ -2,6 +2,7 @@ public enum CandidatePriorityOrderer {
     public static func ordered(
         kana: [String],
         direct: [String],
+        secondary: [String] = [],
         others: [String],
         recencyRanks: [String: Int],
         contextualCandidates: [String] = [],
@@ -9,7 +10,9 @@ public enum CandidatePriorityOrderer {
     ) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
-        result.reserveCapacity(kana.count + direct.count + others.count)
+        result.reserveCapacity(
+            kana.count + direct.count + secondary.count + others.count
+        )
 
         func appendUnique(_ candidates: [String]) {
             for candidate in candidates where seen.insert(candidate).inserted {
@@ -43,6 +46,10 @@ public enum CandidatePriorityOrderer {
                 ranks: recencyRanks
             ))
             appendUnique(CandidateRecencyOrderer.ordered(
+                secondary.filter { !seen.contains($0) },
+                ranks: recencyRanks
+            ))
+            appendUnique(CandidateRecencyOrderer.ordered(
                 others.filter { !seen.contains($0) },
                 ranks: recencyRanks
             ))
@@ -55,6 +62,10 @@ public enum CandidatePriorityOrderer {
         ))
         appendUnique(CandidateRecencyOrderer.ordered(
             kana,
+            ranks: recencyRanks
+        ))
+        appendUnique(CandidateRecencyOrderer.ordered(
+            secondary.filter { !seen.contains($0) },
             ranks: recencyRanks
         ))
         appendUnique(orderedByContext(

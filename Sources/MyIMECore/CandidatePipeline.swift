@@ -2,6 +2,7 @@ public struct CandidatePipeline: Sendable {
     public struct Input: Sendable {
         public let kana: [String]
         public let direct: [String]
+        public let secondary: [String]
         public let other: [String]
         public let english: [String]
         public let trailing: [String]
@@ -12,6 +13,7 @@ public struct CandidatePipeline: Sendable {
         public init(
             kana: [String],
             direct: [String],
+            secondary: [String] = [],
             other: [String],
             english: [String] = [],
             trailing: [String] = [],
@@ -21,6 +23,7 @@ public struct CandidatePipeline: Sendable {
         ) {
             self.kana = kana
             self.direct = direct
+            self.secondary = secondary
             self.other = other
             self.english = english
             self.trailing = trailing
@@ -41,6 +44,7 @@ public struct CandidatePipeline: Sendable {
         let candidates = CandidatePriorityOrderer.ordered(
             kana: kana,
             direct: input.direct,
+            secondary: input.secondary,
             others: input.other + input.english,
             recencyRanks: input.recencyRanks,
             contextualCandidates: input.contextualCandidates,

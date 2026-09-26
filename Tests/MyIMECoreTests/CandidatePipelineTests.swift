@@ -172,4 +172,20 @@ struct CandidatePipelineTests {
         #expect(candidates.first == "その")
         #expect(candidates.contains("そのまま"))
     }
+
+    @Test
+    func keepsDirectCandidateAheadOfRecentParticleComposition() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["こうほを", "コウホヲ"],
+                direct: ["公募を"],
+                secondary: ["候補を"],
+                other: [],
+                recencyRanks: ["候補を": 100],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates == ["公募を", "こうほを", "コウホヲ", "候補を"])
+    }
 }

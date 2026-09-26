@@ -3245,7 +3245,9 @@ final class InputController: IMKInputController {
         )
         let learnedExactCandidates = candidateSelectionHistory.candidates(
             for: lookupReadings
-        )
+        ).filter {
+            !nonLearnableGeneratedCandidates.contains($0)
+        }
         var kanaCandidates: [String] = []
         if let hiragana = romajiConverter.hiragana(
             from: conversionReading
@@ -3263,7 +3265,6 @@ final class InputController: IMKInputController {
             + scriptCandidates
             + basicCandidates.exact
             + imeCandidates.exact
-            + particleCandidates
             + inflectionCandidates
         let otherCandidates = userCandidates.prefix
             + candidateSelectionHistory.completions(
@@ -3285,6 +3286,7 @@ final class InputController: IMKInputController {
             from: CandidatePipeline.Input(
                 kana: kanaCandidates,
                 direct: directCandidates,
+                secondary: particleCandidates,
                 other: otherCandidates,
                 english: englishCandidates,
                 trailing: uppercaseCandidates,
