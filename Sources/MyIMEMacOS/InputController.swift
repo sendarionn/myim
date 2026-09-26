@@ -2246,6 +2246,11 @@ final class InputController: IMKInputController {
                 NSSound.beep()
                 return true
             }
+            registration.confirmedCandidate =
+                DictionaryRegistrationTextAccumulator.confirmedText(
+                    confirmed: registration.confirmedCandidate,
+                    pendingPaste: registration.pastedCandidate
+                )
             registration.pastedCandidate = pasted
             tabDictionaryRegistration = registration
             inputBuffer = ""
@@ -2268,6 +2273,12 @@ final class InputController: IMKInputController {
               ) else {
             return true
         }
+        registration.confirmedCandidate =
+            DictionaryRegistrationTextAccumulator.confirmedText(
+                confirmed: registration.confirmedCandidate,
+                pendingPaste: registration.pastedCandidate
+            )
+        registration.pastedCandidate = nil
         if let selectedValue = selectedCandidateValue {
             recordSelectedCandidate()
             registration.confirmedCandidate =
@@ -2277,7 +2288,6 @@ final class InputController: IMKInputController {
             currentCandidates = []
             selectedCandidateIndex = nil
         }
-        registration.pastedCandidate = nil
         tabDictionaryRegistration = registration
         insertIntoInputBuffer(characters)
         selectedCandidateIndex = nil
@@ -2399,7 +2409,8 @@ final class InputController: IMKInputController {
                     registration.outputCandidate.map { "出力: \($0)" }
                 ].compactMap { $0 },
                 selectedIndex: nil,
-                near: inputLocation(for: sender)
+                near: inputLocation(for: sender),
+                isAccented: true
             )
             return
         }
@@ -2411,7 +2422,8 @@ final class InputController: IMKInputController {
                 candidate
             ].compactMap { $0 },
             selectedIndex: nil,
-            near: inputLocation(for: sender)
+            near: inputLocation(for: sender),
+            isAccented: true
         )
     }
 
@@ -4126,14 +4138,17 @@ final class InputController: IMKInputController {
             return
         }
 
-        let isTranslationInput = isTranslationSessionActive
+        let isAccentedInput = CandidatePanelAccentPolicy.isAccented(
+            isTranslationInput: isTranslationSessionActive,
+            isDictionaryRegistration: tabDictionaryRegistration != nil
+        )
         candidateWindow.show(
             candidates: currentCandidates[pageStart..<pageEnd].map {
                 candidateDisplayValue($0)
             },
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: inputLocation(for: sender),
-            isAccented: isTranslationInput,
+            isAccented: isAccentedInput,
             reservedRightWidth: fuzzySuggestionWindow.isVisible
                 ? fuzzySuggestionWindow.panelWidth
                     + fuzzySuggestionWindow.spacingFromCandidatePanel
