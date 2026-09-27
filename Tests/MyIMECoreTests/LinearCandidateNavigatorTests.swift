@@ -71,7 +71,7 @@ struct LinearCandidateNavigatorTests {
     }
 
     @Test
-    func movesMeaningSearchResultsWithoutACompositionIndex() {
+    func movesCandidatesWithoutACompositionIndex() {
         #expect(LinearCandidateNavigator.index(
             from: nil,
             offset: 1,
