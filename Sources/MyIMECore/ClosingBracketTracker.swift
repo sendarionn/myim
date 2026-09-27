@@ -18,11 +18,21 @@ public struct ClosingBracketTracker: Equatable, Sendable {
         value != candidate
     }
 
+    public func shouldBypassCandidateSuppression(_ value: String) -> Bool {
+        value == candidate
+    }
+
     public func shouldRecordCommittedInput(
         _ value: String,
         requested: Bool
     ) -> Bool {
         requested && shouldRecordAsNextInput(value)
+    }
+
+    public func shouldPreserveCandidatesDuringEmptySystemCommit(
+        hasCandidates: Bool
+    ) -> Bool {
+        candidate != nil && hasCandidates
     }
 
     public mutating func consume(_ text: String) {

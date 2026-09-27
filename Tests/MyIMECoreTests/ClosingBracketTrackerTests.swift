@@ -11,6 +11,8 @@ struct ClosingBracketTrackerTests {
         #expect(tracker.shouldRecordAsNextInput("続き"))
         #expect(tracker.shouldRecordCommittedInput("続き", requested: true))
         #expect(!tracker.shouldRecordCommittedInput("続き", requested: false))
+        #expect(tracker.shouldBypassCandidateSuppression("）"))
+        #expect(!tracker.shouldBypassCandidateSuppression("続き"))
     }
 
     @Test func keepsClosingBracketUntilItIsEntered() {
@@ -31,5 +33,22 @@ struct ClosingBracketTrackerTests {
         #expect(tracker.candidate == "」")
         tracker.consume("」")
         #expect(tracker.candidate == "）")
+    }
+
+    @Test func preservesAClosingCandidateAcrossAnEmptySystemCommit() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("[")
+
+        #expect(tracker.shouldPreserveCandidatesDuringEmptySystemCommit(
+            hasCandidates: true
+        ))
+        #expect(!tracker.shouldPreserveCandidatesDuringEmptySystemCommit(
+            hasCandidates: false
+        ))
+
+        tracker.consume("]")
+        #expect(!tracker.shouldPreserveCandidatesDuringEmptySystemCommit(
+            hasCandidates: true
+        ))
     }
 }

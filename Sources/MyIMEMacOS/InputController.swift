@@ -214,6 +214,7 @@ final class InputController: IMKInputController {
     private var globalLifecycleGeneration: UInt?
     private var inputClientBundleIdentifier: String?
     private var transientCompositionGuard = TransientCompositionGuard()
+    private var isInsertingCommittedText = false
 
     static func handleGlobalEmojiShortcut() {
         guard let controller = activeController,
@@ -1216,6 +1217,12 @@ final class InputController: IMKInputController {
         guard let sender else {
             return
         }
+        guard !isInsertingCommittedText else {
+            Self.lifecycleLogger.notice(
+                "suppressed reentrant system commit during insertText"
+            )
+            return
+        }
 
         if transientCompositionGuard.consumeSystemCommitSuppression(
             now: ProcessInfo.processInfo.systemUptime,
@@ -1237,6 +1244,15 @@ final class InputController: IMKInputController {
             return
         }
         if inputBuffer.isEmpty {
+            if closingBracketTracker
+                .shouldPreserveCandidatesDuringEmptySystemCommit(
+                    hasCandidates: !nextInputCandidates.isEmpty
+                ) {
+                Self.lifecycleLogger.notice(
+                    "preserved structural next-input candidate after empty system commit"
+                )
+                return
+            }
             dismissNextInputSuggestions(clearMarkedTextIn: sender)
             return
         }
@@ -4597,6 +4613,12 @@ final class InputController: IMKInputController {
             return
         }
         let candidate = nextInputCandidates[selectedNextInputIndex]
+        guard !closingBracketTracker.shouldBypassCandidateSuppression(
+            candidate
+        ) else {
+            NSSound.beep()
+            return
+        }
         nextInputPredictionModel.suppress(candidate, after: context)
         do {
             try nextInputPredictionWriter.writeImmediately(
@@ -4657,12 +4679,14 @@ final class InputController: IMKInputController {
         )
         let replacementRange = CandidateCommitReplacementRange.resolve(
             markedRange: markedRange,
-            replacingMarkedText: replacingMarkedText
+            hasActiveComposition: replacingMarkedText || !inputBuffer.isEmpty
         )
+        isInsertingCommittedText = true
         textClient.insertText(
             value,
             replacementRange: replacementRange
         )
+        isInsertingCommittedText = false
         closingBracketTracker.consume(value)
         recentCommittedContext = String(
             (recentCommittedContext + value).suffix(256)
@@ -4886,7 +4910,8 @@ final class InputController: IMKInputController {
             !nextInputPredictionModel.isSuppressed($0, after: value)
         }
         let visiblePreferredCandidates = preferredCandidates.filter {
-            !nextInputPredictionModel.isSuppressed($0, after: value)
+            closingBracketTracker.shouldBypassCandidateSuppression($0)
+                || !nextInputPredictionModel.isSuppressed($0, after: value)
         }
         nextInputCandidates = NextInputCandidateMerger.merged(
             preferred: visiblePreferredCandidates,

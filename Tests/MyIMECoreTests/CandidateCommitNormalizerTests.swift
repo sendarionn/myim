@@ -16,16 +16,28 @@ struct CandidateCommitNormalizerTests {
     }
 
     @Test
-    func replacesTheExistingMarkedRangeWhenCommittingASelectedCandidate() {
+    func replacesTheExistingMarkedRangeForAnActiveComposition() {
         let markedRange = NSRange(location: 12, length: 1)
 
         #expect(CandidateCommitReplacementRange.resolve(
             markedRange: markedRange,
-            replacingMarkedText: true
+            hasActiveComposition: true
         ) == markedRange)
         #expect(CandidateCommitReplacementRange.resolve(
             markedRange: markedRange,
-            replacingMarkedText: false
+            hasActiveComposition: false
+        ).location == NSNotFound)
+    }
+
+    @Test
+    func doesNotUseAnInvalidOrEmptyMarkedRange() {
+        #expect(CandidateCommitReplacementRange.resolve(
+            markedRange: NSRange(location: NSNotFound, length: 0),
+            hasActiveComposition: true
+        ).location == NSNotFound)
+        #expect(CandidateCommitReplacementRange.resolve(
+            markedRange: NSRange(location: 12, length: 0),
+            hasActiveComposition: true
         ).location == NSNotFound)
     }
 }

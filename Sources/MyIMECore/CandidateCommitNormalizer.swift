@@ -14,9 +14,9 @@ public enum CandidateCommitNormalizer {
 public enum CandidateCommitReplacementRange {
     public static func resolve(
         markedRange: NSRange,
-        replacingMarkedText: Bool
+        hasActiveComposition: Bool
     ) -> NSRange {
-        guard replacingMarkedText,
+        guard hasActiveComposition,
               markedRange.location != NSNotFound,
               markedRange.length > 0 else {
             return NSRange(location: NSNotFound, length: NSNotFound)
