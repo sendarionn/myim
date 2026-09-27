@@ -78,7 +78,7 @@ enum SettingsWindowBuilder {
         let wikipediaSuggestions: Bool
         let googleJapaneseInput: Bool
         let appleTranslation: Bool
-        let defaultTranslationLanguageIdentifier: String
+        let translationLanguageIdentifiers: Set<String>
         let nextInputPrediction: Bool
         let fuzzySuggestions: Bool
         let dateTimeCandidates: Bool
@@ -93,7 +93,7 @@ enum SettingsWindowBuilder {
         let toggleWikipediaSuggestions: Selector
         let toggleGoogleJapaneseInput: Selector
         let toggleAppleTranslation: Selector
-        let selectDefaultTranslationLanguage: Selector
+        let toggleTranslationLanguage: Selector
         let toggleNextInputPrediction: Selector
         let toggleFuzzySuggestions: Selector
         let toggleDateTimeCandidates: Selector
@@ -144,14 +144,17 @@ enum SettingsWindowBuilder {
             ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
             ("Wikipediaを辞書として利用", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
             ("Google CGI APIの変換候補を使用", actions.toggleGoogleJapaneseInput, states.googleJapaneseInput),
-            ("日本語入力から英語の変換候補を取得", actions.toggleAppleTranslation, states.appleTranslation),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)
-        addTranslationLanguagePicker(
-            selectedIdentifier: states.defaultTranslationLanguageIdentifier,
-            action: actions.selectDefaultTranslationLanguage,
+        addSection("翻訳候補", to: stack)
+        addCheckboxes([
+            ("翻訳候補を生成", actions.toggleAppleTranslation, states.appleTranslation)
+        ], target: target, to: stack)
+        addTranslationLanguageCheckboxes(
+            selectedIdentifiers: states.translationLanguageIdentifiers,
+            action: actions.toggleTranslationLanguage,
             target: target,
             to: stack
         )
@@ -199,8 +202,14 @@ enum SettingsWindowBuilder {
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
+        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 1)
+        stack.layoutSubtreeIfNeeded()
+        stack.frame.size = NSSize(
+            width: 520,
+            height: max(stack.fittingSize.height, 850)
+        )
+        stack.autoresizingMask = [.width]
         scrollView.documentView = stack
-        stack.frame = NSRect(x: 0, y: 0, width: 520, height: 850)
         panel.contentView = scrollView
         panel.layoutIfNeeded()
         scrollView.contentView.scroll(to: .zero)
@@ -242,37 +251,34 @@ enum SettingsWindowBuilder {
         }
     }
 
-    private static func addTranslationLanguagePicker(
-        selectedIdentifier: String,
+    private static func addTranslationLanguageCheckboxes(
+        selectedIdentifiers: Set<String>,
         action: Selector,
         target: AnyObject,
         to stack: NSStackView
     ) {
-        let row = NSStackView()
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 12
-        row.addArrangedSubview(NSTextField(
-            labelWithString: "デフォルトの翻訳先"
-        ))
-        let popup = NSPopUpButton()
-        popup.target = target
-        popup.action = action
+        let popup = NSPopUpButton(frame: .zero, pullsDown: true)
+        let summary = NSMenuItem(
+            title: "翻訳先言語（\(selectedIdentifiers.count)）",
+            action: nil,
+            keyEquivalent: ""
+        )
+        popup.menu?.addItem(summary)
+        popup.menu?.addItem(.separator())
         for language in TranslationTargetLanguage.available {
             let item = NSMenuItem(
                 title: language.name,
-                action: nil,
+                action: action,
                 keyEquivalent: ""
             )
+            item.target = target
             item.representedObject = language.identifier
+            item.state = selectedIdentifiers.contains(language.identifier)
+                ? .on
+                : .off
             popup.menu?.addItem(item)
         }
-        if let index = popup.itemArray.firstIndex(where: {
-            $0.representedObject as? String == selectedIdentifier
-        }) {
-            popup.selectItem(at: index)
-        }
-        row.addArrangedSubview(popup)
-        stack.addArrangedSubview(row)
+        stack.addArrangedSubview(popup)
     }
+
 }

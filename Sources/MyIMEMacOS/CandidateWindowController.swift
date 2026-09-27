@@ -224,6 +224,16 @@ final class CandidateWindowController: NSObject {
             : panel.frame
     }
 
+    func rowFrame(at index: Int) -> NSRect? {
+        guard candidates.indices.contains(index) else { return nil }
+        collectionView.layoutSubtreeIfNeeded()
+        guard let item = collectionView.item(
+            at: IndexPath(item: index, section: 0)
+        ) else { return nil }
+        let windowFrame = item.view.convert(item.view.bounds, to: nil)
+        return panel.convertToScreen(windowFrame)
+    }
+
     /// 右隣のパネルが画面内へ収まるよう、候補パネル一式を左へ移動する
     func makeRoomOnRight(width: CGFloat, spacing: CGFloat) {
         guard panel.isVisible,
@@ -287,6 +297,36 @@ final class CandidateWindowController: NSObject {
                 y: guidePanel.frame.minY + deltaY
             ))
         }
+    }
+
+    func placeLeft(of anchorFrame: NSRect, spacing: CGFloat = 8) {
+        placeOutside(anchorFrame, onLeft: true, spacing: spacing)
+    }
+
+    func placeRight(of anchorFrame: NSRect, spacing: CGFloat = 8) {
+        placeOutside(anchorFrame, onLeft: false, spacing: spacing)
+    }
+
+    private func placeOutside(
+        _ anchorFrame: NSRect,
+        onLeft: Bool,
+        spacing: CGFloat
+    ) {
+        let visibleFrame = screenContaining(anchorFrame)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        let requestedX = onLeft
+            ? anchorFrame.minX - spacing - panel.frame.width
+            : anchorFrame.maxX + spacing
+        let panelX = min(
+            max(requestedX, visibleFrame.minX),
+            visibleFrame.maxX - panel.frame.width
+        )
+        let panelY = min(
+            max(anchorFrame.maxY - panel.frame.height, visibleFrame.minY),
+            visibleFrame.maxY - panel.frame.height
+        )
+        panel.setFrameOrigin(NSPoint(x: panelX, y: panelY))
+        guidePanel.orderOut(nil)
     }
 
     func show(

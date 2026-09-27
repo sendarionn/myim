@@ -4,15 +4,18 @@ struct FuzzySuggestion: Equatable {
     let candidate: String
     let reading: String
     let distance: Int
+    let isLearnable: Bool
 
     init(
         candidate: String,
         reading: String,
-        distance: Int
+        distance: Int,
+        isLearnable: Bool = true
     ) {
         self.candidate = candidate
         self.reading = reading
         self.distance = distance
+        self.isLearnable = isLearnable
     }
 }
 
@@ -35,6 +38,16 @@ final class FuzzySuggestionWindowController {
     var isVisible: Bool { panel.isVisible }
     var panelWidth: CGFloat { panel.frame.width }
     var spacingFromCandidatePanel: CGFloat { Self.spacing }
+
+    func rowFrame(at index: Int) -> NSRect? {
+        guard stackView.arrangedSubviews.indices.contains(index) else {
+            return nil
+        }
+        stackView.layoutSubtreeIfNeeded()
+        let row = stackView.arrangedSubviews[index]
+        let windowFrame = row.convert(row.bounds, to: nil)
+        return panel.convertToScreen(windowFrame)
+    }
 
     init() {
         panel = PassiveInputPanel(

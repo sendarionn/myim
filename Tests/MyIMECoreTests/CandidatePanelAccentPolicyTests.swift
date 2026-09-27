@@ -6,7 +6,6 @@ struct CandidatePanelAccentPolicyTests {
     @Test
     func accentsDictionaryRegistrationCandidates() {
         #expect(CandidatePanelAccentPolicy.isAccented(
-            isTranslationInput: false,
             isDictionaryRegistration: true
         ))
     }
@@ -14,7 +13,6 @@ struct CandidatePanelAccentPolicyTests {
     @Test
     func leavesOrdinaryCandidatesUnaccented() {
         #expect(!CandidatePanelAccentPolicy.isAccented(
-            isTranslationInput: false,
             isDictionaryRegistration: false
         ))
     }

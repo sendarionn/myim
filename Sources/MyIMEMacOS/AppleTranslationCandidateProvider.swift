@@ -5,9 +5,7 @@ import SwiftUI
 import Translation
 
 private final class TranslationHostPanel: NSPanel {
-    var permitsKeyWindow = false
-
-    override var canBecomeKey: Bool { permitsKeyWindow }
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 }
 
@@ -28,26 +26,13 @@ final class AppleTranslationCandidateProvider {
         )
         panel.animationBehavior = .none
         panel.contentViewController = host
-        panel.title = "翻訳言語を準備"
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
     }
 
-    func translateJapaneseToEnglish(
-        _ text: String,
-        allowsPreparationUI: Bool = true
-    ) async -> String? {
-        await translateJapanese(
-            text,
-            targetIdentifier: "en",
-            allowsPreparationUI: allowsPreparationUI
-        )
-    }
-
     func translateJapanese(
         _ text: String,
-        targetIdentifier: String,
-        allowsPreparationUI: Bool = true
+        targetIdentifier: String
     ) async -> String? {
         let sourceLanguage = Locale.Language(identifier: "ja")
         let targetLanguage = Locale.Language(identifier: targetIdentifier)
@@ -57,7 +42,7 @@ final class AppleTranslationCandidateProvider {
             to: targetLanguage
         )
         guard status != .unsupported else { return nil }
-        guard status != .supported || allowsPreparationUI else { return nil }
+        guard status != .supported else { return nil }
 
         if status == .installed {
             if #available(macOS 26.0, *) {
@@ -74,7 +59,6 @@ final class AppleTranslationCandidateProvider {
             }
         }
 
-        let requiresPreparation = status == .supported
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 finishPendingTranslation(with: nil)
@@ -85,24 +69,14 @@ final class AppleTranslationCandidateProvider {
                     AppleTranslationRequestView(
                         text: text,
                         sourceLanguage: sourceLanguage,
-                        targetLanguage: targetLanguage,
-                        showsPreparation: requiresPreparation
+                        targetLanguage: targetLanguage
                     ) { [weak self] result in
                         self?.finishPendingTranslation(with: result)
                     }
                 )
-                if requiresPreparation {
-                    panel.permitsKeyWindow = true
-                    panel.alphaValue = 1
-                    panel.ignoresMouseEvents = false
-                    panel.center()
-                    panel.makeKeyAndOrderFront(nil)
-                } else {
-                    panel.permitsKeyWindow = false
-                    panel.alphaValue = 0
-                    panel.ignoresMouseEvents = true
-                    panel.orderFrontRegardless()
-                }
+                panel.alphaValue = 0
+                panel.ignoresMouseEvents = true
+                panel.orderFrontRegardless()
             }
         } onCancel: {
             Task { @MainActor [weak self] in
@@ -113,7 +87,6 @@ final class AppleTranslationCandidateProvider {
 
     private func finishPendingTranslation(with result: String?) {
         panel.orderOut(nil)
-        panel.permitsKeyWindow = false
         panel.alphaValue = 0
         panel.ignoresMouseEvents = true
         panel.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
@@ -128,19 +101,11 @@ private struct AppleTranslationRequestView: View {
     let text: String
     let sourceLanguage: Locale.Language
     let targetLanguage: Locale.Language
-    let showsPreparation: Bool
     let completion: (String?) -> Void
     @State private var completed = false
 
     var body: some View {
-        Group {
-            if showsPreparation {
-                Text("翻訳言語データを準備しています")
-                    .padding()
-            } else {
-                EmptyView()
-            }
-        }
+        EmptyView()
             .translationTask(
                 source: sourceLanguage,
                 target: targetLanguage

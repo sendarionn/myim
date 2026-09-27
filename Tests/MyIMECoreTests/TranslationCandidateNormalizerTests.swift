@@ -3,6 +3,13 @@ import Testing
 
 struct TranslationCandidateNormalizerTests {
     @Test
+    func extractsMultipleAlternativesWhenTheProviderReturnsThem() {
+        #expect(TranslationCandidateNormalizer.wordCandidates(
+            from: "love / affection; fondness\nlove"
+        ) == ["love", "affection", "fondness"])
+    }
+
+    @Test
     func removesLeadingEnglishArticles() {
         #expect(TranslationCandidateNormalizer.wordCandidate(from: "a book") == "book")
         #expect(TranslationCandidateNormalizer.wordCandidate(from: "An apple") == "apple")
