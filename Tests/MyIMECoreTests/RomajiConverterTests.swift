@@ -144,6 +144,17 @@ struct RomajiConverterTests {
     }
 
     @Test
+    func preservesLiteralInputCandidateContainingHyphen() {
+        #expect(
+            LongVowelNotationCandidateFilter.candidates(
+                ["Wi-Fi", "ワイファイ"],
+                for: "Wi-Fi",
+                preserving: ["Wi-Fi"]
+            ) == ["Wi-Fi"]
+        )
+    }
+
+    @Test
     func expandsTypedLongVowelsForDictionaryLookup() {
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "re-beru")

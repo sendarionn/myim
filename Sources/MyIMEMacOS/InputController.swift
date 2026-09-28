@@ -182,6 +182,7 @@ final class InputController: IMKInputController {
     private var nextInputCandidates: [String] = []
     private var nextInputContext: String?
     private var generatedParticleCandidates = Set<String>()
+    private var generatedLiteralInputCandidates = Set<String>()
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
     private var nextInputExtensionGeneration: UInt = 0
@@ -3060,6 +3061,7 @@ final class InputController: IMKInputController {
         }
         reloadUserDictionaryFromDiskIfNeeded()
         generatedParticleCandidates = []
+        generatedLiteralInputCandidates = []
         longVowelFilterProtectedCandidates = []
         if !Self.diagnosticConfiguration.minimalMode {
             updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
@@ -3224,6 +3226,15 @@ final class InputController: IMKInputController {
             },
             readings: lookupReadings
         )
+        let exactDictionaryCandidates = userCandidates.exact
+            + dictionarySymbolCandidates.exact
+            + basicCandidates.exact
+            + imeCandidates.exact
+        let literalInputCandidates = LiteralInputCandidatePolicy.candidate(
+            input: inputBuffer,
+            exactDictionaryCandidates: exactDictionaryCandidates
+        ).map { [$0] } ?? []
+        generatedLiteralInputCandidates = Set(literalInputCandidates)
         let learnedExactCandidates = candidateSelectionHistory.candidates(
             for: lookupReadings
         ).filter {
@@ -3241,6 +3252,7 @@ final class InputController: IMKInputController {
         }
         let directCandidates = userCandidates.exact
             + learnedExactCandidates
+            + literalInputCandidates
             + dateTimeCandidates
             + numericPrefixCandidates
             + scriptCandidates
@@ -3264,8 +3276,10 @@ final class InputController: IMKInputController {
             )
             : []
         longVowelFilterProtectedCandidates = Set(
-            userCandidates.exact + dictionarySymbolCandidates.exact
+            userCandidates.exact + userCandidates.prefix
+                + dictionarySymbolCandidates.exact
                 + basicCandidates.exact + imeCandidates.exact
+                + literalInputCandidates
         )
         let orderedCandidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
@@ -4538,6 +4552,21 @@ final class InputController: IMKInputController {
         ) {
             recordCandidateSelection(expression, reading: expression)
         } else {
+            if Self.diagnosticConfiguration.enables(.learning),
+               generatedLiteralInputCandidates.contains(candidate),
+               !inputBuffer.isEmpty {
+                do {
+                    try saveUserDictionaryEntry(
+                        reading: inputBuffer,
+                        candidate: candidate
+                    )
+                } catch {
+                    NSLog(
+                        "直接入力候補のユーザー辞書登録に失敗: %@",
+                        error.localizedDescription
+                    )
+                }
+            }
             recordCandidateSelection(candidate)
         }
     }
