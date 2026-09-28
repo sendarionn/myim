@@ -85,4 +85,35 @@ struct InputLifecycleGenerationTrackerTests {
             globalGeneration: anonymousGeneration
         ))
     }
+
+    @Test
+    func staleControllerCloseIsRejectedAfterReplacementActivation() {
+        var tracker = InputLifecycleGenerationTracker()
+        let oldApplicationGeneration = tracker.recordActivation(
+            for: "com.microsoft.VSCode"
+        )
+        let oldGlobalGeneration = tracker.globalGeneration
+        _ = tracker.recordActivation(for: "com.microsoft.VSCode")
+
+        #expect(tracker.shouldRetireController(
+            application: "com.microsoft.VSCode",
+            applicationGeneration: oldApplicationGeneration,
+            globalGeneration: oldGlobalGeneration
+        ))
+    }
+
+    @Test
+    func currentControllerCloseRemainsLegitimate() {
+        var tracker = InputLifecycleGenerationTracker()
+        let applicationGeneration = tracker.recordActivation(
+            for: "com.apple.TextEdit"
+        )
+        let globalGeneration = tracker.globalGeneration
+
+        #expect(!tracker.shouldRetireController(
+            application: "com.apple.TextEdit",
+            applicationGeneration: applicationGeneration,
+            globalGeneration: globalGeneration
+        ))
+    }
 }

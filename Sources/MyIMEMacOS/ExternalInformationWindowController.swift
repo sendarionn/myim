@@ -19,6 +19,8 @@ final class ExternalInformationWindowController: NSObject {
         let definitions: [SystemDictionaryDefinition]
         let definitionsPending: Bool
         let showExternalInformation: Bool
+        let presentsDefinitionPanel: Bool
+        let presentsExternalInformationPanel: Bool
         let candidateFrame: NSRect
     }
 
@@ -42,6 +44,7 @@ final class ExternalInformationWindowController: NSObject {
     private(set) var isInteractionActive = false
     var onInteractionBegan: (() -> Void)?
     var onInteractionEnded: (() -> Void)?
+    var onDiagnosticEvent: ((String) -> Void)?
 
     override init() {
         definitionTextView = NSTextView(frame: .zero)
@@ -75,6 +78,8 @@ final class ExternalInformationWindowController: NSObject {
         definitions: [SystemDictionaryDefinition],
         definitionsPending: Bool,
         showExternalInformation: Bool,
+        presentsDefinitionPanel: Bool = true,
+        presentsExternalInformationPanel: Bool = true,
         beside candidateFrame: NSRect
     ) -> UUID {
         let currentRequestID = UUID()
@@ -87,6 +92,9 @@ final class ExternalInformationWindowController: NSObject {
                 definitions: definitions,
                 definitionsPending: definitionsPending,
                 showExternalInformation: showExternalInformation,
+                presentsDefinitionPanel: presentsDefinitionPanel,
+                presentsExternalInformationPanel:
+                    presentsExternalInformationPanel,
                 candidateFrame: candidateFrame
             )
             return currentRequestID
@@ -102,6 +110,9 @@ final class ExternalInformationWindowController: NSObject {
             definitions: definitions,
             definitionsPending: definitionsPending,
             showExternalInformation: showExternalInformation,
+            presentsDefinitionPanel: presentsDefinitionPanel,
+            presentsExternalInformationPanel:
+                presentsExternalInformationPanel,
             beside: candidateFrame
         )
         return currentRequestID
@@ -114,6 +125,8 @@ final class ExternalInformationWindowController: NSObject {
         definitions: [SystemDictionaryDefinition],
         definitionsPending: Bool,
         showExternalInformation: Bool,
+        presentsDefinitionPanel: Bool,
+        presentsExternalInformationPanel: Bool,
         beside candidateFrame: NSRect
     ) {
         displayTask?.cancel()
@@ -139,6 +152,7 @@ final class ExternalInformationWindowController: NSObject {
                     title: panelTitle,
                     isVisible: informationPanelIsVisible
                 ))
+                onDiagnosticEvent?("externalLookup.complete")
                 displayedURL = url
                 displayedPanelTitle = panelTitle
             }
@@ -147,10 +161,11 @@ final class ExternalInformationWindowController: NSObject {
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled, let self,
                   requestID == currentRequestID else { return }
-            if !definitions.isEmpty {
+            if presentsDefinitionPanel, !definitions.isEmpty {
                 positionDefinitionPanel(near: candidateFrame)
                 if !definitionPanel.isVisible {
                     definitionPanel.orderFrontRegardless()
+                    onDiagnosticEvent?("dictionaryPanel.show")
                 }
             } else if definitionsPending {
                 if definitionPanel.isVisible {
@@ -159,7 +174,9 @@ final class ExternalInformationWindowController: NSObject {
             } else {
                 definitionPanel.orderOut(nil)
             }
-            guard showExternalInformation, let url else {
+            guard showExternalInformation,
+                  presentsExternalInformationPanel,
+                  let url else {
                 externalBrowser.hide()
                 informationPanelIsVisible = false
                 return
@@ -168,6 +185,7 @@ final class ExternalInformationWindowController: NSObject {
             externalBrowser.send(browserCommand(url: url, title: panelTitle, isVisible: true))
             displayedPanelTitle = panelTitle
             informationPanelIsVisible = true
+            onDiagnosticEvent?("externalPanel.show")
         }
     }
 
@@ -188,6 +206,12 @@ final class ExternalInformationWindowController: NSObject {
     }
 
     func hide() {
+        if definitionPanel.isVisible {
+            onDiagnosticEvent?("dictionaryPanel.hide")
+        }
+        if informationPanelIsVisible {
+            onDiagnosticEvent?("externalPanel.hide")
+        }
         displayTask?.cancel()
         displayTask = nil
         navigationTask?.cancel()
@@ -203,9 +227,11 @@ final class ExternalInformationWindowController: NSObject {
     func showDefinitions(
         _ definitions: [SystemDictionaryDefinition],
         beside candidateFrame: NSRect,
-        requestID currentRequestID: UUID
+        requestID currentRequestID: UUID,
+        presentsPanel: Bool = true
     ) {
         guard requestID == currentRequestID else { return }
+        guard presentsPanel else { return }
         guard !definitions.isEmpty else {
             definitionPanel.orderOut(nil)
             return
@@ -217,6 +243,7 @@ final class ExternalInformationWindowController: NSObject {
         positionDefinitionPanel(near: candidateFrame)
         if !definitionPanel.isVisible {
             definitionPanel.orderFrontRegardless()
+            onDiagnosticEvent?("dictionaryPanel.show")
         }
         if informationPanelIsVisible, let displayedURL {
             positionInformationPanel(near: candidateFrame)
@@ -231,6 +258,7 @@ final class ExternalInformationWindowController: NSObject {
     private func beginInteraction() {
         guard !isInteractionActive else { return }
         isInteractionActive = true
+        onDiagnosticEvent?("externalPanel.interaction.begin")
         displayTask?.cancel()
         navigationTask?.cancel()
         onInteractionBegan?()
@@ -239,6 +267,7 @@ final class ExternalInformationWindowController: NSObject {
     private func endInteraction() {
         guard isInteractionActive else { return }
         isInteractionActive = false
+        onDiagnosticEvent?("externalPanel.interaction.end")
         onInteractionEnded?()
         guard let pendingPresentation else { return }
         self.pendingPresentation = nil
@@ -249,6 +278,10 @@ final class ExternalInformationWindowController: NSObject {
             definitions: pendingPresentation.definitions,
             definitionsPending: pendingPresentation.definitionsPending,
             showExternalInformation: pendingPresentation.showExternalInformation,
+            presentsDefinitionPanel:
+                pendingPresentation.presentsDefinitionPanel,
+            presentsExternalInformationPanel:
+                pendingPresentation.presentsExternalInformationPanel,
             beside: pendingPresentation.candidateFrame
         )
     }

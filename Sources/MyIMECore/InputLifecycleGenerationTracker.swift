@@ -41,4 +41,21 @@ public struct InputLifecycleGenerationTracker: Sendable {
     public func shouldRetireController(globalGeneration: UInt) -> Bool {
         self.globalGeneration != globalGeneration
     }
+
+    public func shouldRetireController(
+        application: String?,
+        applicationGeneration: UInt?,
+        globalGeneration: UInt
+    ) -> Bool {
+        if self.globalGeneration != globalGeneration {
+            return true
+        }
+        guard let application, let applicationGeneration else {
+            return false
+        }
+        return !isCurrent(
+            application: application,
+            generation: applicationGeneration
+        )
+    }
 }

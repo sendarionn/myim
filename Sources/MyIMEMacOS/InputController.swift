@@ -9,6 +9,9 @@ final class InputController: IMKInputController {
         subsystem: "com.sendarionn.myim",
         category: "input-lifecycle"
     )
+    private static let diagnosticConfiguration = InputDiagnosticConfiguration(
+        environment: ProcessInfo.processInfo.environment
+    )
     private static let transientDeactivationDelay: TimeInterval = 0.75
     private static let auxiliaryApplicationBundleIdentifiers: Set<String> = [
         "io.github.sendarionn.inputmethod.myime",
@@ -216,6 +219,9 @@ final class InputController: IMKInputController {
     private var transientCompositionGuard = TransientCompositionGuard()
     private var isInsertingCommittedText = false
     private var lastValidInputLocation: NSRect?
+    private let controllerID = String(UUID().uuidString.prefix(8))
+    private var inputRevision: UInt = 0
+    private var revisionInputSnapshot = ""
 
     static func handleGlobalEmojiShortcut() {
         guard let controller = activeController,
@@ -346,12 +352,34 @@ final class InputController: IMKInputController {
             DictionaryContinuationCandidateGenerator(entries: bundledEntries)
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
+        previewWindow.onInteractionBegan = { [weak self] in
+            self?.trace(
+                "externalPanel.interaction",
+                sender: self?.client(),
+                detail: "phase=began"
+            )
+        }
+        previewWindow.onInteractionEnded = { [weak self] in
+            self?.trace(
+                "externalPanel.interaction",
+                sender: self?.client(),
+                detail: "phase=ended"
+            )
+        }
+        previewWindow.onDiagnosticEvent = { [weak self] event in
+            self?.trace(event, sender: self?.client())
+        }
+        trace("InputController.created", sender: inputClient)
 
         basicDictionaryStatus = bundledEntries.isEmpty
             ? "読込失敗"
             : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(indexedMozcEngine.readingCount)input）"
         rebuildFuzzyConversionEngine()
         updateBasicDictionaryIfNeeded(nil)
+    }
+
+    deinit {
+        trace("InputController.deinit", sender: nil)
     }
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
@@ -362,6 +390,11 @@ final class InputController: IMKInputController {
         guard event.type == .keyDown else {
             return false
         }
+        trace(
+            "keyDown",
+            sender: sender,
+            detail: "keyCode=\(event.keyCode) characters=\(event.characters ?? "")"
+        )
 
         if event.keyCode == 14 {
             let modifiers = event.modifierFlags
@@ -1215,6 +1248,7 @@ final class InputController: IMKInputController {
     }
 
     override func commitComposition(_ sender: Any!) {
+        trace("commitComposition.request", sender: sender)
         guard let sender else {
             return
         }
@@ -1258,7 +1292,13 @@ final class InputController: IMKInputController {
             return
         }
 
+        trace("commitComposition.execute", sender: sender)
         commit(inputBuffer, to: sender)
+    }
+
+    override func cancelComposition() {
+        trace("cancelComposition", sender: client())
+        super.cancelComposition()
     }
 
     override func activateServer(_ sender: Any!) {
@@ -1307,9 +1347,11 @@ final class InputController: IMKInputController {
         Self.lifecycleLogger.notice(
             "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(deactivationDuration ?? -1, privacy: .public) client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public) appGeneration=\(self.applicationLifecycleGeneration ?? 0, privacy: .public) globalGeneration=\(self.globalLifecycleGeneration ?? 0, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
         )
+        trace("activateServer", sender: sender)
     }
 
     override func deactivateServer(_ sender: Any!) {
+        trace("deactivateServer", sender: sender)
         let deactivationStartedAt = ProcessInfo.processInfo.systemUptime
         lifecycleGeneration &+= 1
         let deactivationGeneration = lifecycleGeneration
@@ -1416,8 +1458,16 @@ final class InputController: IMKInputController {
     }
 
     override func inputControllerWillClose() {
+        trace("InputController.willClose", sender: client())
         lifecycleGeneration &+= 1
         let deactivationWasPending = pendingDeactivation != nil
+        let sessionWasSuperseded = globalLifecycleGeneration.map {
+            Self.lifecycleGenerationTracker.shouldRetireController(
+                application: inputClientBundleIdentifier,
+                applicationGeneration: applicationLifecycleGeneration,
+                globalGeneration: $0
+            )
+        } ?? false
         pendingDeactivation?.cancel()
         pendingDeactivation = nil
         pendingDeactivationStartedAt = nil
@@ -1425,8 +1475,14 @@ final class InputController: IMKInputController {
         transientCompositionGuard.reset()
         activeInputClient = nil
         Self.lifecycleLogger.notice(
-            "input controller closing bufferLength=\(self.inputBuffer.count, privacy: .public) pendingDeactivation=\(deactivationWasPending, privacy: .public)"
+            "input controller closing bufferLength=\(self.inputBuffer.count, privacy: .public) pendingDeactivation=\(deactivationWasPending, privacy: .public) superseded=\(sessionWasSuperseded, privacy: .public)"
         )
+        if sessionWasSuperseded {
+            trace("asyncResult.rejectedAsStale", sender: client(), detail: "source=willClose")
+            retireSupersededControllerUI()
+            super.inputControllerWillClose()
+            return
+        }
         if previewWindow.shouldPreserveForExternalInteraction() {
             dismissInputSessionPanels(using: .deactivation(
                 isExternalInformationInteractionActive: true,
@@ -1437,7 +1493,11 @@ final class InputController: IMKInputController {
         }
         finishControllerSession(
             client: client(),
-            commitsComposition: deactivationWasPending,
+            commitsComposition: InputControllerClosurePolicy
+                .shouldCommitComposition(
+                    deactivationWasPending: deactivationWasPending,
+                    sessionWasSuperseded: sessionWasSuperseded
+                ),
             closesController: true
         )
         super.inputControllerWillClose()
@@ -2982,6 +3042,15 @@ final class InputController: IMKInputController {
     }
 
     private func refreshCandidates(client sender: Any) {
+        synchronizeInputRevision()
+        trace("candidateGeneration.start", sender: sender)
+        defer {
+            trace(
+                "candidateGeneration.complete",
+                sender: sender,
+                detail: "candidateCount=\(currentCandidates.count)"
+            )
+        }
         guard !inputBuffer.isEmpty else {
             generatedParticleCandidates = []
             longVowelFilterProtectedCandidates = []
@@ -2992,7 +3061,9 @@ final class InputController: IMKInputController {
         reloadUserDictionaryFromDiskIfNeeded()
         generatedParticleCandidates = []
         longVowelFilterProtectedCandidates = []
-        updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
+        if !Self.diagnosticConfiguration.minimalMode {
+            updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
+        }
         let extensionInput = inputBuffer
         let scriptCandidates = suggestionSearchSession.query(
             for: .javaScriptExtensions
@@ -3000,7 +3071,11 @@ final class InputController: IMKInputController {
             ? javaScriptExtensionCandidates
             : []
         defer {
-            updateJavaScriptExtensionCandidatesIfNeeded(for: extensionInput)
+            if Self.diagnosticConfiguration.enables(.jsExtensions) {
+                updateJavaScriptExtensionCandidatesIfNeeded(
+                    for: extensionInput
+                )
+            }
         }
         if isCalculationExpressionDraft, !scriptCandidates.isEmpty {
             replaceCurrentCandidatesOrderedByRecency(
@@ -3183,6 +3258,7 @@ final class InputController: IMKInputController {
             + imeCandidates.prefix
             + basicCandidates.prefix
         let contextualCandidates = isNextInputPredictionEnabled
+            && Self.diagnosticConfiguration.enables(.nextInput)
             ? nextInputPredictionModel.candidatesAfterLastInput(
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
@@ -3263,7 +3339,8 @@ final class InputController: IMKInputController {
     private func updateFuzzySuggestionsIfNeeded(
         near anchorFrame: NSRect
     ) {
-        guard isFuzzySuggestionsEnabled,
+        guard Self.diagnosticConfiguration.enables(.fuzzySuggestion),
+              isFuzzySuggestionsEnabled,
               conversionReading.count >= 2 else {
             suggestionSearchSession.cancel(.fuzzy)
             fuzzySuggestionWindow.hide()
@@ -3281,6 +3358,10 @@ final class InputController: IMKInputController {
         let compoundGenerator = compoundDictionaryCandidateGenerator
         let userDictionary = userConversionEngine
         let visibleCandidates = Set(currentCandidates)
+        guard let asyncSnapshot = currentInputSessionSnapshot() else {
+            return
+        }
+        trace("candidateGeneration.start", sender: client(), detail: "source=fuzzy")
         let token = suggestionSearchSession.begin(.fuzzy, query: query)
         let task = Task { @MainActor [weak self] in
             do {
@@ -3349,11 +3430,22 @@ final class InputController: IMKInputController {
                 guard let self,
                       suggestionSearchSession.isCurrent(token),
                       conversionReading == query,
-                      isFuzzySuggestionsEnabled else {
+                      isFuzzySuggestionsEnabled,
+                      acceptsAsyncResult(
+                        asyncSnapshot,
+                        source: "fuzzy",
+                        sender: client()
+                      ) else {
                     return
                 }
+                trace("candidateGeneration.complete", sender: client(), detail: "source=fuzzy")
                 applySpellingSuggestions(matchTiers, near: anchorFrame)
             } catch is CancellationError {
+                self?.trace(
+                    "candidateGeneration.cancel",
+                    sender: self?.client(),
+                    detail: "source=fuzzy"
+                )
                 return
             } catch {
                 NSLog("誤入力補完に失敗: %@", error.localizedDescription)
@@ -3701,7 +3793,8 @@ final class InputController: IMKInputController {
     }
 
     private func updateOfficialCandidatesIfNeeded(for input: String) {
-        guard isWikipediaSuggestionsEnabled
+        guard !Self.diagnosticConfiguration.minimalMode,
+              isWikipediaSuggestionsEnabled
                 || isGoogleJapaneseInputEnabled,
               input.count >= 2,
               suggestionSearchSession.query(for: .official) != input else {
@@ -3710,6 +3803,9 @@ final class InputController: IMKInputController {
         officialCandidates = []
         learnableOfficialCandidates = []
         let japaneseInput = romajiConverter.hiragana(from: input) ?? input
+        guard let asyncSnapshot = currentInputSessionSnapshot() else {
+            return
+        }
         let token = suggestionSearchSession.begin(.official, query: input)
         let task = Task { @MainActor [weak self] in
             do {
@@ -3727,7 +3823,12 @@ final class InputController: IMKInputController {
                 guard suggestionSearchSession.isCurrent(token),
                       isWikipediaSuggestionsEnabled
                         || isGoogleJapaneseInputEnabled,
-                      conversionReading == input else {
+                      conversionReading == input,
+                      acceptsAsyncResult(
+                        asyncSnapshot,
+                        source: "officialCandidates",
+                        sender: client()
+                      ) else {
                     return
                 }
                 var seen = Set<String>()
@@ -3737,6 +3838,11 @@ final class InputController: IMKInputController {
                     refreshCandidates(client: inputClient)
                 }
             } catch is CancellationError {
+                self?.trace(
+                    "candidateGeneration.cancel",
+                    sender: self?.client(),
+                    detail: "source=translation"
+                )
                 return
             } catch {
                 NSLog(
@@ -3749,9 +3855,13 @@ final class InputController: IMKInputController {
     }
 
     private func updateJavaScriptExtensionCandidatesIfNeeded(for input: String) {
-        guard !input.isEmpty,
+        guard Self.diagnosticConfiguration.enables(.jsExtensions),
+              !input.isEmpty,
               suggestionSearchSession.query(for: .javaScriptExtensions)
                 != input else {
+            return
+        }
+        guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
         javaScriptExtensionCandidates = []
@@ -3767,7 +3877,12 @@ final class InputController: IMKInputController {
             )
             guard !Task.isCancelled,
                   suggestionSearchSession.isCurrent(token),
-                  inputBuffer == input else {
+                  inputBuffer == input,
+                  acceptsAsyncResult(
+                    asyncSnapshot,
+                    source: "jsExtensions",
+                    sender: client()
+                  ) else {
                 return
             }
             javaScriptExtensionCandidates = candidates
@@ -3779,12 +3894,16 @@ final class InputController: IMKInputController {
     }
 
     private func updatePostalAddressCandidatesIfNeeded(for input: String) {
+        guard !Self.diagnosticConfiguration.minimalMode else { return }
         guard let postalCode = PostalCodeNormalizer.normalize(input) else {
             suggestionSearchSession.cancel(.postalAddress)
             postalAddressCandidates = []
             return
         }
         guard suggestionSearchSession.query(for: .postalAddress) != input else {
+            return
+        }
+        guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
         let token = suggestionSearchSession.begin(.postalAddress, query: input)
@@ -3799,7 +3918,12 @@ final class InputController: IMKInputController {
             guard !Task.isCancelled,
                   let self,
                   suggestionSearchSession.isCurrent(token),
-                  inputBuffer == input else {
+                  inputBuffer == input,
+                  acceptsAsyncResult(
+                    asyncSnapshot,
+                    source: "postalAddress",
+                    sender: client()
+                  ) else {
                 return
             }
             postalAddressCache[postalCode] = candidates
@@ -3822,11 +3946,16 @@ final class InputController: IMKInputController {
         if case .fuzzy = destination {
             suggestionSearchSession.cancel(.fuzzy)
         }
-        guard isAppleTranslationEnabled,
+        guard Self.diagnosticConfiguration.enables(.translation),
+              isAppleTranslationEnabled,
               source.containsJapaneseText,
               !translationTargetLanguages.isEmpty else {
             return
         }
+        guard let asyncSnapshot = currentInputSessionSnapshot() else {
+            return
+        }
+        trace("translation.start", sender: sender, detail: "source=\(source)")
         let targets = translationTargetLanguages
         candidateTranslationTask = Task { @MainActor [weak self] in
             do {
@@ -3870,7 +3999,13 @@ final class InputController: IMKInputController {
                                 : nil
                         } == source
                 }
-                guard sourceIsStillSelected else { return }
+                guard sourceIsStillSelected,
+                      acceptsAsyncResult(
+                        asyncSnapshot,
+                        source: "translation",
+                        sender: sender
+                      ) else { return }
+                trace("translation.complete", sender: sender, detail: "source=\(source) count=\(translations.count)")
                 guard !translations.isEmpty else {
                     self.candidateTranslationTask = nil
                     return
@@ -3933,6 +4068,13 @@ final class InputController: IMKInputController {
     }
 
     private func cancelCandidateTranslation() {
+        if candidateTranslationTask != nil {
+            trace(
+                "candidateGeneration.cancel",
+                sender: client(),
+                detail: "source=translation"
+            )
+        }
         candidateTranslationTask?.cancel()
         candidateTranslationTask = nil
     }
@@ -4404,6 +4546,7 @@ final class InputController: IMKInputController {
         _ candidate: String,
         reading: String? = nil
     ) {
+        guard Self.diagnosticConfiguration.enables(.learning) else { return }
         let learnedReading = reading ?? candidateSelectionReading
         if (generatedParticleCandidates.contains(candidate)
                 || learnableOfficialCandidates.contains(candidate)),
@@ -4454,7 +4597,10 @@ final class InputController: IMKInputController {
     }
 
     private func candidateSelectionRanks(for reading: String) -> [String: Int] {
-        candidateSelectionHistory.ranks(
+        guard Self.diagnosticConfiguration.enables(.learning) else {
+            return [:]
+        }
+        return candidateSelectionHistory.ranks(
             for: RomajiCanonicalizer.dictionaryLookupInputs(from: reading)
         )
     }
@@ -4627,7 +4773,8 @@ final class InputController: IMKInputController {
     }
 
     private func recordNextInputCandidateSelection(_ candidate: String) {
-        guard closingBracketTracker.shouldRecordAsNextInput(candidate),
+        guard Self.diagnosticConfiguration.enables(.learning),
+              closingBracketTracker.shouldRecordAsNextInput(candidate),
               !generatedParticleCandidates.contains(candidate) else {
             return
         }
@@ -4701,6 +4848,7 @@ final class InputController: IMKInputController {
         guard let textClient = sender as? IMKTextInput else {
             return
         }
+        trace("insertText.request", sender: sender, detail: "value=\(value)")
 
         let inputHistoryValue = historyValue ?? value
         let isPendingClosingBracket = !closingBracketTracker
@@ -4731,6 +4879,7 @@ final class InputController: IMKInputController {
             replacementRange: replacementRange
         )
         isInsertingCommittedText = false
+        trace("insertText.complete", sender: sender, detail: "value=\(value)")
         closingBracketTracker.consume(value)
         recentCommittedContext = String(
             (recentCommittedContext + value).suffix(256)
@@ -4787,6 +4936,7 @@ final class InputController: IMKInputController {
     }
 
     private func resetTransientInteractionState() {
+        trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
         calendarFormatTask?.cancel()
         calendarFormatTask = nil
@@ -4825,6 +4975,7 @@ final class InputController: IMKInputController {
     private func dismissInputSessionPanels(
         using policy: InputPanelDismissalPolicy
     ) {
+        trace("candidateGeneration.cancel", sender: client(), detail: "source=panels")
         suggestionSearchSession.cancelAll()
         dictionaryDefinitionTask?.cancel()
         dictionaryDefinitionTask = nil
@@ -4925,6 +5076,10 @@ final class InputController: IMKInputController {
         breakPreviousSequence: Bool = false,
         client sender: Any
     ) {
+        guard Self.diagnosticConfiguration.enables(.nextInput) else {
+            nextInputPredictionModel.breakSequence()
+            return
+        }
         nextInputExtensionGeneration &+= 1
         let extensionGeneration = nextInputExtensionGeneration
         nextInputContext = value
@@ -4933,8 +5088,10 @@ final class InputController: IMKInputController {
             if breakPreviousSequence {
                 nextInputPredictionModel.breakSequence()
             }
-            nextInputPredictionModel.record(value)
-            nextInputPredictionWriter.schedule(nextInputPredictionModel)
+            if Self.diagnosticConfiguration.enables(.learning) {
+                nextInputPredictionModel.record(value)
+                nextInputPredictionWriter.schedule(nextInputPredictionModel)
+            }
 
             learnedCandidates = nextInputPredictionModel.candidates(
                 after: value,
@@ -4978,6 +5135,10 @@ final class InputController: IMKInputController {
                 nextInputDismissTimer = nil
             }
         }
+        guard Self.diagnosticConfiguration.enables(.jsExtensions),
+              let asyncSnapshot = currentInputSessionSnapshot() else {
+            return
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let generated = await Self.javaScriptExtensionClient
@@ -4985,7 +5146,12 @@ final class InputController: IMKInputController {
             guard !Task.isCancelled,
                   nextInputExtensionGeneration == extensionGeneration,
                   inputBuffer.isEmpty,
-                  !generated.isEmpty else {
+                  !generated.isEmpty,
+                  acceptsAsyncResult(
+                    asyncSnapshot,
+                    source: "nextInputJS",
+                    sender: sender
+                  ) else {
                 return
             }
             let visibleGenerated = generated.filter {
@@ -5123,6 +5289,7 @@ final class InputController: IMKInputController {
         guard let textClient = sender as? IMKTextInput else {
             return
         }
+        trace("setMarkedText.request", sender: sender, detail: "value=\(value)")
 
         let markedRange = textClient.markedRange()
         let replacementRange = markedRange.location != NSNotFound
@@ -5137,6 +5304,62 @@ final class InputController: IMKInputController {
             ),
             replacementRange: replacementRange
         )
+        trace("setMarkedText.complete", sender: sender, detail: "value=\(value)")
+    }
+
+    private func synchronizeInputRevision() {
+        guard revisionInputSnapshot != inputBuffer else { return }
+        inputRevision &+= 1
+        revisionInputSnapshot = inputBuffer
+    }
+
+    private func currentInputSessionSnapshot() -> InputSessionSnapshot? {
+        synchronizeInputRevision()
+        guard let globalLifecycleGeneration else { return nil }
+        return InputSessionSnapshot(
+            sessionGeneration: globalLifecycleGeneration,
+            inputRevision: inputRevision
+        )
+    }
+
+    private func acceptsAsyncResult(
+        _ snapshot: InputSessionSnapshot,
+        source: String,
+        sender: Any? = nil
+    ) -> Bool {
+        synchronizeInputRevision()
+        let accepted = snapshot.isCurrent(
+            sessionGeneration: globalLifecycleGeneration,
+            inputRevision: inputRevision
+        ) && isServerActive
+        trace(
+            accepted ? "asyncResult.accepted" : "asyncResult.rejectedAsStale",
+            sender: sender,
+            detail: "source=\(source) startS=\(snapshot.sessionGeneration) startR=\(snapshot.inputRevision)"
+        )
+        return accepted
+    }
+
+    private func trace(
+        _ event: String,
+        sender: Any?,
+        detail: String = ""
+    ) {
+        guard Self.diagnosticConfiguration.traceEnabled else { return }
+        synchronizeInputRevision()
+        let textClient = sender as? IMKTextInput
+        let markedRange = textClient?.markedRange()
+            ?? NSRange(location: NSNotFound, length: 0)
+        let selectedRange = textClient?.selectedRange()
+            ?? NSRange(location: NSNotFound, length: 0)
+        let session = globalLifecycleGeneration ?? 0
+        let application = inputClientBundleIdentifier
+            ?? textClient?.bundleIdentifier()
+            ?? "unknown"
+        let escapedComposition = inputBuffer
+            .replacingOccurrences(of: "\n", with: "\\n")
+        let message = "[S\(session) R\(inputRevision) C\(controllerID)] \(event) app=\(application) composition=\(escapedComposition) marked=\(NSStringFromRange(markedRange)) selected=\(NSStringFromRange(selectedRange)) \(detail)"
+        Self.lifecycleLogger.notice("\(message, privacy: .public)")
     }
 
     private func clearInputBuffer() {
@@ -5294,31 +5517,50 @@ final class InputController: IMKInputController {
         beside anchorFrame: NSRect,
         includeDefinitions: Bool
     ) {
-        guard isExternalInformationPanelEnabled
-            || isSystemDictionaryPreviewEnabled
+        let externalLookupEnabled = isExternalInformationPanelEnabled
+            && Self.diagnosticConfiguration.enables(
+                .externalInformationPanel
+            )
+        let dictionaryLookupEnabled = isSystemDictionaryPreviewEnabled
+            && Self.diagnosticConfiguration.enables(.dictionaryPanel)
+        guard externalLookupEnabled || dictionaryLookupEnabled
         else {
             dictionaryDefinitionTask?.cancel()
             previewWindow.hide()
             return
         }
-        let url = isExternalInformationPanelEnabled
+        let url = externalLookupEnabled
             ? try? SearchURLTemplate(externalInformationURLTemplate)
                 .url(for: candidate)
             : nil
 
         dictionaryDefinitionTask?.cancel()
+        let presentsDictionary = Self.diagnosticConfiguration
+            .presentsPanel(.dictionaryPanel)
+        let presentsExternal = Self.diagnosticConfiguration
+            .presentsPanel(.externalInformationPanel)
+        trace("externalLookup.start", sender: client(), detail: "candidate=\(candidate)")
         let previewRequestID = previewWindow.show(
             url: url,
             panelTitle: url?.host ?? "外部情報",
             definitions: [],
             definitionsPending: includeDefinitions
-                && isSystemDictionaryPreviewEnabled,
-            showExternalInformation: isExternalInformationPanelEnabled,
+                && dictionaryLookupEnabled,
+            showExternalInformation: externalLookupEnabled,
+            presentsDefinitionPanel: presentsDictionary,
+            presentsExternalInformationPanel: presentsExternal,
             beside: anchorFrame
         )
-        guard includeDefinitions, isSystemDictionaryPreviewEnabled else {
+        if presentsExternal {
+            trace("externalPanel.show", sender: client())
+        }
+        guard includeDefinitions, dictionaryLookupEnabled else {
             return
         }
+        guard let asyncSnapshot = currentInputSessionSnapshot() else {
+            return
+        }
+        trace("dictionaryLookup.start", sender: client(), detail: "candidate=\(candidate)")
         let provider = definitionProvider
         let dictionaryNames = systemDictionaryNames
         dictionaryDefinitionTask = Task { @MainActor [weak self] in
@@ -5330,12 +5572,22 @@ final class InputController: IMKInputController {
                     dictionaryNames: dictionaryNames
                 )
             }.value
-            guard !Task.isCancelled, let self else { return }
+            guard !Task.isCancelled, let self,
+                  acceptsAsyncResult(
+                    asyncSnapshot,
+                    source: "dictionaryLookup",
+                    sender: client()
+                  ) else { return }
+            trace("dictionaryLookup.complete", sender: client(), detail: "candidate=\(candidate) count=\(definitions.count)")
             previewWindow.showDefinitions(
                 definitions,
                 beside: anchorFrame,
-                requestID: previewRequestID
+                requestID: previewRequestID,
+                presentsPanel: presentsDictionary
             )
+            if presentsDictionary, !definitions.isEmpty {
+                trace("dictionaryPanel.show", sender: client())
+            }
         }
     }
 
@@ -5490,7 +5742,14 @@ final class InputController: IMKInputController {
 
     private var selectedCandidateIndex: Int? {
         get { candidateSelection.selectedIndex }
-        set { candidateSelection.selectedIndex = newValue }
+        set {
+            candidateSelection.selectedIndex = newValue
+            trace(
+                "candidateSelection.changed",
+                sender: client(),
+                detail: "normal=\(newValue.map(String.init) ?? "none")"
+            )
+        }
     }
 
     private var fuzzySuggestions: [FuzzySuggestion] {
@@ -5500,7 +5759,14 @@ final class InputController: IMKInputController {
 
     private var selectedFuzzySuggestionIndex: Int? {
         get { fuzzySelection.selectedIndex }
-        set { fuzzySelection.selectedIndex = newValue }
+        set {
+            fuzzySelection.selectedIndex = newValue
+            trace(
+                "candidateSelection.changed",
+                sender: client(),
+                detail: "fuzzy=\(newValue.map(String.init) ?? "none")"
+            )
+        }
     }
 
     private var isNextInputPredictionEnabled: Bool {
