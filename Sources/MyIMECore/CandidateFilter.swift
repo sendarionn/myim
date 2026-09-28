@@ -233,6 +233,28 @@ public enum CandidateFilterPanelPlacement {
     }
 }
 
+public enum HorizontalPanelGroupPlacement {
+    public static func offset(
+        groupMinX: Double,
+        groupMaxX: Double,
+        visibleMinX: Double,
+        visibleMaxX: Double
+    ) -> Double {
+        let groupWidth = groupMaxX - groupMinX
+        let visibleWidth = visibleMaxX - visibleMinX
+        guard groupWidth <= visibleWidth else {
+            return visibleMinX - groupMinX
+        }
+        if groupMinX < visibleMinX {
+            return visibleMinX - groupMinX
+        }
+        if groupMaxX > visibleMaxX {
+            return visibleMaxX - groupMaxX
+        }
+        return 0
+    }
+}
+
 public enum CandidateFilterCondition: Equatable, Sendable {
     case characterCount(Int)
     case contains(String)

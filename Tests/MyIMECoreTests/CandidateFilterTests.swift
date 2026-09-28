@@ -239,3 +239,32 @@ struct CandidateFilterTests {
         #expect(result == ["校正", "構成", "公正"])
     }
 }
+
+@Suite struct HorizontalPanelGroupPlacementTests {
+    @Test func keepsGroupPositionWhenAlreadyVisible() {
+        #expect(HorizontalPanelGroupPlacement.offset(
+            groupMinX: 100,
+            groupMaxX: 700,
+            visibleMinX: 0,
+            visibleMaxX: 800
+        ) == 0)
+    }
+
+    @Test func movesWholeGroupLeftAtRightScreenEdge() {
+        #expect(HorizontalPanelGroupPlacement.offset(
+            groupMinX: 380,
+            groupMaxX: 920,
+            visibleMinX: 0,
+            visibleMaxX: 800
+        ) == -120)
+    }
+
+    @Test func movesWholeGroupRightAtLeftScreenEdge() {
+        #expect(HorizontalPanelGroupPlacement.offset(
+            groupMinX: -140,
+            groupMaxX: 500,
+            visibleMinX: 0,
+            visibleMaxX: 800
+        ) == 140)
+    }
+}

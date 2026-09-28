@@ -39,6 +39,20 @@ final class FuzzySuggestionWindowController {
     var panelWidth: CGFloat { panel.frame.width }
     var spacingFromCandidatePanel: CGFloat { Self.spacing }
 
+    func offsetHorizontally(by offset: CGFloat) {
+        guard offset != 0 else { return }
+        panel.setFrameOrigin(NSPoint(
+            x: panel.frame.minX + offset,
+            y: panel.frame.minY
+        ))
+        if guidePanel.isVisible {
+            guidePanel.setFrameOrigin(NSPoint(
+                x: guidePanel.frame.minX + offset,
+                y: guidePanel.frame.minY
+            ))
+        }
+    }
+
     func rowFrame(at index: Int) -> NSRect? {
         guard stackView.arrangedSubviews.indices.contains(index) else {
             return nil

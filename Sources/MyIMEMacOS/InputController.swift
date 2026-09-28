@@ -3951,6 +3951,31 @@ final class InputController: IMKInputController {
         } else {
             translationCandidateWindow.placeRight(of: sourceFrame)
         }
+        keepCandidatePanelGroupInsideScreen()
+    }
+
+    private func keepCandidatePanelGroupInsideScreen() {
+        let frames = [
+            candidateWindow.visibleFrame,
+            fuzzySuggestionWindow.visibleFrame,
+            translationCandidateWindow.visibleFrame
+        ].compactMap { $0 }
+        guard let firstFrame = frames.first,
+              let visibleFrame = NSScreen.inputScreen(
+                containing: candidateWindow.frame
+              )?.visibleFrame else { return }
+        let groupFrame = frames.dropFirst().reduce(firstFrame) {
+            $0.union($1)
+        }
+        let offset = HorizontalPanelGroupPlacement.offset(
+            groupMinX: groupFrame.minX,
+            groupMaxX: groupFrame.maxX,
+            visibleMinX: visibleFrame.minX,
+            visibleMaxX: visibleFrame.maxX
+        )
+        candidateWindow.offsetHorizontally(by: offset)
+        fuzzySuggestionWindow.offsetHorizontally(by: offset)
+        translationCandidateWindow.offsetHorizontally(by: offset)
     }
 
     private func shouldEnterTranslationCandidates(
@@ -5232,6 +5257,9 @@ final class InputController: IMKInputController {
         var result = anchorFrame
         if let fuzzyFrame = fuzzySuggestionWindow.visibleFrame {
             result = result.union(fuzzyFrame)
+        }
+        if let translationFrame = translationCandidateWindow.visibleFrame {
+            result = result.union(translationFrame)
         }
         if let emojiFrame = emojiWindow.visibleFrame {
             result = result.union(emojiFrame)

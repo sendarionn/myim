@@ -299,11 +299,17 @@ final class CandidateWindowController: NSObject {
         }
     }
 
-    func placeLeft(of anchorFrame: NSRect, spacing: CGFloat = 8) {
+    func placeLeft(
+        of anchorFrame: NSRect,
+        spacing: CGFloat = 8
+    ) {
         placeOutside(anchorFrame, onLeft: true, spacing: spacing)
     }
 
-    func placeRight(of anchorFrame: NSRect, spacing: CGFloat = 8) {
+    func placeRight(
+        of anchorFrame: NSRect,
+        spacing: CGFloat = 8
+    ) {
         placeOutside(anchorFrame, onLeft: false, spacing: spacing)
     }
 
@@ -314,19 +320,29 @@ final class CandidateWindowController: NSObject {
     ) {
         let visibleFrame = screenContaining(anchorFrame)?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let requestedX = onLeft
+        let x = onLeft
             ? anchorFrame.minX - spacing - panel.frame.width
             : anchorFrame.maxX + spacing
-        let panelX = min(
-            max(requestedX, visibleFrame.minX),
-            visibleFrame.maxX - panel.frame.width
-        )
-        let panelY = min(
+        let y = min(
             max(anchorFrame.maxY - panel.frame.height, visibleFrame.minY),
             visibleFrame.maxY - panel.frame.height
         )
-        panel.setFrameOrigin(NSPoint(x: panelX, y: panelY))
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
         guidePanel.orderOut(nil)
+    }
+
+    func offsetHorizontally(by offset: CGFloat) {
+        guard offset != 0 else { return }
+        panel.setFrameOrigin(NSPoint(
+            x: panel.frame.minX + offset,
+            y: panel.frame.minY
+        ))
+        if guidePanel.isVisible {
+            guidePanel.setFrameOrigin(NSPoint(
+                x: guidePanel.frame.minX + offset,
+                y: guidePanel.frame.minY
+            ))
+        }
     }
 
     func show(
