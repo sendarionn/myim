@@ -215,6 +215,7 @@ final class InputController: IMKInputController {
     private var inputClientBundleIdentifier: String?
     private var transientCompositionGuard = TransientCompositionGuard()
     private var isInsertingCommittedText = false
+    private var lastValidInputLocation: NSRect?
 
     static func handleGlobalEmojiShortcut() {
         guard let controller = activeController,
@@ -1262,6 +1263,9 @@ final class InputController: IMKInputController {
 
     override func activateServer(_ sender: Any!) {
         let resumesTransientDeactivation = pendingDeactivation != nil
+        if !resumesTransientDeactivation {
+            lastValidInputLocation = nil
+        }
         let now = ProcessInfo.processInfo.systemUptime
         let deactivationDuration = pendingDeactivationStartedAt.map {
             max(now - $0, 0)
@@ -4295,15 +4299,30 @@ final class InputController: IMKInputController {
 
     private func inputLocation(for sender: Any) -> NSRect {
         guard let textClient = sender as? IMKTextInput else {
-            return .zero
+            return lastValidInputLocation ?? .zero
         }
 
         var lineRect = NSRect.zero
+        let characterIndex = InputLocationQueryPolicy.characterIndex(
+            for: textClient.selectedRange()
+        )
         _ = textClient.attributes(
-            forCharacterIndex: 0,
+            forCharacterIndex: characterIndex,
             lineHeightRectangle: &lineRect
         )
-        return lineRect
+        if InputLocationQueryPolicy.isValidRectangle(
+            x: lineRect.minX,
+            y: lineRect.minY,
+            width: lineRect.width,
+            height: lineRect.height
+        ) {
+            lastValidInputLocation = lineRect
+            return lineRect
+        }
+        Self.lifecycleLogger.notice(
+            "invalid input location index=\(characterIndex, privacy: .public) rect=\(String(describing: lineRect), privacy: .public) reusedPrevious=\(self.lastValidInputLocation != nil, privacy: .public)"
+        )
+        return lastValidInputLocation ?? .zero
     }
 
     private func candidateAndInputFrame(for sender: Any) -> NSRect {
