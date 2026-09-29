@@ -158,6 +158,25 @@ struct CandidatePipelineTests {
     }
 
     @Test
+    func keepsUnlearnedLiteralInputAfterEveryGeneratedCandidate() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["わいふぁい", "ワイファイ"],
+                direct: ["無線LAN"],
+                other: ["Wi-Fi接続"],
+                trailing: ["WI-FI", "Wi-Fi"],
+                recencyRanks: ["Wi-Fi": 100],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates == [
+            "無線LAN", "わいふぁい", "ワイファイ", "Wi-Fi接続",
+            "WI-FI", "Wi-Fi"
+        ])
+    }
+
+    @Test
     func keepsExactCandidateAheadOfLearnedCompletion() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(

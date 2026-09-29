@@ -13,10 +13,6 @@ final class InputController: IMKInputController {
         environment: ProcessInfo.processInfo.environment
     )
     private static let transientDeactivationDelay: TimeInterval = 0.75
-    private static let auxiliaryApplicationBundleIdentifiers: Set<String> = [
-        "io.github.sendarionn.inputmethod.myime",
-        "io.github.sendarionn.myim.external-browser"
-    ]
     private static weak var activeController: InputController?
     private static weak var emojiPanelController: InputController?
     private static var lifecycleGenerationTracker =
@@ -217,6 +213,7 @@ final class InputController: IMKInputController {
     private var applicationLifecycleGeneration: UInt?
     private var globalLifecycleGeneration: UInt?
     private var inputClientBundleIdentifier: String?
+    private var inputClientRole = InputClientRole.sourceApplication
     private var transientCompositionGuard = TransientCompositionGuard()
     private var isInsertingCommittedText = false
     private var lastValidInputLocation: NSRect?
@@ -353,6 +350,11 @@ final class InputController: IMKInputController {
             DictionaryContinuationCandidateGenerator(entries: bundledEntries)
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
+        inputClientBundleIdentifier = (inputClient as? IMKTextInput)?
+            .bundleIdentifier()
+        inputClientRole = InputClientRole.resolve(
+            bundleIdentifier: inputClientBundleIdentifier
+        )
         previewWindow.onInteractionBegan = { [weak self] in
             self?.trace(
                 "externalPanel.interaction",
@@ -385,6 +387,13 @@ final class InputController: IMKInputController {
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
         guard let event, let sender else {
+            return false
+        }
+        let senderBundleIdentifier = (sender as? IMKTextInput)?
+            .bundleIdentifier()
+        guard InputClientRole.resolve(
+            bundleIdentifier: senderBundleIdentifier
+        ).participatesInInputSessionLifecycle else {
             return false
         }
 
@@ -1249,6 +1258,10 @@ final class InputController: IMKInputController {
     }
 
     override func commitComposition(_ sender: Any!) {
+        guard inputClientRole.participatesInInputSessionLifecycle else {
+            super.commitComposition(sender)
+            return
+        }
         trace("commitComposition.request", sender: sender)
         guard let sender else {
             return
@@ -1298,11 +1311,29 @@ final class InputController: IMKInputController {
     }
 
     override func cancelComposition() {
+        guard inputClientRole.participatesInInputSessionLifecycle else {
+            super.cancelComposition()
+            return
+        }
         trace("cancelComposition", sender: client())
         super.cancelComposition()
     }
 
     override func activateServer(_ sender: Any!) {
+        let activatingBundleIdentifier = (sender as? IMKTextInput)?
+            .bundleIdentifier()
+        let activatingRole = InputClientRole.resolve(
+            bundleIdentifier: activatingBundleIdentifier
+        )
+        inputClientBundleIdentifier = activatingBundleIdentifier
+        inputClientRole = activatingRole
+        guard activatingRole.participatesInInputSessionLifecycle else {
+            super.activateServer(sender)
+            Self.lifecycleLogger.notice(
+                "ignored auxiliary activation client=\(activatingBundleIdentifier ?? "unknown", privacy: .public)"
+            )
+            return
+        }
         let resumesTransientDeactivation = pendingDeactivation != nil
         if !resumesTransientDeactivation {
             lastValidInputLocation = nil
@@ -1318,16 +1349,10 @@ final class InputController: IMKInputController {
         isServerActive = true
         activatedAt = now
         activeInputClient = sender
-        inputClientBundleIdentifier = (sender as? IMKTextInput)?
-            .bundleIdentifier()
         if let inputClientBundleIdentifier {
-            let isAuxiliaryApplication = Self
-                .auxiliaryApplicationBundleIdentifiers
-                .contains(inputClientBundleIdentifier)
             applicationLifecycleGeneration = Self.lifecycleGenerationTracker
                 .recordActivation(
-                    for: inputClientBundleIdentifier,
-                    supersedesOtherApplications: !isAuxiliaryApplication
+                    for: inputClientBundleIdentifier
                 )
             globalLifecycleGeneration = Self.lifecycleGenerationTracker
                 .globalGeneration
@@ -1352,6 +1377,13 @@ final class InputController: IMKInputController {
     }
 
     override func deactivateServer(_ sender: Any!) {
+        guard inputClientRole.participatesInInputSessionLifecycle else {
+            Self.lifecycleLogger.notice(
+                "ignored auxiliary deactivation client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public)"
+            )
+            super.deactivateServer(sender)
+            return
+        }
         trace("deactivateServer", sender: sender)
         let deactivationStartedAt = ProcessInfo.processInfo.systemUptime
         lifecycleGeneration &+= 1
@@ -1370,14 +1402,21 @@ final class InputController: IMKInputController {
         if Self.activeController === self {
             Self.activeController = nil
         }
+        let frontmostBundleIdentifier = NSWorkspace.shared
+            .frontmostApplication?.bundleIdentifier
         let preservesExternalInformation = previewWindow
-            .shouldPreserveForExternalInteraction()
+            .shouldPreserveForExternalInteraction(
+                frontmostBundleIdentifier: frontmostBundleIdentifier
+            )
         let panelPolicy = InputPanelDismissalPolicy.deactivation(
             isExternalInformationInteractionActive: preservesExternalInformation,
             isCalendarInteractionActive: calendarSessionActive
         )
         dismissInputSessionPanels(using: panelPolicy)
         if preservesExternalInformation {
+            Self.lifecycleLogger.notice(
+                "preserved composition for information panel interaction bufferLength=\(self.inputBuffer.count, privacy: .public) frontmost=\(frontmostBundleIdentifier ?? "unknown", privacy: .public)"
+            )
             activeInputClient = nil
             super.deactivateServer(sender)
             return
@@ -1424,9 +1463,9 @@ final class InputController: IMKInputController {
                 let frontmostApplication = NSWorkspace.shared
                     .frontmostApplication?.bundleIdentifier
                 if frontmostApplication == deactivatingApplication
-                    || frontmostApplication.map(
-                        Self.auxiliaryApplicationBundleIdentifiers.contains
-                    ) == true {
+                    || InputClientRole.resolve(
+                        bundleIdentifier: frontmostApplication
+                    ) == .auxiliaryApplication {
                     Self.lifecycleLogger.notice(
                         "discarded transient follow-up deactivation client=\(deactivatingApplication, privacy: .public) frontmost=\(frontmostApplication ?? "unknown", privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
                     )
@@ -1459,6 +1498,13 @@ final class InputController: IMKInputController {
     }
 
     override func inputControllerWillClose() {
+        guard inputClientRole.participatesInInputSessionLifecycle else {
+            Self.lifecycleLogger.notice(
+                "ignored auxiliary controller close client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public)"
+            )
+            super.inputControllerWillClose()
+            return
+        }
         trace("InputController.willClose", sender: client())
         lifecycleGeneration &+= 1
         let deactivationWasPending = pendingDeactivation != nil
@@ -1484,7 +1530,10 @@ final class InputController: IMKInputController {
             super.inputControllerWillClose()
             return
         }
-        if previewWindow.shouldPreserveForExternalInteraction() {
+        if previewWindow.shouldPreserveForExternalInteraction(
+            frontmostBundleIdentifier: NSWorkspace.shared
+                .frontmostApplication?.bundleIdentifier
+        ) {
             dismissInputSessionPanels(using: .deactivation(
                 isExternalInformationInteractionActive: true,
                 isCalendarInteractionActive: false
@@ -3252,7 +3301,6 @@ final class InputController: IMKInputController {
         }
         let directCandidates = userCandidates.exact
             + learnedExactCandidates
-            + literalInputCandidates
             + dateTimeCandidates
             + numericPrefixCandidates
             + scriptCandidates
@@ -3288,7 +3336,7 @@ final class InputController: IMKInputController {
                 secondary: particleCandidates,
                 other: otherCandidates,
                 english: englishCandidates,
-                trailing: uppercaseCandidates,
+                trailing: uppercaseCandidates + literalInputCandidates,
                 recencyRanks: candidateSelectionRanks(
                     for: conversionReading
                 ),

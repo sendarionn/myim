@@ -68,7 +68,9 @@ private final class BrowserPanel: NSPanel {
 
 private final class BrowserWebView: WKWebView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        true
+        recordBrowserInteraction()
+        (window as? BrowserPanel)?.beginUserInteraction()
+        return true
     }
 
     override func mouseDown(with event: NSEvent) {

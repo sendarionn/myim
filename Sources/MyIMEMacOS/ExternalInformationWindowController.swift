@@ -7,6 +7,34 @@ private final class PassiveInformationPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+private final class InteractiveInformationTextView: NSTextView {
+    var onInteraction: (() -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        onInteraction?()
+        return true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onInteraction?()
+        super.mouseDown(with: event)
+    }
+}
+
+private final class InteractiveInformationScrollView: NSScrollView {
+    var onInteraction: (() -> Void)?
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        onInteraction?()
+        return true
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        onInteraction?()
+        super.scrollWheel(with: event)
+    }
+}
+
 final class ExternalInformationWindowController: NSObject {
     private static let logger = Logger(
         subsystem: "io.github.sendarionn.inputmethod.myime",
@@ -30,7 +58,7 @@ final class ExternalInformationWindowController: NSObject {
     private static let displayDelay: TimeInterval = 0.5
 
     private let definitionPanel: NSPanel
-    private let definitionTextView: NSTextView
+    private let definitionTextView: InteractiveInformationTextView
     private let externalBrowser = ExternalBrowserBridge()
     private var informationPanelFrame = NSRect(origin: .zero, size: informationPanelSize)
     private var displayedURL: URL?
@@ -47,12 +75,15 @@ final class ExternalInformationWindowController: NSObject {
     var onDiagnosticEvent: ((String) -> Void)?
 
     override init() {
-        definitionTextView = NSTextView(frame: .zero)
+        definitionTextView = InteractiveInformationTextView(frame: .zero)
         definitionPanel = Self.makePanel(
             title: "",
             size: Self.informationPanelSize
         )
         super.init()
+        definitionTextView.onInteraction = { [weak self] in
+            self?.beginInteraction()
+        }
         externalBrowser.onInteractionBegan = { [weak self] in
             self?.beginInteraction()
         }
@@ -64,7 +95,10 @@ final class ExternalInformationWindowController: NSObject {
         definitionTextView.drawsBackground = false
         definitionTextView.font = .systemFont(ofSize: 13)
         definitionTextView.textContainerInset = NSSize(width: 12, height: 12)
-        let scrollView = NSScrollView()
+        let scrollView = InteractiveInformationScrollView()
+        scrollView.onInteraction = { [weak self] in
+            self?.beginInteraction()
+        }
         scrollView.documentView = definitionTextView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -100,7 +134,10 @@ final class ExternalInformationWindowController: NSObject {
             return currentRequestID
         }
         if let application = NSWorkspace.shared.frontmostApplication,
-           application.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+           application.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+           InputClientRole.resolve(
+                bundleIdentifier: application.bundleIdentifier
+           ) == .sourceApplication {
             returnApplicationProcessIdentifier = application.processIdentifier
         }
         present(
@@ -300,11 +337,25 @@ final class ExternalInformationWindowController: NSObject {
         onInteractionEnded?()
     }
 
-    func shouldPreserveForExternalInteraction() -> Bool {
+    func shouldPreserveForExternalInteraction(
+        frontmostBundleIdentifier: String? = nil
+    ) -> Bool {
         if externalBrowser.hasRecentInteraction() {
             beginInteraction()
         }
+        if InformationPanelInteractionPolicy.shouldBeginInteraction(
+            isPresentingInformation: isPresentingInformation,
+            frontmostClientRole: InputClientRole.resolve(
+                bundleIdentifier: frontmostBundleIdentifier
+            )
+        ) {
+            beginInteraction()
+        }
         return isInteractionActive
+    }
+
+    private var isPresentingInformation: Bool {
+        definitionPanel.isVisible || informationPanelIsVisible
     }
 
     @discardableResult
