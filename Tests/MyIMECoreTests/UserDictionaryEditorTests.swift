@@ -4,6 +4,57 @@ import Testing
 @Suite
 struct UserDictionaryEditorTests {
     @Test
+    func learnsUnselectedInputWithCaseInsensitiveReading() throws {
+        let learned = try #require(UnselectedInputLearningPolicy.entry(
+            originalInput: "Wi-Fi",
+            hasSelectedCandidate: false
+        ))
+        let entries = UserDictionaryEditor.adding(
+            reading: learned.reading,
+            candidate: learned.candidate,
+            to: []
+        )
+
+        #expect(learned.reading == "wi-fi")
+        #expect(learned.candidate == "Wi-Fi")
+        #expect(
+            ConversionEngine(entries: entries)
+                .candidateGroups(matching: "wi-").prefix == ["Wi-Fi"]
+        )
+    }
+
+    @Test
+    func doesNotLearnRawInputWhenACandidateWasSelected() {
+        #expect(UnselectedInputLearningPolicy.entry(
+            originalInput: "Wi-Fi",
+            hasSelectedCandidate: true
+        ) == nil)
+    }
+
+    @Test
+    func doesNotLearnEmptyOrMultilineInput() {
+        #expect(UnselectedInputLearningPolicy.entry(
+            originalInput: "  ",
+            hasSelectedCandidate: false
+        ) == nil)
+        #expect(UnselectedInputLearningPolicy.entry(
+            originalInput: "Wi\nFi",
+            hasSelectedCandidate: false
+        ) == nil)
+    }
+
+    @Test
+    func preservesTheConfirmedInputExactly() throws {
+        let learned = try #require(UnselectedInputLearningPolicy.entry(
+            originalInput: " Wi-Fi ",
+            hasSelectedCandidate: false
+        ))
+
+        #expect(learned.reading == " wi-fi ")
+        #expect(learned.candidate == " Wi-Fi ")
+    }
+
+    @Test
     func symbolOnlyDictionaryReadingDoesNotBecomeAConversionSuffix() {
         #expect(ConversionReadingSuffix.resolve(
             conversionReading: "",

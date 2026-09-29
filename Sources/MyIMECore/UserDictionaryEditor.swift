@@ -49,6 +49,37 @@ public enum UserDictionaryLookupReading {
     }
 }
 
+public struct UnselectedInputLearningEntry: Equatable, Sendable {
+    public let reading: String
+    public let candidate: String
+
+    public init(reading: String, candidate: String) {
+        self.reading = reading
+        self.candidate = candidate
+    }
+}
+
+public enum UnselectedInputLearningPolicy {
+    public static func entry(
+        originalInput: String,
+        hasSelectedCandidate: Bool
+    ) -> UnselectedInputLearningEntry? {
+        guard !hasSelectedCandidate else { return nil }
+        let trimmedInput = originalInput.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !trimmedInput.isEmpty,
+              !originalInput.contains("\t"),
+              !originalInput.contains("\n") else {
+            return nil
+        }
+        return UnselectedInputLearningEntry(
+            reading: originalInput.lowercased(),
+            candidate: originalInput
+        )
+    }
+}
+
 public enum ConversionReadingSuffix {
     public static func resolve(
         conversionReading: String,

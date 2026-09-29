@@ -1915,9 +1915,14 @@ final class InputController: IMKInputController {
             refreshCandidates(client: sender)
             return true
         }
+        let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
+            originalInput: inputBuffer,
+            hasSelectedCandidate: selectedCandidateValue != nil
+        )
         let value = selectedCandidateValue ?? inputBuffer
         recordSelectedCandidate()
         commit(value + space, to: sender, historyValue: value)
+        learnUnselectedInput(unselectedInputLearningEntry)
         return true
     }
 
@@ -4565,6 +4570,10 @@ final class InputController: IMKInputController {
                 generatedCandidates: cachedJavaScriptCalculationCandidates
             )
         }
+        let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
+            originalInput: inputBuffer,
+            hasSelectedCandidate: selectedCandidateValue != nil
+        )
         recordSelectedCandidate()
         commit(
             value,
@@ -4572,7 +4581,28 @@ final class InputController: IMKInputController {
             historyValue: historyValue,
             preferredNextInputCandidates: calculatorNextInputCandidates
         )
+        learnUnselectedInput(unselectedInputLearningEntry)
         return true
+    }
+
+    private func learnUnselectedInput(
+        _ entry: UnselectedInputLearningEntry?
+    ) {
+        guard Self.diagnosticConfiguration.enables(.learning),
+              let entry else {
+            return
+        }
+        do {
+            try saveUserDictionaryEntry(
+                reading: entry.reading,
+                candidate: entry.candidate
+            )
+        } catch {
+            NSLog(
+                "未選択確定文字列のユーザー辞書登録に失敗: %@",
+                error.localizedDescription
+            )
+        }
     }
 
     private func recordSelectedCandidate() {
