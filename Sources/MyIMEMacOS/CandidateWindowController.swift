@@ -451,17 +451,17 @@ final class CandidateWindowController: NSObject {
         let guideHeight = hasGuide
             ? guideTextHeight + PanelShortcutGuideStyle.verticalPadding * 2
             : 0
-        panel.setContentSize(NSSize(
+        let panelSize = NSSize(
             width: panelWidth,
             height: panelHeight
-        ))
+        )
         scrollView.frame = NSRect(
             x: 0,
             y: 0,
             width: panelWidth,
             height: panelHeight
         )
-        guidePanel.setContentSize(NSSize(width: guideWidth, height: guideHeight))
+        let guideSize = NSSize(width: guideWidth, height: guideHeight)
         guideLabel.frame = NSRect(
             x: PanelShortcutGuideStyle.horizontalPadding,
             y: PanelShortcutGuideStyle.verticalPadding,
@@ -485,6 +485,8 @@ final class CandidateWindowController: NSObject {
             near: anchorFrame,
             visibleFrame: visibleFrame,
             hasGuide: hasGuide,
+            panelSize: panelSize,
+            guideSize: guideSize,
             reservedPanelHeight: reservedPanelHeight,
             reservedRightWidth: reservedRightWidth
         )
@@ -607,41 +609,53 @@ final class CandidateWindowController: NSObject {
         near anchorFrame: NSRect,
         visibleFrame: NSRect,
         hasGuide: Bool,
+        panelSize: NSSize,
+        guideSize: NSSize,
         reservedPanelHeight: CGFloat,
         reservedRightWidth: CGFloat
     ) {
         let guideExtent = hasGuide
-            ? Self.guideSpacing + guidePanel.frame.height
+            ? Self.guideSpacing + guideSize.height
             : 0
-        let groupHeight = panel.frame.height + guideExtent
+        let groupHeight = panelSize.height + guideExtent
         let reservedGroupHeight = reservedPanelHeight + guideExtent
         let fitsBelow = anchorFrame.minY - Self.anchorSpacing
             - reservedGroupHeight
             >= visibleFrame.minY
         let panelY = fitsBelow
-            ? anchorFrame.minY - Self.anchorSpacing - panel.frame.height
+            ? anchorFrame.minY - Self.anchorSpacing - panelSize.height
             : anchorFrame.maxY + Self.anchorSpacing
         let maximumPanelX = max(
             visibleFrame.minX,
-            visibleFrame.maxX - panel.frame.width - max(reservedRightWidth, 0)
+            visibleFrame.maxX - panelSize.width - max(reservedRightWidth, 0)
         )
         let panelX = min(
             max(anchorFrame.minX, visibleFrame.minX),
             maximumPanelX
         )
-        panel.setFrameOrigin(NSPoint(
+        let panelOrigin = NSPoint(
             x: panelX,
             y: min(max(panelY, visibleFrame.minY), visibleFrame.maxY - groupHeight)
-        ))
+        )
+        panel.setFrame(
+            NSRect(origin: panelOrigin, size: panelSize),
+            display: panel.isVisible
+        )
         guard hasGuide else { return }
         let guideX = min(
-            max(panel.frame.minX, visibleFrame.minX),
-            visibleFrame.maxX - guidePanel.frame.width
+            max(panelOrigin.x, visibleFrame.minX),
+            visibleFrame.maxX - guideSize.width
         )
         let guideY = fitsBelow
-            ? panel.frame.minY - Self.guideSpacing - guidePanel.frame.height
-            : panel.frame.maxY + Self.guideSpacing
-        guidePanel.setFrameOrigin(NSPoint(x: guideX, y: guideY))
+            ? panelOrigin.y - Self.guideSpacing - guideSize.height
+            : panelOrigin.y + panelSize.height + Self.guideSpacing
+        guidePanel.setFrame(
+            NSRect(
+                origin: NSPoint(x: guideX, y: guideY),
+                size: guideSize
+            ),
+            display: guidePanel.isVisible
+        )
     }
 
     private func screenContaining(_ frame: NSRect) -> NSScreen? {

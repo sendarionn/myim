@@ -44,6 +44,28 @@ struct UserDictionaryEditorTests {
     }
 
     @Test
+    func doesNotAutomaticallyLearnSingleEnglishLettersOrSymbols() {
+        for input in ["a", "A", "-", "→", "😀"] {
+            #expect(UnselectedInputLearningPolicy.entry(
+                originalInput: input,
+                hasSelectedCandidate: false
+            ) == nil)
+        }
+    }
+
+    @Test
+    func stillLearnsSingleJapaneseCharactersAndDigits() {
+        #expect(UnselectedInputLearningPolicy.entry(
+            originalInput: "あ",
+            hasSelectedCandidate: false
+        )?.candidate == "あ")
+        #expect(UnselectedInputLearningPolicy.entry(
+            originalInput: "1",
+            hasSelectedCandidate: false
+        )?.candidate == "1")
+    }
+
+    @Test
     func preservesTheConfirmedInputExactly() throws {
         let learned = try #require(UnselectedInputLearningPolicy.entry(
             originalInput: " Wi-Fi ",

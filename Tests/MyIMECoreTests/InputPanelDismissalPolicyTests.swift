@@ -25,5 +25,7 @@ struct InputPanelDismissalPolicyTests {
         #expect(!external.preservesCalendar)
         #expect(!calendar.preservesExternalInformation)
         #expect(calendar.preservesCalendar)
+        #expect(!calendar.cancelsCalendarWork)
+        #expect(external.cancelsCalendarWork)
     }
 }

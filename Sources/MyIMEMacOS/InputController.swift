@@ -207,6 +207,9 @@ final class InputController: IMKInputController {
     private var settingsWindow: NSWindow?
     private var activeInputClient: Any?
     private var pendingDeactivation: DispatchWorkItem?
+    private var candidateLocationRetry: DispatchWorkItem?
+    private var candidateLocationRetryAttempt = 0
+    private var lastLocationQueryRejectedPlaceholder = false
     private var pendingDeactivationStartedAt: TimeInterval?
     private var isServerActive = false
     private var lifecycleGeneration: UInt = 0
@@ -217,6 +220,7 @@ final class InputController: IMKInputController {
     private var transientCompositionGuard = TransientCompositionGuard()
     private var isInsertingCommittedText = false
     private var lastValidInputLocation: NSRect?
+    private var compositionAnchorFrame: NSRect?
     private let controllerID = String(UUID().uuidString.prefix(8))
     private var inputRevision: UInt = 0
     private var revisionInputSnapshot = ""
@@ -419,6 +423,15 @@ final class InputController: IMKInputController {
             return false
         }
         secureInputPassthroughActive = false
+
+        if inputBuffer.isEmpty {
+            logPanelSnapshot(event: "keyDown.emptyBuffer.beforeAnchor", sender: sender)
+            compositionAnchorFrame = currentInputLocation(for: sender)
+            if let compositionAnchorFrame {
+                lastValidInputLocation = compositionAnchorFrame
+            }
+            logPanelSnapshot(event: "keyDown.emptyBuffer.afterAnchor", sender: sender)
+        }
 
         if FunctionKeyEventPolicy.shouldIgnore(keyCode: event.keyCode) {
             return true
@@ -2397,6 +2410,7 @@ final class InputController: IMKInputController {
             return
         }
         let candidate = registration.pastedCandidate ?? inputBuffer.nilIfEmpty
+        logPanelSnapshot(event: "candidatePanel.beforeShow", sender: sender)
         candidateWindow.show(
             candidates: [
                 "読み: \(registration.reading)",
@@ -3561,6 +3575,22 @@ final class InputController: IMKInputController {
             fuzzySuggestionWindow.hide()
             return
         }
+        guard candidateWindow.visibleFrame != nil else {
+            fuzzySuggestionWindow.hide()
+            return
+        }
+        showInitialFuzzySuggestionsIfCandidateVisible()
+        if let inputClient = client() {
+            showInputPreview(client: inputClient)
+        }
+    }
+
+    private func showInitialFuzzySuggestionsIfCandidateVisible() {
+        guard candidateWindow.visibleFrame != nil,
+              !fuzzySuggestions.isEmpty else {
+            fuzzySuggestionWindow.hide()
+            return
+        }
         fuzzySuggestionWindow.show(
             suggestions: Array(fuzzySuggestions.prefix(
                 Self.initialFuzzySuggestionCount
@@ -3572,9 +3602,6 @@ final class InputController: IMKInputController {
             isAccented: false,
             prepareAnchor: prepareCandidateAnchorForFuzzyPanel
         )
-        if let inputClient = client() {
-            showInputPreview(client: inputClient)
-        }
     }
 
     private func handleFuzzySuggestionSelection(
@@ -3670,17 +3697,6 @@ final class InputController: IMKInputController {
             updateMarkedText(in: sender)
         }
         showCandidateWindow(client: sender)
-        fuzzySuggestionWindow.show(
-            suggestions: Array(fuzzySuggestions.prefix(
-                Self.initialFuzzySuggestionCount
-            )),
-            selectedIndex: nil,
-            near: candidateWindow.frame,
-            avoidingFrames: [candidateWindow.frame]
-                + candidateWindow.auxiliaryFrames,
-            isAccented: false,
-            prepareAnchor: prepareCandidateAnchorForFuzzyPanel
-        )
         return true
     }
 
@@ -3792,6 +3808,10 @@ final class InputController: IMKInputController {
         selectedIndex: Int,
         client sender: Any
     ) {
+        guard candidateWindow.visibleFrame != nil else {
+            fuzzySuggestionWindow.hide()
+            return
+        }
         let pageStart = selectedIndex
             / Self.maximumCandidateCount
             * Self.maximumCandidateCount
@@ -4087,6 +4107,11 @@ final class InputController: IMKInputController {
                     self.selectedCandidateIndex = self.currentCandidates
                         .firstIndex(of: source)
                     self.showCandidateWindow(client: sender)
+                    guard self.candidateWindow.visibleFrame != nil else {
+                        self.translationCandidateWindow.hide()
+                        self.candidateTranslationTask = nil
+                        return
+                    }
                     let sourceRow = self.selectedCandidateIndex.map {
                         $0 % Self.maximumCandidateCount
                     } ?? 0
@@ -4112,6 +4137,11 @@ final class InputController: IMKInputController {
                             selectedIndex: index,
                             client: sender
                         )
+                    }
+                    guard self.fuzzySuggestionWindow.visibleFrame != nil else {
+                        self.translationCandidateWindow.hide()
+                        self.candidateTranslationTask = nil
+                        return
                     }
                     self.showTranslationCandidateWindow(
                         translations,
@@ -4486,19 +4516,39 @@ final class InputController: IMKInputController {
         let isAccentedInput = CandidatePanelAccentPolicy.isAccented(
             isDictionaryRegistration: tabDictionaryRegistration != nil
         )
+        guard let anchorFrame = candidateInputLocation(for: sender) else {
+            candidateWindow.hide()
+            if lastLocationQueryRejectedPlaceholder {
+                scheduleCandidateLocationRetry(for: sender)
+            }
+            Self.lifecycleLogger.notice(
+                "deferred candidate panel until current input location is available"
+            )
+            return
+        }
+        cancelCandidateLocationRetry()
         candidateWindow.show(
             candidates: currentCandidates[pageStart..<pageEnd].map {
                 candidateDisplayValue($0)
             },
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
-            near: inputLocation(for: sender),
+            near: anchorFrame,
             isAccented: isAccentedInput,
             reservedRightWidth: fuzzySuggestionWindow.isVisible
                 ? fuzzySuggestionWindow.panelWidth
                     + fuzzySuggestionWindow.spacingFromCandidatePanel
                 : 0
         )
-        alignFuzzySuggestionWindowToCandidateRight()
+        Self.lifecycleLogger.notice(
+            "candidate panel positioned anchor=\(String(describing: anchorFrame), privacy: .public) frame=\(String(describing: self.candidateWindow.frame), privacy: .public)"
+        )
+        logPanelSnapshot(event: "candidatePanel.afterShow", sender: sender)
+        schedulePanelSnapshots(afterCandidateShowFor: sender)
+        if fuzzySuggestionWindow.isVisible {
+            alignFuzzySuggestionWindowToCandidateRight()
+        } else if !fuzzySuggestions.isEmpty {
+            showInitialFuzzySuggestionsIfCandidateVisible()
+        }
         if emojiWindow.isVisible {
             let frames = [candidateWindow.visibleFrame, fuzzySuggestionWindow.visibleFrame]
                 .compactMap { $0 }
@@ -4507,31 +4557,187 @@ final class InputController: IMKInputController {
     }
 
     private func inputLocation(for sender: Any) -> NSRect {
-        guard let textClient = sender as? IMKTextInput else {
-            return lastValidInputLocation ?? .zero
-        }
-
-        var lineRect = NSRect.zero
-        let characterIndex = InputLocationQueryPolicy.characterIndex(
-            for: textClient.selectedRange()
-        )
-        _ = textClient.attributes(
-            forCharacterIndex: characterIndex,
-            lineHeightRectangle: &lineRect
-        )
-        if InputLocationQueryPolicy.isValidRectangle(
-            x: lineRect.minX,
-            y: lineRect.minY,
-            width: lineRect.width,
-            height: lineRect.height
-        ) {
-            lastValidInputLocation = lineRect
-            return lineRect
+        if let current = currentInputLocation(for: sender) {
+            lastValidInputLocation = current
+            return current
         }
         Self.lifecycleLogger.notice(
-            "invalid input location index=\(characterIndex, privacy: .public) rect=\(String(describing: lineRect), privacy: .public) reusedPrevious=\(self.lastValidInputLocation != nil, privacy: .public)"
+            "invalid input location reusedPrevious=\(self.lastValidInputLocation != nil, privacy: .public)"
         )
         return lastValidInputLocation ?? .zero
+    }
+
+    private func candidateInputLocation(for sender: Any) -> NSRect? {
+        if let current = currentInputLocation(for: sender) {
+            compositionAnchorFrame = current
+            lastValidInputLocation = current
+            Self.lifecycleLogger.notice(
+                "candidate anchor source=current frame=\(String(describing: current), privacy: .public)"
+            )
+            return current
+        }
+        if lastLocationQueryRejectedPlaceholder {
+            Self.lifecycleLogger.notice(
+                "candidate anchor deferred after rejecting placeholder"
+            )
+            return nil
+        }
+        if let compositionAnchorFrame {
+            Self.lifecycleLogger.notice(
+                "candidate anchor source=composition frame=\(String(describing: compositionAnchorFrame), privacy: .public)"
+            )
+            return compositionAnchorFrame
+        }
+        if let lastValidInputLocation {
+            Self.lifecycleLogger.notice(
+                "candidate anchor source=previous frame=\(String(describing: lastValidInputLocation), privacy: .public)"
+            )
+            return lastValidInputLocation
+        }
+        Self.lifecycleLogger.notice("candidate anchor source=missing")
+        return nil
+    }
+
+    private func currentInputLocation(for sender: Any) -> NSRect? {
+        lastLocationQueryRejectedPlaceholder = false
+        guard let textClient = sender as? IMKTextInput else {
+            return nil
+        }
+
+        let characterIndices = InputLocationQueryPolicy.characterIndices(
+            markedRange: textClient.markedRange(),
+            selectedRange: textClient.selectedRange()
+        )
+        var lastQueriedRect = NSRect.zero
+        for characterIndex in characterIndices {
+            var lineRect = NSRect.zero
+            _ = textClient.attributes(
+                forCharacterIndex: characterIndex,
+                lineHeightRectangle: &lineRect
+            )
+            lastQueriedRect = lineRect
+            let isValidRectangle = InputLocationQueryPolicy.isValidRectangle(
+                x: lineRect.minX,
+                y: lineRect.minY,
+                width: lineRect.width,
+                height: lineRect.height
+            )
+            let isPlaceholder = isValidRectangle
+                && isScreenCornerPlaceholder(lineRect)
+            if isPlaceholder {
+                lastLocationQueryRejectedPlaceholder = true
+                Self.lifecycleLogger.notice(
+                    "rejected top-left input placeholder index=\(characterIndex, privacy: .public) rect=\(String(describing: lineRect), privacy: .public)"
+                )
+            }
+            if isValidRectangle, !isPlaceholder {
+                lastValidInputLocation = lineRect
+                Self.lifecycleLogger.notice(
+                    "accepted IMK input location index=\(characterIndex, privacy: .public) rect=\(String(describing: lineRect), privacy: .public)"
+                )
+                return lineRect
+            }
+        }
+        if let nativeTextClient = sender as? NSTextInputClient {
+            var actualRange = NSRange(location: NSNotFound, length: 0)
+            let fallbackRange = textClient.markedRange().location != NSNotFound
+                ? textClient.markedRange()
+                : textClient.selectedRange()
+            let firstRect = nativeTextClient.firstRect(
+                forCharacterRange: fallbackRange,
+                actualRange: &actualRange
+            )
+            let isValidRectangle = InputLocationQueryPolicy.isValidRectangle(
+                x: firstRect.minX,
+                y: firstRect.minY,
+                width: firstRect.width,
+                height: firstRect.height
+            )
+            let isPlaceholder = isValidRectangle
+                && isScreenCornerPlaceholder(firstRect)
+            if isPlaceholder {
+                lastLocationQueryRejectedPlaceholder = true
+                Self.lifecycleLogger.notice(
+                    "rejected top-left NSTextInputClient placeholder rect=\(String(describing: firstRect), privacy: .public)"
+                )
+            }
+            if isValidRectangle, !isPlaceholder {
+                lastValidInputLocation = firstRect
+                Self.lifecycleLogger.notice(
+                    "used NSTextInputClient fallback input location range=\(String(describing: actualRange), privacy: .public) rect=\(String(describing: firstRect), privacy: .public)"
+                )
+                return firstRect
+            }
+        }
+        Self.lifecycleLogger.notice(
+            "invalid current input location indices=\(String(describing: characterIndices), privacy: .public) rect=\(String(describing: lastQueriedRect), privacy: .public)"
+        )
+        return nil
+    }
+
+    private func scheduleCandidateLocationRetry(for sender: Any) {
+        guard candidateLocationRetry == nil else { return }
+        synchronizeInputRevision()
+        let sessionGeneration = globalLifecycleGeneration
+        let revision = inputRevision
+        let senderObject = sender as AnyObject
+        let retry = DispatchWorkItem { [weak self, weak senderObject] in
+            guard let self else { return }
+            self.candidateLocationRetry = nil
+            guard self.isServerActive,
+                  self.globalLifecycleGeneration == sessionGeneration,
+                  self.inputRevision == revision,
+                  !self.inputBuffer.isEmpty,
+                  !self.currentCandidates.isEmpty,
+                  let senderObject else {
+                self.candidateLocationRetryAttempt = 0
+                return
+            }
+            self.candidateLocationRetryAttempt += 1
+            if self.candidateLocationRetryAttempt == 1
+                || self.candidateLocationRetryAttempt.isMultiple(of: 10) {
+                Self.lifecycleLogger.notice(
+                    "retrying candidate location attempt=\(self.candidateLocationRetryAttempt, privacy: .public)"
+                )
+            }
+            self.showCandidateWindow(client: senderObject)
+        }
+        candidateLocationRetry = retry
+        let delay = CandidateLocationRetryPolicy.delay(
+            after: candidateLocationRetryAttempt
+        )
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + delay,
+            execute: retry
+        )
+    }
+
+    private func cancelCandidateLocationRetry() {
+        candidateLocationRetry?.cancel()
+        candidateLocationRetry = nil
+        candidateLocationRetryAttempt = 0
+    }
+
+    private func isScreenCornerPlaceholder(_ rect: NSRect) -> Bool {
+        NSScreen.screens.contains { screen in
+            let matchesFullScreen = InputLocationQueryPolicy.isTopLeftScreenPlaceholder(
+                x: rect.minX,
+                y: rect.minY,
+                width: rect.width,
+                height: rect.height,
+                screenMinX: screen.frame.minX,
+                screenMaxY: screen.frame.maxY
+            )
+            let matchesVisibleScreen = InputLocationQueryPolicy.isTopLeftScreenPlaceholder(
+                x: rect.minX,
+                y: rect.minY,
+                width: rect.width,
+                height: rect.height,
+                screenMinX: screen.visibleFrame.minX,
+                screenMaxY: screen.visibleFrame.maxY
+            )
+            return matchesFullScreen || matchesVisibleScreen
+        }
     }
 
     private func candidateAndInputFrame(for sender: Any) -> NSRect {
@@ -4817,6 +5023,7 @@ final class InputController: IMKInputController {
         from sender: Any,
         unit: InputBufferDeletionUnit = .character
     ) -> Bool {
+        logPanelSnapshot(event: "delete.before", sender: sender)
         guard !inputBuffer.isEmpty else {
             return false
         }
@@ -4839,6 +5046,7 @@ final class InputController: IMKInputController {
             selectionOffset: compositionPrefix.utf16.count + inputCursor
         )
         refreshCandidates(client: sender)
+        logPanelSnapshot(event: "delete.after", sender: sender)
         return true
     }
 
@@ -5087,9 +5295,11 @@ final class InputController: IMKInputController {
         dictionaryDefinitionTask?.cancel()
         dictionaryDefinitionTask = nil
         cancelCandidateTranslation()
-        calendarFormatTask?.cancel()
-        calendarFormatTask = nil
-        candidateWindow.hide()
+        if policy.cancelsCalendarWork {
+            calendarFormatTask?.cancel()
+            calendarFormatTask = nil
+            candidateWindow.hide()
+        }
         dismissFuzzySuggestions()
         emojiWindow.hide()
         symbolTipsWindow.hide()
@@ -5100,7 +5310,7 @@ final class InputController: IMKInputController {
         if !policy.preservesCalendar {
             clearCalendarSelection()
         }
-        dismissNextInputSuggestions(clearMarkedTextIn: nil)
+        clearNextInputSuggestionState()
     }
 
     private func cancelAuxiliarySuggestionSearches() {
@@ -5416,6 +5626,7 @@ final class InputController: IMKInputController {
 
     private func synchronizeInputRevision() {
         guard revisionInputSnapshot != inputBuffer else { return }
+        cancelCandidateLocationRetry()
         inputRevision &+= 1
         revisionInputSnapshot = inputBuffer
     }
@@ -5469,9 +5680,52 @@ final class InputController: IMKInputController {
         Self.lifecycleLogger.notice("\(message, privacy: .public)")
     }
 
+    private func schedulePanelSnapshots(afterCandidateShowFor sender: Any) {
+        guard Self.diagnosticConfiguration.traceEnabled else { return }
+        DispatchQueue.main.async { [weak self, weak senderObject = sender as AnyObject] in
+            guard let self else { return }
+            self.logPanelSnapshot(
+                event: "candidatePanel.nextRunLoop",
+                sender: senderObject
+            )
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            [weak self, weak senderObject = sender as AnyObject] in
+            guard let self else { return }
+            self.logPanelSnapshot(
+                event: "candidatePanel.after100ms",
+                sender: senderObject
+            )
+        }
+    }
+
+    private func logPanelSnapshot(event: String, sender: Any?) {
+        guard Self.diagnosticConfiguration.traceEnabled else { return }
+        synchronizeInputRevision()
+        let textClient = sender as? IMKTextInput
+        let markedRange = textClient?.markedRange()
+            ?? NSRange(location: NSNotFound, length: 0)
+        let selectedRange = textClient?.selectedRange()
+            ?? NSRange(location: NSNotFound, length: 0)
+        let application = inputClientBundleIdentifier
+            ?? textClient?.bundleIdentifier()
+            ?? "unknown"
+        let anchor = compositionAnchorFrame.map(String.init(describing:)) ?? "nil"
+        let lastLocation = lastValidInputLocation.map(String.init(describing:)) ?? "nil"
+        let windows = NSApp.windows.compactMap { window -> String? in
+            guard window is NSPanel else { return nil }
+            return "number=\(window.windowNumber) type=\(String(describing: type(of: window))) visible=\(window.isVisible) onScreen=\(window.isOnActiveSpace) frame=\(NSStringFromRect(window.frame)) level=\(window.level.rawValue)"
+        }.joined(separator: " | ")
+        Self.lifecycleLogger.notice(
+            "[S\(self.globalLifecycleGeneration ?? 0) R\(self.inputRevision) C\(self.controllerID)] panelSnapshot event=\(event, privacy: .public) app=\(application, privacy: .public) compositionLength=\(self.inputBuffer.count, privacy: .public) marked=\(NSStringFromRange(markedRange), privacy: .public) selected=\(NSStringFromRange(selectedRange), privacy: .public) anchor=\(anchor, privacy: .public) lastLocation=\(lastLocation, privacy: .public) windows=\(windows, privacy: .public)"
+        )
+    }
+
     private func clearInputBuffer() {
+        cancelCandidateLocationRetry()
         inputBuffer = ""
         inputCursor = 0
+        compositionAnchorFrame = nil
     }
 
     private func clearCandidateState(includingFuzzy: Bool = false) {
@@ -5482,6 +5736,7 @@ final class InputController: IMKInputController {
     }
 
     private func hideConversionPanels() {
+        cancelCandidateLocationRetry()
         candidateWindow.hide()
         fuzzySuggestionWindow.hide()
         translationCandidateWindow.hide()

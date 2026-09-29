@@ -7,6 +7,10 @@ public struct InputPanelDismissalPolicy: Equatable, Sendable {
         preservesCalendar: false
     )
 
+    public var cancelsCalendarWork: Bool {
+        !preservesCalendar
+    }
+
     public static func deactivation(
         isExternalInformationInteractionActive: Bool,
         isCalendarInteractionActive: Bool

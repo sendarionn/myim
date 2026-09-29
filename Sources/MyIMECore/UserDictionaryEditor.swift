@@ -70,13 +70,27 @@ public enum UnselectedInputLearningPolicy {
         )
         guard !trimmedInput.isEmpty,
               !originalInput.contains("\t"),
-              !originalInput.contains("\n") else {
+              !originalInput.contains("\n"),
+              !isSingleEnglishLetterOrSymbol(originalInput) else {
             return nil
         }
         return UnselectedInputLearningEntry(
             reading: originalInput.lowercased(),
             candidate: originalInput
         )
+    }
+
+    private static func isSingleEnglishLetterOrSymbol(_ input: String) -> Bool {
+        guard input.count == 1 else { return false }
+        let scalars = input.unicodeScalars
+        let isEnglishLetter = scalars.count == 1 && scalars.allSatisfy {
+            ("a"..."z").contains(Character(String($0).lowercased()))
+        }
+        let isSymbol = scalars.allSatisfy {
+            CharacterSet.symbols.contains($0)
+                || CharacterSet.punctuationCharacters.contains($0)
+        }
+        return isEnglishLetter || isSymbol
     }
 }
 
