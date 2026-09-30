@@ -238,18 +238,22 @@ public enum HorizontalPanelGroupPlacement {
         groupMinX: Double,
         groupMaxX: Double,
         visibleMinX: Double,
-        visibleMaxX: Double
+        visibleMaxX: Double,
+        reservedLeftWidth: Double = 0,
+        reservedRightWidth: Double = 0
     ) -> Double {
-        let groupWidth = groupMaxX - groupMinX
+        let reservedGroupMinX = groupMinX - max(reservedLeftWidth, 0)
+        let reservedGroupMaxX = groupMaxX + max(reservedRightWidth, 0)
+        let groupWidth = reservedGroupMaxX - reservedGroupMinX
         let visibleWidth = visibleMaxX - visibleMinX
         guard groupWidth <= visibleWidth else {
-            return visibleMinX - groupMinX
+            return visibleMinX - reservedGroupMinX
         }
-        if groupMinX < visibleMinX {
-            return visibleMinX - groupMinX
+        if reservedGroupMinX < visibleMinX {
+            return visibleMinX - reservedGroupMinX
         }
-        if groupMaxX > visibleMaxX {
-            return visibleMaxX - groupMaxX
+        if reservedGroupMaxX > visibleMaxX {
+            return visibleMaxX - reservedGroupMaxX
         }
         return 0
     }

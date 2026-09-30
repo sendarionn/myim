@@ -4039,6 +4039,7 @@ final class InputController: IMKInputController {
               !translationTargetLanguages.isEmpty else {
             return
         }
+        reserveTranslationCandidateSpace(for: destination)
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
@@ -4198,6 +4199,38 @@ final class InputController: IMKInputController {
     }
 
     private func keepCandidatePanelGroupInsideScreen() {
+        keepCandidatePanelGroupInsideScreen(
+            reservedLeftWidth: 0,
+            reservedRightWidth: 0
+        )
+    }
+
+    private func reserveTranslationCandidateSpace(
+        for destination: TranslationCandidateDestination
+    ) {
+        guard !translationCandidateWindow.isVisible else {
+            keepCandidatePanelGroupInsideScreen()
+            return
+        }
+        let reservedWidth = CandidatePanelItemStyle.maximumWidth + 8
+        switch destination {
+        case .normal:
+            keepCandidatePanelGroupInsideScreen(
+                reservedLeftWidth: reservedWidth,
+                reservedRightWidth: 0
+            )
+        case .fuzzy:
+            keepCandidatePanelGroupInsideScreen(
+                reservedLeftWidth: 0,
+                reservedRightWidth: reservedWidth
+            )
+        }
+    }
+
+    private func keepCandidatePanelGroupInsideScreen(
+        reservedLeftWidth: CGFloat,
+        reservedRightWidth: CGFloat
+    ) {
         let frames = [
             candidateWindow.visibleFrame,
             fuzzySuggestionWindow.visibleFrame,
@@ -4214,7 +4247,9 @@ final class InputController: IMKInputController {
             groupMinX: groupFrame.minX,
             groupMaxX: groupFrame.maxX,
             visibleMinX: visibleFrame.minX,
-            visibleMaxX: visibleFrame.maxX
+            visibleMaxX: visibleFrame.maxX,
+            reservedLeftWidth: reservedLeftWidth,
+            reservedRightWidth: reservedRightWidth
         )
         candidateWindow.offsetHorizontally(by: offset)
         fuzzySuggestionWindow.offsetHorizontally(by: offset)

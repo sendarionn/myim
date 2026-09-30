@@ -267,4 +267,24 @@ struct CandidateFilterTests {
             visibleMaxX: 800
         ) == 140)
     }
+
+    @Test func reservesTranslationPanelOnTheLeftBeforeItAppears() {
+        #expect(HorizontalPanelGroupPlacement.offset(
+            groupMinX: 100,
+            groupMaxX: 500,
+            visibleMinX: 0,
+            visibleMaxX: 800,
+            reservedLeftWidth: 248
+        ) == 148)
+    }
+
+    @Test func reservesTranslationPanelOnTheRightBeforeItAppears() {
+        #expect(HorizontalPanelGroupPlacement.offset(
+            groupMinX: 100,
+            groupMaxX: 650,
+            visibleMinX: 0,
+            visibleMaxX: 800,
+            reservedRightWidth: 248
+        ) == -98)
+    }
 }
