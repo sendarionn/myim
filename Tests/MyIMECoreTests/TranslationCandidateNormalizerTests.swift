@@ -27,4 +27,11 @@ struct TranslationCandidateNormalizerTests {
         #expect(TranslationCandidateNormalizer.wordCandidate(from: "return") == "return")
         #expect(TranslationCandidateNormalizer.wordCandidate(from: "to think") == "to think")
     }
+
+    @Test
+    func lowercasesEveryTranslationCandidate() {
+        #expect(TranslationCandidateNormalizer.wordCandidates(
+            from: "LOVE / Wi-Fi; API Client"
+        ) == ["love", "wi-fi", "api client"])
+    }
 }

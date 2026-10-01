@@ -24,7 +24,9 @@ public enum TranslationCandidateNormalizer {
         if value.hasSuffix("."), !value.hasSuffix("...") {
             value.removeLast()
         }
-        value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        value = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
         return value.isEmpty ? nil : value
     }
 }
