@@ -1319,7 +1319,12 @@ final class InputController: IMKInputController {
         }
 
         trace("commitComposition.execute", sender: sender)
+        let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
+            originalInput: inputBuffer,
+            hasSelectedCandidate: selectedCandidateValue != nil
+        )
         commit(inputBuffer, to: sender)
+        learnUnselectedInput(unselectedInputLearningEntry)
     }
 
     override func cancelComposition() {
@@ -6042,15 +6047,7 @@ final class InputController: IMKInputController {
     }
 
     private var conversionReading: String {
-        if NumericPrefixCandidateComposer.parts(of: inputBuffer) != nil {
-            return inputBuffer
-        }
-        return String(
-            inputBuffer.prefix {
-                $0.isASCII
-                    && ($0.isLetter || $0 == "-" || $0 == "'")
-            }
-        )
+        ConversionReadingResolver.resolve(inputBuffer)
     }
 
     private var interactionState: InputInteractionState {

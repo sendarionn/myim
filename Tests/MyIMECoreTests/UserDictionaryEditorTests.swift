@@ -24,6 +24,26 @@ struct UserDictionaryEditorTests {
     }
 
     @Test
+    func learnsMixedLettersAndDigitsWithoutChangingTheCandidate() throws {
+        let learned = try #require(UnselectedInputLearningPolicy.entry(
+            originalInput: "E06S",
+            hasSelectedCandidate: false
+        ))
+        let entries = UserDictionaryEditor.adding(
+            reading: learned.reading,
+            candidate: learned.candidate,
+            to: []
+        )
+
+        #expect(learned.reading == "e06s")
+        #expect(learned.candidate == "E06S")
+        #expect(
+            ConversionEngine(entries: entries)
+                .candidateGroups(matching: "e06").prefix == ["E06S"]
+        )
+    }
+
+    @Test
     func doesNotLearnRawInputWhenACandidateWasSelected() {
         #expect(UnselectedInputLearningPolicy.entry(
             originalInput: "Wi-Fi",
