@@ -2392,3 +2392,11 @@
 - 翻訳候補に含まれる英字をすべて小文字へ正規化
 - インポート辞書の解析結果と索引をInputController間で共有し、複数アプリ利用時のメモリ重複を削減
 - 詳細トレースによる入力先アプリへの同期的な範囲照会を入力境界イベントに限定
+- 候補の表示文字列・確定文字列・読み・生成元・学習可否・属性を`Candidate`へ集約し、同じ文字列の複数生成元を保持
+- WikipediaとGoogle日本語入力の非同期候補取得を共通の`CandidateSource`境界へ分離
+- 入力session generation、revision、入力文字列、カーソル位置、controller IDを`InputSessionSnapshot`へ統合
+- 古いController、古い入力revision、deactivate後の遅延パネル要求、遅延willCloseの回帰テストを追加
+- 入力関連パネルの所有権と一括終了処理を`InputPanelCoordinator`へ移動
+- 通常候補の生成元別属性付与とCandidatePipelineへの入力組み立てを`CandidateAssembly`へ分離
+- 通常候補の選択状態、長音後処理、フィルター前候補の保持と復元を`CandidateSession`へ分離
+- 古い入力セッションで完了した曖昧検索索引の構築結果から候補パネルを更新しないように修正

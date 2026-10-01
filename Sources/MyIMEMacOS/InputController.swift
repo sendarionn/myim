@@ -143,9 +143,7 @@ final class InputController: IMKInputController {
     private var recentCommittedContext = ""
     private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
-    private var candidateSelection = CandidateSelectionState<String>()
-    private var longVowelFilterProtectedCandidates = Set<String>()
-    private var unfilteredCandidates: [String]?
+    private var candidateSession = CandidateSession()
     private var candidateFilterConditions: [CandidateFilterCondition] = []
     private var candidateFilterDraft: CandidateFilterDraft?
     private var calendarFormatCandidates: [String]?
@@ -186,29 +184,19 @@ final class InputController: IMKInputController {
         DeferredJSONFileWriter<NextInputPredictionModel>
     private var nextInputCandidates: [String] = []
     private var nextInputContext: String?
-    private var generatedParticleCandidates = Set<String>()
     private var selectedNextInputIndex: Int?
     private var nextInputDismissTimer: Timer?
     private var nextInputExtensionGeneration: UInt = 0
     private var nextInputOutsideLocalMonitor: Any?
     private var nextInputOutsideGlobalMonitor: Any?
     private let suggestionSearchSession = SuggestionSearchSession()
-    private var officialCandidates: [String] = []
-    private var learnableOfficialCandidates = Set<String>()
+    private var officialCandidates: [Candidate] = []
     private var javaScriptExtensionCandidates: [String] = []
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
     private var tabDictionaryRegistration: TabDictionaryRegistration?
     private var basicDictionaryStatus = "未確認"
-    private let candidateWindow = CandidateWindowController()
-    private let candidateFilterDraftWindow = CandidateWindowController()
-    private var candidateFilterConditionWindows: [CandidateWindowController] = []
-    private let calendarWindow = CalendarWindowController()
-    private let emojiWindow = EmojiWindowController.shared
-    private let fuzzySuggestionWindow = FuzzySuggestionWindowController()
-    private let translationCandidateWindow = CandidateWindowController()
-    private let previewWindow = ExternalInformationWindowController()
-    private let symbolTipsWindow = SymbolTipsWindowController()
+    private let panelCoordinator = InputPanelCoordinator()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private var dictionaryDefinitionTask: Task<Void, Never>?
     private let romajiConverter = RomajiConverter()
@@ -230,8 +218,7 @@ final class InputController: IMKInputController {
     private var lastValidInputLocation: NSRect?
     private var compositionAnchorFrame: NSRect?
     private let controllerID = String(UUID().uuidString.prefix(8))
-    private var inputRevision: UInt = 0
-    private var revisionInputSnapshot = ""
+    private var inputSession = InputSession()
     private var lastTracedMarkedRange = NSRange(
         location: NSNotFound,
         length: 0
@@ -240,6 +227,43 @@ final class InputController: IMKInputController {
         location: NSNotFound,
         length: 0
     )
+
+    private var candidateWindow: CandidateWindowController {
+        panelCoordinator.candidate
+    }
+
+    private var candidateFilterDraftWindow: CandidateWindowController {
+        panelCoordinator.candidateFilterDraft
+    }
+
+    private var candidateFilterConditionWindows: [CandidateWindowController] {
+        get { panelCoordinator.candidateFilterConditions }
+        set { panelCoordinator.candidateFilterConditions = newValue }
+    }
+
+    private var calendarWindow: CalendarWindowController {
+        panelCoordinator.calendar
+    }
+
+    private var emojiWindow: EmojiWindowController {
+        panelCoordinator.emoji
+    }
+
+    private var fuzzySuggestionWindow: FuzzySuggestionWindowController {
+        panelCoordinator.fuzzySuggestion
+    }
+
+    private var translationCandidateWindow: CandidateWindowController {
+        panelCoordinator.translationCandidate
+    }
+
+    private var previewWindow: ExternalInformationWindowController {
+        panelCoordinator.externalInformation
+    }
+
+    private var symbolTipsWindow: SymbolTipsWindowController {
+        panelCoordinator.symbolTips
+    }
 
     static func handleGlobalEmojiShortcut() {
         guard let controller = activeController,
@@ -498,7 +522,7 @@ final class InputController: IMKInputController {
             return handleCandidateFilterInput(event, client: sender)
         }
 
-        if unfilteredCandidates != nil,
+        if candidateSession.unfilteredCandidates != nil,
            let offset = CandidateFilterArrowNavigation.offset(
                forKeyCode: Int(event.keyCode)
            ) {
@@ -672,7 +696,7 @@ final class InputController: IMKInputController {
                 unit: deletionUnit(for: event)
             )
         case .escape:
-            if unfilteredCandidates != nil {
+            if candidateSession.unfilteredCandidates != nil {
                 removeLastCandidateFilter(client: sender)
                 return true
             }
@@ -742,7 +766,8 @@ final class InputController: IMKInputController {
             )
             return false
         }
-        if unfilteredCandidates != nil, currentCandidates.isEmpty {
+        if candidateSession.unfilteredCandidates != nil,
+           currentCandidates.isEmpty {
             return true
         }
         return commitFirstCandidateOrInput(to: sender)
@@ -858,7 +883,8 @@ final class InputController: IMKInputController {
             nextInputPredictionModel.breakSequence()
         }
         if let aSelector,
-           candidateFilterDraft != nil || unfilteredCandidates != nil,
+           candidateFilterDraft != nil
+                || candidateSession.unfilteredCandidates != nil,
            let inputClient = client() {
             let command = NSStringFromSelector(aSelector)
             if let offset = CandidateFilterArrowNavigation.offset(
@@ -890,7 +916,8 @@ final class InputController: IMKInputController {
                     return
                 }
             case "insertNewline:", "insertNewlineIgnoringFieldEditor:":
-                if unfilteredCandidates != nil, currentCandidates.isEmpty {
+                if candidateSession.unfilteredCandidates != nil,
+                   currentCandidates.isEmpty {
                     return
                 }
             default:
@@ -1275,9 +1302,9 @@ final class InputController: IMKInputController {
             return
         }
 
-        let storedCandidate = currentCandidates.first {
-            candidateDisplayValue($0) == candidate
-        } ?? candidate
+        let storedCandidate = currentCandidateModels.first {
+            $0.displayText == candidate
+        } ?? Candidate(storageText: candidate)
         recordCandidateSelectionForCurrentInput(storedCandidate)
         if emojiWindow.isVisible {
             selectedCandidateIndex = currentCandidates.firstIndex {
@@ -1288,11 +1315,11 @@ final class InputController: IMKInputController {
         }
         let historyValue = CalculationInputHistory.value(
             input: inputBuffer,
-            selectedCandidate: storedCandidate,
+            selectedCandidate: storedCandidate.storageText,
             generatedCandidates: cachedJavaScriptCalculationCandidates
         )
         commit(
-            candidateValueForCommit(storedCandidate) + conversionSuffix,
+            storedCandidate.commitText + conversionSuffix,
             to: client() as Any,
             historyValue: historyValue
         )
@@ -1406,6 +1433,15 @@ final class InputController: IMKInputController {
             applicationLifecycleGeneration = nil
             globalLifecycleGeneration = Self.lifecycleGenerationTracker
                 .recordAnonymousActivation()
+        }
+        if let globalLifecycleGeneration {
+            inputSession.activate(
+                sessionGeneration: globalLifecycleGeneration
+            )
+            _ = inputSession.synchronize(
+                input: inputBuffer,
+                cursorPosition: inputCursor
+            )
         }
         transientCompositionGuard.recordActivation(
             resumingDeactivation: resumesTransientDeactivation,
@@ -1625,7 +1661,6 @@ final class InputController: IMKInputController {
         pendingDeactivationStartedAt = nil
         activeInputClient = nil
         resetTransientInteractionState()
-        symbolTipsWindow.hide()
         flushPendingHistoryWrites()
     }
 
@@ -1764,7 +1799,6 @@ final class InputController: IMKInputController {
     private func resetOfficialCandidates() {
         suggestionSearchSession.cancel(.official)
         officialCandidates = []
-        learnableOfficialCandidates = []
     }
 
     private func toggleCandidateSource(
@@ -2020,7 +2054,14 @@ final class InputController: IMKInputController {
         if let existingIndex = currentCandidates.firstIndex(of: candidate) {
             index = existingIndex
         } else {
-            currentCandidates.insert(candidate, at: 0)
+            candidateSession.insert(
+                Candidate(
+                    storageText: candidate,
+                    source: .specialConversion,
+                    reading: conversionReading
+                ),
+                at: 0
+            )
             index = 0
         }
         selectedCandidateIndex = index
@@ -2806,12 +2847,11 @@ final class InputController: IMKInputController {
 
     private func beginCandidateFilterInput(client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty,
-              unfilteredCandidates != nil || !currentCandidates.isEmpty else {
+              candidateSession.unfilteredCandidates != nil
+                || !currentCandidates.isEmpty else {
             return false
         }
-        if unfilteredCandidates == nil {
-            unfilteredCandidates = currentCandidates
-        }
+        candidateSession.beginFiltering()
         let currentIDSSignature = Self.calculateCandidateFilterIDSSignature()
         if currentIDSSignature != Self.candidateFilterIDSSignature {
             Self.candidateFilterDatabase = Self.loadCandidateFilterDatabase()
@@ -2915,7 +2955,7 @@ final class InputController: IMKInputController {
     }
 
     private func removeLastCandidateFilter(client sender: Any) {
-        guard let originalCandidates = unfilteredCandidates else {
+        guard candidateSession.unfilteredCandidates != nil else {
             candidateFilterDraft = nil
             return
         }
@@ -2927,7 +2967,7 @@ final class InputController: IMKInputController {
             showFilteredCandidates(client: sender)
             return
         }
-        currentCandidates = originalCandidates
+        _ = candidateSession.restoreUnfilteredCandidates()
         selectedCandidateIndex = nil
         resetCandidateFilters()
         updateMarkedText(in: sender)
@@ -3056,11 +3096,12 @@ final class InputController: IMKInputController {
     }
 
     private func showFilteredCandidates(client sender: Any) {
-        guard let unfilteredCandidates else { return }
-        currentCandidates = CandidateFilter(
+        guard let unfilteredCandidates = candidateSession.unfilteredCandidates
+        else { return }
+        let filteredTexts = CandidateFilter(
             kanjiDatabase: Self.candidateFilterDatabase
         ).filtered(
-            unfilteredCandidates,
+            unfilteredCandidates.map(\.storageText),
             conditions: candidateFilterConditions,
             semanticScorer: { query, candidate in
                 CandidateSemanticScorer.score(
@@ -3073,6 +3114,7 @@ final class InputController: IMKInputController {
                 )
             }
         )
+        candidateSession.applyFilteredTexts(filteredTexts)
         selectedCandidateIndex = nil
         updateMarkedText(in: sender)
         if currentCandidates.isEmpty {
@@ -3136,7 +3178,7 @@ final class InputController: IMKInputController {
     }
 
     private func resetCandidateFilters() {
-        unfilteredCandidates = nil
+        candidateSession.clearFilterBackup()
         candidateFilterConditions = []
         candidateFilterDraft = nil
         candidateFilterDraftWindow.hide()
@@ -3154,15 +3196,11 @@ final class InputController: IMKInputController {
             )
         }
         guard !inputBuffer.isEmpty else {
-            generatedParticleCandidates = []
-            longVowelFilterProtectedCandidates = []
             clearCandidateState(includingFuzzy: true)
             dismissInputSessionPanels(using: .inputBecameEmpty)
             return
         }
         reloadUserDictionaryFromDiskIfNeeded()
-        generatedParticleCandidates = []
-        longVowelFilterProtectedCandidates = []
         if !Self.diagnosticConfiguration.minimalMode {
             updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
         }
@@ -3305,7 +3343,7 @@ final class InputController: IMKInputController {
         let particleCandidates = particleBoundaryCandidates(
             for: conversionReading
         )
-        generatedParticleCandidates = JapaneseParticleCandidateGenerator
+        let generatedParticleCandidates = JapaneseParticleCandidateGenerator
             .generatedOnlyCandidates(
                 generated: particleCandidates,
                 exactDictionaryCandidates: userCandidates.exact
@@ -3341,43 +3379,40 @@ final class InputController: IMKInputController {
             kanaCandidates = [hiragana, katakana]
                 .compactMap { $0 }
         }
-        let directCandidates = userCandidates.exact
-            + learnedExactCandidates
-            + dateTimeCandidates
-            + numericPrefixCandidates
-            + scriptCandidates
-            + dictionarySymbolCandidates.exact
-            + basicCandidates.exact
-            + imeCandidates.exact
-            + inflectionCandidates
-        let otherCandidates = userCandidates.prefix
-            + candidateSelectionHistory.completions(
+        let learnedCompletionCandidates = candidateSelectionHistory
+            .completions(
                 for: conversionReading,
                 limit: Self.maximumCandidateCount * 2
             )
-            + remoteCandidates
-            + dictionarySymbolCandidates.prefix
-            + imeCandidates.prefix
-            + basicCandidates.prefix
         let contextualCandidates = isNextInputPredictionEnabled
             && Self.diagnosticConfiguration.enables(.nextInput)
             ? nextInputPredictionModel.candidatesAfterLastInput(
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
             : []
-        longVowelFilterProtectedCandidates = Set(
-            userCandidates.exact + userCandidates.prefix
-                + dictionarySymbolCandidates.exact
-                + basicCandidates.exact + imeCandidates.exact
-        )
-        let orderedCandidates = CandidatePipeline().candidates(
-            from: CandidatePipeline.Input(
+        let orderedCandidates = CandidateAssembly().candidates(
+            from: CandidateAssembly.Input(
+                reading: conversionReading,
                 kana: kanaCandidates,
-                direct: directCandidates,
-                secondary: particleCandidates,
-                other: otherCandidates,
+                userExact: userCandidates.exact,
+                learnedExact: learnedExactCandidates,
+                dateTime: dateTimeCandidates,
+                numericPrefix: numericPrefixCandidates,
+                javaScript: scriptCandidates,
+                symbolExact: dictionarySymbolCandidates.exact,
+                basicExact: basicCandidates.exact,
+                systemExact: imeCandidates.exact,
+                inflection: inflectionCandidates,
+                particle: particleCandidates,
+                generatedParticles: generatedParticleCandidates,
+                userPrefix: userCandidates.prefix,
+                learnedCompletion: learnedCompletionCandidates,
+                external: remoteCandidates,
+                symbolPrefix: dictionarySymbolCandidates.prefix,
+                systemPrefix: imeCandidates.prefix,
+                basicPrefix: basicCandidates.prefix,
                 english: englishCandidates,
-                trailing: uppercaseCandidates,
+                uppercase: uppercaseCandidates,
                 recencyRanks: candidateSelectionRanks(
                     for: conversionReading
                 ),
@@ -3385,12 +3420,7 @@ final class InputController: IMKInputController {
                 prioritizeKana: kanaCandidates.first?.count == 1
             )
         )
-        replaceCurrentCandidates(with:
-            SingleLetterDictionaryCandidateFilter.candidates(
-                orderedCandidates,
-                for: conversionReading
-            )
-        )
+        replaceCurrentCandidates(with: orderedCandidates)
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
@@ -3408,34 +3438,24 @@ final class InputController: IMKInputController {
     }
 
     private func replaceCurrentCandidates(with candidates: [String]) {
-        let selectedCandidate = selectedCandidateIndex.flatMap { index in
-            currentCandidates.indices.contains(index)
-                ? currentCandidates[index]
-                : nil
-        }
-        let notationMatchedCandidates = inputBuffer == "-"
-            ? candidates
-            : LongVowelNotationCandidateFilter.candidates(
-                candidates,
-                for: conversionReading,
-                preserving: longVowelFilterProtectedCandidates
+        replaceCurrentCandidates(with: candidates.map {
+            Candidate(storageText: $0)
+        })
+    }
+
+    private func replaceCurrentCandidates(with candidates: [Candidate]) {
+        let hadSelection = selectedCandidateIndex != nil
+        candidateSession.replace(
+            with: candidates,
+            input: inputBuffer,
+            reading: conversionReading
+        )
+        if hadSelection {
+            trace(
+                "candidateSelection.changed",
+                sender: client(),
+                detail: "normal=\(selectedCandidateIndex.map(String.init) ?? "none")"
             )
-        if inputBuffer == "-", let prolongedSoundMarkIndex = notationMatchedCandidates.firstIndex(
-            of: "ー"
-        ) {
-            var fixedCandidates = notationMatchedCandidates
-            fixedCandidates.remove(at: prolongedSoundMarkIndex)
-            fixedCandidates.insert("ー", at: 0)
-            currentCandidates = fixedCandidates
-        } else {
-            currentCandidates = notationMatchedCandidates
-        }
-        if let selectedCandidate {
-            selectedCandidateIndex = currentCandidates.firstIndex(
-                of: selectedCandidate
-            )
-        } else if selectedCandidateIndex != nil {
-            selectedCandidateIndex = nil
         }
     }
 
@@ -3910,24 +3930,31 @@ final class InputController: IMKInputController {
             return
         }
         officialCandidates = []
-        learnableOfficialCandidates = []
         let japaneseInput = romajiConverter.hiragana(from: input) ?? input
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
+        var sources: [any CandidateSource] = []
+        if isWikipediaSuggestionsEnabled {
+            sources.append(WikipediaCandidateSource())
+        }
+        if isGoogleJapaneseInputEnabled {
+            sources.append(GoogleJapaneseInputCandidateSource())
+        }
+        let context = CandidateSourceContext(
+            input: inputBuffer,
+            conversionReading: input,
+            japaneseReading: japaneseInput
+        )
         let token = suggestionSearchSession.begin(.official, query: input)
         let task = Task { @MainActor [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(250))
                 guard let self else { return }
-                async let wikipedia: [String] = isWikipediaSuggestionsEnabled
-                    ? (try? await WikipediaSuggestionClient().suggestions(for: japaneseInput)) ?? []
-                    : []
-                async let google: [String] = isGoogleJapaneseInputEnabled
-                    ? (try? await GoogleJapaneseInputClient().candidates(for: japaneseInput)) ?? []
-                    : []
-                let results = await (wikipedia, google)
-                let suggestions = results.0 + results.1
+                let suggestions = await CandidateSourceCollector.candidates(
+                    from: sources,
+                    context: context
+                )
                 try Task.checkCancellation()
                 guard suggestionSearchSession.isCurrent(token),
                       isWikipediaSuggestionsEnabled
@@ -3940,9 +3967,7 @@ final class InputController: IMKInputController {
                       ) else {
                     return
                 }
-                var seen = Set<String>()
-                officialCandidates = suggestions.filter { seen.insert($0).inserted }
-                learnableOfficialCandidates = Set(results.0 + results.1)
+                officialCandidates = suggestions
                 if let inputClient = client() {
                     refreshCandidates(client: inputClient)
                 }
@@ -4734,16 +4759,19 @@ final class InputController: IMKInputController {
 
     private func scheduleCandidateLocationRetry(for sender: Any) {
         guard candidateLocationRetry == nil else { return }
-        synchronizeInputRevision()
-        let sessionGeneration = globalLifecycleGeneration
-        let revision = inputRevision
+        guard let sessionSnapshot = currentInputSessionSnapshot() else {
+            return
+        }
         let senderObject = sender as AnyObject
         let retry = DispatchWorkItem { [weak self, weak senderObject] in
             guard let self else { return }
             self.candidateLocationRetry = nil
-            guard self.isServerActive,
-                  self.globalLifecycleGeneration == sessionGeneration,
-                  self.inputRevision == revision,
+            self.synchronizeInputRevision()
+            guard self.inputSession.accepts(
+                    sessionSnapshot,
+                    controllerID: self.controllerID,
+                    isActive: self.isServerActive
+                  ),
                   !self.inputBuffer.isEmpty,
                   !self.currentCandidates.isEmpty,
                   let senderObject else {
@@ -4871,41 +4899,45 @@ final class InputController: IMKInputController {
     private func recordSelectedCandidate() {
         guard
             let selectedCandidateIndex,
-            currentCandidates.indices.contains(selectedCandidateIndex)
+            currentCandidateModels.indices.contains(selectedCandidateIndex)
         else {
             return
         }
         recordCandidateSelectionForCurrentInput(
-            currentCandidates[selectedCandidateIndex]
+            currentCandidateModels[selectedCandidateIndex]
         )
     }
 
     private func recordCandidateSelectionForCurrentInput(
-        _ candidate: String
+        _ candidate: Candidate
     ) {
-        guard !generatedTranslationCandidates.contains(candidate) else {
+        guard !candidate.hasSource(.translation),
+              !generatedTranslationCandidates.contains(candidate.storageText)
+        else {
             return
         }
         if let expression = CalculationInputHistory.value(
             input: inputBuffer,
-            selectedCandidate: candidate,
+            selectedCandidate: candidate.storageText,
             generatedCandidates: cachedJavaScriptCalculationCandidates
         ) {
             recordCandidateSelection(expression, reading: expression)
         } else {
-            recordCandidateSelection(candidate)
+            recordCandidateSelection(
+                candidate.storageText,
+                isLearnable: candidate.isLearnable
+            )
         }
     }
 
     private func recordCandidateSelection(
         _ candidate: String,
-        reading: String? = nil
+        reading: String? = nil,
+        isLearnable: Bool = false
     ) {
         guard Self.diagnosticConfiguration.enables(.learning) else { return }
         let learnedReading = reading ?? candidateSelectionReading
-        if (generatedParticleCandidates.contains(candidate)
-                || learnableOfficialCandidates.contains(candidate)),
-           !learnedReading.isEmpty {
+        if isLearnable, !learnedReading.isEmpty {
             do {
                 try saveUserDictionaryEntry(
                     reading: learnedReading,
@@ -5132,7 +5164,7 @@ final class InputController: IMKInputController {
     private func recordNextInputCandidateSelection(_ candidate: String) {
         guard Self.diagnosticConfiguration.enables(.learning),
               closingBracketTracker.shouldRecordAsNextInput(candidate),
-              !generatedParticleCandidates.contains(candidate) else {
+              !isGeneratedParticleCandidate(candidate) else {
             return
         }
         let userEngine = userConversionEngine
@@ -5219,7 +5251,7 @@ final class InputController: IMKInputController {
                 inputHistoryValue,
                 requested: recordsInputHistory
             )
-            && !generatedParticleCandidates.contains(inputHistoryValue)
+            && !isGeneratedParticleCandidate(inputHistoryValue)
 
         let markedRange = textClient.markedRange()
         let beginsAfterLineBreak = inputBeginsAfterLineBreak(
@@ -5299,12 +5331,7 @@ final class InputController: IMKInputController {
         calendarFormatTask = nil
         dictionaryDefinitionTask?.cancel()
         dictionaryDefinitionTask = nil
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        translationCandidateWindow.hide()
-        emojiWindow.hide()
-        previewWindow.hide()
-        symbolTipsWindow.hide()
+        panelCoordinator.dismissAll()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
         nextInputCandidates = []
@@ -5340,15 +5367,12 @@ final class InputController: IMKInputController {
         if policy.cancelsCalendarWork {
             calendarFormatTask?.cancel()
             calendarFormatTask = nil
-            candidateWindow.hide()
         }
-        dismissFuzzySuggestions()
-        emojiWindow.hide()
-        symbolTipsWindow.hide()
+        suggestionSearchSession.cancel(.fuzzy)
+        fuzzySuggestions = []
+        selectedFuzzySuggestionIndex = nil
+        panelCoordinator.dismiss(using: policy)
         resetCandidateFilters()
-        if !policy.preservesExternalInformation {
-            previewWindow.hide()
-        }
         if !policy.preservesCalendar {
             clearCalendarSelection()
         }
@@ -5667,19 +5691,21 @@ final class InputController: IMKInputController {
     }
 
     private func synchronizeInputRevision() {
-        guard revisionInputSnapshot != inputBuffer else { return }
-        cancelCandidateLocationRetry()
-        inputRevision &+= 1
-        revisionInputSnapshot = inputBuffer
+        if inputSession.synchronize(
+            input: inputBuffer,
+            cursorPosition: inputCursor
+        ) {
+            cancelCandidateLocationRetry()
+        }
+    }
+
+    private var inputRevision: UInt {
+        inputSession.inputRevision
     }
 
     private func currentInputSessionSnapshot() -> InputSessionSnapshot? {
         synchronizeInputRevision()
-        guard let globalLifecycleGeneration else { return nil }
-        return InputSessionSnapshot(
-            sessionGeneration: globalLifecycleGeneration,
-            inputRevision: inputRevision
-        )
+        return inputSession.snapshot(controllerID: controllerID)
     }
 
     private func acceptsAsyncResult(
@@ -5688,10 +5714,11 @@ final class InputController: IMKInputController {
         sender: Any? = nil
     ) -> Bool {
         synchronizeInputRevision()
-        let accepted = snapshot.isCurrent(
-            sessionGeneration: globalLifecycleGeneration,
-            inputRevision: inputRevision
-        ) && isServerActive
+        let accepted = inputSession.accepts(
+            snapshot,
+            controllerID: controllerID,
+            isActive: isServerActive
+        )
         trace(
             accepted ? "asyncResult.accepted" : "asyncResult.rejectedAsStale",
             sender: sender,
@@ -5774,7 +5801,7 @@ final class InputController: IMKInputController {
     }
 
     private func clearCandidateState(includingFuzzy: Bool = false) {
-        candidateSelection.reset()
+        candidateSession.reset()
         guard includingFuzzy else { return }
         clearSessionTranslationCandidates()
         fuzzySelection.reset()
@@ -6045,6 +6072,7 @@ final class InputController: IMKInputController {
         cancelFuzzySuggestionSearch()
         fuzzyEngineBuildTask?.cancel()
         let userEntries = userEntries
+        let refreshSnapshot = currentInputSessionSnapshot()
         fuzzyEngineBuildTask = Task { @MainActor [weak self] in
             _ = await Task.detached(priority: .utility) {
                 Self.fuzzyEngineRepository.prepare(
@@ -6057,7 +6085,14 @@ final class InputController: IMKInputController {
                 return
             }
             fuzzyEngineBuildTask = nil
-            guard !inputBuffer.isEmpty, let inputClient = client() else {
+            guard let refreshSnapshot,
+                  acceptsAsyncResult(
+                    refreshSnapshot,
+                    source: "fuzzyEngineBuild",
+                    sender: client()
+                  ),
+                  !inputBuffer.isEmpty,
+                  let inputClient = client() else {
                 return
             }
             refreshCandidates(client: inputClient)
@@ -6114,21 +6149,33 @@ final class InputController: IMKInputController {
     }
 
     private var selectedCandidateValue: String? {
-        candidateSelection.selectedValue
+        candidateSession.selectedCandidate
             .map {
-                candidateValueForCommit($0) + conversionSuffix
+                $0.commitText + conversionSuffix
             }
     }
 
     private var currentCandidates: [String] {
-        get { candidateSelection.values }
-        set { candidateSelection.values = newValue }
+        candidateSession.candidateTexts
+    }
+
+    private var currentCandidateModels: [Candidate] {
+        get { candidateSession.candidates }
+        set { candidateSession.candidates = newValue }
+    }
+
+    private func isGeneratedParticleCandidate(_ value: String) -> Bool {
+        currentCandidateModels.contains {
+            ($0.storageText == value || $0.commitText == value)
+                && $0.hasSource(.particleComposition)
+                && $0.hasAttribute(.generated)
+        }
     }
 
     private var selectedCandidateIndex: Int? {
-        get { candidateSelection.selectedIndex }
+        get { candidateSession.selectedIndex }
         set {
-            candidateSelection.selectedIndex = newValue
+            candidateSession.selectedIndex = newValue
             trace(
                 "candidateSelection.changed",
                 sender: client(),

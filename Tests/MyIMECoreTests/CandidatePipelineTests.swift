@@ -4,6 +4,39 @@ import Testing
 @Suite
 struct CandidatePipelineTests {
     @Test
+    func structuredPipelinePreservesStringOrderAndCandidateOrigins() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.StructuredInput(
+                kana: [Candidate(
+                    storageText: "こうほ",
+                    source: .automaticKana
+                )],
+                direct: [
+                    Candidate(
+                        storageText: "候補",
+                        source: .basicDictionary
+                    ),
+                    Candidate(
+                        storageText: "候補",
+                        source: .externalSuggestion,
+                        isLearnable: true
+                    )
+                ],
+                other: [],
+                recencyRanks: [:],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates.map(\.storageText) == ["候補", "こうほ"])
+        #expect(candidates[0].sources == [
+            .basicDictionary,
+            .externalSuggestion
+        ])
+        #expect(candidates[0].isLearnable)
+    }
+
+    @Test
     func preservesCandidatePriorityRules() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
