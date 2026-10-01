@@ -8,7 +8,7 @@ struct TranslationCandidateSessionTests {
         var session = TranslationCandidateSession()
 
         let stored = session.store(
-            ["candidate", "option"],
+            translationCandidates(["candidate", "option"], reading: "候補"),
             for: "候補",
             channel: .normal
         )
@@ -22,8 +22,16 @@ struct TranslationCandidateSessionTests {
     @Test
     func keepsNormalAndFuzzyResultsIndependent() {
         var session = TranslationCandidateSession()
-        session.store(["candidate"], for: "候補", channel: .normal)
-        session.store(["public offer"], for: "公募", channel: .fuzzy)
+        session.store(
+            translationCandidates(["candidate"], reading: "候補"),
+            for: "候補",
+            channel: .normal
+        )
+        session.store(
+            translationCandidates(["public offer"], reading: "公募"),
+            for: "公募",
+            channel: .fuzzy
+        )
 
         #expect(session.contains("candidate", in: .normal))
         #expect(!session.contains("candidate", in: .fuzzy))
@@ -34,8 +42,16 @@ struct TranslationCandidateSessionTests {
     @Test
     func replacesARepeatedSourceWithoutChangingItsOrder() {
         var session = TranslationCandidateSession()
-        session.store(["candidate"], for: "候補", channel: .normal)
-        session.store(["option"], for: "候補", channel: .normal)
+        session.store(
+            translationCandidates(["candidate"], reading: "候補"),
+            for: "候補",
+            channel: .normal
+        )
+        session.store(
+            translationCandidates(["option"], reading: "候補"),
+            for: "候補",
+            channel: .normal
+        )
 
         #expect(session.sources(in: .normal) == ["候補"])
         #expect(session.candidates(for: "候補", channel: .normal)
@@ -47,7 +63,7 @@ struct TranslationCandidateSessionTests {
     func tracksVisibleSelectionAndResetsTheWholeSession() {
         var session = TranslationCandidateSession()
         let candidates = session.store(
-            ["candidate", "option"],
+            translationCandidates(["candidate", "option"], reading: "候補"),
             for: "候補",
             channel: .fuzzy
         )
@@ -65,5 +81,19 @@ struct TranslationCandidateSessionTests {
         #expect(session.selectedIndex == nil)
         #expect(!session.returnWasFuzzy)
         #expect(session.sources(in: .fuzzy).isEmpty)
+    }
+
+    private func translationCandidates(
+        _ values: [String],
+        reading: String
+    ) -> [Candidate] {
+        values.map {
+            Candidate(
+                storageText: $0,
+                source: .translation,
+                reading: reading,
+                attributes: [.generated]
+            )
+        }
     }
 }

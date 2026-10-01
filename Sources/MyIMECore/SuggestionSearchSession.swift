@@ -1,10 +1,15 @@
 import Foundation
 
 public enum SuggestionSearchKind: Hashable, Sendable {
+    case calendarFormat
+    case dictionaryDefinition
     case official
     case fuzzy
+    case fuzzyIndexBuild
     case javaScriptExtensions
+    case nextInputExtension
     case postalAddress
+    case translation
 }
 
 public final class SuggestionSearchSession: @unchecked Sendable {
@@ -52,6 +57,22 @@ public final class SuggestionSearchSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return entries[token.kind]?.token == token
+    }
+
+    public func complete(_ token: Token) {
+        lock.lock()
+        if entries[token.kind]?.token == token {
+            entries.removeValue(forKey: token.kind)
+        }
+        lock.unlock()
+    }
+
+    public func finishTask(_ token: Token) {
+        lock.lock()
+        if entries[token.kind]?.token == token {
+            entries[token.kind]?.task = nil
+        }
+        lock.unlock()
     }
 
     public func query(for kind: SuggestionSearchKind) -> String? {

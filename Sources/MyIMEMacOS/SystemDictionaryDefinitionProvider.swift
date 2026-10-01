@@ -1,7 +1,7 @@
 import CoreServices
 import Foundation
 
-struct SystemDictionaryDefinition {
+struct SystemDictionaryDefinition: Sendable {
     let dictionaryName: String
     let text: String
 }

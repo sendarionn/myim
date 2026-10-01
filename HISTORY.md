@@ -2401,3 +2401,10 @@
 - 通常候補の選択状態、長音後処理、フィルター前候補の保持と復元を`CandidateSession`へ分離
 - 古い入力セッションで完了した曖昧検索索引の構築結果から候補パネルを更新しないように修正
 - 翻訳候補の生成済み結果、表示候補、選択状態を`TranslationCandidateSession`へ集約し、翻訳候補を`Candidate`として保持
+- 翻訳先ごとの取得、正規化、重複除去、候補化を`TranslationCandidateSource`へ分離し、翻訳Taskを共通の`SuggestionSearchSession`で管理
+- もしかして、外部候補、JavaScript拡張、郵便番号、翻訳の非同期Task開始・取消・stale判定・結果適用を`SuggestionSearchCoordinator`へ統一
+- もしかして候補のtypo検索と辞書分割探索を`FuzzySuggestionSource`としてCoreへ移動
+- 次入力JavaScript候補とmacOS辞書検索も共通Coordinatorへ移し、専用generation番号と辞書検索Task状態を削除
+- カレンダー書式生成ともしかして索引構築を共通Coordinatorへ移し、用途ごとの取消範囲を分離
+- フィルター条件パネルと通常候補・もしかして・翻訳候補の配置処理を`InputPanelCoordinator`へ移動
+- 次入力候補の候補列・文脈・選択位置を`NextInputCandidateSession`へ統合

@@ -1,10 +1,6 @@
 import Foundation
-import MyIMECore
 
-/// Shares the expensive typo-correction index between input controllers.
-/// IMK creates a controller for each client application, so keeping this index
-/// on each controller multiplies its memory usage.
-final class FuzzyEngineRepository: @unchecked Sendable {
+public final class FuzzyEngineRepository: @unchecked Sendable {
     private let lock = NSLock()
     private var cachedEntries: [DictionaryEntry] = []
     private var cachedBaseKey: String?
@@ -14,8 +10,10 @@ final class FuzzyEngineRepository: @unchecked Sendable {
     private var cachedEngine = FuzzyConversionEngine(entries: [])
     private var generation = 0
 
+    public init() {}
+
     @discardableResult
-    func prepare(for entries: [DictionaryEntry]) -> Int {
+    public func prepare(for entries: [DictionaryEntry]) -> Int {
         lock.lock()
         defer { lock.unlock() }
 
@@ -31,7 +29,7 @@ final class FuzzyEngineRepository: @unchecked Sendable {
     }
 
     @discardableResult
-    func prepare(
+    public func prepare(
         baseEntries: [DictionaryEntry],
         baseKey: String,
         userEntries: [DictionaryEntry]
@@ -72,7 +70,7 @@ final class FuzzyEngineRepository: @unchecked Sendable {
         return generation
     }
 
-    func matches(
+    public func matches(
         for input: String,
         maximumDistance: Int? = nil,
         limit: Int

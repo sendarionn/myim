@@ -130,7 +130,6 @@ final class InputController: IMKInputController {
     private var inputBuffer = ""
     private var inputCursor = 0
     private var reconversionOriginal: String?
-    private var candidateTranslationTask: Task<Void, Never>?
     private var translationCandidateSession = TranslationCandidateSession()
     private var recentCommittedContext = ""
     private var activatedAt: TimeInterval?
@@ -140,7 +139,6 @@ final class InputController: IMKInputController {
     private var candidateFilterDraft: CandidateFilterDraft?
     private var calendarFormatCandidates: [String]?
     private var selectedCalendarFormatIndex: Int?
-    private var calendarFormatTask: Task<Void, Never>?
     private var calendarSessionActive = false
     private var calendarAnchorFrame: NSRect?
     private var calendarReturnApplication: NSRunningApplication?
@@ -161,7 +159,6 @@ final class InputController: IMKInputController {
         LayeredDictionaryContinuationCandidateGenerator
     private var basicDictionaryContinuationGenerator:
         DictionaryContinuationCandidateGenerator
-    private var fuzzyEngineBuildTask: Task<Void, Never>?
     private let shortcutSettingsController = ShortcutSettingsController()
     private lazy var javaScriptExtensionSettingsController =
         JavaScriptExtensionSettingsController(
@@ -174,14 +171,11 @@ final class InputController: IMKInputController {
     private var closingBracketTracker = ClosingBracketTracker()
     private let nextInputPredictionWriter:
         DeferredJSONFileWriter<NextInputPredictionModel>
-    private var nextInputCandidates: [String] = []
-    private var nextInputContext: String?
-    private var selectedNextInputIndex: Int?
+    private var nextInputSession = NextInputCandidateSession()
     private var nextInputDismissTimer: Timer?
-    private var nextInputExtensionGeneration: UInt = 0
     private var nextInputOutsideLocalMonitor: Any?
     private var nextInputOutsideGlobalMonitor: Any?
-    private let suggestionSearchSession = SuggestionSearchSession()
+    private let suggestionSearchCoordinator = SuggestionSearchCoordinator()
     private var officialCandidates: [Candidate] = []
     private var javaScriptExtensionCandidates: [String] = []
     private var postalAddressCandidates: [String] = []
@@ -190,7 +184,6 @@ final class InputController: IMKInputController {
     private var basicDictionaryStatus = "未確認"
     private let panelCoordinator = InputPanelCoordinator()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
-    private var dictionaryDefinitionTask: Task<Void, Never>?
     private let romajiConverter = RomajiConverter()
     private var settingsWindow: NSWindow?
     private var activeInputClient: Any?
@@ -226,11 +219,6 @@ final class InputController: IMKInputController {
 
     private var candidateFilterDraftWindow: CandidateWindowController {
         panelCoordinator.candidateFilterDraft
-    }
-
-    private var candidateFilterConditionWindows: [CandidateWindowController] {
-        get { panelCoordinator.candidateFilterConditions }
-        set { panelCoordinator.candidateFilterConditions = newValue }
     }
 
     private var calendarWindow: CalendarWindowController {
@@ -482,7 +470,7 @@ final class InputController: IMKInputController {
             if !inputBuffer.isEmpty || tabDictionaryRegistration != nil {
                 clearCompositionForSystemPaste(in: sender)
             }
-            if !nextInputCandidates.isEmpty {
+            if !nextInputSession.candidates.isEmpty {
                 dismissNextInputSuggestions(clearMarkedTextIn: sender)
             }
             return false
@@ -534,7 +522,7 @@ final class InputController: IMKInputController {
 
         if isUserDictionaryDeletionShortcut(event),
            inputBuffer.isEmpty,
-           selectedNextInputIndex != nil {
+           nextInputSession.selectedIndex != nil {
             removeSelectedNextInputCandidate(client: sender)
             return true
         }
@@ -542,16 +530,12 @@ final class InputController: IMKInputController {
         if inputBuffer.isEmpty,
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
            let typedText = event.characters,
-           let selectedNextInputIndex,
-           nextInputCandidates.indices.contains(selectedNextInputIndex),
+           let selectedNextInput = nextInputSession.selectedCandidate,
            closingBracketTracker.shouldConsumeTypedClosing(
                 typedText,
-                selectedCandidate: nextInputCandidates[selectedNextInputIndex]
+                selectedCandidate: selectedNextInput
            ) {
-            commitNextInputCandidate(
-                nextInputCandidates[selectedNextInputIndex],
-                to: sender
-            )
+            commitNextInputCandidate(selectedNextInput, to: sender)
             return true
         }
 
@@ -702,8 +686,8 @@ final class InputController: IMKInputController {
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
-            guard selectedNextInputIndex != nil else {
+        if inputBuffer.isEmpty, !nextInputSession.candidates.isEmpty {
+            guard nextInputSession.selectedIndex != nil else {
                 dismissNextInputSuggestions(clearMarkedTextIn: nil)
                 return false
             }
@@ -726,8 +710,8 @@ final class InputController: IMKInputController {
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
-            guard selectedNextInputIndex != nil else {
+        if inputBuffer.isEmpty, !nextInputSession.candidates.isEmpty {
+            guard nextInputSession.selectedIndex != nil else {
                 dismissNextInputSuggestions(clearMarkedTextIn: nil)
                 return false
             }
@@ -739,13 +723,9 @@ final class InputController: IMKInputController {
     }
 
     private func handleReturnKey(client sender: Any) -> Bool {
-        if inputBuffer.isEmpty, !nextInputCandidates.isEmpty {
-            if let selectedNextInputIndex,
-               nextInputCandidates.indices.contains(selectedNextInputIndex) {
-                commitNextInputCandidate(
-                    nextInputCandidates[selectedNextInputIndex],
-                    to: sender
-                )
+        if inputBuffer.isEmpty, !nextInputSession.candidates.isEmpty {
+            if let selectedNextInput = nextInputSession.selectedCandidate {
+                commitNextInputCandidate(selectedNextInput, to: sender)
                 return true
             }
             dismissNextInputSuggestions(clearMarkedTextIn: sender)
@@ -869,7 +849,7 @@ final class InputController: IMKInputController {
         }
         if let aSelector,
            inputBuffer.isEmpty,
-           nextInputCandidates.isEmpty,
+           nextInputSession.candidates.isEmpty,
            ["insertNewline:", "insertNewlineIgnoringFieldEditor:"]
             .contains(NSStringFromSelector(aSelector)) {
             nextInputPredictionModel.breakSequence()
@@ -1355,7 +1335,7 @@ final class InputController: IMKInputController {
         if inputBuffer.isEmpty {
             if closingBracketTracker
                 .shouldPreserveCandidatesDuringEmptySystemCommit(
-                    hasCandidates: !nextInputCandidates.isEmpty
+                    hasCandidates: !nextInputSession.candidates.isEmpty
                 ) {
                 Self.lifecycleLogger.notice(
                     "preserved structural next-input candidate after empty system commit"
@@ -1642,8 +1622,7 @@ final class InputController: IMKInputController {
         resetTransientInteractionState()
         nextInputPredictionModel.breakSequence()
         if closesController {
-            fuzzyEngineBuildTask?.cancel()
-            fuzzyEngineBuildTask = nil
+            suggestionSearchCoordinator.cancel(.fuzzyIndexBuild)
         }
         flushPendingHistoryWrites()
     }
@@ -1789,7 +1768,7 @@ final class InputController: IMKInputController {
     }
 
     private func resetOfficialCandidates() {
-        suggestionSearchSession.cancel(.official)
+        suggestionSearchCoordinator.cancel(.official)
         officialCandidates = []
     }
 
@@ -1864,7 +1843,7 @@ final class InputController: IMKInputController {
             names,
             forKey: Self.systemDictionaryNamesDefaultsKey
         )
-        dictionaryDefinitionTask?.cancel()
+        suggestionSearchCoordinator.cancel(.dictionaryDefinition)
         definitionProvider.clearCache()
         refreshExperimentalPreview()
     }
@@ -1970,9 +1949,7 @@ final class InputController: IMKInputController {
 
     private func handleSpace(space: String, client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            if let selectedNextInputIndex,
-               nextInputCandidates.indices.contains(selectedNextInputIndex) {
-                let value = nextInputCandidates[selectedNextInputIndex]
+            if let value = nextInputSession.selectedCandidate {
                 recordNextInputCandidateSelection(value)
                 commit(value + space, to: sender, historyValue: value)
                 return true
@@ -2074,7 +2051,7 @@ final class InputController: IMKInputController {
     private func shouldDismissNextInputSuggestions(
         for event: NSEvent
     ) -> Bool {
-        guard !nextInputCandidates.isEmpty else {
+        guard !nextInputSession.candidates.isEmpty else {
             return false
         }
         let nextInputControlKeyCodes: Set<UInt16> = [
@@ -2089,18 +2066,14 @@ final class InputController: IMKInputController {
     ) {
         guard
             shouldDismissNextInputSuggestions(for: event),
-            let selectedNextInputIndex,
-            nextInputCandidates.indices.contains(selectedNextInputIndex),
+            let selectedNextInput = nextInputSession.selectedCandidate,
             event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
             let characters = event.characters,
             !characters.isEmpty
         else {
             return
         }
-        commitNextInputCandidate(
-            nextInputCandidates[selectedNextInputIndex],
-            to: sender
-        )
+        commitNextInputCandidate(selectedNextInput, to: sender)
     }
 
     private func handleTab(_ event: NSEvent, client sender: Any) -> Bool {
@@ -2111,7 +2084,7 @@ final class InputController: IMKInputController {
             return true
         }
         if inputBuffer.isEmpty {
-            if selectedNextInputIndex != nil,
+            if nextInputSession.selectedIndex != nil,
                flags.isEmpty {
                 return selectNextInputCandidate(offset: 1, client: sender)
             }
@@ -2119,7 +2092,7 @@ final class InputController: IMKInputController {
                beginReconversionIfPossible(client: sender) {
                 return true
             }
-            if flags.isEmpty, !nextInputCandidates.isEmpty {
+            if flags.isEmpty, !nextInputSession.candidates.isEmpty {
                 return selectNextInputCandidate(offset: 1, client: sender)
             }
             return false
@@ -2665,7 +2638,7 @@ final class InputController: IMKInputController {
         emojiWindow.hide()
         previewWindow.hide()
         symbolTipsWindow.hide()
-        calendarFormatTask?.cancel()
+        suggestionSearchCoordinator.cancel(.calendarFormat)
         calendarFormatCandidates = nil
         selectedCalendarFormatIndex = nil
         calendarSessionActive = true
@@ -2684,50 +2657,59 @@ final class InputController: IMKInputController {
     }
 
     private func loadCalendarFormats(for date: Date, client sender: Any) {
-        calendarFormatTask?.cancel()
+        suggestionSearchCoordinator.cancel(.calendarFormat)
         calendarFormatCandidates = []
         selectedCalendarFormatIndex = nil
         candidateWindow.hide()
-        calendarFormatTask = Task { @MainActor [weak self] in
-            let candidates = await Self.javaScriptExtensionClient
-                .calendarCandidates(for: date)
-            guard !Task.isCancelled else { return }
-            guard let self else { return }
-            self.calendarFormatCandidates = self.candidatesOrderedByRecency(
-                candidates
-            )
-            self.selectedCalendarFormatIndex = nil
-            self.showCalendarFormatCandidates(client: sender)
-            guard let orderedCandidates = self.calendarFormatCandidates,
-                  !orderedCandidates.isEmpty else {
-                return
-            }
-            guard let selectedIndex = self.calendarWindow.runFormatSelection(
-                candidateCount: orderedCandidates.count,
-                near: self.calendarInputLocation(for: sender),
-                returnTo: self.calendarReturnApplication,
-                directionalSelection: { [weak self] index, direction in
-                    self?.calendarFormatSelectionIndex(
-                        from: index,
-                        direction: direction,
-                        candidateCount: orderedCandidates.count
-                    )
-                },
-                selectionChanged: { [weak self] index in
-                    guard let self else { return }
-                    self.selectedCalendarFormatIndex = index
-                    self.showCalendarFormatCandidates(client: sender)
+        suggestionSearchCoordinator.start(
+            .calendarFormat,
+            query: String(date.timeIntervalSinceReferenceDate),
+            operation: {
+                await Self.javaScriptExtensionClient
+                    .calendarCandidates(for: date)
+            },
+            validate: { [weak self] in
+                self?.calendarSessionActive == true
+            },
+            apply: { [weak self] candidates in
+                guard let self else { return }
+                self.calendarFormatCandidates = self.candidatesOrderedByRecency(
+                    candidates
+                )
+                self.selectedCalendarFormatIndex = nil
+                self.showCalendarFormatCandidates(client: sender)
+                guard let orderedCandidates = self.calendarFormatCandidates,
+                      !orderedCandidates.isEmpty else {
+                    return
                 }
-            ), orderedCandidates.indices.contains(selectedIndex) else {
+                guard let selectedIndex = self.calendarWindow.runFormatSelection(
+                    candidateCount: orderedCandidates.count,
+                    near: self.calendarInputLocation(for: sender),
+                    returnTo: self.calendarReturnApplication,
+                    directionalSelection: { [weak self] index, direction in
+                        self?.calendarFormatSelectionIndex(
+                            from: index,
+                            direction: direction,
+                            candidateCount: orderedCandidates.count
+                        )
+                    },
+                    selectionChanged: { [weak self] index in
+                        guard let self else { return }
+                        self.selectedCalendarFormatIndex = index
+                        self.showCalendarFormatCandidates(client: sender)
+                    }
+                ), orderedCandidates.indices.contains(selectedIndex) else {
+                    self.clearCalendarSelection()
+                    self.candidateWindow.hide()
+                    return
+                }
+                let value = orderedCandidates[selectedIndex]
+                self.recordCandidateSelection(value)
                 self.clearCalendarSelection()
-                self.candidateWindow.hide()
-                return
-            }
-            let value = orderedCandidates[selectedIndex]
-            self.recordCandidateSelection(value)
-            self.clearCalendarSelection()
-            self.commit(value, to: sender)
-        }
+                self.commit(value, to: sender)
+            },
+            retainQueryAfterCompletion: false
+        )
     }
 
     private func handleCalendarFormatSelection(
@@ -2823,8 +2805,7 @@ final class InputController: IMKInputController {
     }
 
     private func clearCalendarSelection() {
-        calendarFormatTask?.cancel()
-        calendarFormatTask = nil
+        suggestionSearchCoordinator.cancel(.calendarFormat)
         calendarFormatCandidates = nil
         selectedCalendarFormatIndex = nil
         calendarSessionActive = false
@@ -2849,7 +2830,7 @@ final class InputController: IMKInputController {
             Self.candidateFilterDatabase = Self.loadCandidateFilterDatabase()
             Self.candidateFilterIDSSignature = currentIDSSignature
         }
-        suggestionSearchSession.cancelAll()
+        cancelPrimarySuggestionSearches()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
         selectedCandidateIndex = nil
@@ -3129,44 +3110,20 @@ final class InputController: IMKInputController {
     }
 
     private func showCandidateFilterConditionPanels(client sender: Any) {
-        while candidateFilterConditionWindows.count < candidateFilterConditions.count {
-            candidateFilterConditionWindows.append(CandidateWindowController())
-        }
-        while candidateFilterConditionWindows.count > candidateFilterConditions.count {
-            candidateFilterConditionWindows.removeLast().hide()
-        }
-        for (window, condition) in zip(
-            candidateFilterConditionWindows,
-            candidateFilterConditions
-        ) {
-            window.show(
-                candidates: [condition.label],
-                selectedIndex: nil,
-                near: inputLocation(for: sender)
-            )
-        }
+        panelCoordinator.showFilterConditions(
+            candidateFilterConditions.map(\.label),
+            near: inputLocation(for: sender)
+        )
     }
 
     private func layoutCandidateFilterPanels() {
-        let windows = candidateFilterConditionWindows
-            + (candidateFilterDraft == nil ? [] : [candidateFilterDraftWindow])
-        guard !windows.isEmpty else { return }
-        let spacing: CGFloat = 8
-        let requiredWidth = windows.reduce(0) { $0 + $1.frame.width }
-            + spacing * CGFloat(windows.count)
-        candidateWindow.makeRoomOnRight(width: requiredWidth, spacing: 0)
-        var offset = spacing
-        for window in windows {
-            window.placeBeside(candidateWindow.frame, spacing: offset)
-            offset += window.frame.width + spacing
-        }
+        panelCoordinator.layoutFilterPanels(
+            includingDraft: candidateFilterDraft != nil
+        )
     }
 
     private func hideCandidateFilterConditionPanels() {
-        for window in candidateFilterConditionWindows {
-            window.hide()
-        }
-        candidateFilterConditionWindows.removeAll(keepingCapacity: true)
+        panelCoordinator.hideFilterConditions()
     }
 
     private func resetCandidateFilters() {
@@ -3197,7 +3154,7 @@ final class InputController: IMKInputController {
             updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
         }
         let extensionInput = inputBuffer
-        let scriptCandidates = suggestionSearchSession.query(
+        let scriptCandidates = suggestionSearchCoordinator.query(
             for: .javaScriptExtensions
         ) == extensionInput
             ? javaScriptExtensionCandidates
@@ -3252,7 +3209,7 @@ final class InputController: IMKInputController {
             : groupedNumberCandidates
                 + JapaneseNumberConverter.kanjiCandidates(for: inputBuffer)
                 + numericUnitCandidates
-            + (suggestionSearchSession.query(for: .postalAddress) == inputBuffer
+            + (suggestionSearchCoordinator.query(for: .postalAddress) == inputBuffer
                 ? postalAddressCandidates
                 : [])
         if !numericFormatCandidates.isEmpty {
@@ -3325,7 +3282,7 @@ final class InputController: IMKInputController {
         let englishCandidates = isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
-        let remoteCandidates = suggestionSearchSession.query(for: .official)
+        let remoteCandidates = suggestionSearchCoordinator.query(for: .official)
             == conversionReading
             ? officialCandidates
             : []
@@ -3457,116 +3414,69 @@ final class InputController: IMKInputController {
         guard Self.diagnosticConfiguration.enables(.fuzzySuggestion),
               isFuzzySuggestionsEnabled,
               conversionReading.count >= 2 else {
-            suggestionSearchSession.cancel(.fuzzy)
+            suggestionSearchCoordinator.cancel(.fuzzy)
             fuzzySuggestionWindow.hide()
             fuzzySuggestions = []
             selectedFuzzySuggestionIndex = nil
             return
         }
         let query = conversionReading
-        guard suggestionSearchSession.query(for: .fuzzy) != query else {
+        guard suggestionSearchCoordinator.query(for: .fuzzy) != query else {
             return
         }
-        suggestionSearchSession.cancel(.fuzzy)
-        let mozcDictionary = mozcConversionEngine
-        let basicDictionary = basicConversionEngine
-        let compoundGenerator = compoundDictionaryCandidateGenerator
-        let userDictionary = userConversionEngine
-        let visibleCandidates = Set(currentCandidates)
+        suggestionSearchCoordinator.cancel(.fuzzy)
+        let source = FuzzySuggestionSource(
+            query: query,
+            visibleCandidates: Set(currentCandidates),
+            userDictionary: userConversionEngine,
+            basicDictionary: basicConversionEngine,
+            mozcDictionary: mozcConversionEngine,
+            compoundGenerator: compoundDictionaryCandidateGenerator,
+            fuzzyRepository: Self.fuzzyEngineRepository
+        )
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
         trace("candidateGeneration.start", sender: client(), detail: "source=fuzzy")
-        let token = suggestionSearchSession.begin(.fuzzy, query: query)
-        let task = Task { @MainActor [weak self] in
-            do {
+        suggestionSearchCoordinator.start(
+            .fuzzy,
+            query: query,
+            operation: {
                 try await Task.sleep(for: .milliseconds(80))
-                let matchTiers = await Task.detached(priority: .userInitiated) {
-                    let keyboardMatches =
-                        RomajiKeyboardTypoGenerator.dictionaryMatches(
-                            for: query
-                        ) { reading in
-                            userDictionary.candidates(for: reading)
-                                + basicDictionary.candidates(for: reading)
-                                + mozcDictionary.candidates(for: reading)
-                        }
-                    var seenReadings = Set<String>()
-                    let fuzzyMatches = Self.fuzzyEngineRepository.matches(
-                        for: query,
-                        limit: .max
-                    )
-                    let combined = (keyboardMatches
-                        + fuzzyMatches).filter {
-                            seenReadings.insert($0.reading).inserted
-                        }
-                    let filtered = Array(FuzzyConversionMatchFilter.filtered(
-                        combined,
-                        excluding: visibleCandidates
-                    ))
-                    let compoundMatches = compoundGenerator
-                        .matches(for: query) {
-                            userDictionary.candidates(for: $0)
-                                + mozcDictionary.candidates(for: $0)
-                        } typoMatches: { segment in
-                            var seenReadings = Set<String>()
-                            let keyboardMatches =
-                                RomajiKeyboardTypoGenerator.dictionaryMatches(
-                                    for: segment
-                                ) { reading in
-                                    userDictionary.candidates(for: reading)
-                                        + basicDictionary.candidates(for: reading)
-                                        + mozcDictionary.candidates(for: reading)
-                                }
-                            let fuzzyMatches = Self.fuzzyEngineRepository
-                                .matches(
-                                    for: segment,
-                                    maximumDistance: 1,
-                                    limit: 4
-                                )
-                            return (keyboardMatches + fuzzyMatches).filter {
-                                seenReadings.insert($0.reading).inserted
-                            }
-                        }
-                        .filter { !visibleCandidates.contains($0.text) }
-                        .map {
-                            FuzzyConversionMatch(
-                                reading: $0.reading,
-                                candidates: [$0.text],
-                                distance: $0.typoDistance
-                            )
-                        }
-                    return FuzzySuggestionTierBuilder.build(
-                        directTypoMatches: filtered,
-                        compoundMatches: compoundMatches
-                    )
-                }.value
+                let matchTiers = await source.matchTiers()
                 try await Task.sleep(for: Self.fuzzySuggestionDisplayDelay)
-                try Task.checkCancellation()
-                guard let self,
-                      suggestionSearchSession.isCurrent(token),
-                      conversionReading == query,
-                      isFuzzySuggestionsEnabled,
-                      acceptsAsyncResult(
+                return matchTiers
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return self.conversionReading == query
+                    && self.isFuzzySuggestionsEnabled
+                    && self.acceptsAsyncResult(
                         asyncSnapshot,
                         source: "fuzzy",
-                        sender: client()
-                      ) else {
-                    return
-                }
-                trace("candidateGeneration.complete", sender: client(), detail: "source=fuzzy")
-                applySpellingSuggestions(matchTiers, near: anchorFrame)
-            } catch is CancellationError {
+                        sender: self.client()
+                    )
+            },
+            apply: { [weak self] matchTiers in
+                guard let self else { return }
+                self.trace(
+                    "candidateGeneration.complete",
+                    sender: self.client(),
+                    detail: "source=fuzzy"
+                )
+                self.applySpellingSuggestions(matchTiers, near: anchorFrame)
+            },
+            onCancel: { [weak self] in
                 self?.trace(
                     "candidateGeneration.cancel",
                     sender: self?.client(),
                     detail: "source=fuzzy"
                 )
-                return
-            } catch {
+            },
+            onError: { error in
                 NSLog("誤入力補完に失敗: %@", error.localizedDescription)
             }
-        }
-        suggestionSearchSession.attach(task, to: token)
+        )
     }
 
     private func applySpellingSuggestions(
@@ -3868,21 +3778,14 @@ final class InputController: IMKInputController {
         width: CGFloat,
         spacing: CGFloat
     ) -> NSRect {
-        candidateWindow.makeRoomOnRight(width: width, spacing: spacing)
-        return candidateWindow.frame
+        panelCoordinator.prepareCandidateAnchorForFuzzyPanel(
+            width: width,
+            spacing: spacing
+        )
     }
 
     private func alignFuzzySuggestionWindowToCandidateRight() {
-        guard fuzzySuggestionWindow.isVisible else { return }
-        candidateWindow.makeRoomOnRight(
-            width: fuzzySuggestionWindow.panelWidth,
-            spacing: fuzzySuggestionWindow.spacingFromCandidatePanel
-        )
-        fuzzySuggestionWindow.reposition(
-            near: candidateWindow.frame,
-            avoidingFrames: [candidateWindow.frame]
-                + candidateWindow.auxiliaryFrames
-        )
+        panelCoordinator.alignFuzzySuggestionToCandidateRight()
     }
 
     private func englishCompletions(for input: String) -> [String] {
@@ -3918,7 +3821,7 @@ final class InputController: IMKInputController {
               isWikipediaSuggestionsEnabled
                 || isGoogleJapaneseInputEnabled,
               input.count >= 2,
-              suggestionSearchSession.query(for: .official) != input else {
+              suggestionSearchCoordinator.query(for: .official) != input else {
             return
         }
         officialCandidates = []
@@ -3926,64 +3829,67 @@ final class InputController: IMKInputController {
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
-        var sources: [any CandidateSource] = []
+        var enabledSources: [any CandidateSource] = []
         if isWikipediaSuggestionsEnabled {
-            sources.append(WikipediaCandidateSource())
+            enabledSources.append(WikipediaCandidateSource())
         }
         if isGoogleJapaneseInputEnabled {
-            sources.append(GoogleJapaneseInputCandidateSource())
+            enabledSources.append(GoogleJapaneseInputCandidateSource())
         }
+        let sources = enabledSources
         let context = CandidateSourceContext(
             input: inputBuffer,
             conversionReading: input,
             japaneseReading: japaneseInput
         )
-        let token = suggestionSearchSession.begin(.official, query: input)
-        let task = Task { @MainActor [weak self] in
-            do {
+        suggestionSearchCoordinator.start(
+            .official,
+            query: input,
+            operation: {
                 try await Task.sleep(for: .milliseconds(250))
-                guard let self else { return }
-                let suggestions = await CandidateSourceCollector.candidates(
+                return await CandidateSourceCollector.candidates(
                     from: sources,
                     context: context
                 )
-                try Task.checkCancellation()
-                guard suggestionSearchSession.isCurrent(token),
-                      isWikipediaSuggestionsEnabled
-                        || isGoogleJapaneseInputEnabled,
-                      conversionReading == input,
-                      acceptsAsyncResult(
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return (self.isWikipediaSuggestionsEnabled
+                    || self.isGoogleJapaneseInputEnabled)
+                    && self.conversionReading == input
+                    && self.acceptsAsyncResult(
                         asyncSnapshot,
                         source: "officialCandidates",
-                        sender: client()
-                      ) else {
-                    return
+                        sender: self.client()
+                    )
+            },
+            apply: { [weak self] suggestions in
+                guard let self else { return }
+                self.officialCandidates = suggestions
+                if let inputClient = self.client() {
+                    self.refreshCandidates(client: inputClient)
                 }
-                officialCandidates = suggestions
-                if let inputClient = client() {
-                    refreshCandidates(client: inputClient)
-                }
-            } catch is CancellationError {
+            },
+            onCancel: { [weak self] in
                 self?.trace(
                     "candidateGeneration.cancel",
                     sender: self?.client(),
-                    detail: "source=translation"
+                    detail: "source=officialCandidates"
                 )
-                return
-            } catch {
+            },
+            onError: { error in
                 NSLog(
                     "公式外部候補の取得に失敗: %@",
                     error.localizedDescription
                 )
             }
-        }
-        suggestionSearchSession.attach(task, to: token)
+        )
     }
 
     private func updateJavaScriptExtensionCandidatesIfNeeded(for input: String) {
         guard Self.diagnosticConfiguration.enables(.jsExtensions),
               !input.isEmpty,
-              suggestionSearchSession.query(for: .javaScriptExtensions)
+              suggestionSearchCoordinator.query(for: .javaScriptExtensions)
                 != input else {
             return
         }
@@ -3991,74 +3897,82 @@ final class InputController: IMKInputController {
             return
         }
         javaScriptExtensionCandidates = []
-        let token = suggestionSearchSession.begin(
+        let dateTimeCandidatesEnabled = isDateTimeCandidatesEnabled
+        suggestionSearchCoordinator.start(
             .javaScriptExtensions,
-            query: input
+            query: input,
+            operation: {
+                await Self.javaScriptExtensionClient.candidates(
+                    for: input,
+                    dateTimeCandidatesEnabled: dateTimeCandidatesEnabled
+                )
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return self.inputBuffer == input
+                    && self.acceptsAsyncResult(
+                        asyncSnapshot,
+                        source: "jsExtensions",
+                        sender: self.client()
+                    )
+            },
+            apply: { [weak self] candidates in
+                guard let self else { return }
+                self.javaScriptExtensionCandidates = candidates
+                if let inputClient = self.client() {
+                    self.refreshCandidates(client: inputClient)
+                }
+            }
         )
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            let candidates = await Self.javaScriptExtensionClient.candidates(
-                for: input,
-                dateTimeCandidatesEnabled: isDateTimeCandidatesEnabled
-            )
-            guard !Task.isCancelled,
-                  suggestionSearchSession.isCurrent(token),
-                  inputBuffer == input,
-                  acceptsAsyncResult(
-                    asyncSnapshot,
-                    source: "jsExtensions",
-                    sender: client()
-                  ) else {
-                return
-            }
-            javaScriptExtensionCandidates = candidates
-            if let inputClient = client() {
-                refreshCandidates(client: inputClient)
-            }
-        }
-        suggestionSearchSession.attach(task, to: token)
     }
 
     private func updatePostalAddressCandidatesIfNeeded(for input: String) {
         guard !Self.diagnosticConfiguration.minimalMode else { return }
         guard let postalCode = PostalCodeNormalizer.normalize(input) else {
-            suggestionSearchSession.cancel(.postalAddress)
+            suggestionSearchCoordinator.cancel(.postalAddress)
             postalAddressCandidates = []
             return
         }
-        guard suggestionSearchSession.query(for: .postalAddress) != input else {
+        guard suggestionSearchCoordinator.query(for: .postalAddress) != input else {
             return
         }
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
-        let token = suggestionSearchSession.begin(.postalAddress, query: input)
         if let cached = postalAddressCache[postalCode] {
+            suggestionSearchCoordinator.activate(
+                .postalAddress,
+                query: input
+            )
             postalAddressCandidates = cached
             return
         }
         postalAddressCandidates = []
-        let task = Task { @MainActor [weak self] in
-            let candidates = (try? await PostalAddressCandidateClient()
-                .candidates(for: postalCode)) ?? []
-            guard !Task.isCancelled,
-                  let self,
-                  suggestionSearchSession.isCurrent(token),
-                  inputBuffer == input,
-                  acceptsAsyncResult(
-                    asyncSnapshot,
-                    source: "postalAddress",
-                    sender: client()
-                  ) else {
-                return
+        suggestionSearchCoordinator.start(
+            .postalAddress,
+            query: input,
+            operation: {
+                (try? await PostalAddressCandidateClient()
+                    .candidates(for: postalCode)) ?? []
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return self.inputBuffer == input
+                    && self.acceptsAsyncResult(
+                        asyncSnapshot,
+                        source: "postalAddress",
+                        sender: self.client()
+                    )
+            },
+            apply: { [weak self] candidates in
+                guard let self else { return }
+                self.postalAddressCache[postalCode] = candidates
+                self.postalAddressCandidates = candidates
+                if let inputClient = self.client() {
+                    self.refreshCandidates(client: inputClient)
+                }
             }
-            postalAddressCache[postalCode] = candidates
-            postalAddressCandidates = candidates
-            if let inputClient = client() {
-                refreshCandidates(client: inputClient)
-            }
-        }
-        suggestionSearchSession.attach(task, to: token)
+        )
     }
 
     private func updateTranslationCandidates(
@@ -4067,10 +3981,10 @@ final class InputController: IMKInputController {
         client sender: Any
     ) {
         cancelCandidateTranslation()
-        suggestionSearchSession.cancel(.official)
-        suggestionSearchSession.cancel(.javaScriptExtensions)
+        suggestionSearchCoordinator.cancel(.official)
+        suggestionSearchCoordinator.cancel(.javaScriptExtensions)
         if case .fuzzy = destination {
-            suggestionSearchSession.cancel(.fuzzy)
+            suggestionSearchCoordinator.cancel(.fuzzy)
         }
         guard Self.diagnosticConfiguration.enables(.translation),
               isAppleTranslationEnabled,
@@ -4083,35 +3997,18 @@ final class InputController: IMKInputController {
             return
         }
         trace("translation.start", sender: sender, detail: "source=\(source)")
-        let targets = translationTargetLanguages
-        candidateTranslationTask = Task { @MainActor [weak self] in
-            do {
-                guard let self else { return }
-                var translations: [String] = []
-#if canImport(Translation)
-                if #available(macOS 15.0, *) {
-                    for target in targets {
-                        try Task.checkCancellation()
-                        let provider = AppleTranslationCandidateProvider()
-                        guard let translated = await provider.translateJapanese(
-                            source,
-                            targetIdentifier: target.identifier
-                        ) else {
-                            continue
-                        }
-                        translations.append(contentsOf:
-                            TranslationCandidateNormalizer.wordCandidates(
-                                from: translated
-                            ).filter { $0 != source }
-                        )
-                    }
-                }
-#endif
-                try Task.checkCancellation()
-                var seenTranslations = Set<String>()
-                translations = translations.filter {
-                    seenTranslations.insert($0).inserted
-                }
+        let translationSource = AppleTranslationCandidateSource(
+            targetIdentifiers: translationTargetLanguages.map(\.identifier)
+        )
+        suggestionSearchCoordinator.start(
+            .translation,
+            query: source,
+            operation: {
+                try await translationSource
+                    .candidates(for: source)
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
                 let sourceIsStillSelected: Bool
                 switch destination {
                 case .normal:
@@ -4126,31 +4023,35 @@ final class InputController: IMKInputController {
                                 : nil
                         } == source
                 }
-                guard sourceIsStillSelected,
-                      acceptsAsyncResult(
+                return sourceIsStillSelected
+                    && self.acceptsAsyncResult(
                         asyncSnapshot,
                         source: "translation",
                         sender: sender
-                      ) else { return }
-                trace("translation.complete", sender: sender, detail: "source=\(source) count=\(translations.count)")
-                guard !translations.isEmpty else {
-                    self.candidateTranslationTask = nil
+                    )
+            },
+            apply: { [weak self] translationCandidates in
+                guard let self else { return }
+                self.trace(
+                    "translation.complete",
+                    sender: sender,
+                    detail: "source=\(source) count=\(translationCandidates.count)"
+                )
+                guard !translationCandidates.isEmpty else {
                     return
                 }
                 switch destination {
                 case .normal:
-                    let translationCandidates =
-                        self.translationCandidateSession.store(
-                            translations,
-                            for: source,
-                            channel: .normal
-                        )
+                    self.translationCandidateSession.store(
+                        translationCandidates,
+                        for: source,
+                        channel: .normal
+                    )
                     self.selectedCandidateIndex = self.currentCandidates
                         .firstIndex(of: source)
                     self.showCandidateWindow(client: sender)
                     guard self.candidateWindow.visibleFrame != nil else {
                         self.translationCandidateWindow.hide()
-                        self.candidateTranslationTask = nil
                         return
                     }
                     let sourceRow = self.selectedCandidateIndex.map {
@@ -4164,12 +4065,11 @@ final class InputController: IMKInputController {
                         client: sender
                     )
                 case .fuzzy:
-                    let translationCandidates =
-                        self.translationCandidateSession.store(
-                            translations,
-                            for: source,
-                            channel: .fuzzy
-                        )
+                    self.translationCandidateSession.store(
+                        translationCandidates,
+                        for: source,
+                        channel: .fuzzy
+                    )
                     self.selectedFuzzySuggestionIndex = self.fuzzySuggestions
                         .firstIndex { $0.candidate == source }
                     if let index = self.selectedFuzzySuggestionIndex {
@@ -4180,7 +4080,6 @@ final class InputController: IMKInputController {
                     }
                     guard self.fuzzySuggestionWindow.visibleFrame != nil else {
                         self.translationCandidateWindow.hide()
-                        self.candidateTranslationTask = nil
                         return
                     }
                     self.showTranslationCandidateWindow(
@@ -4195,25 +4094,20 @@ final class InputController: IMKInputController {
                         client: sender
                     )
                 }
-                self.candidateTranslationTask = nil
-            } catch is CancellationError {
-                return
-            } catch {
-                self?.candidateTranslationTask = nil
-            }
-        }
+            },
+            retainQueryAfterCompletion: false
+        )
     }
 
     private func cancelCandidateTranslation() {
-        if candidateTranslationTask != nil {
+        if suggestionSearchCoordinator.query(for: .translation) != nil {
             trace(
                 "candidateGeneration.cancel",
                 sender: client(),
                 detail: "source=translation"
             )
         }
-        candidateTranslationTask?.cancel()
-        candidateTranslationTask = nil
+        suggestionSearchCoordinator.cancel(.translation)
     }
 
     private func showTranslationCandidateWindow(
@@ -4235,65 +4129,18 @@ final class InputController: IMKInputController {
         } else {
             translationCandidateWindow.placeRight(of: sourceFrame)
         }
-        keepCandidatePanelGroupInsideScreen()
-    }
-
-    private func keepCandidatePanelGroupInsideScreen() {
-        keepCandidatePanelGroupInsideScreen(
-            reservedLeftWidth: 0,
-            reservedRightWidth: 0
-        )
+        panelCoordinator.keepCandidateGroupInsideScreen()
     }
 
     private func reserveTranslationCandidateSpace(
         for destination: TranslationCandidateDestination
     ) {
-        guard !translationCandidateWindow.isVisible else {
-            keepCandidatePanelGroupInsideScreen()
-            return
-        }
-        let reservedWidth = CandidatePanelItemStyle.maximumWidth + 8
         switch destination {
         case .normal:
-            keepCandidatePanelGroupInsideScreen(
-                reservedLeftWidth: reservedWidth,
-                reservedRightWidth: 0
-            )
+            panelCoordinator.reserveTranslationCandidateSpace(onLeft: true)
         case .fuzzy:
-            keepCandidatePanelGroupInsideScreen(
-                reservedLeftWidth: 0,
-                reservedRightWidth: reservedWidth
-            )
+            panelCoordinator.reserveTranslationCandidateSpace(onLeft: false)
         }
-    }
-
-    private func keepCandidatePanelGroupInsideScreen(
-        reservedLeftWidth: CGFloat,
-        reservedRightWidth: CGFloat
-    ) {
-        let frames = [
-            candidateWindow.visibleFrame,
-            fuzzySuggestionWindow.visibleFrame,
-            translationCandidateWindow.visibleFrame
-        ].compactMap { $0 }
-        guard let firstFrame = frames.first,
-              let visibleFrame = NSScreen.inputScreen(
-                containing: candidateWindow.frame
-              )?.visibleFrame else { return }
-        let groupFrame = frames.dropFirst().reduce(firstFrame) {
-            $0.union($1)
-        }
-        let offset = HorizontalPanelGroupPlacement.offset(
-            groupMinX: groupFrame.minX,
-            groupMaxX: groupFrame.maxX,
-            visibleMinX: visibleFrame.minX,
-            visibleMaxX: visibleFrame.maxX,
-            reservedLeftWidth: reservedLeftWidth,
-            reservedRightWidth: reservedRightWidth
-        )
-        candidateWindow.offsetHorizontally(by: offset)
-        fuzzySuggestionWindow.offsetHorizontally(by: offset)
-        translationCandidateWindow.offsetHorizontally(by: offset)
     }
 
     private func shouldEnterTranslationCandidates(
@@ -4517,7 +4364,7 @@ final class InputController: IMKInputController {
         reconversionOriginal = nil
         tabDictionaryRegistration = nil
         clearCandidateState(includingFuzzy: true)
-        suggestionSearchSession.cancelAll()
+        cancelPrimarySuggestionSearches()
         hideConversionPanels()
     }
 
@@ -4827,16 +4674,10 @@ final class InputController: IMKInputController {
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            guard
-                let selectedNextInputIndex,
-                nextInputCandidates.indices.contains(selectedNextInputIndex)
-            else {
+            guard let selectedNextInput = nextInputSession.selectedCandidate else {
                 return false
             }
-            commitNextInputCandidate(
-                nextInputCandidates[selectedNextInputIndex],
-                to: sender
-            )
+            commitNextInputCandidate(selectedNextInput, to: sender)
             return true
         }
 
@@ -5122,7 +4963,7 @@ final class InputController: IMKInputController {
 
     private func cancelInput(in sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            guard !nextInputCandidates.isEmpty else {
+            guard !nextInputSession.candidates.isEmpty else {
                 return false
             }
             dismissNextInputSuggestions(clearMarkedTextIn: sender)
@@ -5182,13 +5023,11 @@ final class InputController: IMKInputController {
     }
 
     private func removeSelectedNextInputCandidate(client sender: Any) {
-        guard let selectedNextInputIndex,
-              nextInputCandidates.indices.contains(selectedNextInputIndex),
-              let context = nextInputContext else {
+        guard let candidate = nextInputSession.selectedCandidate,
+              let context = nextInputSession.context else {
             NSSound.beep()
             return
         }
-        let candidate = nextInputCandidates[selectedNextInputIndex]
         guard !closingBracketTracker.shouldBypassCandidateSuppression(
             candidate
         ) else {
@@ -5207,14 +5046,13 @@ final class InputController: IMKInputController {
             )
             NSSound.beep()
         }
-        nextInputCandidates.remove(at: selectedNextInputIndex)
-        self.selectedNextInputIndex = nil
+        _ = nextInputSession.removeSelectedCandidate()
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(candidate, forType: .string)
         setMarkedText("", in: sender)
         previewWindow.hide()
-        guard !nextInputCandidates.isEmpty else {
+        guard !nextInputSession.candidates.isEmpty else {
             dismissNextInputSuggestions(clearMarkedTextIn: nil)
             return
         }
@@ -5269,7 +5107,7 @@ final class InputController: IMKInputController {
         recentCommittedContext = String(
             (recentCommittedContext + value).suffix(256)
         )
-        suggestionSearchSession.cancelAll()
+        cancelPrimarySuggestionSearches()
         cancelCandidateTranslation()
         clearInputBuffer()
         reconversionOriginal = nil
@@ -5323,29 +5161,26 @@ final class InputController: IMKInputController {
     private func resetTransientInteractionState() {
         trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
-        calendarFormatTask?.cancel()
-        calendarFormatTask = nil
-        dictionaryDefinitionTask?.cancel()
-        dictionaryDefinitionTask = nil
+        suggestionSearchCoordinator.cancel(.calendarFormat)
         panelCoordinator.dismissAll()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
-        nextInputCandidates = []
-        selectedNextInputIndex = nil
+        nextInputSession.clearCandidates()
         stopNextInputOutsideClickMonitoring()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
-        suggestionSearchSession.cancelAll()
+        cancelPrimarySuggestionSearches()
+        suggestionSearchCoordinator.cancel(.dictionaryDefinition)
         clearCalendarSelection()
         resetCandidateFilters()
     }
 
     private func cancelFuzzySuggestionSearch() {
-        suggestionSearchSession.cancel(.fuzzy)
+        suggestionSearchCoordinator.cancel(.fuzzy)
     }
 
     private func dismissFuzzySuggestions() {
-        suggestionSearchSession.cancel(.fuzzy)
+        suggestionSearchCoordinator.cancel(.fuzzy)
         cancelCandidateTranslation()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
@@ -5356,15 +5191,13 @@ final class InputController: IMKInputController {
         using policy: InputPanelDismissalPolicy
     ) {
         trace("candidateGeneration.cancel", sender: client(), detail: "source=panels")
-        suggestionSearchSession.cancelAll()
-        dictionaryDefinitionTask?.cancel()
-        dictionaryDefinitionTask = nil
+        cancelPrimarySuggestionSearches()
+        suggestionSearchCoordinator.cancel(.dictionaryDefinition)
         cancelCandidateTranslation()
         if policy.cancelsCalendarWork {
-            calendarFormatTask?.cancel()
-            calendarFormatTask = nil
+            suggestionSearchCoordinator.cancel(.calendarFormat)
         }
-        suggestionSearchSession.cancel(.fuzzy)
+        suggestionSearchCoordinator.cancel(.fuzzy)
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
         panelCoordinator.dismiss(using: policy)
@@ -5376,7 +5209,14 @@ final class InputController: IMKInputController {
     }
 
     private func cancelAuxiliarySuggestionSearches() {
-        suggestionSearchSession.cancel(.fuzzy)
+        suggestionSearchCoordinator.cancel(.fuzzy)
+    }
+
+    private func cancelPrimarySuggestionSearches() {
+        suggestionSearchCoordinator.cancel(.official)
+        suggestionSearchCoordinator.cancel(.fuzzy)
+        suggestionSearchCoordinator.cancel(.javaScriptExtensions)
+        suggestionSearchCoordinator.cancel(.postalAddress)
     }
 
     private func flushPendingHistoryWrites() {
@@ -5388,21 +5228,15 @@ final class InputController: IMKInputController {
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        guard !nextInputCandidates.isEmpty else {
+        guard !nextInputSession.candidates.isEmpty else {
             return false
         }
-
-        let offset: Int
-        switch direction {
-        case .left, .up:
-            offset = -1
-        case .right, .down:
-            offset = 1
+        let offset = switch direction {
+        case .left, .up: -1
+        case .right, .down: 1
         }
-        guard let nextIndex = LinearCandidateNavigator.index(
-            from: selectedNextInputIndex,
-            offset: offset,
-            candidateCount: nextInputCandidates.count
+        guard let nextIndex = nextInputSession.linearSelectionIndex(
+            offset: offset
         ) else { return true }
         return selectNextInputCandidate(index: nextIndex, client: sender)
     }
@@ -5411,11 +5245,9 @@ final class InputController: IMKInputController {
         offset: Int,
         client sender: Any
     ) -> Bool {
-        let currentIndex = selectedNextInputIndex
-            ?? (offset > 0 ? -1 : 0)
-        let nextIndex = (
-            currentIndex + offset + nextInputCandidates.count
-        ) % nextInputCandidates.count
+        guard let nextIndex = nextInputSession.wrappedSelectionIndex(
+            offset: offset
+        ) else { return true }
         return selectNextInputCandidate(index: nextIndex, client: sender)
     }
 
@@ -5423,27 +5255,29 @@ final class InputController: IMKInputController {
         index: Int,
         client sender: Any
     ) -> Bool {
-        guard nextInputCandidates.indices.contains(index) else {
+        guard nextInputSession.candidates.indices.contains(index) else {
             return true
         }
         let previousPage = LinearCandidateNavigator.pageRange(
-            containing: selectedNextInputIndex,
+            containing: nextInputSession.selectedIndex,
             pageSize: Self.maximumCandidateCount,
-            candidateCount: nextInputCandidates.count
+            candidateCount: nextInputSession.candidates.count
         )
-        selectedNextInputIndex = index
+        guard let candidate = nextInputSession.select(index: index) else {
+            return true
+        }
         let currentPage = LinearCandidateNavigator.pageRange(
             containing: index,
             pageSize: Self.maximumCandidateCount,
-            candidateCount: nextInputCandidates.count
+            candidateCount: nextInputSession.candidates.count
         )
         if currentPage == previousPage {
             candidateWindow.select(index: index - currentPage.lowerBound)
         } else {
             showNextInputCandidateWindow(client: sender)
         }
-        setMarkedText(nextInputCandidates[index], in: sender)
-        showPreview(for: nextInputCandidates[index])
+        setMarkedText(candidate, in: sender)
+        showPreview(for: candidate)
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
         return true
@@ -5459,9 +5293,7 @@ final class InputController: IMKInputController {
             nextInputPredictionModel.breakSequence()
             return
         }
-        nextInputExtensionGeneration &+= 1
-        let extensionGeneration = nextInputExtensionGeneration
-        nextInputContext = value
+        suggestionSearchCoordinator.cancel(.nextInputExtension)
         var learnedCandidates: [String] = []
         if isNextInputPredictionEnabled {
             if breakPreviousSequence {
@@ -5493,15 +5325,15 @@ final class InputController: IMKInputController {
             closingBracketTracker.shouldBypassCandidateSuppression($0)
                 || !nextInputPredictionModel.isSuppressed($0, after: value)
         }
-        nextInputCandidates = NextInputCandidateMerger.merged(
+        let candidates = NextInputCandidateMerger.merged(
             preferred: visiblePreferredCandidates,
             learned: learnedCandidates + dictionaryCandidates,
             limit: visiblePreferredCandidates.count
                 + learnedCandidates.count
                 + dictionaryCandidates.count
         )
-        selectedNextInputIndex = nil
-        if nextInputCandidates.isEmpty {
+        nextInputSession.begin(context: value, candidates: candidates)
+        if nextInputSession.candidates.isEmpty {
             nextInputDismissTimer?.invalidate()
             nextInputDismissTimer = nil
         } else {
@@ -5518,50 +5350,59 @@ final class InputController: IMKInputController {
               let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let generated = await Self.javaScriptExtensionClient
-                .nextInputCandidates(after: value)
-            guard !Task.isCancelled,
-                  nextInputExtensionGeneration == extensionGeneration,
-                  inputBuffer.isEmpty,
-                  !generated.isEmpty,
-                  acceptsAsyncResult(
-                    asyncSnapshot,
-                    source: "nextInputJS",
-                    sender: sender
-                  ) else {
-                return
-            }
-            let visibleGenerated = generated.filter {
-                !self.nextInputPredictionModel.isSuppressed($0, after: value)
-            }
-            let merged = NextInputCandidateMerger.merged(
-                preferred: nextInputCandidates,
-                learned: visibleGenerated,
-                limit: nextInputCandidates.count + visibleGenerated.count
-            )
-            guard merged != nextInputCandidates else { return }
-            nextInputCandidates = merged
-            showNextInputCandidateWindow(client: sender)
-            startNextInputOutsideClickMonitoring()
-            scheduleNextInputDismissal()
-        }
+        suggestionSearchCoordinator.start(
+            .nextInputExtension,
+            query: value,
+            operation: {
+                await Self.javaScriptExtensionClient
+                    .nextInputCandidates(after: value)
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return self.inputBuffer.isEmpty
+                    && self.acceptsAsyncResult(
+                        asyncSnapshot,
+                        source: "nextInputJS",
+                        sender: sender
+                    )
+            },
+            apply: { [weak self] generated in
+                guard let self, !generated.isEmpty else { return }
+                let visibleGenerated = generated.filter {
+                    !self.nextInputPredictionModel.isSuppressed(
+                        $0,
+                        after: value
+                    )
+                }
+                let merged = NextInputCandidateMerger.merged(
+                    preferred: self.nextInputSession.candidates,
+                    learned: visibleGenerated,
+                    limit: self.nextInputSession.candidates.count
+                        + visibleGenerated.count
+                )
+                guard merged != self.nextInputSession.candidates else { return }
+                self.nextInputSession.updateCandidates(merged)
+                self.showNextInputCandidateWindow(client: sender)
+                self.startNextInputOutsideClickMonitoring()
+                self.scheduleNextInputDismissal()
+            },
+            retainQueryAfterCompletion: false
+        )
     }
 
     private func showNextInputCandidateWindow(client sender: Any) {
         let pageRange = LinearCandidateNavigator.pageRange(
-            containing: selectedNextInputIndex,
+            containing: nextInputSession.selectedIndex,
             pageSize: Self.maximumCandidateCount,
-            candidateCount: nextInputCandidates.count
+            candidateCount: nextInputSession.candidates.count
         )
         guard !pageRange.isEmpty else {
             candidateWindow.hide()
             return
         }
         candidateWindow.show(
-            candidates: Array(nextInputCandidates[pageRange]),
-            selectedIndex: selectedNextInputIndex.map {
+            candidates: Array(nextInputSession.candidates[pageRange]),
+            selectedIndex: nextInputSession.selectedIndex.map {
                 $0 - pageRange.lowerBound
             },
             near: inputLocation(for: sender),
@@ -5585,7 +5426,7 @@ final class InputController: IMKInputController {
     private func dismissNextInputSuggestions(
         clearMarkedTextIn sender: Any?
     ) {
-        if selectedNextInputIndex != nil, let sender {
+        if nextInputSession.selectedIndex != nil, let sender {
             setMarkedText("", in: sender)
         }
         clearNextInputSuggestionState()
@@ -5594,13 +5435,11 @@ final class InputController: IMKInputController {
     }
 
     private func clearNextInputSuggestionState() {
-        nextInputExtensionGeneration &+= 1
+        suggestionSearchCoordinator.cancel(.nextInputExtension)
         stopNextInputOutsideClickMonitoring()
         nextInputDismissTimer?.invalidate()
         nextInputDismissTimer = nil
-        nextInputCandidates = []
-        nextInputContext = nil
-        selectedNextInputIndex = nil
+        nextInputSession.reset()
     }
 
     private func startNextInputOutsideClickMonitoring() {
@@ -5635,7 +5474,7 @@ final class InputController: IMKInputController {
     }
 
     private func dismissNextInputIfClickedOutside() {
-        guard !nextInputCandidates.isEmpty,
+        guard !nextInputSession.candidates.isEmpty,
               !candidateWindow.contains(screenPoint: NSEvent.mouseLocation)
         else { return }
         dismissNextInputSuggestions(clearMarkedTextIn: client())
@@ -5805,10 +5644,7 @@ final class InputController: IMKInputController {
 
     private func hideConversionPanels() {
         cancelCandidateLocationRetry()
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
-        translationCandidateWindow.hide()
-        previewWindow.hide()
+        panelCoordinator.hideConversionPanels()
     }
 
     private func insertIntoInputBuffer(_ text: String) {
@@ -5849,7 +5685,7 @@ final class InputController: IMKInputController {
 
     private func dismissPanelsForCursorMovement(client sender: Any) {
         symbolTipsWindow.hide()
-        if !nextInputCandidates.isEmpty {
+        if !nextInputSession.candidates.isEmpty {
             dismissNextInputSuggestions(clearMarkedTextIn: sender)
         }
     }
@@ -5879,7 +5715,7 @@ final class InputController: IMKInputController {
             input: conversionReading,
             selectedCandidate: selectedCandidate
         ) else {
-            dictionaryDefinitionTask?.cancel()
+            suggestionSearchCoordinator.cancel(.dictionaryDefinition)
             previewWindow.hide()
             return
         }
@@ -5955,7 +5791,7 @@ final class InputController: IMKInputController {
             && Self.diagnosticConfiguration.enables(.dictionaryPanel)
         guard externalLookupEnabled || dictionaryLookupEnabled
         else {
-            dictionaryDefinitionTask?.cancel()
+            suggestionSearchCoordinator.cancel(.dictionaryDefinition)
             previewWindow.hide()
             return
         }
@@ -5964,7 +5800,7 @@ final class InputController: IMKInputController {
                 .url(for: candidate)
             : nil
 
-        dictionaryDefinitionTask?.cancel()
+        suggestionSearchCoordinator.cancel(.dictionaryDefinition)
         let presentsDictionary = Self.diagnosticConfiguration
             .presentsPanel(.dictionaryPanel)
         let presentsExternal = Self.diagnosticConfiguration
@@ -5993,32 +5829,48 @@ final class InputController: IMKInputController {
         trace("dictionaryLookup.start", sender: client(), detail: "candidate=\(candidate)")
         let provider = definitionProvider
         let dictionaryNames = systemDictionaryNames
-        dictionaryDefinitionTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(500))
-            guard !Task.isCancelled else { return }
-            let definitions = await Task.detached(priority: .utility) {
-                provider.definitions(
-                    for: candidate,
-                    dictionaryNames: dictionaryNames
-                )
-            }.value
-            guard !Task.isCancelled, let self,
-                  acceptsAsyncResult(
+        suggestionSearchCoordinator.start(
+            .dictionaryDefinition,
+            query: candidate,
+            operation: {
+                try await Task.sleep(for: .milliseconds(500))
+                return await Task.detached(priority: .utility) {
+                    provider.definitions(
+                        for: candidate,
+                        dictionaryNames: dictionaryNames
+                    )
+                }.value
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return self.acceptsAsyncResult(
                     asyncSnapshot,
                     source: "dictionaryLookup",
-                    sender: client()
-                  ) else { return }
-            trace("dictionaryLookup.complete", sender: client(), detail: "candidate=\(candidate) count=\(definitions.count)")
-            previewWindow.showDefinitions(
-                definitions,
-                beside: anchorFrame,
-                requestID: previewRequestID,
-                presentsPanel: presentsDictionary
-            )
-            if presentsDictionary, !definitions.isEmpty {
-                trace("dictionaryPanel.show", sender: client())
-            }
-        }
+                    sender: self.client()
+                )
+            },
+            apply: { [weak self] definitions in
+                guard let self else { return }
+                self.trace(
+                    "dictionaryLookup.complete",
+                    sender: self.client(),
+                    detail: "candidate=\(candidate) count=\(definitions.count)"
+                )
+                self.previewWindow.showDefinitions(
+                    definitions,
+                    beside: anchorFrame,
+                    requestID: previewRequestID,
+                    presentsPanel: presentsDictionary
+                )
+                if presentsDictionary, !definitions.isEmpty {
+                    self.trace(
+                        "dictionaryPanel.show",
+                        sender: self.client()
+                    )
+                }
+            },
+            retainQueryAfterCompletion: false
+        )
     }
 
     private func rebuildConversionEngine(
@@ -6066,33 +5918,37 @@ final class InputController: IMKInputController {
 
     private func rebuildFuzzyConversionEngine() {
         cancelFuzzySuggestionSearch()
-        fuzzyEngineBuildTask?.cancel()
+        suggestionSearchCoordinator.cancel(.fuzzyIndexBuild)
         let userEntries = userEntries
         let refreshSnapshot = currentInputSessionSnapshot()
-        fuzzyEngineBuildTask = Task { @MainActor [weak self] in
-            _ = await Task.detached(priority: .utility) {
-                Self.fuzzyEngineRepository.prepare(
-                    baseEntries: Self.sharedBasicFuzzyEntries,
-                    baseKey: Self.sharedBasicFuzzyKey,
-                    userEntries: userEntries
-                )
-            }.value
-            guard !Task.isCancelled, let self else {
-                return
-            }
-            fuzzyEngineBuildTask = nil
-            guard let refreshSnapshot,
-                  acceptsAsyncResult(
+        suggestionSearchCoordinator.start(
+            .fuzzyIndexBuild,
+            query: "\(Self.sharedBasicFuzzyKey):\(userEntries.count)",
+            operation: {
+                await Task.detached(priority: .utility) {
+                    Self.fuzzyEngineRepository.prepare(
+                        baseEntries: Self.sharedBasicFuzzyEntries,
+                        baseKey: Self.sharedBasicFuzzyKey,
+                        userEntries: userEntries
+                    )
+                }.value
+            },
+            validate: { [weak self] in
+                guard let self, let refreshSnapshot else { return false }
+                return self.acceptsAsyncResult(
                     refreshSnapshot,
                     source: "fuzzyEngineBuild",
-                    sender: client()
-                  ),
-                  !inputBuffer.isEmpty,
-                  let inputClient = client() else {
-                return
-            }
-            refreshCandidates(client: inputClient)
-        }
+                    sender: self.client()
+                ) && !self.inputBuffer.isEmpty && self.client() != nil
+            },
+            apply: { [weak self] _ in
+                guard let self, let inputClient = self.client() else {
+                    return
+                }
+                self.refreshCandidates(client: inputClient)
+            },
+            retainQueryAfterCompletion: false
+        )
     }
 
     private var conversionReading: String {
@@ -6105,7 +5961,7 @@ final class InputController: IMKInputController {
             isRegisteringDictionary: tabDictionaryRegistration != nil,
             hasSelectedCandidate: selectedCandidateIndex != nil,
             hasSelectedFuzzySuggestion: selectedFuzzySuggestionIndex != nil,
-            hasSelectedNextInput: selectedNextInputIndex != nil
+            hasSelectedNextInput: nextInputSession.selectedIndex != nil
         )
     }
 
@@ -6137,7 +5993,7 @@ final class InputController: IMKInputController {
 
     private var cachedJavaScriptCalculationCandidates: [String] {
         guard isCalculationExpressionDraft,
-              suggestionSearchSession.query(for: .javaScriptExtensions)
+              suggestionSearchCoordinator.query(for: .javaScriptExtensions)
                 == inputBuffer else {
             return []
         }

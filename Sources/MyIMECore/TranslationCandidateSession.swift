@@ -19,24 +19,18 @@ public struct TranslationCandidateSession: Equatable, Sendable {
 
     @discardableResult
     public mutating func store(
-        _ values: [String],
+        _ candidates: [Candidate],
         for source: String,
         channel: TranslationCandidateChannel
     ) -> [Candidate] {
-        let candidates = values.map {
-            Candidate(
-                storageText: $0,
-                source: .translation,
-                reading: source,
-                attributes: [.generated]
-            )
-        }
         if candidatesByChannelAndSource[channel]?[source] == nil {
             sourceOrderByChannel[channel, default: []].append(source)
         }
         candidatesByChannelAndSource[channel, default: [:]][source] =
             candidates
-        generatedTextsByChannel[channel, default: []].formUnion(values)
+        generatedTextsByChannel[channel, default: []].formUnion(
+            candidates.map(\.storageText)
+        )
         return candidates
     }
 
