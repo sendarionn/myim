@@ -22,6 +22,14 @@ public struct ClosingBracketTracker: Equatable, Sendable {
         value == candidate
     }
 
+    public func shouldConsumeTypedClosing(
+        _ typedText: String,
+        selectedCandidate: String
+    ) -> Bool {
+        guard let candidate else { return false }
+        return selectedCandidate == candidate && typedText == candidate
+    }
+
     public func shouldRecordCommittedInput(
         _ value: String,
         requested: Bool

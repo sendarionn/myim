@@ -513,6 +513,22 @@ final class InputController: IMKInputController {
             return true
         }
 
+        if inputBuffer.isEmpty,
+           event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+           let typedText = event.characters,
+           let selectedNextInputIndex,
+           nextInputCandidates.indices.contains(selectedNextInputIndex),
+           closingBracketTracker.shouldConsumeTypedClosing(
+                typedText,
+                selectedCandidate: nextInputCandidates[selectedNextInputIndex]
+           ) {
+            commitNextInputCandidate(
+                nextInputCandidates[selectedNextInputIndex],
+                to: sender
+            )
+            return true
+        }
+
         commitSelectedNextInputBeforeNewInput(event, client: sender)
 
         if shouldDismissNextInputSuggestions(for: event) {

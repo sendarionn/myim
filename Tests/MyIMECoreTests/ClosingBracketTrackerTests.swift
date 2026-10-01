@@ -51,4 +51,22 @@ struct ClosingBracketTrackerTests {
             hasCandidates: true
         ))
     }
+
+    @Test func consumesTheSameClosingTypedOverASelectedSuggestion() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("[")
+
+        #expect(tracker.shouldConsumeTypedClosing(
+            "]",
+            selectedCandidate: "]"
+        ))
+        #expect(!tracker.shouldConsumeTypedClosing(
+            "a",
+            selectedCandidate: "]"
+        ))
+        #expect(!tracker.shouldConsumeTypedClosing(
+            "]",
+            selectedCandidate: "続き"
+        ))
+    }
 }
