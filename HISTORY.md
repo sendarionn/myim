@@ -2400,3 +2400,4 @@
 - 通常候補の生成元別属性付与とCandidatePipelineへの入力組み立てを`CandidateAssembly`へ分離
 - 通常候補の選択状態、長音後処理、フィルター前候補の保持と復元を`CandidateSession`へ分離
 - 古い入力セッションで完了した曖昧検索索引の構築結果から候補パネルを更新しないように修正
+- 翻訳候補の生成済み結果、表示候補、選択状態を`TranslationCandidateSession`へ集約し、翻訳候補を`Candidate`として保持

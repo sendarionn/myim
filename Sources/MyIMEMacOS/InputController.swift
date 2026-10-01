@@ -131,15 +131,7 @@ final class InputController: IMKInputController {
     private var inputCursor = 0
     private var reconversionOriginal: String?
     private var candidateTranslationTask: Task<Void, Never>?
-    private var generatedTranslationCandidates = Set<String>()
-    private var generatedFuzzyTranslationCandidates = Set<String>()
-    private var sessionNormalTranslations: [String: [String]] = [:]
-    private var sessionNormalTranslationSources: [String] = []
-    private var sessionFuzzyTranslations: [String: [String]] = [:]
-    private var sessionFuzzyTranslationSources: [String] = []
-    private var visibleTranslationCandidates: [String] = []
-    private var selectedTranslationCandidateIndex: Int?
-    private var translationReturnWasFuzzy = false
+    private var translationCandidateSession = TranslationCandidateSession()
     private var recentCommittedContext = ""
     private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
@@ -2573,7 +2565,7 @@ final class InputController: IMKInputController {
             in: sender
         )
         showPreview(for: candidate)
-        if !generatedTranslationCandidates.contains(candidate) {
+        if !translationCandidateSession.contains(candidate, in: .normal) {
             updateTranslationCandidates(
                 for: candidateValueForCommit(candidate),
                 destination: .normal,
@@ -3836,7 +3828,7 @@ final class InputController: IMKInputController {
         )
         showFuzzySuggestionPage(selectedIndex: resolvedIndex, client: sender)
         showPreview(for: suggestion.candidate)
-        if !generatedFuzzyTranslationCandidates.contains(candidate) {
+        if !translationCandidateSession.contains(candidate, in: .fuzzy) {
             updateTranslationCandidates(
                 for: candidate,
                 destination: .fuzzy(reading: suggestion.reading),
@@ -4147,11 +4139,12 @@ final class InputController: IMKInputController {
                 }
                 switch destination {
                 case .normal:
-                    if self.sessionNormalTranslations[source] == nil {
-                        self.sessionNormalTranslationSources.append(source)
-                    }
-                    self.sessionNormalTranslations[source] = translations
-                    self.generatedTranslationCandidates.formUnion(translations)
+                    let translationCandidates =
+                        self.translationCandidateSession.store(
+                            translations,
+                            for: source,
+                            channel: .normal
+                        )
                     self.selectedCandidateIndex = self.currentCandidates
                         .firstIndex(of: source)
                     self.showCandidateWindow(client: sender)
@@ -4164,20 +4157,19 @@ final class InputController: IMKInputController {
                         $0 % Self.maximumCandidateCount
                     } ?? 0
                     self.showTranslationCandidateWindow(
-                        translations,
+                        translationCandidates,
                         beside: self.candidateWindow.rowFrame(at: sourceRow)
                             ?? self.candidateWindow.frame,
                         onLeft: true,
                         client: sender
                     )
                 case .fuzzy:
-                    if self.sessionFuzzyTranslations[source] == nil {
-                        self.sessionFuzzyTranslationSources.append(source)
-                    }
-                    self.sessionFuzzyTranslations[source] = translations
-                    self.generatedFuzzyTranslationCandidates.formUnion(
-                        translations
-                    )
+                    let translationCandidates =
+                        self.translationCandidateSession.store(
+                            translations,
+                            for: source,
+                            channel: .fuzzy
+                        )
                     self.selectedFuzzySuggestionIndex = self.fuzzySuggestions
                         .firstIndex { $0.candidate == source }
                     if let index = self.selectedFuzzySuggestionIndex {
@@ -4192,7 +4184,7 @@ final class InputController: IMKInputController {
                         return
                     }
                     self.showTranslationCandidateWindow(
-                        translations,
+                        translationCandidates,
                         beside: self.selectedFuzzySuggestionIndex.flatMap {
                             self.fuzzySuggestionWindow.rowFrame(
                                 at: $0 % Self.maximumCandidateCount
@@ -4225,14 +4217,15 @@ final class InputController: IMKInputController {
     }
 
     private func showTranslationCandidateWindow(
-        _ candidates: [String],
+        _ candidates: [Candidate],
         beside sourceFrame: NSRect,
         onLeft: Bool,
         client sender: Any
     ) {
-        visibleTranslationCandidates = candidates
+        translationCandidateSession.show(candidates)
         translationCandidateWindow.show(
-            candidates: Array(candidates.prefix(Self.maximumCandidateCount)),
+            candidates: Array(candidates.prefix(Self.maximumCandidateCount))
+                .map(\.storageText),
             selectedIndex: nil,
             near: inputLocation(for: sender),
             isAccented: false
@@ -4308,7 +4301,9 @@ final class InputController: IMKInputController {
         from sourceFrame: NSRect
     ) -> Bool {
         guard translationCandidateWindow.isVisible,
-              !visibleTranslationCandidates.isEmpty else { return false }
+              !translationCandidateSession.visibleCandidates.isEmpty else {
+            return false
+        }
         return translationCandidateWindow.frame.midX < sourceFrame.midX
             ? direction == .left
             : direction == .right
@@ -4318,15 +4313,15 @@ final class InputController: IMKInputController {
         index: Int,
         client sender: Any
     ) -> Bool {
-        guard visibleTranslationCandidates.indices.contains(index) else {
+        guard let candidate = translationCandidateSession.select(
+            index: index,
+            returningToFuzzy: selectedFuzzySuggestionIndex != nil
+        ) else {
             return true
         }
-        translationReturnWasFuzzy = selectedFuzzySuggestionIndex != nil
-            || translationReturnWasFuzzy && selectedTranslationCandidateIndex != nil
-        selectedTranslationCandidateIndex = index
         candidateWindow.clearSelection()
         translationCandidateWindow.select(index: index)
-        setMarkedText(visibleTranslationCandidates[index], in: sender)
+        setMarkedText(candidate.storageText, in: sender)
         return true
     }
 
@@ -4334,31 +4329,36 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool? {
-        guard let selectedTranslationCandidateIndex else { return nil }
+        guard let selectedTranslationCandidateIndex =
+                translationCandidateSession.selectedIndex,
+              translationCandidateSession.visibleCandidates.indices.contains(
+                selectedTranslationCandidateIndex
+              ) else { return nil }
+        let visibleCandidates = translationCandidateSession.visibleCandidates
         switch InputKey(keyCode: event.keyCode) {
         case .returnKey:
             commit(
-                visibleTranslationCandidates[selectedTranslationCandidateIndex],
+                visibleCandidates[selectedTranslationCandidateIndex].storageText,
                 to: sender
             )
             return true
         case .tab, .downArrow:
             return selectTranslationCandidate(
                 index: (selectedTranslationCandidateIndex + 1)
-                    % visibleTranslationCandidates.count,
+                    % visibleCandidates.count,
                 client: sender
             )
         case .upArrow:
             return selectTranslationCandidate(
                 index: (selectedTranslationCandidateIndex - 1
-                    + visibleTranslationCandidates.count)
-                    % visibleTranslationCandidates.count,
+                    + visibleCandidates.count)
+                    % visibleCandidates.count,
                 client: sender
             )
         case .leftArrow, .rightArrow, .escape:
-            self.selectedTranslationCandidateIndex = nil
+            translationCandidateSession.clearSelection()
             translationCandidateWindow.clearSelection()
-            if translationReturnWasFuzzy,
+            if translationCandidateSession.returnWasFuzzy,
                let selectedFuzzySuggestionIndex {
                 return selectFuzzySuggestion(
                     index: selectedFuzzySuggestionIndex,
@@ -4371,7 +4371,8 @@ final class InputController: IMKInputController {
             return true
         case .space:
             commit(
-                visibleTranslationCandidates[selectedTranslationCandidateIndex] + " ",
+                visibleCandidates[selectedTranslationCandidateIndex].storageText
+                    + " ",
                 to: sender
             )
             return true
@@ -4382,15 +4383,7 @@ final class InputController: IMKInputController {
 
     private func clearSessionTranslationCandidates() {
         cancelCandidateTranslation()
-        generatedTranslationCandidates = []
-        generatedFuzzyTranslationCandidates = []
-        sessionNormalTranslations = [:]
-        sessionNormalTranslationSources = []
-        sessionFuzzyTranslations = [:]
-        sessionFuzzyTranslationSources = []
-        visibleTranslationCandidates = []
-        selectedTranslationCandidateIndex = nil
-        translationReturnWasFuzzy = false
+        translationCandidateSession.reset()
         translationCandidateWindow.hide()
     }
 
@@ -4912,7 +4905,10 @@ final class InputController: IMKInputController {
         _ candidate: Candidate
     ) {
         guard !candidate.hasSource(.translation),
-              !generatedTranslationCandidates.contains(candidate.storageText)
+              !translationCandidateSession.contains(
+                candidate.storageText,
+                in: .normal
+              )
         else {
             return
         }
