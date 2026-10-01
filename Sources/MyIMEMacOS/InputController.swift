@@ -5,6 +5,13 @@ import OSLog
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
+    private struct ImportedDictionaryRuntimeSnapshot {
+        let dictionaries: [ImportedDictionary]
+        let conversionEngines: [String: ConversionEngine]
+        let continuationGenerators:
+            [String: DictionaryContinuationCandidateGenerator]
+    }
+
     private static let lifecycleLogger = Logger(
         subsystem: "com.sendarionn.myim",
         category: "input-lifecycle"
@@ -104,6 +111,8 @@ final class InputController: IMKInputController {
             from: sharedBasicEntries
         )
     private static let sharedBasicFuzzyKey = "bundled-\(sharedBasicEntries.count)-\(sharedBasicFuzzyEntries.count)"
+    private nonisolated(unsafe) static var sharedImportedDictionarySnapshot =
+        loadImportedDictionaryRuntimeSnapshot()
     private static let fuzzyEngineRepository = FuzzyEngineRepository()
     private static let basicDictionaryUpdateCoordinator =
         BasicDictionaryUpdateCoordinator()
@@ -223,6 +232,14 @@ final class InputController: IMKInputController {
     private let controllerID = String(UUID().uuidString.prefix(8))
     private var inputRevision: UInt = 0
     private var revisionInputSnapshot = ""
+    private var lastTracedMarkedRange = NSRange(
+        location: NSNotFound,
+        length: 0
+    )
+    private var lastTracedSelectedRange = NSRange(
+        location: NSNotFound,
+        length: 0
+    )
 
     static func handleGlobalEmojiShortcut() {
         guard let controller = activeController,
@@ -285,19 +302,12 @@ final class InputController: IMKInputController {
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let cachedUserEntries = Self.loadUserEntries()
-        let importedDictionaries = Self.importedDictionaryStore.loadDictionaries()
+        let importedSnapshot = Self.sharedImportedDictionarySnapshot
+        let importedDictionaries = importedSnapshot.dictionaries
         let disabledImportedDictionaries = Self.disabledImportedDictionaryFilenames
-        let importedConversionEngines = Dictionary(uniqueKeysWithValues:
-            importedDictionaries.map {
-                ($0.fileURL.lastPathComponent, ConversionEngine(entries: $0.entries))
-            }
-        )
-        let importedContinuationGenerators = Dictionary(uniqueKeysWithValues:
-            importedDictionaries.map {
-                ($0.fileURL.lastPathComponent,
-                 DictionaryContinuationCandidateGenerator(entries: $0.entries))
-            }
-        )
+        let importedConversionEngines = importedSnapshot.conversionEngines
+        let importedContinuationGenerators =
+            importedSnapshot.continuationGenerators
         let enabledImportedNames = importedDictionaries.map(\.fileURL.lastPathComponent)
             .filter { !disabledImportedDictionaries.contains($0) }
         let bundledEntries = Self.sharedBasicEntries
@@ -1047,9 +1057,12 @@ final class InputController: IMKInputController {
                         enabled: true
                     )
                 }
-                importedDictionaries = Self.importedDictionaryStore
-                    .loadDictionaries()
-                rebuildImportedDictionaryCaches()
+                let importedSnapshot = Self
+                    .reloadSharedImportedDictionarySnapshot()
+                importedDictionaries = importedSnapshot.dictionaries
+                importedConversionEngines = importedSnapshot.conversionEngines
+                importedContinuationGenerators =
+                    importedSnapshot.continuationGenerators
                 rebuildConversionEngine()
                 let alert = NSAlert()
                 alert.messageText = "SKK辞書をインポートしました"
@@ -5695,10 +5708,13 @@ final class InputController: IMKInputController {
         guard Self.diagnosticConfiguration.traceEnabled else { return }
         synchronizeInputRevision()
         let textClient = sender as? IMKTextInput
-        let markedRange = textClient?.markedRange()
-            ?? NSRange(location: NSNotFound, length: 0)
-        let selectedRange = textClient?.selectedRange()
-            ?? NSRange(location: NSNotFound, length: 0)
+        if InputTraceClientRangePolicy.shouldCapture(for: event),
+           let textClient {
+            lastTracedMarkedRange = textClient.markedRange()
+            lastTracedSelectedRange = textClient.selectedRange()
+        }
+        let markedRange = lastTracedMarkedRange
+        let selectedRange = lastTracedSelectedRange
         let session = globalLifecycleGeneration ?? 0
         let application = inputClientBundleIdentifier
             ?? textClient?.bundleIdentifier()
@@ -6023,20 +6039,6 @@ final class InputController: IMKInputController {
         return importedDictionaries.map(\.fileURL.lastPathComponent).filter {
             !disabled.contains($0)
         }
-    }
-
-    private func rebuildImportedDictionaryCaches() {
-        importedConversionEngines = Dictionary(uniqueKeysWithValues:
-            importedDictionaries.map {
-                ($0.fileURL.lastPathComponent, ConversionEngine(entries: $0.entries))
-            }
-        )
-        importedContinuationGenerators = Dictionary(uniqueKeysWithValues:
-            importedDictionaries.map {
-                ($0.fileURL.lastPathComponent,
-                 DictionaryContinuationCandidateGenerator(entries: $0.entries))
-            }
-        )
     }
 
     private func rebuildFuzzyConversionEngine() {
@@ -6463,6 +6465,35 @@ final class InputController: IMKInputController {
         ImportedDictionaryStore(
             directoryURL: userDataURL(fileName: "imported-dictionaries")
         )
+    }
+
+    private static func loadImportedDictionaryRuntimeSnapshot()
+        -> ImportedDictionaryRuntimeSnapshot {
+        let dictionaries = importedDictionaryStore.loadDictionaries()
+        return ImportedDictionaryRuntimeSnapshot(
+            dictionaries: dictionaries,
+            conversionEngines: Dictionary(uniqueKeysWithValues:
+                dictionaries.map {
+                    ($0.fileURL.lastPathComponent,
+                     ConversionEngine(entries: $0.entries))
+                }
+            ),
+            continuationGenerators: Dictionary(uniqueKeysWithValues:
+                dictionaries.map {
+                    ($0.fileURL.lastPathComponent,
+                     DictionaryContinuationCandidateGenerator(
+                        entries: $0.entries
+                     ))
+                }
+            )
+        )
+    }
+
+    private static func reloadSharedImportedDictionarySnapshot()
+        -> ImportedDictionaryRuntimeSnapshot {
+        let snapshot = loadImportedDictionaryRuntimeSnapshot()
+        sharedImportedDictionarySnapshot = snapshot
+        return snapshot
     }
 
     private static var disabledImportedDictionaryFilenames: Set<String> {
