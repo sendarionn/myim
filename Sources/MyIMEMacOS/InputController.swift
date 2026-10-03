@@ -3806,9 +3806,7 @@ final class InputController: IMKInputController {
         secureInputPassthroughActive = true
         lifecycleCoordinator.clearActivationTime()
         NSLog("myim: Secure Event Inputを検知し、キー処理を停止")
-        clearCompositionForSystemPaste(in: sender)
-        cancelCandidateTranslation()
-        resetTransientInteractionState()
+        discardComposition(in: sender)
         nextInputSuggestionCoordinator.breakSequence()
     }
 
@@ -4143,16 +4141,21 @@ final class InputController: IMKInputController {
             return true
         }
 
-        let wasSelectingCandidate = selectedCandidateIndex != nil
+        guard selectedCandidateIndex != nil else {
+            discardComposition(in: sender)
+            return true
+        }
         selectedCandidateIndex = nil
         candidateWindow.clearSelection()
         updateMarkedText(in: sender)
-        if wasSelectingCandidate {
-            showCandidateWindow(client: sender)
-            return true
-        }
-        showInputPreview(client: sender)
+        showCandidateWindow(client: sender)
         return true
+    }
+
+    private func discardComposition(in sender: Any) {
+        clearCompositionForSystemPaste(in: sender)
+        cancelCandidateTranslation()
+        resetTransientInteractionState()
     }
 
     private func commitNextInputCandidate(
