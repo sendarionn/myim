@@ -136,14 +136,14 @@ final class InputController: IMKInputController {
     private var dictionaryRegistrationSession: DictionaryRegistrationSession?
     private var basicDictionaryStatus = "未確認"
     private let panelCoordinator = InputPanelCoordinator()
+    private let locationCoordinator = InputLocationCoordinator(
+        logger: lifecycleLogger
+    )
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private let romajiConverter = RomajiConverter()
     private var settingsWindow: NSWindow?
     private var activeInputClient: Any?
     private var pendingDeactivation: DispatchWorkItem?
-    private var candidateLocationRetry: DispatchWorkItem?
-    private var candidateLocationRetryAttempt = 0
-    private var lastLocationQueryRejectedPlaceholder = false
     private var pendingDeactivationStartedAt: TimeInterval?
     private var isServerActive = false
     private var lifecycleGeneration: UInt = 0
@@ -153,8 +153,6 @@ final class InputController: IMKInputController {
     private var inputClientRole = InputClientRole.sourceApplication
     private var transientCompositionGuard = TransientCompositionGuard()
     private var isInsertingCommittedText = false
-    private var lastValidInputLocation: NSRect?
-    private var compositionAnchorFrame: NSRect?
     private let controllerID = String(UUID().uuidString.prefix(8))
     private var inputSession = InputSession()
     private var lastTracedMarkedRange = NSRange(
@@ -406,10 +404,7 @@ final class InputController: IMKInputController {
 
         if inputBuffer.isEmpty {
             logPanelSnapshot(event: "keyDown.emptyBuffer.beforeAnchor", sender: sender)
-            compositionAnchorFrame = currentInputLocation(for: sender)
-            if let compositionAnchorFrame {
-                lastValidInputLocation = compositionAnchorFrame
-            }
+            locationCoordinator.captureCompositionAnchor(from: sender)
             logPanelSnapshot(event: "keyDown.emptyBuffer.afterAnchor", sender: sender)
         }
 
@@ -1409,7 +1404,7 @@ final class InputController: IMKInputController {
         }
         let resumesTransientDeactivation = pendingDeactivation != nil
         if !resumesTransientDeactivation {
-            lastValidInputLocation = nil
+            locationCoordinator.forgetPreviousLocation()
         }
         let now = ProcessInfo.processInfo.systemUptime
         let deactivationDuration = pendingDeactivationStartedAt.map {
@@ -4171,9 +4166,10 @@ final class InputController: IMKInputController {
         let isAccentedInput = CandidatePanelAccentPolicy.isAccented(
             isDictionaryRegistration: dictionaryRegistrationSession != nil
         )
-        guard let anchorFrame = candidateInputLocation(for: sender) else {
+        let anchor = locationCoordinator.candidateAnchor(for: sender)
+        guard let anchorFrame = anchor.location else {
             candidateWindow.hide()
-            if lastLocationQueryRejectedPlaceholder {
+            if anchor.shouldRetry {
                 scheduleCandidateLocationRetry(for: sender)
             }
             Self.lifecycleLogger.notice(
@@ -4212,189 +4208,34 @@ final class InputController: IMKInputController {
     }
 
     private func inputLocation(for sender: Any) -> NSRect {
-        if let current = currentInputLocation(for: sender) {
-            lastValidInputLocation = current
-            return current
-        }
-        Self.lifecycleLogger.notice(
-            "invalid input location reusedPrevious=\(self.lastValidInputLocation != nil, privacy: .public)"
-        )
-        return lastValidInputLocation ?? .zero
-    }
-
-    private func candidateInputLocation(for sender: Any) -> NSRect? {
-        if let current = currentInputLocation(for: sender) {
-            compositionAnchorFrame = current
-            lastValidInputLocation = current
-            Self.lifecycleLogger.notice(
-                "candidate anchor source=current frame=\(String(describing: current), privacy: .public)"
-            )
-            return current
-        }
-        if lastLocationQueryRejectedPlaceholder {
-            Self.lifecycleLogger.notice(
-                "candidate anchor deferred after rejecting placeholder"
-            )
-            return nil
-        }
-        if let compositionAnchorFrame {
-            Self.lifecycleLogger.notice(
-                "candidate anchor source=composition frame=\(String(describing: compositionAnchorFrame), privacy: .public)"
-            )
-            return compositionAnchorFrame
-        }
-        if let lastValidInputLocation {
-            Self.lifecycleLogger.notice(
-                "candidate anchor source=previous frame=\(String(describing: lastValidInputLocation), privacy: .public)"
-            )
-            return lastValidInputLocation
-        }
-        Self.lifecycleLogger.notice("candidate anchor source=missing")
-        return nil
-    }
-
-    private func currentInputLocation(for sender: Any) -> NSRect? {
-        lastLocationQueryRejectedPlaceholder = false
-        guard let textClient = sender as? IMKTextInput else {
-            return nil
-        }
-
-        let characterIndices = InputLocationQueryPolicy.characterIndices(
-            markedRange: textClient.markedRange(),
-            selectedRange: textClient.selectedRange()
-        )
-        var lastQueriedRect = NSRect.zero
-        for characterIndex in characterIndices {
-            var lineRect = NSRect.zero
-            _ = textClient.attributes(
-                forCharacterIndex: characterIndex,
-                lineHeightRectangle: &lineRect
-            )
-            lastQueriedRect = lineRect
-            let isValidRectangle = InputLocationQueryPolicy.isValidRectangle(
-                x: lineRect.minX,
-                y: lineRect.minY,
-                width: lineRect.width,
-                height: lineRect.height
-            )
-            let isPlaceholder = isValidRectangle
-                && isScreenCornerPlaceholder(lineRect)
-            if isPlaceholder {
-                lastLocationQueryRejectedPlaceholder = true
-                Self.lifecycleLogger.notice(
-                    "rejected top-left input placeholder index=\(characterIndex, privacy: .public) rect=\(String(describing: lineRect), privacy: .public)"
-                )
-            }
-            if isValidRectangle, !isPlaceholder {
-                lastValidInputLocation = lineRect
-                Self.lifecycleLogger.notice(
-                    "accepted IMK input location index=\(characterIndex, privacy: .public) rect=\(String(describing: lineRect), privacy: .public)"
-                )
-                return lineRect
-            }
-        }
-        if let nativeTextClient = sender as? NSTextInputClient {
-            var actualRange = NSRange(location: NSNotFound, length: 0)
-            let fallbackRange = textClient.markedRange().location != NSNotFound
-                ? textClient.markedRange()
-                : textClient.selectedRange()
-            let firstRect = nativeTextClient.firstRect(
-                forCharacterRange: fallbackRange,
-                actualRange: &actualRange
-            )
-            let isValidRectangle = InputLocationQueryPolicy.isValidRectangle(
-                x: firstRect.minX,
-                y: firstRect.minY,
-                width: firstRect.width,
-                height: firstRect.height
-            )
-            let isPlaceholder = isValidRectangle
-                && isScreenCornerPlaceholder(firstRect)
-            if isPlaceholder {
-                lastLocationQueryRejectedPlaceholder = true
-                Self.lifecycleLogger.notice(
-                    "rejected top-left NSTextInputClient placeholder rect=\(String(describing: firstRect), privacy: .public)"
-                )
-            }
-            if isValidRectangle, !isPlaceholder {
-                lastValidInputLocation = firstRect
-                Self.lifecycleLogger.notice(
-                    "used NSTextInputClient fallback input location range=\(String(describing: actualRange), privacy: .public) rect=\(String(describing: firstRect), privacy: .public)"
-                )
-                return firstRect
-            }
-        }
-        Self.lifecycleLogger.notice(
-            "invalid current input location indices=\(String(describing: characterIndices), privacy: .public) rect=\(String(describing: lastQueriedRect), privacy: .public)"
-        )
-        return nil
+        locationCoordinator.inputLocation(for: sender)
     }
 
     private func scheduleCandidateLocationRetry(for sender: Any) {
-        guard candidateLocationRetry == nil else { return }
         guard let sessionSnapshot = currentInputSessionSnapshot() else {
             return
         }
         let senderObject = sender as AnyObject
-        let retry = DispatchWorkItem { [weak self, weak senderObject] in
-            guard let self else { return }
-            self.candidateLocationRetry = nil
-            guard self.inputSession.accepts(
-                    sessionSnapshot,
-                    controllerID: self.controllerID,
-                    isActive: self.isServerActive
-                  ),
-                  !self.inputBuffer.isEmpty,
-                  !self.currentCandidates.isEmpty,
-                  let senderObject else {
-                self.candidateLocationRetryAttempt = 0
-                return
+        locationCoordinator.scheduleCandidateRetry(
+            isCurrent: { [weak self, weak senderObject] in
+                guard let self, senderObject != nil else { return false }
+                return self.inputSession.accepts(
+                        sessionSnapshot,
+                        controllerID: self.controllerID,
+                        isActive: self.isServerActive
+                    )
+                    && !self.inputBuffer.isEmpty
+                    && !self.currentCandidates.isEmpty
+            },
+            retry: { [weak self, weak senderObject] in
+                guard let self, let senderObject else { return }
+                self.showCandidateWindow(client: senderObject)
             }
-            self.candidateLocationRetryAttempt += 1
-            if self.candidateLocationRetryAttempt == 1
-                || self.candidateLocationRetryAttempt.isMultiple(of: 10) {
-                Self.lifecycleLogger.notice(
-                    "retrying candidate location attempt=\(self.candidateLocationRetryAttempt, privacy: .public)"
-                )
-            }
-            self.showCandidateWindow(client: senderObject)
-        }
-        candidateLocationRetry = retry
-        let delay = CandidateLocationRetryPolicy.delay(
-            after: candidateLocationRetryAttempt
-        )
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + delay,
-            execute: retry
         )
     }
 
     private func cancelCandidateLocationRetry() {
-        candidateLocationRetry?.cancel()
-        candidateLocationRetry = nil
-        candidateLocationRetryAttempt = 0
-    }
-
-    private func isScreenCornerPlaceholder(_ rect: NSRect) -> Bool {
-        NSScreen.screens.contains { screen in
-            let matchesFullScreen = InputLocationQueryPolicy.isTopLeftScreenPlaceholder(
-                x: rect.minX,
-                y: rect.minY,
-                width: rect.width,
-                height: rect.height,
-                screenMinX: screen.frame.minX,
-                screenMaxY: screen.frame.maxY
-            )
-            let matchesVisibleScreen = InputLocationQueryPolicy.isTopLeftScreenPlaceholder(
-                x: rect.minX,
-                y: rect.minY,
-                width: rect.width,
-                height: rect.height,
-                screenMinX: screen.visibleFrame.minX,
-                screenMaxY: screen.visibleFrame.maxY
-            )
-            return matchesFullScreen || matchesVisibleScreen
-        }
+        locationCoordinator.cancelCandidateRetry()
     }
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
@@ -5164,8 +5005,8 @@ final class InputController: IMKInputController {
         let application = inputClientBundleIdentifier
             ?? textClient?.bundleIdentifier()
             ?? "unknown"
-        let anchor = compositionAnchorFrame.map(String.init(describing:)) ?? "nil"
-        let lastLocation = lastValidInputLocation.map(String.init(describing:)) ?? "nil"
+        let anchor = locationCoordinator.compositionAnchorDescription
+        let lastLocation = locationCoordinator.lastValidLocationDescription
         let windows = NSApp.windows.compactMap { window -> String? in
             guard window is NSPanel else { return nil }
             return "number=\(window.windowNumber) type=\(String(describing: type(of: window))) visible=\(window.isVisible) onScreen=\(window.isOnActiveSpace) frame=\(NSStringFromRect(window.frame)) level=\(window.level.rawValue)"
@@ -5178,7 +5019,7 @@ final class InputController: IMKInputController {
     private func clearInputBuffer() {
         cancelCandidateLocationRetry()
         inputSession.clear()
-        compositionAnchorFrame = nil
+        locationCoordinator.clearCompositionAnchor()
     }
 
     private func clearCandidateState(includingFuzzy: Bool = false) {

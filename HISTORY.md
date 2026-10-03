@@ -2432,3 +2432,7 @@
 - 辞書登録処理に残っていたTab起動時代の関数名を現在の役割に合わせて整理
 - フィルター入力候補の生成、直接確定、条件適用と解除、ページング、候補絞り込みを`CandidateFilterCoordinator`へ統合
 - もしかして候補のモデル、候補順、重複除去、選択位置、ページング、通常候補との行位置対応を`FuzzySuggestionCoordinator`へ統合
+
+## 2026-10-04
+
+- 入力位置の照会、プレースホルダー拒否、変換開始時アンカー、直前の有効座標、候補パネル位置の再試行を`InputLocationCoordinator`へ統合し、アンカー選択と再試行回数の状態遷移を`InputLocationAnchorSession`としてCoreへ分離
