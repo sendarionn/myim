@@ -2,6 +2,7 @@ public enum CandidateSourceKind: String, CaseIterable, Sendable {
     case unspecified
     case automaticKana
     case userDictionary
+    case importedDictionary
     case selectionHistory
     case dateTime
     case numericPrefix

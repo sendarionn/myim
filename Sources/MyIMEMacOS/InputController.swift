@@ -2840,7 +2840,8 @@ final class InputController: IMKInputController {
             )
             : []
         let standardSource = StandardConversionCandidateSource(
-            userEngine: dictionaryRuntime.userEngine,
+            userEngine: dictionaryRuntime.userDictionaryEngine,
+            importedEngine: dictionaryRuntime.importedEngine,
             basicEngine: dictionaryRuntime.basicEngine,
             symbolEngine: Self.sharedSymbolConversionEngine,
             systemEngine: dictionaryRuntime.systemEngine,

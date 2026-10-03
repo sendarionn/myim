@@ -77,6 +77,20 @@ struct ConversionDictionaryRuntimeTests {
         #expect(runtime.readings(for: "候補") == ["kouho", "kôho"])
     }
 
+    @Test
+    func keepsTheUsersOwnDictionarySeparateFromImportedDictionaries() {
+        let runtime = makeRuntime(
+            userEntries: [DictionaryEntry(reading: "kouho", candidates: ["候補"])],
+            disabled: []
+        )
+
+        #expect(runtime.userDictionaryEngine.candidates(for: "kouho") == ["候補"])
+        #expect(runtime.userEngine.candidates(for: "kouho")
+            == ["候補", "公募", "後方"])
+        #expect(runtime.importedEngine.candidates(for: "kouho")
+            == ["公募", "後方"])
+    }
+
     private func makeRuntime(
         userEntries: [DictionaryEntry] = [],
         disabled: Set<String>,

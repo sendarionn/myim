@@ -32,6 +32,7 @@ public struct StandardConversionCandidateContext: Sendable {
 
 public struct StandardConversionCandidateSource: Sendable {
     private let userEngine: LayeredConversionEngine
+    private let importedEngine: LayeredConversionEngine
     private let basicEngine: ConversionEngine
     private let symbolEngine: ConversionEngine
     private let systemEngine: IndexedDictionaryEngine
@@ -39,8 +40,11 @@ public struct StandardConversionCandidateSource: Sendable {
     private let maximumSystemPrefixCandidates: Int
     private let romajiConverter = RomajiConverter()
 
+    /// `userEngine` holds only the user's own registrations so that bulk
+    /// imported dictionaries do not share their priority
     public init(
         userEngine: LayeredConversionEngine,
+        importedEngine: LayeredConversionEngine,
         basicEngine: ConversionEngine,
         symbolEngine: ConversionEngine,
         systemEngine: IndexedDictionaryEngine,
@@ -48,6 +52,7 @@ public struct StandardConversionCandidateSource: Sendable {
         maximumSystemPrefixCandidates: Int = 2048
     ) {
         self.userEngine = userEngine
+        self.importedEngine = importedEngine
         self.basicEngine = basicEngine
         self.symbolEngine = symbolEngine
         self.systemEngine = systemEngine
@@ -70,6 +75,10 @@ public struct StandardConversionCandidateSource: Sendable {
         let user = mergedGroups(
             readings: userLookupReadings,
             lookup: { userEngine.candidateGroups(matching: $0) }
+        )
+        let imported = importedGroups(
+            readings: lookupReadings,
+            spellings: userLookupReadings
         )
         let basic = mergedGroups(
             readings: lookupReadings,
@@ -133,6 +142,8 @@ public struct StandardConversionCandidateSource: Sendable {
             symbolExact: symbols.exact,
             basicExact: basic.exact,
             systemExact: system.exact,
+            importedExact: imported.reading.exact,
+            importedSpelling: imported.spelling.exact,
             inflection: inflections,
             particle: particles,
             generatedParticles: generatedParticles,
@@ -145,6 +156,7 @@ public struct StandardConversionCandidateSource: Sendable {
             symbolPrefix: symbols.prefix,
             systemPrefix: system.prefix,
             basicPrefix: basic.prefix,
+            importedPrefix: imported.reading.prefix + imported.spelling.prefix,
             english: context.englishCandidates,
             uppercase: caseCandidates,
             recencyRanks: recencyRanks(
@@ -214,8 +226,44 @@ public struct StandardConversionCandidateSource: Sendable {
             ) + mergedCandidates(
                 readings: readings,
                 lookup: systemEngine.candidates
+            ) + importedGroups(readings: readings, spellings: []).reading.exact
+        }
+    }
+
+    /// Splits imported matches by quality: `reading` matches the kana of
+    /// the input, while `spelling` only matches the typed letters, such as
+    /// SKK abbrev headwords that are English spellings
+    private func importedGroups(
+        readings: [String],
+        spellings: [String]
+    ) -> (reading: DictionaryCandidateGroups, spelling: DictionaryCandidateGroups) {
+        var seenKana = Set<String>()
+        let kanaReadings = readings.compactMap {
+            romajiConverter.hiragana(from: $0)
+        }.filter { seenKana.insert($0).inserted }
+        let reading = mergedGroups(readings: kanaReadings) {
+            importedEngine.candidateGroups(
+                matching: $0,
+                limit: maximumSystemPrefixCandidates
             )
         }
+        guard !spellings.isEmpty else {
+            return (reading, DictionaryCandidateGroups())
+        }
+        let readingMatches = Set(reading.exact + reading.prefix)
+        let typed = mergedGroups(readings: spellings) {
+            importedEngine.candidateGroups(
+                matching: $0,
+                limit: maximumSystemPrefixCandidates
+            )
+        }
+        return (
+            reading,
+            DictionaryCandidateGroups(
+                exact: typed.exact.filter { !readingMatches.contains($0) },
+                prefix: typed.prefix.filter { !readingMatches.contains($0) }
+            )
+        )
     }
 
     private func recencyRanks(

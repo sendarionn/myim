@@ -10,6 +10,8 @@ public struct CandidateAssembly: Sendable {
         public let symbolExact: [String]
         public let basicExact: [String]
         public let systemExact: [String]
+        public let importedExact: [String]
+        public let importedSpelling: [String]
         public let inflection: [String]
         public let particle: [String]
         public let generatedParticles: Set<String>
@@ -19,6 +21,7 @@ public struct CandidateAssembly: Sendable {
         public let symbolPrefix: [String]
         public let systemPrefix: [String]
         public let basicPrefix: [String]
+        public let importedPrefix: [String]
         public let english: [String]
         public let uppercase: [String]
         public let recencyRanks: [String: Int]
@@ -37,6 +40,8 @@ public struct CandidateAssembly: Sendable {
             symbolExact: [String],
             basicExact: [String],
             systemExact: [String],
+            importedExact: [String] = [],
+            importedSpelling: [String] = [],
             inflection: [String],
             particle: [String],
             generatedParticles: Set<String>,
@@ -46,6 +51,7 @@ public struct CandidateAssembly: Sendable {
             symbolPrefix: [String],
             systemPrefix: [String],
             basicPrefix: [String],
+            importedPrefix: [String] = [],
             english: [String],
             uppercase: [String],
             recencyRanks: [String: Int],
@@ -63,6 +69,8 @@ public struct CandidateAssembly: Sendable {
             self.symbolExact = symbolExact
             self.basicExact = basicExact
             self.systemExact = systemExact
+            self.importedExact = importedExact
+            self.importedSpelling = importedSpelling
             self.inflection = inflection
             self.particle = particle
             self.generatedParticles = generatedParticles
@@ -72,6 +80,7 @@ public struct CandidateAssembly: Sendable {
             self.symbolPrefix = symbolPrefix
             self.systemPrefix = systemPrefix
             self.basicPrefix = basicPrefix
+            self.importedPrefix = importedPrefix
             self.english = english
             self.uppercase = uppercase
             self.recencyRanks = recencyRanks
@@ -125,11 +134,20 @@ public struct CandidateAssembly: Sendable {
             reading: input.reading,
             attributes: preserveLongVowel
         ) + makeCandidates(
+            input.importedExact,
+            source: .importedDictionary,
+            reading: input.reading,
+            attributes: preserveLongVowel
+        ) + makeCandidates(
             input.inflection,
             source: .verbInflection,
             reading: input.reading
         )
         let other = makeCandidates(
+            input.importedSpelling,
+            source: .importedDictionary,
+            reading: input.reading
+        ) + makeCandidates(
             input.userPrefix,
             source: .userDictionary,
             reading: input.reading,
@@ -149,6 +167,10 @@ public struct CandidateAssembly: Sendable {
         ) + makeCandidates(
             input.basicPrefix,
             source: .basicDictionary,
+            reading: input.reading
+        ) + makeCandidates(
+            input.importedPrefix,
+            source: .importedDictionary,
             reading: input.reading
         )
         let ordered = CandidatePipeline().candidates(

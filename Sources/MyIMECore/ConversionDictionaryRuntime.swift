@@ -42,6 +42,10 @@ public struct ConversionDictionaryRuntime: Sendable {
     public private(set) var imported: ImportedDictionaryRuntime
     public private(set) var basicEntries: [DictionaryEntry]
     public private(set) var userEngine: LayeredConversionEngine
+    /// The user's own dictionary without imported dictionaries
+    public private(set) var userDictionaryEngine: LayeredConversionEngine
+    /// Enabled imported dictionaries without the user's own dictionary
+    public private(set) var importedEngine: LayeredConversionEngine
     public private(set) var basicEngine: ConversionEngine
     public let systemEngine: IndexedDictionaryEngine
     public private(set) var verbInflectionGenerator: VerbInflectionCandidateGenerator
@@ -70,11 +74,12 @@ public struct ConversionDictionaryRuntime: Sendable {
         basicContinuationGenerator = DictionaryContinuationCandidateGenerator(
             entries: basicEntries
         )
-        (userEngine, userContinuationGenerator) = Self.userLayers(
-            userEntries: userEntries,
-            imported: imported,
-            disabledImportedFilenames: disabledImportedFilenames
-        )
+        (userEngine, userDictionaryEngine, importedEngine, userContinuationGenerator) =
+            Self.userLayers(
+                userEntries: userEntries,
+                imported: imported,
+                disabledImportedFilenames: disabledImportedFilenames
+            )
     }
 
     public func enabledImportedFilenames(
@@ -87,11 +92,12 @@ public struct ConversionDictionaryRuntime: Sendable {
         userEntries: [DictionaryEntry],
         disabledImportedFilenames: Set<String>
     ) {
-        (userEngine, userContinuationGenerator) = Self.userLayers(
-            userEntries: userEntries,
-            imported: imported,
-            disabledImportedFilenames: disabledImportedFilenames
-        )
+        (userEngine, userDictionaryEngine, importedEngine, userContinuationGenerator) =
+            Self.userLayers(
+                userEntries: userEntries,
+                imported: imported,
+                disabledImportedFilenames: disabledImportedFilenames
+            )
     }
 
     public mutating func replaceImported(
@@ -146,16 +152,19 @@ public struct ConversionDictionaryRuntime: Sendable {
         disabledImportedFilenames: Set<String>
     ) -> (
         LayeredConversionEngine,
+        LayeredConversionEngine,
+        LayeredConversionEngine,
         LayeredDictionaryContinuationCandidateGenerator
     ) {
         let enabled = imported.enabledFilenames(
             excluding: disabledImportedFilenames
         )
+        let userDictionary = ConversionEngine(entries: userEntries)
+        let importedEngines = imported.conversionEngines(for: enabled)
         return (
-            LayeredConversionEngine(
-                engines: [ConversionEngine(entries: userEntries)]
-                    + imported.conversionEngines(for: enabled)
-            ),
+            LayeredConversionEngine(engines: [userDictionary] + importedEngines),
+            LayeredConversionEngine(engines: [userDictionary]),
+            LayeredConversionEngine(engines: importedEngines),
             LayeredDictionaryContinuationCandidateGenerator(
                 generators: [DictionaryContinuationCandidateGenerator(
                     entries: userEntries

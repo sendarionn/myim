@@ -73,13 +73,173 @@ struct StandardConversionCandidateSourceTests {
         #expect(candidates.suffix(2).map(\.storageText) == ["Code", "CODE"])
     }
 
+    @Test
+    func particleStemsIgnoreImportedAbbrevHeadwords() {
+        let source = makeSource(
+            importedEntries: [DictionaryEntry(reading: "made", candidates: ["メイド"])],
+            basicEntries: [DictionaryEntry(reading: "made", candidates: ["まで"])]
+        )
+
+        let particle = source.candidates(for: .init(
+            input: "madeha",
+            conversionReading: "madeha"
+        )).map(\.storageText)
+        let direct = source.candidates(for: .init(
+            input: "made",
+            conversionReading: "made"
+        )).map(\.storageText)
+
+        #expect(particle.first == "までは")
+        #expect(!particle.contains("メイドは"))
+        #expect(direct.contains("メイド"))
+    }
+
+    @Test
+    func particleStemsStillUseTheUsersOwnDictionary() {
+        let source = makeSource(
+            userEntries: [DictionaryEntry(reading: "myim", candidates: ["マイム"])]
+        )
+
+        let candidates = source.candidates(for: .init(
+            input: "myimwo",
+            conversionReading: "myimwo"
+        )).map(\.storageText)
+
+        #expect(candidates.first == "マイムを")
+    }
+
+    @Test
+    func wholeInputExactCandidateOutranksAGeneratedParticleComposition() {
+        let source = makeSource(basicEntries: [
+            DictionaryEntry(reading: "kouho", candidates: ["候補"]),
+            DictionaryEntry(reading: "kouhowo", candidates: ["好捕を"])
+        ])
+
+        let candidates = source.candidates(for: .init(
+            input: "kouhowo",
+            conversionReading: "kouhowo"
+        ))
+
+        #expect(candidates.map(\.storageText).prefix(2) == ["好捕を", "候補を"])
+        #expect(candidates[1].hasSource(.particleComposition))
+        #expect(candidates[1].hasAttribute(.generated))
+    }
+
+    @Test
+    func basicDictionaryAloneRanksTheReadingFirst() {
+        let candidates = texts(makeSource(basicEntries: madeBasic), "made")
+
+        #expect(candidates.first == "まで")
+    }
+
+    @Test
+    func importedReadingMatchesFollowBuiltInDictionaries() {
+        let source = makeSource(
+            importedEntries: madeImported,
+            basicEntries: madeBasic
+        )
+
+        let candidates = source.candidates(for: .init(
+            input: "made",
+            conversionReading: "made"
+        ))
+        let values = candidates.map(\.storageText)
+
+        #expect(values.prefix(2) == ["まで", "迄"])
+        #expect(candidates[1].hasSource(.importedDictionary))
+        #expect(!candidates[1].hasSource(.userDictionary))
+    }
+
+    @Test
+    func importedSpellingMatchesFollowReadingMatchesAndKana() throws {
+        let values = texts(
+            makeSource(importedEntries: madeImported, basicEntries: madeBasic),
+            "made"
+        )
+
+        let maid = try #require(values.firstIndex(of: "メイド"))
+        let katakana = try #require(values.firstIndex(of: "マデ"))
+        #expect(maid > katakana)
+        #expect(values.firstIndex(of: "メード") == maid + 1)
+    }
+
+    @Test
+    func importedDictionaryAloneStillPrefersItsReadingMatch() {
+        let values = texts(makeSource(importedEntries: madeImported), "made")
+
+        #expect(values.first == "迄")
+        #expect(values.contains("メイド"))
+    }
+
+    @Test
+    func importedSpellingMatchesLeadWhenNothingMatchesTheReading() {
+        let values = texts(
+            makeSource(importedEntries: [
+                DictionaryEntry(reading: "computer", candidates: ["コンピュータ"])
+            ]),
+            "computer"
+        )
+
+        #expect(values.first == "コンピュータ")
+    }
+
+    @Test
+    func explicitUserRegistrationKeepsItsPriority() {
+        let values = texts(
+            makeSource(
+                userEntries: [DictionaryEntry(reading: "made", candidates: ["メイド"])],
+                importedEntries: madeImported,
+                basicEntries: madeBasic
+            ),
+            "made"
+        )
+
+        #expect(values.prefix(3) == ["メイド", "まで", "迄"])
+    }
+
+    @Test
+    func exactMatchesFromEachDictionaryKeepTheirDictionaryOrder() {
+        let values = texts(
+            makeSource(
+                userEntries: [DictionaryEntry(reading: "kouho", candidates: ["校補"])],
+                importedEntries: [
+                    DictionaryEntry(reading: "こうほ", candidates: ["好捕", "候補"])
+                ],
+                basicEntries: [DictionaryEntry(reading: "kouho", candidates: ["候補"])]
+            ),
+            "kouho"
+        )
+
+        #expect(values.prefix(3) == ["校補", "候補", "好捕"])
+    }
+
+    private let madeBasic = [DictionaryEntry(reading: "made", candidates: ["まで"])]
+    private let madeImported = [
+        DictionaryEntry(reading: "made", candidates: ["メイド", "メード"]),
+        DictionaryEntry(reading: "まで", candidates: ["迄"])
+    ]
+
+    private func texts(
+        _ source: StandardConversionCandidateSource,
+        _ input: String
+    ) -> [String] {
+        source.candidates(for: .init(
+            input: input,
+            conversionReading: input
+        )).map(\.storageText)
+    }
+
     private func makeSource(
         userEntries: [DictionaryEntry] = [],
+        importedEntries: [DictionaryEntry] = [],
         basicEntries: [DictionaryEntry] = []
     ) -> StandardConversionCandidateSource {
         StandardConversionCandidateSource(
             userEngine: LayeredConversionEngine(engines: [
                 ConversionEngine(entries: userEntries)
+            ]),
+            importedEngine: LayeredConversionEngine(engines: [
+                ConversionEngine(entries: importedEntries)
             ]),
             basicEngine: ConversionEngine(entries: basicEntries),
             symbolEngine: ConversionEngine(entries: []),
