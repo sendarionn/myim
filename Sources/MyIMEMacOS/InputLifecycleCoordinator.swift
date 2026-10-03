@@ -43,19 +43,45 @@ final class InputLifecycleCoordinator {
         session.updateClient(bundleIdentifier: bundleIdentifier)
     }
 
-    func activate(now: TimeInterval) -> InputControllerActivation {
+    func activate(
+        now: TimeInterval,
+        hasComposition: Bool
+    ) -> InputControllerActivation {
         pendingDeactivation?.cancel()
         pendingDeactivation = nil
-        return session.activate(now: now, tracker: &Self.generationTracker)
+        return session.activate(
+            now: now,
+            hasComposition: hasComposition,
+            transientDeactivationGracePeriod: Self.transientDeactivationDelay,
+            tracker: &Self.generationTracker
+        )
     }
 
     func beginDeactivation(
-        protectsTransientDeactivation: Bool
+        hasComposition: Bool
     ) -> InputControllerDeactivation {
         session.beginDeactivation(
-            protectsTransientDeactivation: protectsTransientDeactivation,
+            now: ProcessInfo.processInfo.systemUptime,
+            hasComposition: hasComposition,
             tracker: Self.generationTracker
         )
+    }
+
+    func consumeSystemCommitSuppression(hasComposition: Bool) -> Bool {
+        session.consumeSystemCommitSuppression(
+            now: ProcessInfo.processInfo.systemUptime,
+            hasComposition: hasComposition
+        )
+    }
+
+    func isWithinActivationKeyWindow() -> Bool {
+        session.isWithinActivationKeyWindow(
+            now: ProcessInfo.processInfo.systemUptime
+        )
+    }
+
+    func clearActivationTime() {
+        session.clearActivationTime()
     }
 
     func deferDeactivation(

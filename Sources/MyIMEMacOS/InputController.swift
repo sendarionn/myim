@@ -5,13 +5,6 @@ import OSLog
 
 @objc(MyIMEInputController)
 final class InputController: IMKInputController {
-    private struct ImportedDictionaryRuntimeSnapshot {
-        let dictionaries: [ImportedDictionary]
-        let conversionEngines: [String: ConversionEngine]
-        let continuationGenerators:
-            [String: DictionaryContinuationCandidateGenerator]
-    }
-
     private static let lifecycleLogger = Logger(
         subsystem: "com.sendarionn.myim",
         category: "input-lifecycle"
@@ -49,8 +42,10 @@ final class InputController: IMKInputController {
             from: sharedBasicEntries
         )
     private static let sharedBasicFuzzyKey = "bundled-\(sharedBasicEntries.count)-\(sharedBasicFuzzyEntries.count)"
-    private nonisolated(unsafe) static var sharedImportedDictionarySnapshot =
-        loadImportedDictionaryRuntimeSnapshot()
+    private nonisolated(unsafe) static var sharedImportedDictionaryRuntime =
+        ImportedDictionaryRuntime(
+            dictionaries: importedDictionaryStore.loadDictionaries()
+        )
     private static let fuzzyEngineRepository = FuzzyEngineRepository()
     private static let basicDictionaryUpdateCoordinator =
         BasicDictionaryUpdateCoordinator()
@@ -74,28 +69,13 @@ final class InputController: IMKInputController {
     private var reconversionOriginal: String?
     private var translationCandidateSession = TranslationCandidateSession()
     private var recentCommittedContext = ""
-    private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
     private var candidateSession = CandidateSession()
     private var candidateFilterCoordinator = CandidateFilterCoordinator()
     private var calendarSelectionSession = CalendarFormatSelectionSession()
     private var fuzzySuggestionCoordinator = FuzzySuggestionCoordinator()
     private let userDictionaryStore: UserDictionaryStore
-    private var importedDictionaries: [ImportedDictionary]
-    private var importedConversionEngines: [String: ConversionEngine]
-    private var importedContinuationGenerators:
-        [String: DictionaryContinuationCandidateGenerator]
-    private var basicEntries: [DictionaryEntry]
-    private var userConversionEngine: LayeredConversionEngine
-    private var basicConversionEngine: ConversionEngine
-    private let mozcConversionEngine: IndexedDictionaryEngine
-    private var verbInflectionGenerator: VerbInflectionCandidateGenerator
-    private var compoundDictionaryCandidateGenerator:
-        CompoundDictionaryCandidateGenerator
-    private var userDictionaryContinuationGenerator:
-        LayeredDictionaryContinuationCandidateGenerator
-    private var basicDictionaryContinuationGenerator:
-        DictionaryContinuationCandidateGenerator
+    private var dictionaryRuntime: ConversionDictionaryRuntime
     private let shortcutSettingsController = ShortcutSettingsController()
     private lazy var javaScriptExtensionSettingsController =
         JavaScriptExtensionSettingsController(
@@ -124,7 +104,6 @@ final class InputController: IMKInputController {
     private let lifecycleCoordinator = InputLifecycleCoordinator(
         clientBundleIdentifier: nil
     )
-    private var transientCompositionGuard = TransientCompositionGuard()
     private var isInsertingCommittedText = false
     private let controllerID = String(UUID().uuidString.prefix(8))
     private var inputSession = InputSession()
@@ -228,14 +207,6 @@ final class InputController: IMKInputController {
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let cachedUserEntries = Self.loadUserEntries()
-        let importedSnapshot = Self.sharedImportedDictionarySnapshot
-        let importedDictionaries = importedSnapshot.dictionaries
-        let disabledImportedDictionaries = Self.featureSettings.disabledImportedDictionaryFilenames
-        let importedConversionEngines = importedSnapshot.conversionEngines
-        let importedContinuationGenerators =
-            importedSnapshot.continuationGenerators
-        let enabledImportedNames = importedDictionaries.map(\.fileURL.lastPathComponent)
-            .filter { !disabledImportedDictionaries.contains($0) }
         let bundledEntries = Self.sharedBasicEntries
         let indexedMozcEngine = Self.sharedMozcConversionEngine
         let selectionHistory = Self.loadCandidateSelectionHistory()
@@ -254,10 +225,17 @@ final class InputController: IMKInputController {
                 )
             }
         )
-        self.importedDictionaries = importedDictionaries
-        self.importedConversionEngines = importedConversionEngines
-        self.importedContinuationGenerators = importedContinuationGenerators
-        basicEntries = bundledEntries
+        dictionaryRuntime = ConversionDictionaryRuntime(
+            userEntries: cachedUserEntries,
+            imported: Self.sharedImportedDictionaryRuntime,
+            disabledImportedFilenames: Self.featureSettings
+                .disabledImportedDictionaryFilenames,
+            basicEntries: bundledEntries,
+            basicEngine: Self.sharedBasicConversionEngine,
+            verbInflectionGenerator: Self.sharedVerbInflectionGenerator,
+            compoundGenerator: Self.sharedBasicCompoundGenerator,
+            systemEngine: indexedMozcEngine
+        )
         candidateSelectionHistoryStore = CandidateSelectionHistoryStore(
             history: selectionHistory,
             writer: DeferredJSONFileWriter(
@@ -284,25 +262,6 @@ final class InputController: IMKInputController {
                 }
             )
         )
-        userConversionEngine = LayeredConversionEngine(
-            engines: [ConversionEngine(entries: cachedUserEntries)]
-                + enabledImportedNames.compactMap { importedConversionEngines[$0] }
-        )
-        basicConversionEngine = Self.sharedBasicConversionEngine
-        mozcConversionEngine = indexedMozcEngine
-        verbInflectionGenerator = Self.sharedVerbInflectionGenerator
-        compoundDictionaryCandidateGenerator =
-            Self.sharedBasicCompoundGenerator
-        userDictionaryContinuationGenerator =
-            LayeredDictionaryContinuationCandidateGenerator(
-                generators: [DictionaryContinuationCandidateGenerator(
-                    entries: cachedUserEntries
-                )] + enabledImportedNames.compactMap {
-                    importedContinuationGenerators[$0]
-                }
-            )
-        basicDictionaryContinuationGenerator =
-            DictionaryContinuationCandidateGenerator(entries: bundledEntries)
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
         lifecycleCoordinator.updateClient(
@@ -590,7 +549,7 @@ final class InputController: IMKInputController {
             let space = isFullWidthSpaceShortcut(event) ? "　" : " "
             if space == " ", inputBuffer.isEmpty,
                shouldSuppressActivationSpace(event) {
-                activatedAt = nil
+                lifecycleCoordinator.clearActivationTime()
                 return true
             }
             return handleSpace(space: space, client: sender)
@@ -946,7 +905,7 @@ final class InputController: IMKInputController {
             externalInformationPanel: Self.featureSettings.isExternalInformationPanelEnabled,
             systemDictionaryPreview: Self.featureSettings.isSystemDictionaryPreviewEnabled,
             webSearch: Self.featureSettings.isWebSearchEnabled,
-            importedDictionaries: importedDictionaries.map {
+            importedDictionaries: dictionaryRuntime.imported.dictionaries.map {
                     SettingsWindowBuilder.ImportedDictionaryState(
                         filename: $0.fileURL.lastPathComponent,
                         isEnabled: !Self.featureSettings.disabledImportedDictionaryFilenames
@@ -1010,13 +969,17 @@ final class InputController: IMKInputController {
                         enabled: true
                     )
                 }
-                let importedSnapshot = Self
-                    .reloadSharedImportedDictionarySnapshot()
-                importedDictionaries = importedSnapshot.dictionaries
-                importedConversionEngines = importedSnapshot.conversionEngines
-                importedContinuationGenerators =
-                    importedSnapshot.continuationGenerators
-                rebuildConversionEngine()
+                let imported = ImportedDictionaryRuntime(
+                    dictionaries: Self.importedDictionaryStore.loadDictionaries()
+                )
+                Self.sharedImportedDictionaryRuntime = imported
+                dictionaryRuntime.replaceImported(
+                    imported,
+                    userEntries: userDictionaryStore.entries,
+                    disabledImportedFilenames: Self.featureSettings
+                        .disabledImportedDictionaryFilenames
+                )
+                rebuildFuzzyConversionEngine()
                 let alert = NSAlert()
                 alert.messageText = "SKK辞書をインポートしました"
                 alert.informativeText = summary.description
@@ -1234,8 +1197,7 @@ final class InputController: IMKInputController {
             return
         }
 
-        if transientCompositionGuard.consumeSystemCommitSuppression(
-            now: ProcessInfo.processInfo.systemUptime,
+        if lifecycleCoordinator.consumeSystemCommitSuppression(
             hasComposition: !inputBuffer.isEmpty
         ) {
             Self.lifecycleLogger.notice(
@@ -1299,21 +1261,17 @@ final class InputController: IMKInputController {
             return
         }
         let now = ProcessInfo.processInfo.systemUptime
-        let activation = lifecycleCoordinator.activate(now: now)
+        let activation = lifecycleCoordinator.activate(
+            now: now,
+            hasComposition: !inputBuffer.isEmpty
+        )
         let resumesTransientDeactivation = activation
             .resumesTransientDeactivation
         if !resumesTransientDeactivation {
             locationCoordinator.forgetPreviousLocation()
         }
-        activatedAt = now
         activeInputClient = sender
         inputSession.activate(sessionGeneration: activation.globalGeneration)
-        transientCompositionGuard.recordActivation(
-            resumingDeactivation: resumesTransientDeactivation,
-            hasComposition: !inputBuffer.isEmpty,
-            now: now,
-            gracePeriod: InputLifecycleCoordinator.transientDeactivationDelay
-        )
         Self.activeController = self
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
@@ -1332,13 +1290,8 @@ final class InputController: IMKInputController {
             return
         }
         trace("deactivateServer", sender: sender)
-        let protectsTransientDeactivation = transientCompositionGuard
-            .isProtectingTransientDeactivation(
-                now: ProcessInfo.processInfo.systemUptime,
-                hasComposition: !inputBuffer.isEmpty
-            )
         let deactivation = lifecycleCoordinator.beginDeactivation(
-            protectsTransientDeactivation: protectsTransientDeactivation
+            hasComposition: !inputBuffer.isEmpty
         )
         EmojiGlobalHotKey.shared.deactivate()
         if Self.activeController === self {
@@ -1410,7 +1363,6 @@ final class InputController: IMKInputController {
         }
         trace("InputController.willClose", sender: client())
         let closure = lifecycleCoordinator.close()
-        transientCompositionGuard.reset()
         activeInputClient = nil
         Self.lifecycleLogger.notice(
             "input controller closing bufferLength=\(self.inputBuffer.count, privacy: .public) pendingDeactivation=\(closure.deactivationWasPending, privacy: .public) superseded=\(closure.sessionWasSuperseded, privacy: .public)"
@@ -1682,7 +1634,7 @@ final class InputController: IMKInputController {
                         return
                     }
                     basicDictionaryStatus = .checked(
-                        readingCount: basicEntries.count
+                        readingCount: dictionaryRuntime.basicEntries.count
                     )
                     return
                 }
@@ -1696,7 +1648,7 @@ final class InputController: IMKInputController {
                 }
                 switch result {
                 case .alreadyLatest:
-                    if basicEntries.isEmpty {
+                    if dictionaryRuntime.basicEntries.isEmpty {
                         applyBasicDictionarySnapshot(snapshot)
                     }
                     basicDictionaryStatus = .latest(
@@ -1723,8 +1675,10 @@ final class InputController: IMKInputController {
     private func applyBasicDictionarySnapshot(
         _ snapshot: TKGDictionarySnapshot
     ) {
-        basicEntries = Self.addingBundledRequiredEntries(to: snapshot.entries)
-        rebuildConversionEngine(basicDictionaryChanged: true)
+        dictionaryRuntime.replaceBasicEntries(
+            Self.addingBundledRequiredEntries(to: snapshot.entries)
+        )
+        rebuildConversionEngine()
     }
 
     private func handleSpace(space: String, client sender: Any) -> Bool {
@@ -1909,17 +1863,7 @@ final class InputController: IMKInputController {
     }
 
     private func reconversionReadings(for candidate: String) -> [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        func append(_ readings: [String]) {
-            for reading in readings where seen.insert(reading).inserted {
-                result.append(reading)
-            }
-        }
-        append(userConversionEngine.readings(for: candidate))
-        append(basicConversionEngine.readings(for: candidate))
-        append(mozcConversionEngine.readings(for: candidate))
-        return result
+        dictionaryRuntime.readings(for: candidate)
     }
 
     private func selectedText(from sender: Any) -> String? {
@@ -2236,10 +2180,7 @@ final class InputController: IMKInputController {
         if !event.modifierFlags.intersection(switchModifiers).isEmpty {
             return true
         }
-        guard let activatedAt else {
-            return false
-        }
-        return ProcessInfo.processInfo.systemUptime - activatedAt < 0.2
+        return lifecycleCoordinator.isWithinActivationKeyWindow()
     }
 
     private func moveCandidate(
@@ -2707,9 +2648,9 @@ final class InputController: IMKInputController {
 
     private func candidateFilterQueryVariants(for input: String) -> [String] {
         CandidateFilterQuerySource(
-            userEngine: userConversionEngine,
-            basicEngine: basicConversionEngine,
-            systemEngine: mozcConversionEngine
+            userEngine: dictionaryRuntime.userEngine,
+            basicEngine: dictionaryRuntime.basicEngine,
+            systemEngine: dictionaryRuntime.systemEngine
         ).candidates(
             for: input,
             selectionHistory: candidateSelectionHistoryStore.snapshot
@@ -2895,11 +2836,11 @@ final class InputController: IMKInputController {
             )
             : []
         let standardSource = StandardConversionCandidateSource(
-            userEngine: userConversionEngine,
-            basicEngine: basicConversionEngine,
+            userEngine: dictionaryRuntime.userEngine,
+            basicEngine: dictionaryRuntime.basicEngine,
             symbolEngine: Self.sharedSymbolConversionEngine,
-            systemEngine: mozcConversionEngine,
-            verbInflectionGenerator: verbInflectionGenerator,
+            systemEngine: dictionaryRuntime.systemEngine,
+            verbInflectionGenerator: dictionaryRuntime.verbInflectionGenerator,
             maximumSystemPrefixCandidates:
                 Self.maximumMozcDictionaryPrefixCandidates
         )
@@ -2967,10 +2908,10 @@ final class InputController: IMKInputController {
         let source = FuzzySuggestionSource(
             query: query,
             visibleCandidates: Set(currentCandidates),
-            userDictionary: userConversionEngine,
-            basicDictionary: basicConversionEngine,
-            mozcDictionary: mozcConversionEngine,
-            compoundGenerator: compoundDictionaryCandidateGenerator,
+            userDictionary: dictionaryRuntime.userEngine,
+            basicDictionary: dictionaryRuntime.basicEngine,
+            mozcDictionary: dictionaryRuntime.systemEngine,
+            compoundGenerator: dictionaryRuntime.compoundGenerator,
             fuzzyRepository: Self.fuzzyEngineRepository
         )
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
@@ -3859,7 +3800,7 @@ final class InputController: IMKInputController {
     private func beginSecureInputPassthroughIfNeeded(client sender: Any) {
         guard !secureInputPassthroughActive else { return }
         secureInputPassthroughActive = true
-        activatedAt = nil
+        lifecycleCoordinator.clearActivationTime()
         NSLog("myim: Secure Event Inputを検知し、キー処理を停止")
         clearCompositionForSystemPaste(in: sender)
         cancelCandidateTranslation()
@@ -4227,9 +4168,9 @@ final class InputController: IMKInputController {
               !isGeneratedParticleCandidate(candidate) else {
             return
         }
-        let userEngine = userConversionEngine
-        let basicEngine = basicConversionEngine
-        let indexedEngine = mozcConversionEngine
+        let userEngine = dictionaryRuntime.userEngine
+        let basicEngine = dictionaryRuntime.basicEngine
+        let indexedEngine = dictionaryRuntime.systemEngine
         Task { @MainActor [weak self] in
             let readings = await CandidateReadingLookup.resolve(
                 candidate: candidate,
@@ -4523,13 +4464,8 @@ final class InputController: IMKInputController {
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
 
-        let dictionaryCandidates = NextInputCandidateMerger.merged(
-            preferred: userDictionaryContinuationGenerator.candidates(
-                after: value
-            ),
-            learned: basicDictionaryContinuationGenerator.candidates(
-                after: value
-            ),
+        let dictionaryCandidates = dictionaryRuntime.continuationCandidates(
+            after: value,
             limit: 16
         )
         nextInputSuggestionCoordinator.beginSuggestions(
@@ -5020,32 +4956,12 @@ final class InputController: IMKInputController {
         )
     }
 
-    private func rebuildConversionEngine(
-        basicDictionaryChanged: Bool = false
-    ) {
-        let enabledNames = enabledImportedDictionaryNames
-        userConversionEngine = LayeredConversionEngine(
-            engines: [ConversionEngine(entries: userDictionaryStore.entries)]
-                + enabledNames.compactMap { importedConversionEngines[$0] }
+    private func rebuildConversionEngine() {
+        dictionaryRuntime.rebuildUserLayers(
+            userEntries: userDictionaryStore.entries,
+            disabledImportedFilenames: Self.featureSettings
+                .disabledImportedDictionaryFilenames
         )
-        userDictionaryContinuationGenerator =
-            LayeredDictionaryContinuationCandidateGenerator(
-                generators: [DictionaryContinuationCandidateGenerator(
-                    entries: userDictionaryStore.entries
-                )] + enabledNames.compactMap {
-                    importedContinuationGenerators[$0]
-                }
-            )
-        if basicDictionaryChanged {
-            basicConversionEngine = ConversionEngine(entries: basicEntries)
-            basicDictionaryContinuationGenerator =
-                DictionaryContinuationCandidateGenerator(entries: basicEntries)
-            verbInflectionGenerator = VerbInflectionCandidateGenerator(
-                entries: basicEntries
-            )
-        }
-        compoundDictionaryCandidateGenerator =
-            Self.sharedBasicCompoundGenerator
         rebuildFuzzyConversionEngine()
     }
 
@@ -5055,13 +4971,6 @@ final class InputController: IMKInputController {
             return
         }
         rebuildConversionEngine()
-    }
-
-    private var enabledImportedDictionaryNames: [String] {
-        let disabled = Self.featureSettings.disabledImportedDictionaryFilenames
-        return importedDictionaries.map(\.fileURL.lastPathComponent).filter {
-            !disabled.contains($0)
-        }
     }
 
     private func rebuildFuzzyConversionEngine() {
@@ -5326,35 +5235,6 @@ final class InputController: IMKInputController {
         ImportedDictionaryStore(
             directoryURL: userDataURL(fileName: "imported-dictionaries")
         )
-    }
-
-    private static func loadImportedDictionaryRuntimeSnapshot()
-        -> ImportedDictionaryRuntimeSnapshot {
-        let dictionaries = importedDictionaryStore.loadDictionaries()
-        return ImportedDictionaryRuntimeSnapshot(
-            dictionaries: dictionaries,
-            conversionEngines: Dictionary(uniqueKeysWithValues:
-                dictionaries.map {
-                    ($0.fileURL.lastPathComponent,
-                     ConversionEngine(entries: $0.entries))
-                }
-            ),
-            continuationGenerators: Dictionary(uniqueKeysWithValues:
-                dictionaries.map {
-                    ($0.fileURL.lastPathComponent,
-                     DictionaryContinuationCandidateGenerator(
-                        entries: $0.entries
-                     ))
-                }
-            )
-        )
-    }
-
-    private static func reloadSharedImportedDictionarySnapshot()
-        -> ImportedDictionaryRuntimeSnapshot {
-        let snapshot = loadImportedDictionaryRuntimeSnapshot()
-        sharedImportedDictionarySnapshot = snapshot
-        return snapshot
     }
 
     private static func bundledBasicDictionaryRevision() -> String? {

@@ -40,7 +40,9 @@ public struct InputControllerLifecycleSession: Equatable, Sendable {
     public private(set) var applicationGeneration: UInt?
     public private(set) var globalGeneration: UInt?
     public private(set) var pendingDeactivationStartedAt: TimeInterval?
+    public private(set) var activatedAt: TimeInterval?
     private var lifecycleGeneration: UInt = 0
+    private var compositionGuard = TransientCompositionGuard()
 
     public init(clientBundleIdentifier: String? = nil) {
         self.clientBundleIdentifier = clientBundleIdentifier
@@ -68,6 +70,8 @@ public struct InputControllerLifecycleSession: Equatable, Sendable {
 
     public mutating func activate(
         now: TimeInterval,
+        hasComposition: Bool,
+        transientDeactivationGracePeriod: TimeInterval,
         tracker: inout InputLifecycleGenerationTracker
     ) -> InputControllerActivation {
         let resumesTransientDeactivation = hasPendingDeactivation
@@ -77,6 +81,13 @@ public struct InputControllerLifecycleSession: Equatable, Sendable {
         lifecycleGeneration &+= 1
         pendingDeactivationStartedAt = nil
         isActive = true
+        activatedAt = now
+        compositionGuard.recordActivation(
+            resumingDeactivation: resumesTransientDeactivation,
+            hasComposition: hasComposition,
+            now: now,
+            gracePeriod: transientDeactivationGracePeriod
+        )
         let globalGeneration: UInt
         if let clientBundleIdentifier {
             applicationGeneration = tracker.recordActivation(
@@ -96,9 +107,15 @@ public struct InputControllerLifecycleSession: Equatable, Sendable {
     }
 
     public mutating func beginDeactivation(
-        protectsTransientDeactivation: Bool,
+        now: TimeInterval,
+        hasComposition: Bool,
         tracker: InputLifecycleGenerationTracker
     ) -> InputControllerDeactivation {
+        let protectsTransientDeactivation = compositionGuard
+            .isProtectingTransientDeactivation(
+                now: now,
+                hasComposition: hasComposition
+            )
         lifecycleGeneration &+= 1
         isActive = false
         return InputControllerDeactivation(
@@ -108,6 +125,28 @@ public struct InputControllerLifecycleSession: Equatable, Sendable {
             globalGeneration: globalGeneration ?? tracker.globalGeneration,
             protectsTransientDeactivation: protectsTransientDeactivation
         )
+    }
+
+    public mutating func consumeSystemCommitSuppression(
+        now: TimeInterval,
+        hasComposition: Bool
+    ) -> Bool {
+        compositionGuard.consumeSystemCommitSuppression(
+            now: now,
+            hasComposition: hasComposition
+        )
+    }
+
+    public func isWithinActivationKeyWindow(
+        now: TimeInterval,
+        interval: TimeInterval = 0.2
+    ) -> Bool {
+        guard let activatedAt else { return false }
+        return now - activatedAt < interval
+    }
+
+    public mutating func clearActivationTime() {
+        activatedAt = nil
     }
 
     public mutating func deferDeactivation(startedAt: TimeInterval) {
@@ -169,6 +208,7 @@ public struct InputControllerLifecycleSession: Equatable, Sendable {
         } ?? false
         pendingDeactivationStartedAt = nil
         isActive = false
+        compositionGuard.reset()
         return InputControllerClosure(
             deactivationWasPending: deactivationWasPending,
             sessionWasSuperseded: sessionWasSuperseded

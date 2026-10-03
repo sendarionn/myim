@@ -2441,3 +2441,5 @@
 - 候補フィルター用IDSデータのフォルダ準備、変更検出、読み込み、ダウンロード保存を`CandidateFilterIDSStore`、変更時の再読込を`CandidateFilterDatabaseCache`としてCoreへ分離
 - TKGJE基本辞書の更新判定、キャッシュ保存、状態表示を`BasicDictionaryUpdater`と`BasicDictionaryStatus`としてCoreへ分離
 - 複数SKK辞書の取り込みと件数集計を`ImportedDictionaryStore`へ移し、設定ウィンドウの表示位置とシート表示を`SettingsWindowPresenter`へ分離
+- ユーザー辞書、インポート辞書、基本辞書、Mozc辞書の変換エンジンと続き候補生成を`ConversionDictionaryRuntime`へ統合し、辞書の再読込、有効・無効、基本辞書更新時の再構築を一か所で扱う構成へ変更
+- 一時的なdeactivate後の確定抑止と、activate直後のスペース抑止の時刻を`InputControllerLifecycleSession`へ移し、activate・deactivateの状態遷移と同時に更新する構成へ変更

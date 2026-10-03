@@ -1,6 +1,6 @@
 import Foundation
 
-public struct TransientCompositionGuard: Sendable {
+public struct TransientCompositionGuard: Equatable, Sendable {
     private var suppressionDeadline: TimeInterval?
 
     public init() {}
