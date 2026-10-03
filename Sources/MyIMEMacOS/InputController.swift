@@ -112,13 +112,9 @@ final class InputController: IMKInputController {
     private var secureInputPassthroughActive = false
     private var candidateSession = CandidateSession()
     private var candidateFilterSession = CandidateFilterInputSession()
-    private var calendarFormatCandidates: [String]?
-    private var selectedCalendarFormatIndex: Int?
-    private var calendarSessionActive = false
-    private var calendarAnchorFrame: NSRect?
-    private var calendarReturnApplication: NSRunningApplication?
+    private var calendarSelectionSession = CalendarFormatSelectionSession()
     private var fuzzySelection = CandidateSelectionState<FuzzySuggestion>()
-    private var userEntries: [DictionaryEntry]
+    private let userDictionaryStore: UserDictionaryStore
     private var importedDictionaries: [ImportedDictionary]
     private var importedConversionEngines: [String: ConversionEngine]
     private var importedContinuationGenerators:
@@ -140,11 +136,8 @@ final class InputController: IMKInputController {
             client: Self.javaScriptExtensionClient
         )
     private let candidateSelectionHistoryStore: CandidateSelectionHistoryStore
-    private var nextInputPredictionModel: NextInputPredictionModel
     private var closingBracketTracker = ClosingBracketTracker()
-    private let nextInputPredictionWriter:
-        DeferredJSONFileWriter<NextInputPredictionModel>
-    private var nextInputSession = NextInputCandidateSession()
+    private let nextInputSuggestionCoordinator: NextInputSuggestionCoordinator
     private let suggestionSearchCoordinator = SuggestionSearchCoordinator()
     private let specialConversionCandidateSource =
         SpecialConversionCandidateSource()
@@ -289,7 +282,19 @@ final class InputController: IMKInputController {
         let selectionHistory = Self.loadCandidateSelectionHistory()
         let nextInputModel = Self.loadNextInputPredictionModel()
 
-        userEntries = cachedUserEntries
+        userDictionaryStore = UserDictionaryStore(
+            entries: cachedUserEntries,
+            persist: { entries in
+                let cache = try Self.userDictionaryCache()
+                try cache.save(
+                    dictionaryText: DictionarySerializer.text(from: entries),
+                    metadata: DictionaryCacheMetadata(
+                        syncedAt: Date(),
+                        entryCount: entries.count
+                    )
+                )
+            }
+        )
         self.importedDictionaries = importedDictionaries
         self.importedConversionEngines = importedConversionEngines
         self.importedContinuationGenerators = importedContinuationGenerators
@@ -307,16 +312,18 @@ final class InputController: IMKInputController {
                 }
             )
         )
-        nextInputPredictionModel = nextInputModel
-        nextInputPredictionWriter = DeferredJSONFileWriter(
-            fileURL: Self.nextInputPredictionModelURL(),
-            queueLabel: "myim.next-input-history",
-            errorHandler: {
-                NSLog(
-                    "次入力履歴の保存に失敗: %@",
-                    $0.localizedDescription
-                )
-            }
+        nextInputSuggestionCoordinator = NextInputSuggestionCoordinator(
+            predictionModel: nextInputModel,
+            writer: DeferredJSONFileWriter(
+                fileURL: Self.nextInputPredictionModelURL(),
+                queueLabel: "myim.next-input-history",
+                errorHandler: {
+                    NSLog(
+                        "次入力履歴の保存に失敗: %@",
+                        $0.localizedDescription
+                    )
+                }
+            )
         )
         userConversionEngine = LayeredConversionEngine(
             engines: [ConversionEngine(entries: cachedUserEntries)]
@@ -442,7 +449,7 @@ final class InputController: IMKInputController {
             if !inputBuffer.isEmpty || tabDictionaryRegistration != nil {
                 clearCompositionForSystemPaste(in: sender)
             }
-            if !nextInputSession.candidates.isEmpty {
+            if nextInputSuggestionCoordinator.hasCandidates {
                 dismissNextInputSuggestions(clearMarkedTextIn: sender)
             }
             return false
@@ -452,7 +459,7 @@ final class InputController: IMKInputController {
             return calendarWindow.handleKeyEvent(event)
         }
 
-        if calendarFormatCandidates != nil {
+        if calendarSelectionSession.isSelectingFormat {
             return handleCalendarFormatSelection(event, client: sender)
         }
 
@@ -494,7 +501,7 @@ final class InputController: IMKInputController {
 
         if isUserDictionaryDeletionShortcut(event),
            inputBuffer.isEmpty,
-           nextInputSession.selectedIndex != nil {
+           nextInputSuggestionCoordinator.selectedIndex != nil {
             removeSelectedNextInputCandidate(client: sender)
             return true
         }
@@ -502,7 +509,8 @@ final class InputController: IMKInputController {
         if inputBuffer.isEmpty,
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
            let typedText = event.characters,
-           let selectedNextInput = nextInputSession.selectedCandidate,
+           let selectedNextInput = nextInputSuggestionCoordinator
+            .selectedCandidate,
            closingBracketTracker.shouldConsumeTypedClosing(
                 typedText,
                 selectedCandidate: selectedNextInput
@@ -658,8 +666,8 @@ final class InputController: IMKInputController {
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        if inputBuffer.isEmpty, !nextInputSession.candidates.isEmpty {
-            guard nextInputSession.selectedIndex != nil else {
+        if inputBuffer.isEmpty, nextInputSuggestionCoordinator.hasCandidates {
+            guard nextInputSuggestionCoordinator.selectedIndex != nil else {
                 dismissNextInputSuggestions(clearMarkedTextIn: nil)
                 return false
             }
@@ -682,8 +690,8 @@ final class InputController: IMKInputController {
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        if inputBuffer.isEmpty, !nextInputSession.candidates.isEmpty {
-            guard nextInputSession.selectedIndex != nil else {
+        if inputBuffer.isEmpty, nextInputSuggestionCoordinator.hasCandidates {
+            guard nextInputSuggestionCoordinator.selectedIndex != nil else {
                 dismissNextInputSuggestions(clearMarkedTextIn: nil)
                 return false
             }
@@ -695,8 +703,9 @@ final class InputController: IMKInputController {
     }
 
     private func handleReturnKey(client sender: Any) -> Bool {
-        if inputBuffer.isEmpty, !nextInputSession.candidates.isEmpty {
-            if let selectedNextInput = nextInputSession.selectedCandidate {
+        if inputBuffer.isEmpty, nextInputSuggestionCoordinator.hasCandidates {
+            if let selectedNextInput = nextInputSuggestionCoordinator
+                .selectedCandidate {
                 commitNextInputCandidate(selectedNextInput, to: sender)
                 return true
             }
@@ -704,7 +713,7 @@ final class InputController: IMKInputController {
             return true
         }
         if inputBuffer.isEmpty {
-            nextInputPredictionModel.breakSequence()
+            nextInputSuggestionCoordinator.breakSequence()
             recentCommittedContext = String(
                 (recentCommittedContext + "\n").suffix(256)
             )
@@ -880,10 +889,10 @@ final class InputController: IMKInputController {
         }
         if let aSelector,
            inputBuffer.isEmpty,
-           nextInputSession.candidates.isEmpty,
+           !nextInputSuggestionCoordinator.hasCandidates,
            ["insertNewline:", "insertNewlineIgnoringFieldEditor:"]
             .contains(NSStringFromSelector(aSelector)) {
-            nextInputPredictionModel.breakSequence()
+            nextInputSuggestionCoordinator.breakSequence()
         }
         if let aSelector,
            candidateFilterSession.draft != nil
@@ -1276,7 +1285,7 @@ final class InputController: IMKInputController {
         let alert = NSAlert()
         alert.messageText = "myimの状態"
         alert.informativeText = [
-            "ユーザー辞書: \(userEntries.count)読み",
+            "ユーザー辞書: \(userDictionaryStore.count)読み",
             "TKGJE更新: \(basicDictionaryStatus)",
             "保護入力: \(secureInputStatusDescription)"
         ].joined(separator: "\n")
@@ -1366,7 +1375,7 @@ final class InputController: IMKInputController {
         if inputBuffer.isEmpty {
             if closingBracketTracker
                 .shouldPreserveCandidatesDuringEmptySystemCommit(
-                    hasCandidates: !nextInputSession.candidates.isEmpty
+                    hasCandidates: nextInputSuggestionCoordinator.hasCandidates
                 ) {
                 Self.lifecycleLogger.notice(
                     "preserved structural next-input candidate after empty system commit"
@@ -1491,7 +1500,7 @@ final class InputController: IMKInputController {
             )
         let panelPolicy = InputPanelDismissalPolicy.deactivation(
             isExternalInformationInteractionActive: preservesExternalInformation,
-            isCalendarInteractionActive: calendarSessionActive
+            isCalendarInteractionActive: calendarSelectionSession.isActive
         )
         dismissInputSessionPanels(using: panelPolicy)
         if preservesExternalInformation {
@@ -1502,7 +1511,7 @@ final class InputController: IMKInputController {
             super.deactivateServer(sender)
             return
         }
-        if calendarSessionActive {
+        if calendarSelectionSession.isActive {
             activeInputClient = nil
             super.deactivateServer(sender)
             return
@@ -1647,7 +1656,7 @@ final class InputController: IMKInputController {
             }
         }
         resetTransientInteractionState()
-        nextInputPredictionModel.breakSequence()
+        nextInputSuggestionCoordinator.breakSequence()
         if closesController {
             suggestionSearchCoordinator.cancel(.fuzzyIndexBuild)
         }
@@ -1672,7 +1681,7 @@ final class InputController: IMKInputController {
         UserDefaults.standard.synchronize()
         if !enabled {
             dismissNextInputSuggestions(clearMarkedTextIn: client())
-            nextInputPredictionModel.breakSequence()
+            nextInputSuggestionCoordinator.breakSequence()
         }
     }
 
@@ -1891,11 +1900,8 @@ final class InputController: IMKInputController {
     @objc
     private func clearNextInputPredictionHistory(_ sender: Any?) {
         dismissNextInputSuggestions(clearMarkedTextIn: client())
-        nextInputPredictionModel.removeAll()
         do {
-            try nextInputPredictionWriter.writeImmediately(
-                nextInputPredictionModel
-            )
+            try nextInputSuggestionCoordinator.removeAllLearning()
         } catch {
             NSLog(
                 "次入力履歴の削除に失敗: %@",
@@ -1976,7 +1982,7 @@ final class InputController: IMKInputController {
 
     private func handleSpace(space: String, client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            if let value = nextInputSession.selectedCandidate {
+            if let value = nextInputSuggestionCoordinator.selectedCandidate {
                 recordNextInputCandidateSelection(value)
                 commit(value + space, to: sender, historyValue: value)
                 return true
@@ -2078,7 +2084,7 @@ final class InputController: IMKInputController {
     private func shouldDismissNextInputSuggestions(
         for event: NSEvent
     ) -> Bool {
-        guard !nextInputSession.candidates.isEmpty else {
+        guard nextInputSuggestionCoordinator.hasCandidates else {
             return false
         }
         let nextInputControlKeyCodes: Set<UInt16> = [
@@ -2093,7 +2099,8 @@ final class InputController: IMKInputController {
     ) {
         guard
             shouldDismissNextInputSuggestions(for: event),
-            let selectedNextInput = nextInputSession.selectedCandidate,
+            let selectedNextInput = nextInputSuggestionCoordinator
+                .selectedCandidate,
             event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
             let characters = event.characters,
             !characters.isEmpty
@@ -2111,7 +2118,7 @@ final class InputController: IMKInputController {
             return true
         }
         if inputBuffer.isEmpty {
-            if nextInputSession.selectedIndex != nil,
+            if nextInputSuggestionCoordinator.selectedIndex != nil,
                flags.isEmpty {
                 return selectNextInputCandidate(offset: 1, client: sender)
             }
@@ -2119,7 +2126,7 @@ final class InputController: IMKInputController {
                beginReconversionIfPossible(client: sender) {
                 return true
             }
-            if flags.isEmpty, !nextInputSession.candidates.isEmpty {
+            if flags.isEmpty, nextInputSuggestionCoordinator.hasCandidates {
                 return selectNextInputCandidate(offset: 1, client: sender)
             }
             return false
@@ -2667,14 +2674,10 @@ final class InputController: IMKInputController {
         previewWindow.hide()
         symbolTipsWindow.hide()
         suggestionSearchCoordinator.cancel(.calendarFormat)
-        calendarFormatCandidates = nil
-        selectedCalendarFormatIndex = nil
-        calendarSessionActive = true
-        calendarAnchorFrame = anchorFrame == .zero ? nil : anchorFrame
-        calendarReturnApplication = returnApplication
-        guard let date = calendarWindow.runSelection(
-            near: calendarAnchorFrame ?? anchorFrame,
-            returnTo: calendarReturnApplication
+        calendarSelectionSession.beginCalendarSelection()
+        guard let date = panelCoordinator.beginCalendarSelection(
+            near: anchorFrame,
+            returnTo: returnApplication
         ) else {
             clearCalendarSelection()
             candidateWindow.hide()
@@ -2686,8 +2689,7 @@ final class InputController: IMKInputController {
 
     private func loadCalendarFormats(for date: Date, client sender: Any) {
         suggestionSearchCoordinator.cancel(.calendarFormat)
-        calendarFormatCandidates = []
-        selectedCalendarFormatIndex = nil
+        calendarSelectionSession.beginFormatLoading()
         candidateWindow.hide()
         suggestionSearchCoordinator.start(
             .calendarFormat,
@@ -2697,23 +2699,23 @@ final class InputController: IMKInputController {
                     .calendarCandidates(for: date)
             },
             validate: { [weak self] in
-                self?.calendarSessionActive == true
+                self?.calendarSelectionSession.isActive == true
             },
             apply: { [weak self] candidates in
                 guard let self else { return }
-                self.calendarFormatCandidates = self.candidatesOrderedByRecency(
-                    candidates
+                self.calendarSelectionSession.replaceCandidates(
+                    self.candidatesOrderedByRecency(candidates)
                 )
-                self.selectedCalendarFormatIndex = nil
                 self.showCalendarFormatCandidates(client: sender)
-                guard let orderedCandidates = self.calendarFormatCandidates,
+                guard let orderedCandidates = self.calendarSelectionSession
+                    .candidates,
                       !orderedCandidates.isEmpty else {
                     return
                 }
-                guard let selectedIndex = self.calendarWindow.runFormatSelection(
+                guard let selectedIndex = self.panelCoordinator
+                    .runCalendarFormatSelection(
                     candidateCount: orderedCandidates.count,
-                    near: self.calendarInputLocation(for: sender),
-                    returnTo: self.calendarReturnApplication,
+                    fallbackLocation: self.inputLocation(for: sender),
                     directionalSelection: { [weak self] index, direction in
                         self?.calendarFormatSelectionIndex(
                             from: index,
@@ -2723,7 +2725,7 @@ final class InputController: IMKInputController {
                     },
                     selectionChanged: { [weak self] index in
                         guard let self else { return }
-                        self.selectedCalendarFormatIndex = index
+                        self.calendarSelectionSession.select(index: index)
                         self.showCalendarFormatCandidates(client: sender)
                     }
                 ), orderedCandidates.indices.contains(selectedIndex) else {
@@ -2744,16 +2746,14 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool {
-        guard let candidates = calendarFormatCandidates else { return false }
+        guard let candidates = calendarSelectionSession.candidates else {
+            return false
+        }
         switch event.keyCode {
         case 48:
             guard !candidates.isEmpty else { return true }
             let offset = event.modifierFlags.contains(.shift) ? -1 : 1
-            selectedCalendarFormatIndex = (
-                (selectedCalendarFormatIndex ?? (offset > 0 ? -1 : 0))
-                    + offset
-                    + candidates.count
-            ) % candidates.count
+            calendarSelectionSession.moveSelection(by: offset)
             showCalendarFormatCandidates(client: sender)
         case 123, 124, 125, 126:
             guard !candidates.isEmpty else { return true }
@@ -2763,14 +2763,14 @@ final class InputController: IMKInputController {
             case 125: .down
             default: .up
             }
-            selectedCalendarFormatIndex = calendarFormatSelectionIndex(
-                from: selectedCalendarFormatIndex,
+            calendarSelectionSession.select(index: calendarFormatSelectionIndex(
+                from: calendarSelectionSession.selectedIndex,
                 direction: direction,
                 candidateCount: candidates.count
-            )
+            ))
             showCalendarFormatCandidates(client: sender)
         case 36, 76:
-            guard let index = selectedCalendarFormatIndex,
+            guard let index = calendarSelectionSession.selectedIndex,
                   candidates.indices.contains(index) else {
                 return true
             }
@@ -2816,34 +2816,35 @@ final class InputController: IMKInputController {
     }
 
     private func showCalendarFormatCandidates(client sender: Any) {
-        guard let candidates = calendarFormatCandidates else { return }
+        guard let candidates = calendarSelectionSession.candidates else {
+            return
+        }
         guard !candidates.isEmpty else {
             candidateWindow.hide()
             return
         }
-        let selectedIndex = selectedCalendarFormatIndex ?? 0
-        let pageStart = selectedIndex / Self.maximumCandidateCount
-            * Self.maximumCandidateCount
-        let pageEnd = min(pageStart + Self.maximumCandidateCount, candidates.count)
+        let pageRange = calendarSelectionSession.pageRange(
+            pageSize: Self.maximumCandidateCount
+        )
         candidateWindow.show(
-            candidates: Array(candidates[pageStart..<pageEnd]),
-            selectedIndex: selectedCalendarFormatIndex.map { $0 - pageStart },
+            candidates: Array(candidates[pageRange]),
+            selectedIndex: calendarSelectionSession.selectedIndex.map {
+                $0 - pageRange.lowerBound
+            },
             near: calendarInputLocation(for: sender)
         )
     }
 
     private func clearCalendarSelection() {
         suggestionSearchCoordinator.cancel(.calendarFormat)
-        calendarFormatCandidates = nil
-        selectedCalendarFormatIndex = nil
-        calendarSessionActive = false
-        calendarAnchorFrame = nil
-        calendarReturnApplication = nil
-        calendarWindow.hide()
+        calendarSelectionSession.reset()
+        panelCoordinator.clearCalendarPresentation()
     }
 
     private func calendarInputLocation(for sender: Any) -> NSRect {
-        calendarAnchorFrame ?? inputLocation(for: sender)
+        panelCoordinator.calendarInputLocation(
+            fallback: inputLocation(for: sender)
+        )
     }
 
     private func beginCandidateFilterInput(client sender: Any) -> Bool {
@@ -2983,30 +2984,14 @@ final class InputController: IMKInputController {
     }
 
     private func candidateFilterQueryVariants(for input: String) -> [String] {
-        guard !input.isEmpty else { return [""] }
-        var kanaCandidates: [String] = []
-        if let hiragana = romajiConverter.hiragana(from: input) {
-            kanaCandidates.append(hiragana)
-        }
-        if let katakana = romajiConverter.katakana(from: input) {
-            kanaCandidates.append(katakana)
-        }
-        var directCandidates: [String] = []
-        for reading in RomajiCanonicalizer.dictionaryLookupInputs(from: input) {
-            directCandidates.append(contentsOf: userConversionEngine.candidates(for: reading))
-            directCandidates.append(contentsOf: basicConversionEngine.candidates(for: reading))
-            directCandidates.append(contentsOf: mozcConversionEngine.candidates(for: reading))
-        }
-        let orderedCandidates = CandidatePriorityOrderer.ordered(
-            kana: kanaCandidates,
-            direct: directCandidates,
-            others: [],
-            recencyRanks: candidateSelectionHistoryStore.ranks(for: input),
-            prioritizeKana: kanaCandidates.first?.count == 1
+        CandidateFilterQuerySource(
+            userEngine: userConversionEngine,
+            basicEngine: basicConversionEngine,
+            systemEngine: mozcConversionEngine
+        ).candidates(
+            for: input,
+            selectionHistory: candidateSelectionHistoryStore.snapshot
         )
-        let values = [input] + orderedCandidates
-        var seen = Set<String>()
-        return values.filter { !$0.isEmpty && seen.insert($0).inserted }
     }
 
     private func showCandidateFilterChoices(client sender: Any) {
@@ -3189,7 +3174,7 @@ final class InputController: IMKInputController {
             : []
         let contextualCandidates = isNextInputPredictionEnabled
             && Self.diagnosticConfiguration.enables(.nextInput)
-            ? nextInputPredictionModel.candidatesAfterLastInput(
+            ? nextInputSuggestionCoordinator.candidatesAfterLastInput(
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
             : []
@@ -3532,18 +3517,19 @@ final class InputController: IMKInputController {
             return
         }
         let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
-        let updatedEntries = UserDictionaryEditor.removing(
+        guard userDictionaryStore.canRemove(
             candidate: suggestion.candidate,
-            matchingReadings: [suggestion.reading],
-            from: userEntries
-        )
-        guard updatedEntries != userEntries else {
+            matchingReadings: [suggestion.reading]
+        ) else {
             NSSound.beep()
             return
         }
         do {
-            userEntries = updatedEntries
-            try persistUserDictionary()
+            try userDictionaryStore.remove(
+                candidate: suggestion.candidate,
+                matchingReadings: [suggestion.reading]
+            )
+            rebuildConversionEngine()
             candidateSelectionHistoryStore.remove([suggestion.candidate])
             self.selectedFuzzySuggestionIndex = nil
             updateMarkedText(in: sender)
@@ -3553,7 +3539,7 @@ final class InputController: IMKInputController {
                 "もしかして候補のユーザー辞書削除に失敗: %@",
                 error.localizedDescription
             )
-            userEntries = Self.loadUserEntries()
+            userDictionaryStore.restore(Self.loadUserEntries())
             rebuildConversionEngine()
             NSSound.beep()
         }
@@ -4105,19 +4091,10 @@ final class InputController: IMKInputController {
         candidate: String,
         display: String? = nil
     ) throws {
-        userEntries = UserDictionaryEditor.adding(
+        try userDictionaryStore.add(
             reading: reading,
             candidate: candidate,
-            display: display,
-            to: userEntries
-        )
-        let cache = try Self.userDictionaryCache()
-        try cache.save(
-            dictionaryText: DictionarySerializer.text(from: userEntries),
-            metadata: DictionaryCacheMetadata(
-                syncedAt: Date(),
-                entryCount: userEntries.count
-            )
+            display: display
         )
         rebuildConversionEngine()
     }
@@ -4136,11 +4113,9 @@ final class InputController: IMKInputController {
             candidateDisplayValue(candidate),
             candidateValueForCommit(candidate)
         ]
-        let updatedEntries = UserDictionaryEditor.removing(
-            candidate: candidate,
-            from: userEntries
+        let removesDictionaryEntry = userDictionaryStore.canRemove(
+            candidate: candidate
         )
-        let removesDictionaryEntry = updatedEntries != userEntries
         let removesHistory = candidateSelectionHistoryStore.containsAny(
             historyCandidates
         )
@@ -4151,8 +4126,8 @@ final class InputController: IMKInputController {
 
         do {
             if removesDictionaryEntry {
-                userEntries = updatedEntries
-                try persistUserDictionary()
+                try userDictionaryStore.remove(candidate: candidate)
+                rebuildConversionEngine()
             }
             candidateSelectionHistoryStore.remove(historyCandidates)
             let pasteboard = NSPasteboard.general
@@ -4169,22 +4144,10 @@ final class InputController: IMKInputController {
                 "ユーザー辞書候補の削除に失敗: %@",
                 error.localizedDescription
             )
-            userEntries = Self.loadUserEntries()
+            userDictionaryStore.restore(Self.loadUserEntries())
             rebuildConversionEngine()
             NSSound.beep()
         }
-    }
-
-    private func persistUserDictionary() throws {
-        let cache = try Self.userDictionaryCache()
-        try cache.save(
-            dictionaryText: DictionarySerializer.text(from: userEntries),
-            metadata: DictionaryCacheMetadata(
-                syncedAt: Date(),
-                entryCount: userEntries.count
-            )
-        )
-        rebuildConversionEngine()
     }
 
     private func clearCompositionForSystemPaste(in sender: Any) {
@@ -4212,7 +4175,7 @@ final class InputController: IMKInputController {
         clearCompositionForSystemPaste(in: sender)
         cancelCandidateTranslation()
         resetTransientInteractionState()
-        nextInputPredictionModel.breakSequence()
+        nextInputSuggestionCoordinator.breakSequence()
     }
 
     private var secureInputStatusDescription: String {
@@ -4509,7 +4472,8 @@ final class InputController: IMKInputController {
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            guard let selectedNextInput = nextInputSession.selectedCandidate else {
+            guard let selectedNextInput = nextInputSuggestionCoordinator
+                .selectedCandidate else {
                 return false
             }
             commitNextInputCandidate(selectedNextInput, to: sender)
@@ -4694,7 +4658,7 @@ final class InputController: IMKInputController {
 
     private func cancelInput(in sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            guard !nextInputSession.candidates.isEmpty else {
+            guard nextInputSuggestionCoordinator.hasCandidates else {
                 return false
             }
             dismissNextInputSuggestions(clearMarkedTextIn: sender)
@@ -4754,8 +4718,8 @@ final class InputController: IMKInputController {
     }
 
     private func removeSelectedNextInputCandidate(client sender: Any) {
-        guard let candidate = nextInputSession.selectedCandidate,
-              let context = nextInputSession.context else {
+        guard let candidate = nextInputSuggestionCoordinator.selectedCandidate
+        else {
             NSSound.beep()
             return
         }
@@ -4765,11 +4729,8 @@ final class InputController: IMKInputController {
             NSSound.beep()
             return
         }
-        nextInputPredictionModel.suppress(candidate, after: context)
         do {
-            try nextInputPredictionWriter.writeImmediately(
-                nextInputPredictionModel
-            )
+            try nextInputSuggestionCoordinator.suppressSelectedCandidate()
         } catch {
             NSLog(
                 "次入力候補の削除保存に失敗: %@",
@@ -4777,13 +4738,12 @@ final class InputController: IMKInputController {
             )
             NSSound.beep()
         }
-        _ = nextInputSession.removeSelectedCandidate()
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(candidate, forType: .string)
         setMarkedText("", in: sender)
         previewWindow.hide()
-        guard !nextInputSession.candidates.isEmpty else {
+        guard nextInputSuggestionCoordinator.hasCandidates else {
             dismissNextInputSuggestions(clearMarkedTextIn: nil)
             return
         }
@@ -4808,8 +4768,9 @@ final class InputController: IMKInputController {
         let isPendingClosingBracket = !closingBracketTracker
             .shouldRecordAsNextInput(inputHistoryValue)
         if isPendingClosingBracket {
-            nextInputPredictionModel.forgetLearnedCandidate(inputHistoryValue)
-            nextInputPredictionWriter.schedule(nextInputPredictionModel)
+            nextInputSuggestionCoordinator.forgetLearnedCandidate(
+                inputHistoryValue
+            )
         }
         let shouldRecordInputHistory = closingBracketTracker
             .shouldRecordCommittedInput(
@@ -4896,7 +4857,7 @@ final class InputController: IMKInputController {
         panelCoordinator.dismissAll()
         fuzzySuggestions = []
         selectedFuzzySuggestionIndex = nil
-        nextInputSession.clearCandidates()
+        nextInputSuggestionCoordinator.clearCandidates()
         panelCoordinator.stopNextInputLifecycle()
         cancelPrimarySuggestionSearches()
         suggestionSearchCoordinator.cancel(.dictionaryDefinition)
@@ -4950,21 +4911,22 @@ final class InputController: IMKInputController {
 
     private func flushPendingHistoryWrites() {
         candidateSelectionHistoryStore.flush()
-        nextInputPredictionWriter.flush()
+        nextInputSuggestionCoordinator.flush()
     }
 
     private func moveNextInputCandidate(
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        guard !nextInputSession.candidates.isEmpty else {
+        guard nextInputSuggestionCoordinator.hasCandidates else {
             return false
         }
         let offset = switch direction {
         case .left, .up: -1
         case .right, .down: 1
         }
-        guard let nextIndex = nextInputSession.linearSelectionIndex(
+        guard let nextIndex = nextInputSuggestionCoordinator
+            .linearSelectionIndex(
             offset: offset
         ) else { return true }
         return selectNextInputCandidate(index: nextIndex, client: sender)
@@ -4974,7 +4936,8 @@ final class InputController: IMKInputController {
         offset: Int,
         client sender: Any
     ) -> Bool {
-        guard let nextIndex = nextInputSession.wrappedSelectionIndex(
+        guard let nextIndex = nextInputSuggestionCoordinator
+            .wrappedSelectionIndex(
             offset: offset
         ) else { return true }
         return selectNextInputCandidate(index: nextIndex, client: sender)
@@ -4984,21 +4947,20 @@ final class InputController: IMKInputController {
         index: Int,
         client sender: Any
     ) -> Bool {
-        guard nextInputSession.candidates.indices.contains(index) else {
+        guard nextInputSuggestionCoordinator.candidates.indices.contains(index)
+        else {
             return true
         }
-        let previousPage = LinearCandidateNavigator.pageRange(
-            containing: nextInputSession.selectedIndex,
-            pageSize: Self.maximumCandidateCount,
-            candidateCount: nextInputSession.candidates.count
+        let previousPage = nextInputSuggestionCoordinator.pageRange(
+            pageSize: Self.maximumCandidateCount
         )
-        guard let candidate = nextInputSession.select(index: index) else {
+        guard let candidate = nextInputSuggestionCoordinator.select(
+            index: index
+        ) else {
             return true
         }
-        let currentPage = LinearCandidateNavigator.pageRange(
-            containing: index,
-            pageSize: Self.maximumCandidateCount,
-            candidateCount: nextInputSession.candidates.count
+        let currentPage = nextInputSuggestionCoordinator.pageRange(
+            pageSize: Self.maximumCandidateCount
         )
         if currentPage == previousPage {
             candidateWindow.select(index: index - currentPage.lowerBound)
@@ -5018,25 +4980,20 @@ final class InputController: IMKInputController {
         client sender: Any
     ) {
         guard Self.diagnosticConfiguration.enables(.nextInput) else {
-            nextInputPredictionModel.breakSequence()
+            nextInputSuggestionCoordinator.breakSequence()
             return
         }
         suggestionSearchCoordinator.cancel(.nextInputExtension)
-        var learnedCandidates: [String] = []
-        if isNextInputPredictionEnabled {
-            if breakPreviousSequence {
-                nextInputPredictionModel.breakSequence()
-            }
-            if Self.diagnosticConfiguration.enables(.learning) {
-                nextInputPredictionModel.record(value)
-                nextInputPredictionWriter.schedule(nextInputPredictionModel)
-            }
-
-            learnedCandidates = nextInputPredictionModel.candidates(
+        let learnedCandidates = nextInputSuggestionCoordinator
+            .learnedCandidates(
                 after: value,
+                predictionEnabled: isNextInputPredictionEnabled,
+                learningEnabled: Self.diagnosticConfiguration.enables(
+                    .learning
+                ),
+                breakPreviousSequence: breakPreviousSequence,
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
-        }
 
         let dictionaryCandidates = NextInputCandidateMerger.merged(
             preferred: userDictionaryContinuationGenerator.candidates(
@@ -5046,22 +5003,17 @@ final class InputController: IMKInputController {
                 after: value
             ),
             limit: 16
-        ).filter {
-            !nextInputPredictionModel.isSuppressed($0, after: value)
-        }
-        let visiblePreferredCandidates = preferredCandidates.filter {
-            closingBracketTracker.shouldBypassCandidateSuppression($0)
-                || !nextInputPredictionModel.isSuppressed($0, after: value)
-        }
-        let candidates = NextInputCandidateMerger.merged(
-            preferred: visiblePreferredCandidates,
-            learned: learnedCandidates + dictionaryCandidates,
-            limit: visiblePreferredCandidates.count
-                + learnedCandidates.count
-                + dictionaryCandidates.count
         )
-        nextInputSession.begin(context: value, candidates: candidates)
-        if nextInputSession.candidates.isEmpty {
+        nextInputSuggestionCoordinator.beginSuggestions(
+            context: value,
+            preferredCandidates: preferredCandidates,
+            learnedCandidates: learnedCandidates,
+            dictionaryCandidates: dictionaryCandidates,
+            unsuppressibleCandidates: Set(preferredCandidates.filter {
+                closingBracketTracker.shouldBypassCandidateSuppression($0)
+            })
+        )
+        if !nextInputSuggestionCoordinator.hasCandidates {
             panelCoordinator.stopNextInputLifecycle()
         } else {
             showNextInputCandidateWindow(client: sender)
@@ -5094,20 +5046,10 @@ final class InputController: IMKInputController {
             },
             apply: { [weak self] generated in
                 guard let self, !generated.isEmpty else { return }
-                let visibleGenerated = generated.filter {
-                    !self.nextInputPredictionModel.isSuppressed(
-                        $0,
-                        after: value
-                    )
+                guard self.nextInputSuggestionCoordinator
+                    .appendGeneratedCandidates(generated, after: value) else {
+                    return
                 }
-                let merged = NextInputCandidateMerger.merged(
-                    preferred: self.nextInputSession.candidates,
-                    learned: visibleGenerated,
-                    limit: self.nextInputSession.candidates.count
-                        + visibleGenerated.count
-                )
-                guard merged != self.nextInputSession.candidates else { return }
-                self.nextInputSession.updateCandidates(merged)
                 self.showNextInputCandidateWindow(client: sender)
                 self.startNextInputOutsideClickMonitoring()
                 self.scheduleNextInputDismissal()
@@ -5117,18 +5059,18 @@ final class InputController: IMKInputController {
     }
 
     private func showNextInputCandidateWindow(client sender: Any) {
-        let pageRange = LinearCandidateNavigator.pageRange(
-            containing: nextInputSession.selectedIndex,
-            pageSize: Self.maximumCandidateCount,
-            candidateCount: nextInputSession.candidates.count
+        let pageRange = nextInputSuggestionCoordinator.pageRange(
+            pageSize: Self.maximumCandidateCount
         )
         guard !pageRange.isEmpty else {
             candidateWindow.hide()
             return
         }
         candidateWindow.show(
-            candidates: Array(nextInputSession.candidates[pageRange]),
-            selectedIndex: nextInputSession.selectedIndex.map {
+            candidates: Array(
+                nextInputSuggestionCoordinator.candidates[pageRange]
+            ),
+            selectedIndex: nextInputSuggestionCoordinator.selectedIndex.map {
                 $0 - pageRange.lowerBound
             },
             near: inputLocation(for: sender),
@@ -5148,7 +5090,7 @@ final class InputController: IMKInputController {
     private func dismissNextInputSuggestions(
         clearMarkedTextIn sender: Any?
     ) {
-        if nextInputSession.selectedIndex != nil, let sender {
+        if nextInputSuggestionCoordinator.selectedIndex != nil, let sender {
             setMarkedText("", in: sender)
         }
         clearNextInputSuggestionState()
@@ -5159,7 +5101,7 @@ final class InputController: IMKInputController {
     private func clearNextInputSuggestionState() {
         suggestionSearchCoordinator.cancel(.nextInputExtension)
         panelCoordinator.stopNextInputLifecycle()
-        nextInputSession.reset()
+        nextInputSuggestionCoordinator.resetSuggestions()
     }
 
     private func startNextInputOutsideClickMonitoring() {
@@ -5361,7 +5303,7 @@ final class InputController: IMKInputController {
 
     private func dismissPanelsForCursorMovement(client sender: Any) {
         symbolTipsWindow.hide()
-        if !nextInputSession.candidates.isEmpty {
+        if nextInputSuggestionCoordinator.hasCandidates {
             dismissNextInputSuggestions(clearMarkedTextIn: sender)
         }
     }
@@ -5554,13 +5496,13 @@ final class InputController: IMKInputController {
     ) {
         let enabledNames = enabledImportedDictionaryNames
         userConversionEngine = LayeredConversionEngine(
-            engines: [ConversionEngine(entries: userEntries)]
+            engines: [ConversionEngine(entries: userDictionaryStore.entries)]
                 + enabledNames.compactMap { importedConversionEngines[$0] }
         )
         userDictionaryContinuationGenerator =
             LayeredDictionaryContinuationCandidateGenerator(
                 generators: [DictionaryContinuationCandidateGenerator(
-                    entries: userEntries
+                    entries: userDictionaryStore.entries
                 )] + enabledNames.compactMap {
                     importedContinuationGenerators[$0]
                 }
@@ -5580,8 +5522,9 @@ final class InputController: IMKInputController {
 
     private func reloadUserDictionaryFromDiskIfNeeded() {
         let storedEntries = Self.loadUserEntries()
-        guard storedEntries != userEntries else { return }
-        userEntries = storedEntries
+        guard userDictionaryStore.replaceEntriesIfChanged(storedEntries) else {
+            return
+        }
         rebuildConversionEngine()
     }
 
@@ -5595,7 +5538,7 @@ final class InputController: IMKInputController {
     private func rebuildFuzzyConversionEngine() {
         cancelFuzzySuggestionSearch()
         suggestionSearchCoordinator.cancel(.fuzzyIndexBuild)
-        let userEntries = userEntries
+        let userEntries = userDictionaryStore.entries
         let refreshSnapshot = currentInputSessionSnapshot()
         suggestionSearchCoordinator.start(
             .fuzzyIndexBuild,
@@ -5637,7 +5580,8 @@ final class InputController: IMKInputController {
             isRegisteringDictionary: tabDictionaryRegistration != nil,
             hasSelectedCandidate: selectedCandidateIndex != nil,
             hasSelectedFuzzySuggestion: selectedFuzzySuggestionIndex != nil,
-            hasSelectedNextInput: nextInputSession.selectedIndex != nil
+            hasSelectedNextInput:
+                nextInputSuggestionCoordinator.selectedIndex != nil
         )
     }
 

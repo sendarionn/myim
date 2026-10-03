@@ -14,6 +14,8 @@ final class InputPanelCoordinator {
     private var nextInputDismissTimer: Timer?
     private var nextInputOutsideLocalMonitor: Any?
     private var nextInputOutsideGlobalMonitor: Any?
+    private var calendarAnchorFrame: NSRect?
+    private var calendarReturnApplication: NSRunningApplication?
 
     deinit {
         stopNextInputLifecycle()
@@ -85,6 +87,43 @@ final class InputPanelCoordinator {
             return
         }
         onDismiss()
+    }
+
+    func beginCalendarSelection(
+        near anchorFrame: NSRect,
+        returnTo application: NSRunningApplication?
+    ) -> Date? {
+        calendarAnchorFrame = anchorFrame == .zero ? nil : anchorFrame
+        calendarReturnApplication = application
+        return calendar.runSelection(
+            near: calendarAnchorFrame ?? anchorFrame,
+            returnTo: calendarReturnApplication
+        )
+    }
+
+    func runCalendarFormatSelection(
+        candidateCount: Int,
+        fallbackLocation: NSRect,
+        directionalSelection: @escaping (Int?, CandidateNavigationDirection) -> Int?,
+        selectionChanged: @escaping (Int?) -> Void
+    ) -> Int? {
+        calendar.runFormatSelection(
+            candidateCount: candidateCount,
+            near: calendarInputLocation(fallback: fallbackLocation),
+            returnTo: calendarReturnApplication,
+            directionalSelection: directionalSelection,
+            selectionChanged: selectionChanged
+        )
+    }
+
+    func calendarInputLocation(fallback: NSRect) -> NSRect {
+        calendarAnchorFrame ?? fallback
+    }
+
+    func clearCalendarPresentation() {
+        calendarAnchorFrame = nil
+        calendarReturnApplication = nil
+        calendar.hide()
     }
 
     func showFilterConditions(
@@ -208,7 +247,7 @@ final class InputPanelCoordinator {
             externalInformation.hide()
         }
         if !policy.preservesCalendar {
-            calendar.hide()
+            clearCalendarPresentation()
         }
     }
 
@@ -222,6 +261,6 @@ final class InputPanelCoordinator {
         symbolTips.hide()
         candidateFilterDraft.hide()
         hideFilterConditions()
-        calendar.hide()
+        clearCalendarPresentation()
     }
 }

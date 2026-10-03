@@ -2424,3 +2424,7 @@
 - 次入力候補の自動終了Timerとパネル外クリック監視を`InputPanelCoordinator`へ移し、パネル終了時に監視も一括破棄する構成へ変更
 - フィルター入力の文字列、変換段階、選択候補、有効条件を`CandidateFilterInputSession`へ統合
 - 候補選択履歴と遅延保存を`CandidateSelectionHistoryStore`へ統合し、履歴更新と保存予約の分離を解消
+- カレンダーの日付選択、書式候補、選択位置を`CalendarFormatSelectionSession`へ統合し、表示処理を`InputPanelCoordinator`へ移動
+- 次入力候補の学習、抑止、JavaScript候補の統合、選択状態、遅延保存を`NextInputSuggestionCoordinator`へ統合
+- ユーザー辞書の追加、削除、再読込、保存を`UserDictionaryStore`へ統合
+- フィルターモード内のかな変換、辞書検索、履歴順の候補生成を`CandidateFilterQuerySource`へ分離
