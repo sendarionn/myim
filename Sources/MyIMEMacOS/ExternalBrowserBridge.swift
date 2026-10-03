@@ -1,7 +1,14 @@
 @preconcurrency import AppKit
 import MyIMECore
+import os
 
 final class ExternalBrowserBridge {
+    private static let helperBundleIdentifier =
+        "io.github.sendarionn.myim.external-browser"
+    private static let logger = Logger(
+        subsystem: "io.github.sendarionn.inputmethod.myime",
+        category: "panel-layout"
+    )
     private static let notificationName = Notification.Name(
         "io.github.sendarionn.myim.external-browser.command"
     )
@@ -49,19 +56,32 @@ final class ExternalBrowserBridge {
     }
 
     func send(_ command: ExternalBrowserCommand) {
-        guard let url = command.url else {
+        switch ExternalBrowserCommandDelivery.resolve(
+            url: command.url,
+            isHelperRunning: isHelperRunning,
+            isLaunching: isLaunching
+        ) {
+        case .discard:
+            return
+        case .notifyRunningHelper:
             writeAndNotify(command)
-            return
+        case .waitForLaunch:
+            pendingCommand = command
+            write(command)
+        case .launchHelper:
+            pendingCommand = command
+            write(command)
+            launchHelper()
         }
-        guard url.scheme == "https" else {
-            return
-        }
-        pendingCommand = command
-        write(command)
+    }
 
-        guard !isLaunching else {
-            return
-        }
+    private var isHelperRunning: Bool {
+        NSRunningApplication.runningApplications(
+            withBundleIdentifier: Self.helperBundleIdentifier
+        ).contains { !$0.isTerminated }
+    }
+
+    private func launchHelper() {
         let helperURL = Bundle.main.bundleURL
             .appendingPathComponent("Contents/Helpers")
             .appendingPathComponent("myim-external-browser.app")
@@ -69,6 +89,7 @@ final class ExternalBrowserBridge {
         configuration.activates = false
         configuration.createsNewApplicationInstance = false
         isLaunching = true
+        Self.logger.notice("external browser launch requested")
         NSWorkspace.shared.openApplication(
             at: helperURL,
             configuration: configuration
