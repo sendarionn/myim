@@ -17,6 +17,10 @@ public final class NextInputSuggestionCoordinator {
         session.candidates
     }
 
+    public var candidateModels: [Candidate] {
+        session.candidateModels
+    }
+
     public var hasCandidates: Bool {
         !session.candidates.isEmpty
     }
@@ -27,6 +31,15 @@ public final class NextInputSuggestionCoordinator {
 
     public var selectedCandidate: String? {
         session.selectedCandidate
+    }
+
+    public var selectedCandidateModel: Candidate? {
+        session.selectedCandidateModel
+    }
+
+    public var selectedSourceTokens: [String]? {
+        guard let candidate = session.selectedCandidateModel else { return nil }
+        return NextInputCandidateMetadata.sourceTokens(from: candidate)
     }
 
     public var context: String? {
@@ -44,15 +57,41 @@ public final class NextInputSuggestionCoordinator {
         breakPreviousSequence: Bool,
         limit: Int
     ) -> [String] {
+        learnedCandidateModels(
+            after: value,
+            committedTokens: [value],
+            learningSource: .directInput,
+            predictionEnabled: predictionEnabled,
+            learningEnabled: learningEnabled,
+            breakPreviousSequence: breakPreviousSequence,
+            limit: limit
+        ).map(\.commitText)
+    }
+
+    public func learnedCandidateModels(
+        after value: String,
+        committedTokens: [String],
+        learningSource: NextInputLearningSource,
+        predictionEnabled: Bool,
+        learningEnabled: Bool,
+        breakPreviousSequence: Bool,
+        limit: Int
+    ) -> [Candidate] {
         guard predictionEnabled else { return [] }
         if breakPreviousSequence {
             predictionModel.breakSequence()
         }
         if learningEnabled {
-            predictionModel.record(value)
+            predictionModel.record(tokens: committedTokens, source: learningSource)
             writer.schedule(predictionModel)
         }
-        return predictionModel.candidates(after: value, limit: limit)
+        let predictions: [NextInputPrediction]
+        if learningEnabled {
+            predictions = predictionModel.predictionsAfterLastInput(limit: limit)
+        } else {
+            predictions = predictionModel.predictions(after: value, limit: limit)
+        }
+        return predictions.map(NextInputCandidateMetadata.candidate)
     }
 
     public func beginSuggestions(
@@ -62,12 +101,34 @@ public final class NextInputSuggestionCoordinator {
         dictionaryCandidates: [String],
         unsuppressibleCandidates: Set<String> = []
     ) {
+        beginSuggestions(
+            context: context,
+            preferredCandidates: preferredCandidates.map {
+                Candidate(storageText: $0, source: .nextInput)
+            },
+            learnedCandidates: learnedCandidates.map {
+                Candidate(storageText: $0, source: .nextInput)
+            },
+            dictionaryCandidates: dictionaryCandidates.map {
+                Candidate(storageText: $0, source: .nextInput)
+            },
+            unsuppressibleCandidates: unsuppressibleCandidates
+        )
+    }
+
+    public func beginSuggestions(
+        context: String,
+        preferredCandidates: [Candidate],
+        learnedCandidates: [Candidate],
+        dictionaryCandidates: [Candidate],
+        unsuppressibleCandidates: Set<String> = []
+    ) {
         let visibleDictionaryCandidates = dictionaryCandidates.filter {
-            !predictionModel.isSuppressed($0, after: context)
+            !predictionModel.isSuppressed($0.commitText, after: context)
         }
         let visiblePreferredCandidates = preferredCandidates.filter {
-            unsuppressibleCandidates.contains($0)
-                || !predictionModel.isSuppressed($0, after: context)
+            unsuppressibleCandidates.contains($0.commitText)
+                || !predictionModel.isSuppressed($0.commitText, after: context)
         }
         let candidates = NextInputCandidateMerger.merged(
             preferred: visiblePreferredCandidates,
@@ -86,13 +147,13 @@ public final class NextInputSuggestionCoordinator {
     ) -> Bool {
         let visibleGenerated = generated.filter {
             !predictionModel.isSuppressed($0, after: context)
-        }
+        }.map { Candidate(storageText: $0, source: .nextInput) }
         let merged = NextInputCandidateMerger.merged(
-            preferred: session.candidates,
+            preferred: session.candidateModels,
             learned: visibleGenerated,
             limit: session.candidates.count + visibleGenerated.count
         )
-        guard merged != session.candidates else { return false }
+        guard merged != session.candidateModels else { return false }
         session.updateCandidates(merged)
         return true
     }
@@ -118,7 +179,7 @@ public final class NextInputSuggestionCoordinator {
         LinearCandidateNavigator.pageRange(
             containing: session.selectedIndex,
             pageSize: pageSize,
-            candidateCount: session.candidates.count
+            candidateCount: session.candidateModels.count
         )
     }
 

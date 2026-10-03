@@ -1,75 +1,97 @@
 public struct NextInputCandidateSession: Equatable, Sendable {
-    public private(set) var candidates: [String] = []
+    public private(set) var candidateModels: [Candidate] = []
     public private(set) var context: String?
     public private(set) var selectedIndex: Int?
 
     public init() {}
 
-    public var selectedCandidate: String? {
+    public var candidates: [String] {
+        candidateModels.map(\.displayText)
+    }
+
+    public var selectedCandidateModel: Candidate? {
         guard let selectedIndex,
-              candidates.indices.contains(selectedIndex) else {
+              candidateModels.indices.contains(selectedIndex) else {
             return nil
         }
-        return candidates[selectedIndex]
+        return candidateModels[selectedIndex]
+    }
+
+    public var selectedCandidate: String? {
+        selectedCandidateModel?.commitText
     }
 
     public mutating func begin(context: String, candidates: [String]) {
+        begin(
+            context: context,
+            candidates: candidates.map { Candidate(storageText: $0) }
+        )
+    }
+
+    public mutating func begin(context: String, candidates: [Candidate]) {
         self.context = context
-        self.candidates = candidates
+        candidateModels = candidates
         selectedIndex = nil
     }
 
     public mutating func updateCandidates(_ candidates: [String]) {
-        let selectedCandidate = selectedCandidate
-        self.candidates = candidates
-        if let selectedCandidate {
-            selectedIndex = candidates.firstIndex(of: selectedCandidate)
+        updateCandidates(candidates.map { Candidate(storageText: $0) })
+    }
+
+    public mutating func updateCandidates(_ candidates: [Candidate]) {
+        let selectedModel = selectedCandidateModel
+        candidateModels = candidates
+        if let selectedModel {
+            selectedIndex = candidates.firstIndex(of: selectedModel)
+                ?? candidates.firstIndex {
+                    $0.commitText == selectedModel.commitText
+                }
         } else if selectedIndex != nil {
             selectedIndex = nil
         }
     }
 
     public mutating func clearCandidates() {
-        candidates = []
+        candidateModels = []
         selectedIndex = nil
     }
 
     @discardableResult
     public mutating func select(index: Int) -> String? {
-        guard candidates.indices.contains(index) else { return nil }
+        guard candidateModels.indices.contains(index) else { return nil }
         selectedIndex = index
-        return candidates[index]
+        return candidateModels[index].commitText
     }
 
     public func linearSelectionIndex(offset: Int) -> Int? {
         return LinearCandidateNavigator.index(
             from: selectedIndex,
             offset: offset,
-            candidateCount: candidates.count
+            candidateCount: candidateModels.count
         )
     }
 
     public func wrappedSelectionIndex(offset: Int) -> Int? {
-        guard !candidates.isEmpty else { return nil }
+        guard !candidateModels.isEmpty else { return nil }
         let currentIndex = selectedIndex ?? (offset > 0 ? -1 : 0)
         return (
-            currentIndex + offset + candidates.count
-        ) % candidates.count
+            currentIndex + offset + candidateModels.count
+        ) % candidateModels.count
     }
 
     @discardableResult
     public mutating func removeSelectedCandidate() -> String? {
         guard let selectedIndex,
-              candidates.indices.contains(selectedIndex) else {
+              candidateModels.indices.contains(selectedIndex) else {
             return nil
         }
-        let removed = candidates.remove(at: selectedIndex)
+        let removed = candidateModels.remove(at: selectedIndex)
         self.selectedIndex = nil
-        return removed
+        return removed.commitText
     }
 
     public mutating func reset() {
-        candidates = []
+        candidateModels = []
         context = nil
         selectedIndex = nil
     }

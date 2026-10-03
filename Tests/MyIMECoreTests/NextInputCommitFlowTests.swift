@@ -139,6 +139,24 @@ struct NextInputCommitFlowTests {
         #expect(flow.text == "（「本文」）a")
         #expect(flow.tracker.candidate == nil)
     }
+
+    @Test
+    func acceptedSequenceKeepsItsOriginalCommitBoundaries() {
+        let flow = CommitFlow()
+        for _ in 0..<3 {
+            for token in ["A", "B", "C", "D"] {
+                flow.commitInput(token)
+            }
+            flow.breakSequence()
+        }
+        flow.commitInput("A")
+        flow.select("BC")
+
+        flow.commitSelectedNextInput()
+
+        #expect(flow.text.hasSuffix("ABC"))
+        #expect(flow.coordinator.candidates.contains("D"))
+    }
 }
 
 /// Mirrors the order InputController uses when committing text so the
@@ -157,7 +175,11 @@ private final class CommitFlow {
         )
     )
 
-    func commitInput(_ value: String) {
+    func commitInput(
+        _ value: String,
+        learningTokens: [String]? = nil,
+        learningSource: NextInputLearningSource = .directInput
+    ) {
         let policy = NextInputCommitPolicy.resolve(
             committing: value,
             closingBracketTracker: tracker,
@@ -167,11 +189,16 @@ private final class CommitFlow {
         tracker.consume(value)
         guard policy.updatesSuggestions else { return }
         let structural = tracker.candidate.map { [$0] } ?? []
+        let committedTokens = learningTokens ?? [value]
         coordinator.beginSuggestions(
-            context: value,
-            preferredCandidates: structural,
-            learnedCandidates: coordinator.learnedCandidates(
+            context: committedTokens.last ?? value,
+            preferredCandidates: structural.map {
+                Candidate(storageText: $0, source: .nextInput)
+            },
+            learnedCandidates: coordinator.learnedCandidateModels(
                 after: value,
+                committedTokens: committedTokens,
+                learningSource: learningSource,
                 predictionEnabled: true,
                 learningEnabled: policy.learnsInput,
                 breakPreviousSequence: false,
@@ -195,13 +222,24 @@ private final class CommitFlow {
 
     func commitSelectedNextInput() {
         guard let value = coordinator.selectedCandidate else { return }
+        let sourceTokens = coordinator.selectedSourceTokens
         coordinator.resetSuggestions()
-        commitInput(value)
+        commitInput(
+            value,
+            learningTokens: sourceTokens,
+            learningSource: sourceTokens == nil
+                ? .directInput
+                : .acceptedSuggestion
+        )
     }
 
     func type(_ characters: String) {
         commitSelectedNextInput()
         coordinator.resetSuggestions()
         text += characters
+    }
+
+    func breakSequence() {
+        coordinator.breakSequence()
     }
 }

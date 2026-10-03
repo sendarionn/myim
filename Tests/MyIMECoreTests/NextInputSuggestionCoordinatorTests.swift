@@ -96,6 +96,51 @@ struct NextInputSuggestionCoordinatorTests {
         #expect(coordinator.selectedIndex == 1)
     }
 
+    @Test
+    func selectedSequenceCandidateRetainsItsSourceTokens() {
+        let fixture = makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let coordinator = fixture.coordinator
+        for _ in 0..<3 {
+            for token in ["実装", "に", "進んで"] {
+                _ = coordinator.learnedCandidateModels(
+                    after: token,
+                    committedTokens: [token],
+                    learningSource: .directInput,
+                    predictionEnabled: true,
+                    learningEnabled: true,
+                    breakPreviousSequence: false,
+                    limit: 16
+                )
+            }
+            coordinator.breakSequence()
+        }
+        let learned = coordinator.learnedCandidateModels(
+            after: "実装",
+            committedTokens: ["実装"],
+            learningSource: .directInput,
+            predictionEnabled: true,
+            learningEnabled: false,
+            breakPreviousSequence: false,
+            limit: 16
+        )
+        coordinator.beginSuggestions(
+            context: "実装",
+            preferredCandidates: [],
+            learnedCandidates: learned,
+            dictionaryCandidates: []
+        )
+        guard let index = coordinator.candidates.firstIndex(of: "に進んで")
+        else {
+            Issue.record("に進んで is not a next-input candidate")
+            return
+        }
+
+        _ = coordinator.select(index: index)
+
+        #expect(coordinator.selectedSourceTokens == ["に", "進んで"])
+    }
+
     private func makeFixture() -> (
         coordinator: NextInputSuggestionCoordinator,
         directory: URL,

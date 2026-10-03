@@ -4214,13 +4214,19 @@ final class InputController: IMKInputController {
         replacingMarkedText: Bool = true,
         to sender: Any
     ) {
+        let sourceTokens = nextInputSuggestionCoordinator.selectedSourceTokens
+        let learningSource: NextInputLearningSource = sourceTokens == nil
+            ? .directInput
+            : .acceptedSuggestion
         recordNextInputCandidateSelection(value)
         clearNextInputSuggestionState()
         commit(
             value + suffix,
             to: sender,
             replacingMarkedText: replacingMarkedText,
-            historyValue: value
+            historyValue: value,
+            historyTokens: sourceTokens,
+            historyLearningSource: learningSource
         )
     }
 
@@ -4287,6 +4293,8 @@ final class InputController: IMKInputController {
         to sender: Any,
         replacingMarkedText: Bool = false,
         historyValue: String? = nil,
+        historyTokens: [String]? = nil,
+        historyLearningSource: NextInputLearningSource = .directInput,
         preferredNextInputCandidates: [String] = []
     ) {
         guard let textClient = sender as? IMKTextInput else {
@@ -4345,6 +4353,8 @@ final class InputController: IMKInputController {
             } ?? []
             recordCommittedInput(
                 inputHistoryValue,
+                learningTokens: historyTokens,
+                learningSource: historyLearningSource,
                 learnsInput: nextInputPolicy.learnsInput,
                 preferredCandidates: structuralCandidates
                     + preferredNextInputCandidates,
@@ -4505,6 +4515,8 @@ final class InputController: IMKInputController {
 
     private func recordCommittedInput(
         _ value: String,
+        learningTokens: [String]? = nil,
+        learningSource: NextInputLearningSource = .directInput,
         learnsInput: Bool,
         preferredCandidates: [String] = [],
         breakPreviousSequence: Bool = false,
@@ -4515,9 +4527,13 @@ final class InputController: IMKInputController {
             return
         }
         suggestionSearchCoordinator.cancel(.nextInputExtension)
+        let committedTokens = learningTokens ?? [value]
+        let predictionContext = committedTokens.last ?? value
         let learnedCandidates = nextInputSuggestionCoordinator
-            .learnedCandidates(
+            .learnedCandidateModels(
                 after: value,
+                committedTokens: committedTokens,
+                learningSource: learningSource,
                 predictionEnabled: Self.featureSettings.isNextInputPredictionEnabled,
                 learningEnabled: learnsInput
                     && Self.diagnosticConfiguration.enables(.learning),
@@ -4526,12 +4542,14 @@ final class InputController: IMKInputController {
             )
 
         let dictionaryCandidates = dictionaryRuntime.continuationCandidates(
-            after: value,
+            after: predictionContext,
             limit: 16
-        )
+        ).map { Candidate(storageText: $0, source: .nextInput) }
         nextInputSuggestionCoordinator.beginSuggestions(
-            context: value,
-            preferredCandidates: preferredCandidates,
+            context: predictionContext,
+            preferredCandidates: preferredCandidates.map {
+                Candidate(storageText: $0, source: .nextInput)
+            },
             learnedCandidates: learnedCandidates,
             dictionaryCandidates: dictionaryCandidates,
             unsuppressibleCandidates: Set(preferredCandidates.filter {
@@ -4555,10 +4573,10 @@ final class InputController: IMKInputController {
         }
         suggestionSearchCoordinator.start(
             .nextInputExtension,
-            query: value,
+            query: predictionContext,
             operation: {
                 await Self.javaScriptExtensionClient
-                    .nextInputCandidates(after: value)
+                .nextInputCandidates(after: predictionContext)
             },
             validate: { [weak self] in
                 guard let self else { return false }
@@ -4572,7 +4590,10 @@ final class InputController: IMKInputController {
             apply: { [weak self] generated in
                 guard let self, !generated.isEmpty else { return }
                 guard self.nextInputSuggestionCoordinator
-                    .appendGeneratedCandidates(generated, after: value) else {
+                    .appendGeneratedCandidates(
+                        generated,
+                        after: predictionContext
+                    ) else {
                     return
                 }
                 self.showNextInputCandidateWindow(client: sender)
