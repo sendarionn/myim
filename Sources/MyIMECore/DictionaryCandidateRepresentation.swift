@@ -5,8 +5,8 @@ public enum DictionaryCandidateRepresentation {
 
     public static func encoded(display: String, value: String) -> String? {
         guard !display.isEmpty, !value.isEmpty,
-              !display.contains(separator), !value.contains(separator),
-              !display.contains("\n"), !value.contains("\n")
+              !display.contains(separator),
+              !display.contains("\n"), !display.contains("\r")
         else { return nil }
         return display + separator + value
     }

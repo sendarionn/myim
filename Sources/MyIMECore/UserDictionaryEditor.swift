@@ -113,12 +113,19 @@ public enum UserDictionaryEditor {
     ) -> [DictionaryEntry] {
         let normalizedReading =
             RomajiCanonicalizer.canonicalInput(from: reading)
-        guard !normalizedReading.isEmpty, !candidate.isEmpty else {
+        let insertedValue = candidate.isEmpty ? (display ?? "") : candidate
+        guard !normalizedReading.isEmpty, !insertedValue.isEmpty else {
             return entries
         }
-        let storedCandidate = display.flatMap {
-            DictionaryCandidateRepresentation.encoded(display: $0, value: candidate)
-        } ?? candidate
+        let storedCandidate: String
+        if let display, !display.isEmpty, display != insertedValue {
+            storedCandidate = DictionaryCandidateRepresentation.encoded(
+                display: display,
+                value: insertedValue
+            ) ?? insertedValue
+        } else {
+            storedCandidate = insertedValue
+        }
 
         var result = entries
         if let index = result.firstIndex(where: {

@@ -88,6 +88,26 @@ struct DictionaryParserTests {
     }
 
     @Test
+    func parsesThreeColumnTSVEntry() throws {
+        let entries = try DictionaryParser().parse(
+            "gg\tGoogle\thttps://www.google.com/\n"
+        )
+        let candidate = try #require(entries.first?.candidates.first)
+
+        #expect(DictionaryCandidateRepresentation.display(from: candidate) == "Google")
+        #expect(DictionaryCandidateRepresentation.value(from: candidate) == "https://www.google.com/")
+    }
+
+    @Test
+    func emptyInsertedValueFallsBackToDisplayText() throws {
+        let entries = try DictionaryParser().parse("google\tGoogle\t\n")
+
+        #expect(entries == [
+            DictionaryEntry(reading: "google", candidates: ["Google"])
+        ])
+    }
+
+    @Test
     func rejectsCandidateWithoutReading() {
         #expect(throws: DictionaryParserError.candidateWithoutReading(line: 1)) {
             try DictionaryParser().parse(" 見る")

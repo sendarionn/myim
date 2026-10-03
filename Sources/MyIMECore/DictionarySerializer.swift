@@ -7,7 +7,7 @@ public enum DictionarySerializer {
                 if let parts = DictionaryCandidateRepresentation.parts(
                     from: candidate
                 ) {
-                    return "\(entry.input)\t\(parts.display)\t\(parts.value)"
+                    return "\(entry.input)\t\(parts.display)\t\(DictionaryTSVFieldCodec.encode(parts.value))"
                 }
                 return "\(entry.input)\t\(candidate)"
             }

@@ -25,4 +25,21 @@ struct DictionarySerializerTests {
         #expect(text == "tomato\tトマトの画像\thttps://example.com/tomato.jpg\n")
         #expect(try DictionaryParser().parse(text) == entries)
     }
+
+    @Test
+    func roundTripsMultilineInsertedValue() throws {
+        let value = "山田太郎\n株式会社Example\nexample@example.com"
+        let encoded = try #require(DictionaryCandidateRepresentation.encoded(
+            display: "会社署名",
+            value: value
+        ))
+        let entries = [
+            DictionaryEntry(reading: "signature", candidates: [encoded])
+        ]
+
+        let text = DictionarySerializer.text(from: entries)
+
+        #expect(!text.contains("山田太郎\n株式会社Example"))
+        #expect(try DictionaryParser().parse(text) == entries)
+    }
 }

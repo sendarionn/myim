@@ -260,6 +260,34 @@ struct UserDictionaryEditorTests {
     }
 
     @Test
+    func omittedInsertedValueFallsBackToDisplayName() {
+        let result = UserDictionaryEditor.adding(
+            reading: "google",
+            candidate: "",
+            display: "Google",
+            to: []
+        )
+
+        #expect(result == [
+            DictionaryEntry(reading: "google", candidates: ["Google"])
+        ])
+    }
+
+    @Test
+    func equalDisplayAndInsertedValueUseLegacyTwoColumnCandidate() {
+        let result = UserDictionaryEditor.adding(
+            reading: "google",
+            candidate: "Google",
+            display: "Google",
+            to: []
+        )
+
+        #expect(result == [
+            DictionaryEntry(reading: "google", candidates: ["Google"])
+        ])
+    }
+
+    @Test
     func removesCandidateFromMatchingReading() {
         let entries = [
             DictionaryEntry(

@@ -77,12 +77,22 @@ public struct DictionaryParser: Sendable {
                 let candidate: String
                 if columns.count == 2 {
                     candidate = columns[1]
-                } else if columns.count == 3,
-                          let encoded = DictionaryCandidateRepresentation.encoded(
-                              display: columns[1],
-                              value: columns[2]
-                          ) {
-                    candidate = encoded
+                } else if columns.count == 3 {
+                    let display = columns[1]
+                    let insertedValue = DictionaryTSVFieldCodec.decode(columns[2])
+                    if insertedValue.isEmpty {
+                        candidate = display
+                    } else if let encoded = DictionaryCandidateRepresentation.encoded(
+                        display: display,
+                        value: insertedValue
+                    ) {
+                        candidate = encoded
+                    } else {
+                        throw DictionaryParserError.readingWithoutCandidates(
+                            reading: reading,
+                            line: lineNumber
+                        )
+                    }
                 } else {
                     throw DictionaryParserError.readingWithoutCandidates(
                         reading: reading,

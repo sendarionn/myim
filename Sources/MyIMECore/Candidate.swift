@@ -87,6 +87,10 @@ public struct Candidate: Equatable, Sendable {
         DictionaryCandidateRepresentation.value(from: storageText)
     }
 
+    public var hasDistinctCommitText: Bool {
+        displayText != commitText
+    }
+
     public var primarySource: CandidateSourceKind {
         origins.first?.source ?? .unspecified
     }

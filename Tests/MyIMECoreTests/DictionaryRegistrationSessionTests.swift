@@ -56,6 +56,23 @@ struct DictionaryRegistrationSessionTests {
     }
 
     @Test
+    func exposesTheCurrentRegistrationInputField() {
+        var session = DictionaryRegistrationSession(
+            originalInput: "gg",
+            reading: "gg"
+        )
+
+        #expect(session.activeInputField == .insertedText)
+
+        session.appendConfirmed("https://www.google.com/")
+        _ = session.beginDisplayName(
+            output: session.confirmedCandidate ?? ""
+        )
+
+        #expect(session.activeInputField == .displayText)
+    }
+
+    @Test
     func doesNotCompleteWhilePasteIsPending() {
         var session = DictionaryRegistrationSession(
             originalInput: "key",

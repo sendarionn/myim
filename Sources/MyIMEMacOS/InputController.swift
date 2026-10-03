@@ -777,7 +777,7 @@ final class InputController: IMKInputController {
     }
 
     override func candidates(_ sender: Any!) -> [Any]! {
-        currentCandidates
+        currentCandidateModels.map(\.displayText)
     }
 
     override func doCommand(
@@ -1146,32 +1146,55 @@ final class InputController: IMKInputController {
     }
 
     override func candidateSelectionChanged(_ candidateString: NSAttributedString!) {
-        guard let candidate = candidateString?.string else {
+        guard let candidateText = candidateString?.string else {
             previewWindow.hide()
             return
         }
 
-        selectedCandidateIndex = currentCandidates.firstIndex {
-            candidateDisplayValue($0) == candidate
+        guard let index = CandidateSelectionProjection.index(
+            for: candidateText,
+            preferredIndex: selectedCandidateIndex,
+            in: currentCandidateModels
+        ) else { return }
+        selectedCandidateIndex = index
+        let candidate = currentCandidateModels[index]
+        if let inputClient = client() {
+            setMarkedText(
+                CandidateSelectionProjection.markedText(
+                    for: candidate,
+                    prefix: compositionPrefix,
+                    suffix: conversionSuffix + compositionSuffix
+                ),
+                in: inputClient
+            )
         }
-        if let selectedCandidateIndex {
-            showPreview(for: currentCandidates[selectedCandidateIndex])
-        }
+        showPreview(for: candidate.storageText)
     }
 
     override func candidateSelected(_ candidateString: NSAttributedString!) {
-        guard let candidate = candidateString?.string else {
+        guard let candidateText = candidateString?.string else {
             return
         }
 
-        let storedCandidate = currentCandidateModels.first {
-            $0.displayText == candidate
-        } ?? Candidate(storageText: candidate)
+        let resolvedIndex = CandidateSelectionProjection.index(
+            for: candidateText,
+            preferredIndex: selectedCandidateIndex,
+            in: currentCandidateModels
+        )
+        let storedCandidate: Candidate
+        if let resolvedIndex {
+            selectedCandidateIndex = resolvedIndex
+            storedCandidate = currentCandidateModels[resolvedIndex]
+        } else if currentCandidateModels.contains(where: {
+            $0.displayText == candidateText || $0.storageText == candidateText
+        }) {
+            NSSound.beep()
+            return
+        } else {
+            storedCandidate = Candidate(storageText: candidateText)
+        }
         recordCandidateSelectionForCurrentInput(storedCandidate)
         if emojiWindow.isVisible {
-            selectedCandidateIndex = currentCandidates.firstIndex {
-                candidateDisplayValue($0) == candidate
-            }
             confirmEmojiSearch(client: client() as Any)
             return
         }
@@ -2014,8 +2037,7 @@ final class InputController: IMKInputController {
         }
 
         if isPasteShortcut(event) {
-            let pasted = NSPasteboard.general.string(forType: .string)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let pasted = NSPasteboard.general.string(forType: .string) ?? ""
             guard !pasted.isEmpty else {
                 NSSound.beep()
                 return true
@@ -2152,16 +2174,21 @@ final class InputController: IMKInputController {
         guard let registration = dictionaryRegistrationSession else {
             return
         }
+        let activeFieldLabel = switch registration.activeInputField {
+        case .insertedText: "挿入文字列"
+        case .displayText: "候補表示"
+        }
         if let confirmedCandidate = registration.confirmedCandidate,
            inputBuffer.isEmpty,
            registration.pastedCandidate == nil {
             candidateWindow.show(
                 candidates: [
+                    "入力中: \(activeFieldLabel)",
                     "読み: \(registration.reading)",
                     registration.isEnteringDisplayName
-                        ? "表示: \(confirmedCandidate)"
-                        : "登録: \(confirmedCandidate)",
-                    registration.outputCandidate.map { "出力: \($0)" }
+                        ? "候補表示: \(confirmedCandidate)"
+                        : "挿入: \(confirmedCandidate)",
+                    registration.outputCandidate.map { "挿入: \($0)" }
                 ].compactMap { $0 },
                 selectedIndex: nil,
                 near: inputLocation(for: sender),
@@ -2173,9 +2200,14 @@ final class InputController: IMKInputController {
         logPanelSnapshot(event: "candidatePanel.beforeShow", sender: sender)
         candidateWindow.show(
             candidates: [
+                "入力中: \(activeFieldLabel)",
                 "読み: \(registration.reading)",
-                registration.outputCandidate.map { "出力: \($0)" },
-                candidate
+                registration.outputCandidate.map { "挿入: \($0)" },
+                candidate.map {
+                    registration.isEnteringDisplayName
+                        ? "候補表示: \($0)"
+                        : "挿入: \($0)"
+                }
             ].compactMap { $0 },
             selectedIndex: nil,
             near: inputLocation(for: sender),
@@ -2240,25 +2272,27 @@ final class InputController: IMKInputController {
         guard currentCandidates.indices.contains(index) else {
             return true
         }
-        let candidate = currentCandidates[index]
-        guard let resolvedIndex = currentCandidates.firstIndex(of: candidate)
-        else { return true }
-        selectedCandidateIndex = resolvedIndex
+        let candidate = currentCandidateModels[index]
+        selectedCandidateIndex = index
         selectedFuzzySuggestionIndex = nil
         showCandidateWindow(client: sender)
         let registrationPrefix = dictionaryRegistrationSession?
             .confirmedCandidate ?? compositionPrefix
         setMarkedText(
-            registrationPrefix
-                + candidateDisplayValue(candidate)
-                + conversionSuffix
-                + compositionSuffix,
+            CandidateSelectionProjection.markedText(
+                for: candidate,
+                prefix: registrationPrefix,
+                suffix: conversionSuffix + compositionSuffix
+            ),
             in: sender
         )
-        showPreview(for: candidate)
-        if !translationCandidateSession.contains(candidate, in: .normal) {
+        showPreview(for: candidate.storageText)
+        if !translationCandidateSession.contains(
+            candidate.storageText,
+            in: .normal
+        ) {
             updateTranslationCandidates(
-                for: candidateValueForCommit(candidate),
+                for: candidate.commitText,
                 destination: .normal,
                 client: sender
             )
@@ -3103,10 +3137,14 @@ final class InputController: IMKInputController {
         }
         selectedFuzzySuggestionIndex = nil
         if let selectedCandidateIndex,
-           currentCandidates.indices.contains(selectedCandidateIndex) {
-            let value = candidateDisplayValue(currentCandidates[selectedCandidateIndex])
+           currentCandidateModels.indices.contains(selectedCandidateIndex) {
+            let candidate = currentCandidateModels[selectedCandidateIndex]
             setMarkedText(
-                compositionPrefix + value + conversionSuffix + compositionSuffix,
+                CandidateSelectionProjection.markedText(
+                    for: candidate,
+                    prefix: compositionPrefix,
+                    suffix: conversionSuffix + compositionSuffix
+                ),
                 in: sender
             )
         } else {
@@ -3510,8 +3548,6 @@ final class InputController: IMKInputController {
                         for: source,
                         channel: .normal
                     )
-                    self.selectedCandidateIndex = self.currentCandidates
-                        .firstIndex(of: source)
                     self.showCandidateWindow(client: sender)
                     guard self.candidateWindow.visibleFrame != nil else {
                         self.translationCandidateWindow.hide()
@@ -3891,10 +3927,14 @@ final class InputController: IMKInputController {
             return
         }
         cancelCandidateLocationRetry()
+        let pageCandidates = Array(
+            currentCandidateModels[pageStart..<pageEnd]
+        )
         candidateWindow.show(
-            candidates: currentCandidates[pageStart..<pageEnd].map {
-                candidateDisplayValue($0)
-            },
+            candidates: pageCandidates.map(\.displayText),
+            alternateCommitIndicators: pageCandidates.map(
+                \.hasDistinctCommitText
+            ),
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: anchorFrame,
             isAccented: isAccentedInput,

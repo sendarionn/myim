@@ -38,4 +38,42 @@ struct CandidateTests {
         #expect(merged.primarySource == .basicDictionary)
         #expect(merged.isLearnable)
     }
+
+    @Test
+    func alternateCommitIndicatorDependsOnlyOnDisplayAndCommitText() throws {
+        let normal = Candidate(
+            storageText: "知る",
+            source: .userDictionary
+        )
+        let encoded = try #require(DictionaryCandidateRepresentation.encoded(
+            display: "Google",
+            value: "https://www.google.com/"
+        ))
+        let javaScript = Candidate(
+            storageText: encoded,
+            source: .javaScriptExtension
+        )
+
+        #expect(!normal.hasDistinctCommitText)
+        #expect(javaScript.hasDistinctCommitText)
+        #expect(javaScript.displayText == "Google")
+        #expect(javaScript.commitText == "https://www.google.com/")
+    }
+
+    @Test
+    func duplicateDisplayTextKeepsIndependentIndicatorAndCommitIdentity() throws {
+        let first = try #require(DictionaryCandidateRepresentation.encoded(
+            display: "Google",
+            value: "AAA"
+        ))
+        let second = try #require(DictionaryCandidateRepresentation.encoded(
+            display: "Google",
+            value: "BBB"
+        ))
+        let candidates = [Candidate(storageText: first), Candidate(storageText: second)]
+
+        #expect(candidates.map(\.hasDistinctCommitText) == [true, true])
+        #expect(candidates.map(\.displayText) == ["Google", "Google"])
+        #expect(candidates.map(\.commitText) == ["AAA", "BBB"])
+    }
 }

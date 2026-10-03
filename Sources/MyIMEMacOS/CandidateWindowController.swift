@@ -26,6 +26,8 @@ enum CandidatePanelItemStyle {
     static let maximumVisibleCount = 4
     static let horizontalPadding: CGFloat = 9
     static let verticalPadding: CGFloat = 9
+    static let accessorySpacing: CGFloat = 8
+    static let accessoryFont = NSFont.systemFont(ofSize: 8)
     static let height = ceil(
         font.ascender - font.descender + font.leading
     ) + verticalPadding * 2
@@ -33,7 +35,10 @@ enum CandidatePanelItemStyle {
 
 final class CandidatePanelRowView: NSView {
     private let label = NSTextField(labelWithString: "")
+    private let accessoryLabel = NSTextField(labelWithString: "●")
+    private let contentStack = NSStackView()
     private var text = ""
+    private var showsAlternateCommitIndicator = false
     private var fixedWidthConstraint: NSLayoutConstraint?
     private var fixedHeightConstraint: NSLayoutConstraint?
 
@@ -44,17 +49,33 @@ final class CandidatePanelRowView: NSView {
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = CandidatePanelItemStyle.font
         label.lineBreakMode = .byTruncatingTail
-        addSubview(label)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        accessoryLabel.font = CandidatePanelItemStyle.accessoryFont
+        accessoryLabel.alignment = .center
+        accessoryLabel.setContentHuggingPriority(.required, for: .horizontal)
+        accessoryLabel.setContentCompressionResistancePriority(
+            .required,
+            for: .horizontal
+        )
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.orientation = .horizontal
+        contentStack.alignment = .centerY
+        contentStack.distribution = .fill
+        contentStack.spacing = CandidatePanelItemStyle.accessorySpacing
+        contentStack.detachesHiddenViews = true
+        contentStack.addArrangedSubview(label)
+        contentStack.addArrangedSubview(accessoryLabel)
+        addSubview(contentStack)
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(
+            contentStack.leadingAnchor.constraint(
                 equalTo: leadingAnchor,
                 constant: CandidatePanelItemStyle.horizontalPadding
             ),
-            label.trailingAnchor.constraint(
+            contentStack.trailingAnchor.constraint(
                 equalTo: trailingAnchor,
                 constant: -CandidatePanelItemStyle.horizontalPadding
             ),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+            contentStack.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
     }
 
@@ -63,19 +84,32 @@ final class CandidatePanelRowView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func configure(text: String, isSelected: Bool) {
+    func configure(
+        text: String,
+        isSelected: Bool,
+        showsAlternateCommitIndicator: Bool = false
+    ) {
         self.text = text
+        self.showsAlternateCommitIndicator = showsAlternateCommitIndicator
         label.stringValue = text
+        accessoryLabel.isHidden = !showsAlternateCommitIndicator
         layer?.backgroundColor = isSelected
             ? NSColor.controlAccentColor.cgColor
             : NSColor.clear.cgColor
         label.textColor = isSelected
             ? .alternateSelectedControlTextColor
             : .labelColor
+        accessoryLabel.textColor = isSelected
+            ? .alternateSelectedControlTextColor
+            : .secondaryLabelColor
     }
 
     func updateSelection(_ isSelected: Bool) {
-        configure(text: text, isSelected: isSelected)
+        configure(
+            text: text,
+            isSelected: isSelected,
+            showsAlternateCommitIndicator: showsAlternateCommitIndicator
+        )
     }
 
     func setFixedSize(width: CGFloat, height: CGFloat) {
@@ -105,8 +139,12 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
         }
     }
 
-    func configure(text: String) {
-        rowView.configure(text: text, isSelected: isSelected)
+    func configure(text: String, showsAlternateCommitIndicator: Bool) {
+        rowView.configure(
+            text: text,
+            isSelected: isSelected,
+            showsAlternateCommitIndicator: showsAlternateCommitIndicator
+        )
     }
 
     private func updateSelectionAppearance() {
@@ -136,6 +174,7 @@ final class CandidateWindowController: NSObject {
     private let scrollView: NSScrollView
     private let guideLabel: NSTextView
     private var candidates: [String] = []
+    private var alternateCommitIndicators: [Bool] = []
     private var itemSizes: [NSSize] = []
 
     override init() {
@@ -347,6 +386,7 @@ final class CandidateWindowController: NSObject {
 
     func show(
         candidates: [String],
+        alternateCommitIndicators: [Bool] = [],
         selectedIndex: Int?,
         near anchorFrame: NSRect,
         guide: String? = nil,
@@ -360,7 +400,17 @@ final class CandidateWindowController: NSObject {
             ? NSColor.controlAccentColor.cgColor
             : NSColor.clear.cgColor
         self.candidates = candidates
-        let measuredItemSizes = candidates.map { itemSize(for: $0) }
+        self.alternateCommitIndicators = candidates.indices.map {
+            alternateCommitIndicators.indices.contains($0)
+                ? alternateCommitIndicators[$0]
+                : false
+        }
+        let measuredItemSizes = candidates.indices.map {
+            itemSize(
+                for: candidates[$0],
+                showsAlternateCommitIndicator: self.alternateCommitIndicators[$0]
+            )
+        }
 
         let screen = NSScreen.inputScreen(containing: anchorFrame)
         let visibleFrame = screen?.visibleFrame
@@ -407,7 +457,12 @@ final class CandidateWindowController: NSObject {
             max(
                 measuredItemSizes.map(\.width).max()
                     ?? CandidatePanelItemStyle.minimumWidth,
-                minimumPanelText.map { itemSize(for: $0).width }
+                minimumPanelText.map {
+                    itemSize(
+                        for: $0,
+                        showsAlternateCommitIndicator: false
+                    ).width
+                }
                     ?? CandidatePanelItemStyle.minimumWidth
             ),
             maximumPanelWidth
@@ -587,16 +642,25 @@ final class CandidateWindowController: NSObject {
         guidePanel.orderOut(nil)
     }
 
-    private func itemSize(for candidate: String) -> NSSize {
+    private func itemSize(
+        for candidate: String,
+        showsAlternateCommitIndicator: Bool
+    ) -> NSSize {
         let textWidth = ceil(
                 (candidate as NSString).size(
                 withAttributes: [.font: CandidatePanelItemStyle.font]
             ).width
         )
+        let accessoryWidth = showsAlternateCommitIndicator
+            ? ceil(("●" as NSString).size(
+                withAttributes: [.font: CandidatePanelItemStyle.accessoryFont]
+            ).width) + CandidatePanelItemStyle.accessorySpacing
+            : 0
         return NSSize(
             width: min(
                 max(
-                    textWidth + CandidatePanelItemStyle.horizontalPadding * 2,
+                    textWidth + accessoryWidth
+                        + CandidatePanelItemStyle.horizontalPadding * 2,
                     CandidatePanelItemStyle.minimumWidth
                 ),
                 CandidatePanelItemStyle.maximumWidth
@@ -683,7 +747,11 @@ extension CandidateWindowController: NSCollectionViewDataSource {
             return item
         }
 
-        candidateItem.configure(text: candidates[indexPath.item])
+        candidateItem.configure(
+            text: candidates[indexPath.item],
+            showsAlternateCommitIndicator:
+                alternateCommitIndicators[indexPath.item]
+        )
         return candidateItem
     }
 }

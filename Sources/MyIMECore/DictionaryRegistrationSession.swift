@@ -10,6 +10,11 @@ public struct DictionaryRegistrationCompletion: Equatable, Sendable {
     }
 }
 
+public enum DictionaryRegistrationInputField: Equatable, Sendable {
+    case insertedText
+    case displayText
+}
+
 public struct DictionaryRegistrationSession: Equatable, Sendable {
     public let originalInput: String
     public let reading: String
@@ -24,6 +29,10 @@ public struct DictionaryRegistrationSession: Equatable, Sendable {
 
     public var isEnteringDisplayName: Bool {
         outputCandidate != nil
+    }
+
+    public var activeInputField: DictionaryRegistrationInputField {
+        isEnteringDisplayName ? .displayText : .insertedText
     }
 
     public mutating func appendConfirmed(

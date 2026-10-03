@@ -17,4 +17,15 @@ struct DictionaryCandidateRepresentationTests {
         #expect(DictionaryCandidateRepresentation.display(from: "〜個") == "個")
         #expect(DictionaryCandidateRepresentation.value(from: "〜個") == "個")
     }
+
+    @Test func preservesMultilineInsertedValue() throws {
+        let value = "山田太郎\n株式会社Example\nexample@example.com"
+        let encoded = try #require(DictionaryCandidateRepresentation.encoded(
+            display: "会社署名",
+            value: value
+        ))
+
+        #expect(DictionaryCandidateRepresentation.display(from: encoded) == "会社署名")
+        #expect(DictionaryCandidateRepresentation.value(from: encoded) == value)
+    }
 }
