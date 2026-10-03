@@ -177,7 +177,20 @@ final class EmojiWindowController: NSObject {
     var isVisible: Bool { panel.isVisible }
     var visibleFrame: NSRect? { panel.isVisible ? panel.frame : nil }
     var searchText: String { searchQuery }
-    var canSelectEmoji: Bool { isSearchConfirmed || searchQuery.isEmpty }
+    var canSelectEmoji: Bool {
+        EmojiSearchActivationPolicy.tabNavigatesEmoji(
+            searchText: searchQuery,
+            isSearchConfirmed: isSearchConfirmed
+        )
+    }
+    private var showsRecentArea: Bool {
+        EmojiSearchActivationPolicy.showsRecentEmojis(
+            searchText: searchQuery
+        )
+    }
+    private var visibleRecentCount: Int {
+        showsRecentArea ? recentHistory.emojis.count : 0
+    }
     var selectedEmoji: String? {
         if let selectedRecentIndex,
            recentHistory.emojis.indices.contains(selectedRecentIndex) {
@@ -207,7 +220,9 @@ final class EmojiWindowController: NSObject {
             guard let self, self.panel.isVisible else { return }
             self.scrollToPreferredEdge()
         }
-        EmojiGlobalHotKey.shared.beginPanelCapture()
+        EmojiGlobalHotKey.shared.beginPanelCapture(
+            capturesTab: canSelectEmoji
+        )
         startOutsideClickMonitoring()
         EmojiDiagnostics.logger.notice(
             "panel ordered size=\(String(describing: self.panel.frame.size), privacy: .public) origin=\(String(describing: self.panel.frame.origin), privacy: .public) visible=\(self.panel.isVisible, privacy: .public)"
@@ -244,6 +259,7 @@ final class EmojiWindowController: NSObject {
     func updateSearchText(_ text: String) {
         isSearchConfirmed = false
         setSearchQuery(text)
+        updateTabCapture()
     }
 
     func confirmSearch() {
@@ -253,14 +269,15 @@ final class EmojiWindowController: NSObject {
         collectionView.selectionIndexPaths = []
         updateRecentSelection()
         comparisonPanel.orderOut(nil)
+        updateTabCapture()
     }
 
     func advanceSelection(backward: Bool) {
-        guard !visibleEntries.isEmpty || !recentHistory.emojis.isEmpty else {
+        guard !visibleEntries.isEmpty || visibleRecentCount > 0 else {
             return
         }
         let offset = backward ? -1 : 1
-        let recentCount = recentHistory.emojis.count
+        let recentCount = visibleRecentCount
         let totalCount = recentCount + visibleEntries.count
         let current = selectedRecentIndex
             ?? selectedIndex.map { recentCount + $0 }
@@ -274,7 +291,7 @@ final class EmojiWindowController: NSObject {
     }
 
     func moveSelection(_ direction: EmojiGridDirection) {
-        guard !visibleEntries.isEmpty || !recentHistory.emojis.isEmpty else {
+        guard !visibleEntries.isEmpty || visibleRecentCount > 0 else {
             return
         }
         if let selectedRecentIndex {
@@ -282,7 +299,7 @@ final class EmojiWindowController: NSObject {
             return
         }
         guard let selectedIndex else {
-            if !searchQuery.isEmpty || recentHistory.emojis.isEmpty {
+            if !showsRecentArea || recentHistory.emojis.isEmpty {
                 select(index: 0)
             } else {
                 selectRecent(index: 0)
@@ -292,7 +309,7 @@ final class EmojiWindowController: NSObject {
         let entersRecentArea = layout.displaysBottomUp
             ? direction == .down && selectedIndex < Self.columnCount
             : direction == .up && selectedIndex < Self.columnCount
-        if searchQuery.isEmpty,
+        if showsRecentArea,
            entersRecentArea,
            !recentHistory.emojis.isEmpty {
             selectRecent(index: min(
@@ -511,6 +528,11 @@ final class EmojiWindowController: NSObject {
         }
     }
 
+    private func updateTabCapture() {
+        guard panel.isVisible else { return }
+        EmojiGlobalHotKey.shared.setPanelTabCaptureEnabled(canSelectEmoji)
+    }
+
     private func updateCollectionDocumentHeight() {
         let rowCount = ceil(
             CGFloat(visibleEntries.count) / CGFloat(Self.columnCount)
@@ -538,7 +560,8 @@ final class EmojiWindowController: NSObject {
         let listHeight = min(documentHeight, Self.maximumListHeight)
         let size = NSSize(
             width: panel.frame.width,
-            height: listHeight + Self.panelChromeHeight
+            height: listHeight
+                + (showsRecentArea ? Self.panelChromeHeight : 0)
         )
         panel.setContentSize(size)
         panel.contentView?.frame = NSRect(origin: .zero, size: size)
@@ -590,6 +613,17 @@ final class EmojiWindowController: NSObject {
     }
 
     private func positionSections(listHeight: CGFloat, width: CGFloat) {
+        recentStack.isHidden = !showsRecentArea
+        recentSeparator.isHidden = !showsRecentArea
+        guard showsRecentArea else {
+            scrollView.frame = NSRect(
+                x: 0,
+                y: 0,
+                width: width,
+                height: listHeight
+            )
+            return
+        }
         if layout.displaysBottomUp {
             recentStack.frame = NSRect(
                 x: 8, y: 8, width: width - 16,

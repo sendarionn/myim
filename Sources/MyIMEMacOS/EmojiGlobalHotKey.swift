@@ -17,6 +17,7 @@ final class EmojiGlobalHotKey {
     private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
     private var panelHotKeys: [EventHotKeyRef] = []
+    private var panelTabHotKeys: [EventHotKeyRef] = []
     private var repeatingCommand: UInt32?
     private var repeatTimer: DispatchSourceTimer?
 
@@ -120,7 +121,7 @@ final class EmojiGlobalHotKey {
         EmojiDiagnostics.logger.notice("global hot key unregistered")
     }
 
-    func beginPanelCapture() {
+    func beginPanelCapture(capturesTab: Bool) {
         endPanelCapture()
         let shortcuts: [(UInt32, UInt32, UInt32)] = [
             (4, UInt32(kVK_LeftArrow), 0),
@@ -152,12 +153,50 @@ final class EmojiGlobalHotKey {
         EmojiDiagnostics.logger.notice(
             "panel hot keys registered count=\(self.panelHotKeys.count, privacy: .public)"
         )
+        setPanelTabCaptureEnabled(capturesTab)
+    }
+
+    func setPanelTabCaptureEnabled(_ enabled: Bool) {
+        if enabled, panelTabHotKeys.count == 2 { return }
+        panelTabHotKeys.forEach { UnregisterEventHotKey($0) }
+        panelTabHotKeys = []
+        guard enabled else {
+            EmojiDiagnostics.logger.notice("panel Tab capture disabled")
+            return
+        }
+        let shortcuts: [(UInt32, UInt32, UInt32)] = [
+            (11, UInt32(kVK_Tab), 0),
+            (12, UInt32(kVK_Tab), UInt32(shiftKey))
+        ]
+        for (id, keyCode, modifiers) in shortcuts {
+            var reference: EventHotKeyRef?
+            let status = RegisterEventHotKey(
+                keyCode,
+                modifiers,
+                EventHotKeyID(signature: Self.signature, id: id),
+                GetApplicationEventTarget(),
+                0,
+                &reference
+            )
+            if status == noErr, let reference {
+                panelTabHotKeys.append(reference)
+            } else {
+                EmojiDiagnostics.logger.error(
+                    "panel Tab hot key registration failed id=\(id, privacy: .public) status=\(status, privacy: .public)"
+                )
+            }
+        }
+        EmojiDiagnostics.logger.notice(
+            "panel Tab hot keys registered count=\(self.panelTabHotKeys.count, privacy: .public)"
+        )
     }
 
     func endPanelCapture() {
         stopRepeating()
         panelHotKeys.forEach { UnregisterEventHotKey($0) }
         panelHotKeys = []
+        panelTabHotKeys.forEach { UnregisterEventHotKey($0) }
+        panelTabHotKeys = []
     }
 
     private func startRepeating(command: UInt32) {

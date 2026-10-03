@@ -269,17 +269,13 @@ final class InputController: IMKInputController {
             ?? (controller.client() as Any?)
         switch command {
         case 4:
-            guard controller.emojiWindow.canSelectEmoji else { return }
-            controller.emojiWindow.moveSelection(.left)
+            controller.handleEmojiArrow(.left, client: client)
         case 5:
-            guard controller.emojiWindow.canSelectEmoji else { return }
-            controller.emojiWindow.moveSelection(.right)
+            controller.handleEmojiArrow(.right, client: client)
         case 6:
-            guard controller.emojiWindow.canSelectEmoji else { return }
-            controller.emojiWindow.moveSelection(.up)
+            controller.handleEmojiArrow(.up, client: client)
         case 7:
-            guard controller.emojiWindow.canSelectEmoji else { return }
-            controller.emojiWindow.moveSelection(.down)
+            controller.handleEmojiArrow(.down, client: client)
         case 8, 9:
             guard let client else { return }
             if let emoji = controller.emojiWindow.selectedEmoji {
@@ -294,11 +290,13 @@ final class InputController: IMKInputController {
             }
             return
         case 10:
-            if let client {
-                controller.clearCompositionForSystemPaste(in: client)
-            }
-            controller.emojiWindow.hide()
-            emojiPanelController = nil
+            controller.handleEmojiEscape(client: client)
+        case 11:
+            guard controller.emojiWindow.canSelectEmoji else { return }
+            controller.emojiWindow.advanceSelection(backward: false)
+        case 12:
+            guard controller.emojiWindow.canSelectEmoji else { return }
+            controller.emojiWindow.advanceSelection(backward: true)
         default:
             break
         }
@@ -751,26 +749,22 @@ final class InputController: IMKInputController {
     ) -> Bool {
         switch InputKey(keyCode: event.keyCode) {
         case .tab:
-            if !emojiWindow.isSearchConfirmed {
+            if emojiWindow.canSelectEmoji {
+                emojiWindow.advanceSelection(
+                    backward: event.modifierFlags.contains(.shift)
+                )
+            } else {
                 _ = handleTab(event, client: sender)
                 updateEmojiSearchFromComposition()
             }
         case .leftArrow:
-            if emojiWindow.canSelectEmoji {
-                emojiWindow.moveSelection(.left)
-            }
+            handleEmojiArrow(.left, client: sender)
         case .rightArrow:
-            if emojiWindow.canSelectEmoji {
-                emojiWindow.moveSelection(.right)
-            }
+            handleEmojiArrow(.right, client: sender)
         case .downArrow:
-            if emojiWindow.canSelectEmoji {
-                emojiWindow.moveSelection(.down)
-            }
+            handleEmojiArrow(.down, client: sender)
         case .upArrow:
-            if emojiWindow.canSelectEmoji {
-                emojiWindow.moveSelection(.up)
-            }
+            handleEmojiArrow(.up, client: sender)
         case .returnKey:
             if let emoji = emojiWindow.selectedEmoji {
                 emojiWindow.recordUsage(emoji)
@@ -782,8 +776,7 @@ final class InputController: IMKInputController {
                 confirmEmojiSearch(client: sender)
             }
         case .escape:
-            clearCompositionForSystemPaste(in: sender)
-            emojiWindow.hide()
+            handleEmojiEscape(client: sender)
         case .delete:
             if inputBuffer.isEmpty {
                 emojiWindow.hide()
@@ -825,6 +818,58 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func handleEmojiArrow(
+        _ direction: EmojiGridDirection,
+        client sender: Any?
+    ) {
+        let action = EmojiSearchActivationPolicy.arrowAction(
+            direction: direction,
+            searchText: emojiWindow.searchText,
+            isSearchConfirmed: emojiWindow.isSearchConfirmed
+        )
+        switch action {
+        case .moveSearchCandidate:
+            guard let sender else { return }
+            let candidateDirection: CandidateNavigationDirection = switch direction {
+            case .up: .up
+            case .down: .down
+            case .left: .left
+            case .right: .right
+            }
+            _ = moveCandidate(candidateDirection, client: sender)
+            updateEmojiSearchFromComposition()
+        case .enterEmojiSelection:
+            guard let sender else { return }
+            confirmEmojiSearch(client: sender)
+            emojiWindow.moveSelection(direction)
+        case .moveEmojiSelection:
+            emojiWindow.moveSelection(direction)
+        }
+    }
+
+    private func handleEmojiEscape(client sender: Any?) {
+        switch EmojiSearchActivationPolicy.escapeAction(
+            isSearchConfirmed: emojiWindow.isSearchConfirmed
+        ) {
+        case .resumeSearchEditing:
+            guard let sender else { return }
+            let searchText = selectedCandidateIndex.flatMap { index in
+                currentCandidates.indices.contains(index)
+                    ? candidateDisplayValue(currentCandidates[index])
+                    : nil
+            } ?? inputBuffer
+            emojiWindow.updateSearchText(searchText)
+            setMarkedText(searchText, in: sender)
+            showCandidateWindow(client: sender)
+        case .closePanel:
+            if let sender {
+                clearCompositionForSystemPaste(in: sender)
+            }
+            emojiWindow.hide()
+            Self.emojiPanelController = nil
+        }
+    }
+
     override func candidates(_ sender: Any!) -> [Any]! {
         currentCandidates
     }
@@ -833,6 +878,18 @@ final class InputController: IMKInputController {
         by aSelector: Selector!,
         command infoDictionary: [AnyHashable: Any]!
     ) {
+        if let aSelector,
+           emojiWindow.isVisible,
+           emojiWindow.canSelectEmoji,
+           case let .moveSelection(backward) = EmojiPanelCommand(
+               selectorName: NSStringFromSelector(aSelector)
+           ) {
+            EmojiDiagnostics.logger.notice(
+                "Tab command routed to emoji panel backward=\(backward, privacy: .public)"
+            )
+            emojiWindow.advanceSelection(backward: backward)
+            return
+        }
         if let aSelector,
            tabDictionaryRegistration != nil,
            let inputClient = client() {
