@@ -2436,3 +2436,4 @@
 ## 2026-10-04
 
 - 入力位置の照会、プレースホルダー拒否、変換開始時アンカー、直前の有効座標、候補パネル位置の再試行を`InputLocationCoordinator`へ統合し、アンカー選択と再試行回数の状態遷移を`InputLocationAnchorSession`としてCoreへ分離
+- 入力先のactivate、deactivate猶予、古いControllerの判定、終了時の確定判定を`InputControllerLifecycleSession`としてCoreへ分離し、世代Trackerと猶予Taskを`InputLifecycleCoordinator`へ統合

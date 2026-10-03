@@ -19,11 +19,8 @@ final class InputController: IMKInputController {
     private static let diagnosticConfiguration = InputDiagnosticConfiguration(
         environment: ProcessInfo.processInfo.environment
     )
-    private static let transientDeactivationDelay: TimeInterval = 0.75
     private static weak var activeController: InputController?
     private static weak var emojiPanelController: InputController?
-    private static var lifecycleGenerationTracker =
-        InputLifecycleGenerationTracker()
     private enum TranslationCandidateDestination {
         case normal
         case fuzzy(reading: String)
@@ -143,14 +140,9 @@ final class InputController: IMKInputController {
     private let romajiConverter = RomajiConverter()
     private var settingsWindow: NSWindow?
     private var activeInputClient: Any?
-    private var pendingDeactivation: DispatchWorkItem?
-    private var pendingDeactivationStartedAt: TimeInterval?
-    private var isServerActive = false
-    private var lifecycleGeneration: UInt = 0
-    private var applicationLifecycleGeneration: UInt?
-    private var globalLifecycleGeneration: UInt?
-    private var inputClientBundleIdentifier: String?
-    private var inputClientRole = InputClientRole.sourceApplication
+    private let lifecycleCoordinator = InputLifecycleCoordinator(
+        clientBundleIdentifier: nil
+    )
     private var transientCompositionGuard = TransientCompositionGuard()
     private var isInsertingCommittedText = false
     private let controllerID = String(UUID().uuidString.prefix(8))
@@ -332,10 +324,9 @@ final class InputController: IMKInputController {
             DictionaryContinuationCandidateGenerator(entries: bundledEntries)
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
-        inputClientBundleIdentifier = (inputClient as? IMKTextInput)?
-            .bundleIdentifier()
-        inputClientRole = InputClientRole.resolve(
-            bundleIdentifier: inputClientBundleIdentifier
+        lifecycleCoordinator.updateClient(
+            bundleIdentifier: (inputClient as? IMKTextInput)?
+                .bundleIdentifier()
         )
         previewWindow.onInteractionBegan = { [weak self] in
             self?.trace(
@@ -1321,7 +1312,7 @@ final class InputController: IMKInputController {
     }
 
     override func commitComposition(_ sender: Any!) {
-        guard inputClientRole.participatesInInputSessionLifecycle else {
+        guard lifecycleCoordinator.participatesInInputSessionLifecycle else {
             super.commitComposition(sender)
             return
         }
@@ -1379,7 +1370,7 @@ final class InputController: IMKInputController {
     }
 
     override func cancelComposition() {
-        guard inputClientRole.participatesInInputSessionLifecycle else {
+        guard lifecycleCoordinator.participatesInInputSessionLifecycle else {
             super.cancelComposition()
             return
         }
@@ -1390,11 +1381,9 @@ final class InputController: IMKInputController {
     override func activateServer(_ sender: Any!) {
         let activatingBundleIdentifier = (sender as? IMKTextInput)?
             .bundleIdentifier()
-        let activatingRole = InputClientRole.resolve(
+        let activatingRole = lifecycleCoordinator.updateClient(
             bundleIdentifier: activatingBundleIdentifier
         )
-        inputClientBundleIdentifier = activatingBundleIdentifier
-        inputClientRole = activatingRole
         guard activatingRole.participatesInInputSessionLifecycle else {
             super.activateServer(sender)
             Self.lifecycleLogger.notice(
@@ -1402,75 +1391,48 @@ final class InputController: IMKInputController {
             )
             return
         }
-        let resumesTransientDeactivation = pendingDeactivation != nil
+        let now = ProcessInfo.processInfo.systemUptime
+        let activation = lifecycleCoordinator.activate(now: now)
+        let resumesTransientDeactivation = activation
+            .resumesTransientDeactivation
         if !resumesTransientDeactivation {
             locationCoordinator.forgetPreviousLocation()
         }
-        let now = ProcessInfo.processInfo.systemUptime
-        let deactivationDuration = pendingDeactivationStartedAt.map {
-            max(now - $0, 0)
-        }
-        lifecycleGeneration &+= 1
-        pendingDeactivation?.cancel()
-        pendingDeactivation = nil
-        pendingDeactivationStartedAt = nil
-        isServerActive = true
         activatedAt = now
         activeInputClient = sender
-        if let inputClientBundleIdentifier {
-            applicationLifecycleGeneration = Self.lifecycleGenerationTracker
-                .recordActivation(
-                    for: inputClientBundleIdentifier
-                )
-            globalLifecycleGeneration = Self.lifecycleGenerationTracker
-                .globalGeneration
-        } else {
-            applicationLifecycleGeneration = nil
-            globalLifecycleGeneration = Self.lifecycleGenerationTracker
-                .recordAnonymousActivation()
-        }
-        if let globalLifecycleGeneration {
-            inputSession.activate(
-                sessionGeneration: globalLifecycleGeneration
-            )
-        }
+        inputSession.activate(sessionGeneration: activation.globalGeneration)
         transientCompositionGuard.recordActivation(
             resumingDeactivation: resumesTransientDeactivation,
             hasComposition: !inputBuffer.isEmpty,
             now: now,
-            gracePeriod: Self.transientDeactivationDelay
+            gracePeriod: InputLifecycleCoordinator.transientDeactivationDelay
         )
         Self.activeController = self
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
         Self.lifecycleLogger.notice(
-            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(deactivationDuration ?? -1, privacy: .public) client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public) appGeneration=\(self.applicationLifecycleGeneration ?? 0, privacy: .public) globalGeneration=\(self.globalLifecycleGeneration ?? 0, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
+            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(activation.deactivationDuration ?? -1, privacy: .public) client=\(self.lifecycleCoordinator.clientBundleIdentifier ?? "unknown", privacy: .public) appGeneration=\(self.lifecycleCoordinator.applicationGeneration ?? 0, privacy: .public) globalGeneration=\(activation.globalGeneration, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
         )
         trace("activateServer", sender: sender)
     }
 
     override func deactivateServer(_ sender: Any!) {
-        guard inputClientRole.participatesInInputSessionLifecycle else {
+        guard lifecycleCoordinator.participatesInInputSessionLifecycle else {
             Self.lifecycleLogger.notice(
-                "ignored auxiliary deactivation client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public)"
+                "ignored auxiliary deactivation client=\(self.lifecycleCoordinator.clientBundleIdentifier ?? "unknown", privacy: .public)"
             )
             super.deactivateServer(sender)
             return
         }
         trace("deactivateServer", sender: sender)
-        let deactivationStartedAt = ProcessInfo.processInfo.systemUptime
-        lifecycleGeneration &+= 1
-        let deactivationGeneration = lifecycleGeneration
-        let deactivatingApplication = inputClientBundleIdentifier
-        let deactivatingApplicationGeneration = applicationLifecycleGeneration
-        let deactivatingGlobalGeneration = globalLifecycleGeneration
-            ?? Self.lifecycleGenerationTracker.globalGeneration
         let protectsTransientDeactivation = transientCompositionGuard
             .isProtectingTransientDeactivation(
-                now: deactivationStartedAt,
+                now: ProcessInfo.processInfo.systemUptime,
                 hasComposition: !inputBuffer.isEmpty
             )
-        isServerActive = false
+        let deactivation = lifecycleCoordinator.beginDeactivation(
+            protectsTransientDeactivation: protectsTransientDeactivation
+        )
         EmojiGlobalHotKey.shared.deactivate()
         if Self.activeController === self {
             Self.activeController = nil
@@ -1499,105 +1461,54 @@ final class InputController: IMKInputController {
             super.deactivateServer(sender)
             return
         }
-        pendingDeactivation?.cancel()
-        pendingDeactivationStartedAt = ProcessInfo.processInfo.systemUptime
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self,
-                  !self.isServerActive,
-                  self.lifecycleGeneration == deactivationGeneration else {
+        lifecycleCoordinator.deferDeactivation(deactivation) { [weak self] outcome in
+            guard let self else { return }
+            switch outcome {
+            case .ignored:
                 return
-            }
-            let globalSessionWasSuperseded = Self.lifecycleGenerationTracker
-                .shouldRetireController(
-                    globalGeneration: deactivatingGlobalGeneration
-                )
-            let applicationSessionWasSuperseded: Bool
-            if let deactivatingApplication,
-               let deactivatingApplicationGeneration {
-                applicationSessionWasSuperseded = Self
-                    .lifecycleGenerationTracker.shouldRetireController(
-                        application: deactivatingApplication,
-                        generation: deactivatingApplicationGeneration,
-                        globalGeneration: deactivatingGlobalGeneration
-                    )
-            } else {
-                applicationSessionWasSuperseded = false
-            }
-            if globalSessionWasSuperseded
-                || applicationSessionWasSuperseded {
+            case .superseded:
                 Self.lifecycleLogger.notice(
-                    "discarded stale deactivation client=\(deactivatingApplication ?? "unknown", privacy: .public) appGeneration=\(deactivatingApplicationGeneration ?? 0, privacy: .public) globalGeneration=\(deactivatingGlobalGeneration, privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
+                    "discarded stale deactivation client=\(deactivation.application ?? "unknown", privacy: .public) appGeneration=\(deactivation.applicationGeneration ?? 0, privacy: .public) globalGeneration=\(deactivation.globalGeneration, privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
                 )
                 self.retireSupersededControllerUI()
-                return
+            case .transientFollowUp:
+                Self.lifecycleLogger.notice(
+                    "discarded transient follow-up deactivation client=\(deactivation.application ?? "unknown", privacy: .public) frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown", privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
+                )
+            case .commit:
+                Self.lifecycleLogger.notice(
+                    "deactivation committed after grace period bufferLength=\(self.inputBuffer.count, privacy: .public)"
+                )
+                self.finishControllerSession(
+                    client: sender,
+                    commitsComposition: true,
+                    closesController: false
+                )
+                self.activeInputClient = nil
             }
-            if protectsTransientDeactivation,
-               let deactivatingApplication {
-                let frontmostApplication = NSWorkspace.shared
-                    .frontmostApplication?.bundleIdentifier
-                if frontmostApplication == deactivatingApplication
-                    || InputClientRole.resolve(
-                        bundleIdentifier: frontmostApplication
-                    ) == .auxiliaryApplication {
-                    Self.lifecycleLogger.notice(
-                        "discarded transient follow-up deactivation client=\(deactivatingApplication, privacy: .public) frontmost=\(frontmostApplication ?? "unknown", privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public)"
-                    )
-                    self.pendingDeactivation = nil
-                    self.pendingDeactivationStartedAt = nil
-                    return
-                }
-            }
-            Self.lifecycleLogger.notice(
-                "deactivation committed after grace period bufferLength=\(self.inputBuffer.count, privacy: .public)"
-            )
-            self.finishControllerSession(
-                client: sender,
-                commitsComposition: true,
-                closesController: false
-            )
-            self.activeInputClient = nil
-            self.pendingDeactivation = nil
-            self.pendingDeactivationStartedAt = nil
         }
-        pendingDeactivation = workItem
         Self.lifecycleLogger.notice(
             "deactivation deferred bufferLength=\(self.inputBuffer.count, privacy: .public)"
-        )
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + Self.transientDeactivationDelay,
-            execute: workItem
         )
         super.deactivateServer(sender)
     }
 
     override func inputControllerWillClose() {
-        guard inputClientRole.participatesInInputSessionLifecycle else {
+        guard lifecycleCoordinator.participatesInInputSessionLifecycle else {
             Self.lifecycleLogger.notice(
-                "ignored auxiliary controller close client=\(self.inputClientBundleIdentifier ?? "unknown", privacy: .public)"
+                "ignored auxiliary controller close client=\(self.lifecycleCoordinator.clientBundleIdentifier ?? "unknown", privacy: .public)"
             )
             super.inputControllerWillClose()
             return
         }
         trace("InputController.willClose", sender: client())
-        lifecycleGeneration &+= 1
-        let deactivationWasPending = pendingDeactivation != nil
-        let sessionWasSuperseded = globalLifecycleGeneration.map {
-            Self.lifecycleGenerationTracker.shouldRetireController(
-                application: inputClientBundleIdentifier,
-                applicationGeneration: applicationLifecycleGeneration,
-                globalGeneration: $0
-            )
-        } ?? false
-        pendingDeactivation?.cancel()
-        pendingDeactivation = nil
-        pendingDeactivationStartedAt = nil
-        isServerActive = false
+        let closure = lifecycleCoordinator.close()
         transientCompositionGuard.reset()
         activeInputClient = nil
         Self.lifecycleLogger.notice(
-            "input controller closing bufferLength=\(self.inputBuffer.count, privacy: .public) pendingDeactivation=\(deactivationWasPending, privacy: .public) superseded=\(sessionWasSuperseded, privacy: .public)"
+            "input controller closing bufferLength=\(self.inputBuffer.count, privacy: .public) pendingDeactivation=\(closure.deactivationWasPending, privacy: .public) superseded=\(closure.sessionWasSuperseded, privacy: .public)"
         )
-        if sessionWasSuperseded {
+        if closure.sessionWasSuperseded {
             trace("asyncResult.rejectedAsStale", sender: client(), detail: "source=willClose")
             retireSupersededControllerUI()
             super.inputControllerWillClose()
@@ -1616,11 +1527,7 @@ final class InputController: IMKInputController {
         }
         finishControllerSession(
             client: client(),
-            commitsComposition: InputControllerClosurePolicy
-                .shouldCommitComposition(
-                    deactivationWasPending: deactivationWasPending,
-                    sessionWasSuperseded: sessionWasSuperseded
-                ),
+            commitsComposition: closure.commitsComposition,
             closesController: true
         )
         super.inputControllerWillClose()
@@ -1647,8 +1554,7 @@ final class InputController: IMKInputController {
     }
 
     private func retireSupersededControllerUI() {
-        pendingDeactivation = nil
-        pendingDeactivationStartedAt = nil
+        lifecycleCoordinator.clearPendingDeactivation()
         activeInputClient = nil
         resetTransientInteractionState()
         flushPendingHistoryWrites()
@@ -4222,7 +4128,7 @@ final class InputController: IMKInputController {
                 return self.inputSession.accepts(
                         sessionSnapshot,
                         controllerID: self.controllerID,
-                        isActive: self.isServerActive
+                        isActive: self.lifecycleCoordinator.isActive
                     )
                     && !self.inputBuffer.isEmpty
                     && !self.currentCandidates.isEmpty
@@ -4942,7 +4848,7 @@ final class InputController: IMKInputController {
         let accepted = inputSession.accepts(
             snapshot,
             controllerID: controllerID,
-            isActive: isServerActive
+            isActive: lifecycleCoordinator.isActive
         )
         trace(
             accepted ? "asyncResult.accepted" : "asyncResult.rejectedAsStale",
@@ -4966,8 +4872,8 @@ final class InputController: IMKInputController {
         }
         let markedRange = lastTracedMarkedRange
         let selectedRange = lastTracedSelectedRange
-        let session = globalLifecycleGeneration ?? 0
-        let application = inputClientBundleIdentifier
+        let session = lifecycleCoordinator.globalGeneration ?? 0
+        let application = lifecycleCoordinator.clientBundleIdentifier
             ?? textClient?.bundleIdentifier()
             ?? "unknown"
         let escapedComposition = inputBuffer
@@ -5002,7 +4908,7 @@ final class InputController: IMKInputController {
             ?? NSRange(location: NSNotFound, length: 0)
         let selectedRange = textClient?.selectedRange()
             ?? NSRange(location: NSNotFound, length: 0)
-        let application = inputClientBundleIdentifier
+        let application = lifecycleCoordinator.clientBundleIdentifier
             ?? textClient?.bundleIdentifier()
             ?? "unknown"
         let anchor = locationCoordinator.compositionAnchorDescription
@@ -5012,7 +4918,7 @@ final class InputController: IMKInputController {
             return "number=\(window.windowNumber) type=\(String(describing: type(of: window))) visible=\(window.isVisible) onScreen=\(window.isOnActiveSpace) frame=\(NSStringFromRect(window.frame)) level=\(window.level.rawValue)"
         }.joined(separator: " | ")
         Self.lifecycleLogger.notice(
-            "[S\(self.globalLifecycleGeneration ?? 0) R\(self.inputRevision) C\(self.controllerID)] panelSnapshot event=\(event, privacy: .public) app=\(application, privacy: .public) compositionLength=\(self.inputBuffer.count, privacy: .public) marked=\(NSStringFromRange(markedRange), privacy: .public) selected=\(NSStringFromRange(selectedRange), privacy: .public) anchor=\(anchor, privacy: .public) lastLocation=\(lastLocation, privacy: .public) windows=\(windows, privacy: .public)"
+            "[S\(self.lifecycleCoordinator.globalGeneration ?? 0) R\(self.inputRevision) C\(self.controllerID)] panelSnapshot event=\(event, privacy: .public) app=\(application, privacy: .public) compositionLength=\(self.inputBuffer.count, privacy: .public) marked=\(NSStringFromRange(markedRange), privacy: .public) selected=\(NSStringFromRange(selectedRange), privacy: .public) anchor=\(anchor, privacy: .public) lastLocation=\(lastLocation, privacy: .public) windows=\(windows, privacy: .public)"
         )
     }
 
