@@ -88,15 +88,23 @@ struct RomajiTypoScorer {
 }
 
 enum RomajiPhoneticRelation {
-    private static let unvoicedConsonants: Set<Character> = Set("ksthpfcqx")
-    private static let voicedConsonants: Set<Character> = Set("gzdbjv")
+    /// Unvoiced consonants paired with the voiced ones that add dakuten,
+    /// such as か→が or し→じ, so unrelated keys like g and h stay typos
+    private static let voicedCounterparts: [Character: Set<Character>] = [
+        "k": ["g"],
+        "s": ["z", "j"],
+        "t": ["d", "z", "j"],
+        "c": ["j", "z"],
+        "h": ["b"],
+        "f": ["b", "v"],
+        "p": ["b"]
+    ]
 
     static func addsVoicing(
         from source: Character,
         to target: Character
     ) -> Bool {
-        unvoicedConsonants.contains(source)
-            && voicedConsonants.contains(target)
+        voicedCounterparts[source]?.contains(target) == true
     }
 
     static func differsByVoicing(

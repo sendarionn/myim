@@ -2913,7 +2913,8 @@ final class InputController: IMKInputController {
         let source = FuzzySuggestionSource(
             query: query,
             visibleCandidates: Set(currentCandidates),
-            userDictionary: dictionaryRuntime.userEngine,
+            userDictionary: dictionaryRuntime.userDictionaryEngine,
+            importedDictionary: dictionaryRuntime.importedEngine,
             basicDictionary: dictionaryRuntime.basicEngine,
             mozcDictionary: dictionaryRuntime.systemEngine,
             compoundGenerator: dictionaryRuntime.compoundGenerator,

@@ -2,11 +2,19 @@ public struct CompoundDictionaryCandidate: Equatable, Sendable {
     public let text: String
     public let reading: String
     public let typoDistance: Int
+    /// Romaji length of the shortest segment in the split
+    public let minimumSegmentLength: Int
 
-    public init(text: String, reading: String, typoDistance: Int) {
+    public init(
+        text: String,
+        reading: String,
+        typoDistance: Int,
+        minimumSegmentLength: Int = .max
+    ) {
         self.text = text
         self.reading = reading
         self.typoDistance = typoDistance
+        self.minimumSegmentLength = minimumSegmentLength
     }
 }
 
@@ -135,7 +143,8 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
                 CompoundDictionaryCandidate(
                     text: $0,
                     reading: correctedReading,
-                    typoDistance: path.typoDistance
+                    typoDistance: path.typoDistance,
+                    minimumSegmentLength: path.minimumSegmentLength
                 )
             }
     }

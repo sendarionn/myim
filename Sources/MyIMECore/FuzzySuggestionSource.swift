@@ -2,6 +2,7 @@ public struct FuzzySuggestionSource: Sendable {
     private let query: String
     private let visibleCandidates: Set<String>
     private let userDictionary: LayeredConversionEngine
+    private let importedDictionary: LayeredConversionEngine
     private let basicDictionary: ConversionEngine
     private let mozcDictionary: IndexedDictionaryEngine
     private let compoundGenerator: CompoundDictionaryCandidateGenerator
@@ -11,6 +12,9 @@ public struct FuzzySuggestionSource: Sendable {
         query: String,
         visibleCandidates: Set<String>,
         userDictionary: LayeredConversionEngine,
+        importedDictionary: LayeredConversionEngine = LayeredConversionEngine(
+            engines: []
+        ),
         basicDictionary: ConversionEngine,
         mozcDictionary: IndexedDictionaryEngine,
         compoundGenerator: CompoundDictionaryCandidateGenerator,
@@ -19,6 +23,7 @@ public struct FuzzySuggestionSource: Sendable {
         self.query = query
         self.visibleCandidates = visibleCandidates
         self.userDictionary = userDictionary
+        self.importedDictionary = importedDictionary
         self.basicDictionary = basicDictionary
         self.mozcDictionary = mozcDictionary
         self.compoundGenerator = compoundGenerator
@@ -31,7 +36,7 @@ public struct FuzzySuggestionSource: Sendable {
                 RomajiKeyboardTypoGenerator.dictionaryMatches(
                     for: query
                 ) { reading in
-                    userDictionary.candidates(for: reading)
+                    userCandidates(for: reading)
                         + basicDictionary.candidates(for: reading)
                         + mozcDictionary.candidates(for: reading)
                 }
@@ -47,9 +52,9 @@ public struct FuzzySuggestionSource: Sendable {
                 combined,
                 excluding: visibleCandidates
             ))
-            let compoundMatches = compoundGenerator
+            let compounds = compoundGenerator
                 .matches(for: query) {
-                    userDictionary.candidates(for: $0)
+                    userCandidates(for: $0)
                         + mozcDictionary.candidates(for: $0)
                 } typoMatches: { segment in
                     var seenReadings = Set<String>()
@@ -57,7 +62,7 @@ public struct FuzzySuggestionSource: Sendable {
                         RomajiKeyboardTypoGenerator.dictionaryMatches(
                             for: segment
                         ) { reading in
-                            userDictionary.candidates(for: reading)
+                            userCandidates(for: reading)
                                 + basicDictionary.candidates(for: reading)
                                 + mozcDictionary.candidates(for: reading)
                         }
@@ -71,17 +76,19 @@ public struct FuzzySuggestionSource: Sendable {
                     }
                 }
                 .filter { !visibleCandidates.contains($0.text) }
-                .map {
-                    FuzzyConversionMatch(
-                        reading: $0.reading,
-                        candidates: [$0.text],
-                        distance: $0.typoDistance
-                    )
-                }
             return FuzzySuggestionTierBuilder.build(
                 directTypoMatches: filtered,
-                compoundMatches: compoundMatches
+                compounds: compounds
             )
         }.value
+    }
+
+    /// Imported dictionaries contribute only entries whose kana reading
+    /// matches, so SKK abbrev headwords such as `hs` are not used as words
+    private func userCandidates(for reading: String) -> [String] {
+        userDictionary.candidates(for: reading)
+            + (RomajiConverter().hiragana(from: reading).map {
+                importedDictionary.candidates(for: $0)
+            } ?? [])
     }
 }

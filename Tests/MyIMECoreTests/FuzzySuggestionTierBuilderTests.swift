@@ -8,26 +8,54 @@ struct FuzzySuggestionTierBuilderTests {
             candidates: ["通用候補"],
             distance: 1
         )
-        let exactCompound = FuzzyConversionMatch(
+        let exactCompound = CompoundDictionaryCandidate(
+            text: "通常候補",
             reading: "tuujoukouho",
-            candidates: ["通常候補"],
-            distance: 0
+            typoDistance: 0,
+            minimumSegmentLength: 5
         )
-        let typoCompound = FuzzyConversionMatch(
+        let typoCompound = CompoundDictionaryCandidate(
+            text: "通常広報",
             reading: "tuujoukouho",
-            candidates: ["通常広報"],
-            distance: 1
+            typoDistance: 1,
+            minimumSegmentLength: 5
         )
 
         let tiers = FuzzySuggestionTierBuilder.build(
             directTypoMatches: [directTypo],
-            compoundMatches: [typoCompound, exactCompound]
+            compounds: [typoCompound, exactCompound]
         )
 
-        #expect(tiers.map { $0.map(\.candidates) } == [
-            [["通常候補"]],
-            [["通用候補"]],
-            [["通常広報"]]
+        #expect(tiers.flatMap { $0.flatMap(\.candidates) } == [
+            "通常候補", "通用候補", "通常広報"
+        ])
+    }
+
+    @Test func placesCloseWholeReadingCorrectionsBeforeFragmentSplits() {
+        let close = FuzzyConversionMatch(
+            reading: "hyouka",
+            candidates: ["評価"],
+            distance: 1
+        )
+        let distant = FuzzyConversionMatch(
+            reading: "gyokou",
+            candidates: ["漁港"],
+            distance: 2
+        )
+        let fragmentSplit = CompoundDictionaryCandidate(
+            text: "魚羽化",
+            reading: "gyouka",
+            typoDistance: 0,
+            minimumSegmentLength: 3
+        )
+
+        let tiers = FuzzySuggestionTierBuilder.build(
+            directTypoMatches: [close, distant],
+            compounds: [fragmentSplit]
+        )
+
+        #expect(tiers.flatMap { $0.flatMap(\.candidates) } == [
+            "評価", "魚羽化", "漁港"
         ])
     }
 }
