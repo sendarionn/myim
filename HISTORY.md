@@ -2437,3 +2437,5 @@
 
 - 入力位置の照会、プレースホルダー拒否、変換開始時アンカー、直前の有効座標、候補パネル位置の再試行を`InputLocationCoordinator`へ統合し、アンカー選択と再試行回数の状態遷移を`InputLocationAnchorSession`としてCoreへ分離
 - 入力先のactivate、deactivate猶予、古いControllerの判定、終了時の確定判定を`InputControllerLifecycleSession`としてCoreへ分離し、世代Trackerと猶予Taskを`InputLifecycleCoordinator`へ統合
+- 機能設定のUserDefaultsキー、既定値、旧翻訳言語設定の読み替え、インポート辞書の有効状態を`InputFeatureSettings`としてCoreへ統合
+- 候補フィルター用IDSデータのフォルダ準備、変更検出、読み込み、ダウンロード保存を`CandidateFilterIDSStore`、変更時の再読込を`CandidateFilterDatabaseCache`としてCoreへ分離

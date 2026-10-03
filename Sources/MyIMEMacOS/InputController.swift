@@ -26,30 +26,7 @@ final class InputController: IMKInputController {
         case fuzzy(reading: String)
     }
 
-    private static let nextInputEnabledDefaultsKey = "NextInputPredictionEnabled"
-    private static let englishCompletionEnabledDefaultsKey =
-        "EnglishCompletionEnabled"
-    private static let wikipediaSuggestionsEnabledDefaultsKey =
-        "WikipediaSuggestionsEnabled"
-    private static let googleJapaneseInputEnabledDefaultsKey =
-        "GoogleJapaneseInputEnabled"
-    private static let appleTranslationEnabledDefaultsKey =
-        "AppleTranslationEnabled"
-    private static let translationLanguagesDefaultsKey =
-        "TranslationTargetLanguages"
-    private static let webSearchEnabledDefaultsKey = "WebSearchEnabled"
-    private static let externalInformationPanelEnabledDefaultsKey =
-        "ExternalInformationPanelEnabled"
-    private static let systemDictionaryPreviewEnabledDefaultsKey =
-        "SystemDictionaryPreviewEnabled"
-    private static let systemDictionaryNamesDefaultsKey =
-        "SystemDictionaryNames"
-    private static let fuzzySuggestionsEnabledDefaultsKey =
-        "FuzzySuggestionsEnabled"
-    private static let dateTimeCandidatesEnabledDefaultsKey =
-        "DateTimeCandidatesEnabled"
-    private static let disabledImportedDictionariesDefaultsKey =
-        "DisabledImportedDictionaries"
+    private static let featureSettings = InputFeatureSettings()
     private static let maximumCandidateCount = 4
     private static let initialFuzzySuggestionCount = 4
     private static let fuzzySuggestionDisplayDelay = Duration.milliseconds(120)
@@ -78,9 +55,13 @@ final class InputController: IMKInputController {
     private static let basicDictionaryUpdateCoordinator =
         BasicDictionaryUpdateCoordinator()
     private static let javaScriptExtensionClient = JavaScriptExtensionClient()
-    private static var candidateFilterDatabase = loadCandidateFilterDatabase()
-    private static var candidateFilterIDSSignature =
-        calculateCandidateFilterIDSSignature()
+    private static let candidateFilterIDSStore =
+        CandidateFilterIDSStore.applicationSupport()
+    private static var candidateFilterDatabaseCache =
+        CandidateFilterDatabaseCache(
+            bundledText: loadBundledText(resource: "kanji-filter-data") ?? "",
+            store: candidateFilterIDSStore
+        )
     private static let candidateFilterChoiceGenerator =
         CandidateFilterChoiceGenerator(
             aliasDictionaryText: loadBundledText(
@@ -249,7 +230,7 @@ final class InputController: IMKInputController {
         let cachedUserEntries = Self.loadUserEntries()
         let importedSnapshot = Self.sharedImportedDictionarySnapshot
         let importedDictionaries = importedSnapshot.dictionaries
-        let disabledImportedDictionaries = Self.disabledImportedDictionaryFilenames
+        let disabledImportedDictionaries = Self.featureSettings.disabledImportedDictionaryFilenames
         let importedConversionEngines = importedSnapshot.conversionEngines
         let importedContinuationGenerators =
             importedSnapshot.continuationGenerators
@@ -986,22 +967,22 @@ final class InputController: IMKInputController {
 
     private var settingsFeatureStates: SettingsWindowBuilder.FeatureStates {
         SettingsWindowBuilder.FeatureStates(
-            englishCompletion: isEnglishCompletionEnabled,
-            wikipediaSuggestions: isWikipediaSuggestionsEnabled,
-            googleJapaneseInput: isGoogleJapaneseInputEnabled,
-            appleTranslation: isAppleTranslationEnabled,
+            englishCompletion: Self.featureSettings.isEnglishCompletionEnabled,
+            wikipediaSuggestions: Self.featureSettings.isWikipediaSuggestionsEnabled,
+            googleJapaneseInput: Self.featureSettings.isGoogleJapaneseInputEnabled,
+            appleTranslation: Self.featureSettings.isAppleTranslationEnabled,
             translationLanguageIdentifiers:
-                Set(translationTargetLanguages.map(\.identifier)),
-            nextInputPrediction: isNextInputPredictionEnabled,
-            fuzzySuggestions: isFuzzySuggestionsEnabled,
-            dateTimeCandidates: isDateTimeCandidatesEnabled,
-            externalInformationPanel: isExternalInformationPanelEnabled,
-            systemDictionaryPreview: isSystemDictionaryPreviewEnabled,
-            webSearch: isWebSearchEnabled,
+                Set(Self.featureSettings.translationTargetLanguages.map(\.identifier)),
+            nextInputPrediction: Self.featureSettings.isNextInputPredictionEnabled,
+            fuzzySuggestions: Self.featureSettings.isFuzzySuggestionsEnabled,
+            dateTimeCandidates: Self.featureSettings.isDateTimeCandidatesEnabled,
+            externalInformationPanel: Self.featureSettings.isExternalInformationPanelEnabled,
+            systemDictionaryPreview: Self.featureSettings.isSystemDictionaryPreviewEnabled,
+            webSearch: Self.featureSettings.isWebSearchEnabled,
             importedDictionaries: importedDictionaries.map {
                     SettingsWindowBuilder.ImportedDictionaryState(
                         filename: $0.fileURL.lastPathComponent,
-                        isEnabled: !Self.disabledImportedDictionaryFilenames
+                        isEnabled: !Self.featureSettings.disabledImportedDictionaryFilenames
                             .contains($0.fileURL.lastPathComponent)
                     )
                 }
@@ -1065,7 +1046,7 @@ final class InputController: IMKInputController {
                     readingCount += summary.readingCount
                     candidateCount += summary.candidateCount
                     skippedCount += summary.skippedEntryCount
-                    Self.setImportedDictionary(
+                    Self.featureSettings.setImportedDictionary(
                         summary.fileURL.lastPathComponent,
                         enabled: true
                     )
@@ -1097,7 +1078,7 @@ final class InputController: IMKInputController {
     @objc
     private func toggleImportedDictionary(_ sender: NSButton) {
         guard let filename = sender.identifier?.rawValue else { return }
-        Self.setImportedDictionary(filename, enabled: sender.state == .on)
+        Self.featureSettings.setImportedDictionary(filename, enabled: sender.state == .on)
         rebuildConversionEngine()
     }
 
@@ -1128,7 +1109,7 @@ final class InputController: IMKInputController {
 
     @objc
     private func openCandidateFilterIDSDirectory(_ sender: Any?) {
-        guard let directory = Self.candidateFilterIDSDirectory() else {
+        guard let store = Self.candidateFilterIDSStore else {
             showJavaScriptExtensionDirectoryError(
                 title: "IDSデータフォルダを開けません",
                 message: "Application Supportフォルダが見つかりません"
@@ -1136,19 +1117,8 @@ final class InputController: IMKInputController {
             return
         }
         do {
-            try FileManager.default.createDirectory(
-                at: directory,
-                withIntermediateDirectories: true
-            )
-            let guideURL = directory.appendingPathComponent("README.txt")
-            if !FileManager.default.fileExists(atPath: guideURL.path) {
-                try Self.candidateFilterIDSGuide.write(
-                    to: guideURL,
-                    atomically: true,
-                    encoding: .utf8
-                )
-            }
-            JavaScriptExtensionDirectoryPresenter.open(directory)
+            try store.prepareDirectory()
+            JavaScriptExtensionDirectoryPresenter.open(store.directoryURL)
         } catch {
             showJavaScriptExtensionDirectoryError(
                 title: "IDSデータフォルダを開けません",
@@ -1185,33 +1155,15 @@ final class InputController: IMKInputController {
             }
             do {
                 let data = try await OptionalIDSDataClient().fetch()
-                guard let directory = Self.candidateFilterIDSDirectory() else {
+                guard let store = Self.candidateFilterIDSStore else {
                     throw OptionalIDSDataError.invalidData
                 }
-                try FileManager.default.createDirectory(
-                    at: directory,
-                    withIntermediateDirectories: true
-                )
-                try data.write(
-                    to: directory.appendingPathComponent("cjkvi-ids.txt"),
-                    options: .atomic
-                )
-                let sourceInformation = """
-                Source: https://github.com/cjkvi/cjkvi-ids/blob/master/ids.txt
-                Downloaded: \(ISO8601DateFormatter().string(from: Date()))
-                License: CHISE-derived data under the upstream terms
-                """
-                try sourceInformation.write(
-                    to: directory.appendingPathComponent("cjkvi-ids-source.md"),
-                    atomically: true,
-                    encoding: .utf8
-                )
+                try store.saveCJKVIIDS(data, downloadedAt: Date())
+                let cache = Self.candidateFilterDatabaseCache
                 let database = await Task.detached(priority: .utility) {
-                    Self.loadCandidateFilterDatabase()
+                    cache.loadDatabase()
                 }.value
-                Self.candidateFilterDatabase = database
-                Self.candidateFilterIDSSignature =
-                    Self.calculateCandidateFilterIDSSignature()
+                Self.candidateFilterDatabaseCache.replace(with: database)
                 self?.showCandidateFilterIDSDownloadResult(
                     title: "ダウンロード完了",
                     message: "次の候補フィルターから構成要素検索へ反映されます"
@@ -1562,12 +1514,8 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleNextInputPrediction(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: isNextInputPredictionEnabled)
-        UserDefaults.standard.set(
-            enabled,
-            forKey: Self.nextInputEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isNextInputPredictionEnabled)
+        Self.featureSettings.isNextInputPredictionEnabled = enabled
         if !enabled {
             dismissNextInputSuggestions(clearMarkedTextIn: client())
             nextInputSuggestionCoordinator.breakSequence()
@@ -1576,12 +1524,8 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleFuzzySuggestions(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: isFuzzySuggestionsEnabled)
-        UserDefaults.standard.set(
-            enabled,
-            forKey: Self.fuzzySuggestionsEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isFuzzySuggestionsEnabled)
+        Self.featureSettings.isFuzzySuggestionsEnabled = enabled
         cancelFuzzySuggestionSearch()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             fuzzySuggestionWindow.hide()
@@ -1592,12 +1536,8 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleDateTimeCandidates(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: isDateTimeCandidatesEnabled)
-        UserDefaults.standard.set(
-            enabled,
-            forKey: Self.dateTimeCandidatesEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isDateTimeCandidatesEnabled)
+        Self.featureSettings.isDateTimeCandidatesEnabled = enabled
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
         }
@@ -1606,20 +1546,19 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleEnglishCompletion(_ sender: Any?) {
-        toggleCandidateSource(
-            defaultsKey: Self.englishCompletionEnabledDefaultsKey,
-            enabled: checkboxValue(sender, current: isEnglishCompletionEnabled)
+        let enabled = checkboxValue(
+            sender,
+            current: Self.featureSettings.isEnglishCompletionEnabled
         )
+        toggleCandidateSource {
+            Self.featureSettings.isEnglishCompletionEnabled = enabled
+        }
     }
 
     @objc
     private func toggleWikipediaSuggestions(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: isWikipediaSuggestionsEnabled)
-        UserDefaults.standard.set(
-            enabled,
-            forKey: Self.wikipediaSuggestionsEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isWikipediaSuggestionsEnabled)
+        Self.featureSettings.isWikipediaSuggestionsEnabled = enabled
         resetOfficialCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
@@ -1631,12 +1570,8 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleGoogleJapaneseInput(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: isGoogleJapaneseInputEnabled)
-        UserDefaults.standard.set(
-            enabled,
-            forKey: Self.googleJapaneseInputEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isGoogleJapaneseInputEnabled)
+        Self.featureSettings.isGoogleJapaneseInputEnabled = enabled
         resetOfficialCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
@@ -1644,12 +1579,8 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleAppleTranslation(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: isAppleTranslationEnabled)
-        UserDefaults.standard.set(
-            enabled,
-            forKey: Self.appleTranslationEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isAppleTranslationEnabled)
+        Self.featureSettings.isAppleTranslationEnabled = enabled
         resetOfficialCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
@@ -1663,7 +1594,7 @@ final class InputController: IMKInputController {
                 != nil else {
             return
         }
-        var identifiers = Set(translationTargetLanguages.map(\.identifier))
+        var identifiers = Set(Self.featureSettings.translationTargetLanguages.map(\.identifier))
         if item.state == .on {
             identifiers.remove(identifier)
             item.state = .off
@@ -1671,11 +1602,7 @@ final class InputController: IMKInputController {
             identifiers.insert(identifier)
             item.state = .on
         }
-        UserDefaults.standard.set(
-            Array(identifiers).sorted(),
-            forKey: Self.translationLanguagesDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        Self.featureSettings.translationLanguageIdentifiers = identifiers
         item.menu?.items.first?.title = "翻訳先言語（\(identifiers.count)）"
         cancelCandidateTranslation()
         if let inputClient = client(), !inputBuffer.isEmpty {
@@ -1685,11 +1612,7 @@ final class InputController: IMKInputController {
 
     @objc
     private func toggleWebSearch(_ sender: Any?) {
-        UserDefaults.standard.set(
-            checkboxValue(sender, current: isWebSearchEnabled),
-            forKey: Self.webSearchEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        Self.featureSettings.isWebSearchEnabled = checkboxValue(sender, current: Self.featureSettings.isWebSearchEnabled)
     }
 
     private func resetOfficialCandidates() {
@@ -1698,11 +1621,9 @@ final class InputController: IMKInputController {
     }
 
     private func toggleCandidateSource(
-        defaultsKey: String,
-        enabled: Bool
+        update: () -> Void
     ) {
-        UserDefaults.standard.set(enabled, forKey: defaultsKey)
-        UserDefaults.standard.synchronize()
+        update()
         rebuildFuzzyConversionEngine()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
@@ -1717,13 +1638,9 @@ final class InputController: IMKInputController {
     private func toggleExternalInformationPanel(_ sender: Any?) {
         let enabled = checkboxValue(
             sender,
-            current: isExternalInformationPanelEnabled
+            current: Self.featureSettings.isExternalInformationPanelEnabled
         )
-        UserDefaults.standard.set(
-            enabled,
-            forKey: Self.externalInformationPanelEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        Self.featureSettings.isExternalInformationPanelEnabled = enabled
         refreshExperimentalPreview()
     }
 
@@ -1731,13 +1648,9 @@ final class InputController: IMKInputController {
     private func toggleSystemDictionaryPreview(_ sender: Any?) {
         let enabled = checkboxValue(
             sender,
-            current: isSystemDictionaryPreviewEnabled
+            current: Self.featureSettings.isSystemDictionaryPreviewEnabled
         )
-        UserDefaults.standard.set(
-            enabled,
-            forKey: Self.systemDictionaryPreviewEnabledDefaultsKey
-        )
-        UserDefaults.standard.synchronize()
+        Self.featureSettings.isSystemDictionaryPreviewEnabled = enabled
         refreshExperimentalPreview()
     }
 
@@ -1764,10 +1677,7 @@ final class InputController: IMKInputController {
             selectedNames: systemDictionaryNames,
             descriptions: definitionProvider.contentDescriptions()
         ) else { return }
-        UserDefaults.standard.set(
-            names,
-            forKey: Self.systemDictionaryNamesDefaultsKey
-        )
+        Self.featureSettings.setSystemDictionaryNames(names)
         suggestionSearchCoordinator.cancel(.dictionaryDefinition)
         definitionProvider.clearCache()
         refreshExperimentalPreview()
@@ -2729,11 +2639,7 @@ final class InputController: IMKInputController {
             return false
         }
         candidateSession.beginFiltering()
-        let currentIDSSignature = Self.calculateCandidateFilterIDSSignature()
-        if currentIDSSignature != Self.candidateFilterIDSSignature {
-            Self.candidateFilterDatabase = Self.loadCandidateFilterDatabase()
-            Self.candidateFilterIDSSignature = currentIDSSignature
-        }
+        Self.candidateFilterDatabaseCache.refreshIfChanged()
         cancelPrimarySuggestionSearches()
         fuzzySuggestionWindow.hide()
         previewWindow.hide()
@@ -2908,7 +2814,7 @@ final class InputController: IMKInputController {
         let filteredTexts = candidateFilterCoordinator.filteredCandidates(
             unfilteredCandidates.map(\.storageText),
             using: CandidateFilter(
-                kanjiDatabase: Self.candidateFilterDatabase
+                kanjiDatabase: Self.candidateFilterDatabaseCache.database
             ),
             semanticScorer: { query, candidate in
                 CandidateSemanticScorer.score(
@@ -3027,14 +2933,14 @@ final class InputController: IMKInputController {
             updateOfficialCandidatesIfNeeded(for: suggestionInput)
         }
 
-        let englishCandidates = isEnglishCompletionEnabled
+        let englishCandidates = Self.featureSettings.isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
         let remoteCandidates = suggestionSearchCoordinator.query(for: .official)
             == conversionReading
             ? officialCandidates
             : []
-        let contextualCandidates = isNextInputPredictionEnabled
+        let contextualCandidates = Self.featureSettings.isNextInputPredictionEnabled
             && Self.diagnosticConfiguration.enables(.nextInput)
             ? nextInputSuggestionCoordinator.candidatesAfterLastInput(
                 limit: NextInputPredictionModel.maximumFollowersPerContext
@@ -3097,7 +3003,7 @@ final class InputController: IMKInputController {
 
     private func updateFuzzySuggestionsIfNeeded() {
         guard Self.diagnosticConfiguration.enables(.fuzzySuggestion),
-              isFuzzySuggestionsEnabled,
+              Self.featureSettings.isFuzzySuggestionsEnabled,
               conversionReading.count >= 2 else {
             suggestionSearchCoordinator.cancel(.fuzzy)
             fuzzySuggestionWindow.hide()
@@ -3135,7 +3041,7 @@ final class InputController: IMKInputController {
             validate: { [weak self] in
                 guard let self else { return false }
                 return self.conversionReading == query
-                    && self.isFuzzySuggestionsEnabled
+                    && Self.featureSettings.isFuzzySuggestionsEnabled
                     && self.acceptsAsyncResult(
                         asyncSnapshot,
                         source: "fuzzy",
@@ -3476,8 +3382,8 @@ final class InputController: IMKInputController {
 
     private func updateOfficialCandidatesIfNeeded(for input: String) {
         guard !Self.diagnosticConfiguration.minimalMode,
-              isWikipediaSuggestionsEnabled
-                || isGoogleJapaneseInputEnabled,
+              Self.featureSettings.isWikipediaSuggestionsEnabled
+                || Self.featureSettings.isGoogleJapaneseInputEnabled,
               input.count >= 2,
               suggestionSearchCoordinator.query(for: .official) != input else {
             return
@@ -3488,10 +3394,10 @@ final class InputController: IMKInputController {
             return
         }
         var enabledSources: [any CandidateSource] = []
-        if isWikipediaSuggestionsEnabled {
+        if Self.featureSettings.isWikipediaSuggestionsEnabled {
             enabledSources.append(WikipediaCandidateSource())
         }
-        if isGoogleJapaneseInputEnabled {
+        if Self.featureSettings.isGoogleJapaneseInputEnabled {
             enabledSources.append(GoogleJapaneseInputCandidateSource())
         }
         let sources = enabledSources
@@ -3512,8 +3418,8 @@ final class InputController: IMKInputController {
             },
             validate: { [weak self] in
                 guard let self else { return false }
-                return (self.isWikipediaSuggestionsEnabled
-                    || self.isGoogleJapaneseInputEnabled)
+                return (Self.featureSettings.isWikipediaSuggestionsEnabled
+                    || Self.featureSettings.isGoogleJapaneseInputEnabled)
                     && self.conversionReading == input
                     && self.acceptsAsyncResult(
                         asyncSnapshot,
@@ -3555,7 +3461,7 @@ final class InputController: IMKInputController {
             return
         }
         javaScriptExtensionCandidates = []
-        let dateTimeCandidatesEnabled = isDateTimeCandidatesEnabled
+        let dateTimeCandidatesEnabled = Self.featureSettings.isDateTimeCandidatesEnabled
         suggestionSearchCoordinator.start(
             .javaScriptExtensions,
             query: input,
@@ -3645,9 +3551,9 @@ final class InputController: IMKInputController {
             suggestionSearchCoordinator.cancel(.fuzzy)
         }
         guard Self.diagnosticConfiguration.enables(.translation),
-              isAppleTranslationEnabled,
+              Self.featureSettings.isAppleTranslationEnabled,
               source.containsJapaneseText,
-              !translationTargetLanguages.isEmpty else {
+              !Self.featureSettings.translationTargetLanguages.isEmpty else {
             return
         }
         reserveTranslationCandidateSpace(for: destination)
@@ -3656,7 +3562,7 @@ final class InputController: IMKInputController {
         }
         trace("translation.start", sender: sender, detail: "source=\(source)")
         let translationSource = AppleTranslationCandidateSource(
-            targetIdentifiers: translationTargetLanguages.map(\.identifier)
+            targetIdentifiers: Self.featureSettings.translationTargetLanguages.map(\.identifier)
         )
         suggestionSearchCoordinator.start(
             .translation,
@@ -3905,7 +3811,7 @@ final class InputController: IMKInputController {
     }
 
     private func openSelectedWebSearch(client sender: Any) -> Bool {
-        guard isWebSearchEnabled,
+        guard Self.featureSettings.isWebSearchEnabled,
               let selectedCandidateIndex,
               currentCandidates.indices.contains(selectedCandidateIndex) else {
             return false
@@ -4661,7 +4567,7 @@ final class InputController: IMKInputController {
         let learnedCandidates = nextInputSuggestionCoordinator
             .learnedCandidates(
                 after: value,
-                predictionEnabled: isNextInputPredictionEnabled,
+                predictionEnabled: Self.featureSettings.isNextInputPredictionEnabled,
                 learningEnabled: Self.diagnosticConfiguration.enables(
                     .learning
                 ),
@@ -5076,11 +4982,11 @@ final class InputController: IMKInputController {
         beside anchorFrame: NSRect,
         includeDefinitions: Bool
     ) {
-        let externalLookupEnabled = isExternalInformationPanelEnabled
+        let externalLookupEnabled = Self.featureSettings.isExternalInformationPanelEnabled
             && Self.diagnosticConfiguration.enables(
                 .externalInformationPanel
             )
-        let dictionaryLookupEnabled = isSystemDictionaryPreviewEnabled
+        let dictionaryLookupEnabled = Self.featureSettings.isSystemDictionaryPreviewEnabled
             && Self.diagnosticConfiguration.enables(.dictionaryPanel)
         guard externalLookupEnabled || dictionaryLookupEnabled
         else {
@@ -5204,7 +5110,7 @@ final class InputController: IMKInputController {
     }
 
     private var enabledImportedDictionaryNames: [String] {
-        let disabled = Self.disabledImportedDictionaryFilenames
+        let disabled = Self.featureSettings.disabledImportedDictionaryFilenames
         return importedDictionaries.map(\.fileURL.lastPathComponent).filter {
             !disabled.contains($0)
         }
@@ -5343,29 +5249,6 @@ final class InputController: IMKInputController {
         }
     }
 
-    private var isNextInputPredictionEnabled: Bool {
-        if UserDefaults.standard.object(
-            forKey: Self.nextInputEnabledDefaultsKey
-        ) == nil {
-            return true
-        }
-        return UserDefaults.standard.bool(
-            forKey: Self.nextInputEnabledDefaultsKey
-        )
-    }
-
-    private var isExternalInformationPanelEnabled: Bool {
-        let defaults = UserDefaults.standard
-        if defaults.object(
-            forKey: Self.externalInformationPanelEnabledDefaultsKey
-        ) != nil {
-            return defaults.bool(
-                forKey: Self.externalInformationPanelEnabledDefaultsKey
-            )
-        }
-        return true
-    }
-
     private var externalInformationURLTemplate: String {
         JavaScriptExtensionConfiguration.externalInformationURL(
             project: ""
@@ -5376,102 +5259,16 @@ final class InputController: IMKInputController {
         "https://ja.wikipedia.org/w/index.php?search=%s"
     }
 
-    private var isEnglishCompletionEnabled: Bool {
-        experimentalFeatureIsEnabled(
-            defaultsKey: Self.englishCompletionEnabledDefaultsKey
-        )
-    }
-
-    private var isWikipediaSuggestionsEnabled: Bool {
-        if UserDefaults.standard.object(
-            forKey: Self.wikipediaSuggestionsEnabledDefaultsKey
-        ) == nil {
-            return false
-        }
-        return UserDefaults.standard.bool(
-            forKey: Self.wikipediaSuggestionsEnabledDefaultsKey
-        )
-    }
-
-    private var isGoogleJapaneseInputEnabled: Bool {
-        UserDefaults.standard.bool(
-            forKey: Self.googleJapaneseInputEnabledDefaultsKey
-        )
-    }
-
-    private var isAppleTranslationEnabled: Bool {
-        if UserDefaults.standard.object(forKey: Self.appleTranslationEnabledDefaultsKey) == nil {
-            return true
-        }
-        return UserDefaults.standard.bool(forKey: Self.appleTranslationEnabledDefaultsKey)
-    }
-
-    private var translationTargetLanguages: [TranslationTargetLanguage] {
-        let defaults = UserDefaults.standard
-        let identifiers: Set<String>
-        if let stored = defaults.stringArray(
-            forKey: Self.translationLanguagesDefaultsKey
-        ) {
-            identifiers = Set(stored)
-        } else if let legacy = defaults.string(
-            forKey: "DefaultTranslationLanguage"
-        ) {
-            identifiers = [legacy]
-        } else {
-            identifiers = ["en"]
-        }
-        return TranslationTargetLanguage.languages(
-            forIdentifiers: identifiers
-        )
-    }
-
-    private var isWebSearchEnabled: Bool {
-        if UserDefaults.standard.object(forKey: Self.webSearchEnabledDefaultsKey) == nil {
-            return false
-        }
-        return UserDefaults.standard.bool(forKey: Self.webSearchEnabledDefaultsKey)
-    }
-
     private var webSearchTemplate: String {
         JavaScriptExtensionConfiguration.webSearchURL()
     }
 
-    private var isSystemDictionaryPreviewEnabled: Bool {
-        experimentalFeatureIsEnabled(
-            defaultsKey: Self.systemDictionaryPreviewEnabledDefaultsKey
-        )
-    }
-
     private var systemDictionaryNames: [String] {
-        let defaults = UserDefaults.standard
-        if defaults.object(forKey: Self.systemDictionaryNamesDefaultsKey) != nil {
-            return defaults.stringArray(
-                forKey: Self.systemDictionaryNamesDefaultsKey
-            ) ?? []
+        Self.featureSettings.systemDictionaryNames {
+            let available = Set(definitionProvider.availableDictionaryNames())
+            return SystemDictionaryDefinitionProvider.defaultDictionaryNames
+                .filter { available.contains($0) }
         }
-        let available = Set(definitionProvider.availableDictionaryNames())
-        return SystemDictionaryDefinitionProvider.defaultDictionaryNames.filter {
-            available.contains($0)
-        }
-    }
-
-    private var isFuzzySuggestionsEnabled: Bool {
-        UserDefaults.standard.bool(
-            forKey: Self.fuzzySuggestionsEnabledDefaultsKey
-        )
-    }
-
-    private var isDateTimeCandidatesEnabled: Bool {
-        UserDefaults.standard.bool(
-            forKey: Self.dateTimeCandidatesEnabledDefaultsKey
-        )
-    }
-
-    private func experimentalFeatureIsEnabled(defaultsKey: String) -> Bool {
-        if UserDefaults.standard.object(forKey: defaultsKey) == nil {
-            return true
-        }
-        return UserDefaults.standard.bool(forKey: defaultsKey)
     }
 
     private func candidateValueForCommit(_ candidate: String) -> String {
@@ -5557,79 +5354,6 @@ final class InputController: IMKInputController {
         return try? String(contentsOf: url, encoding: .utf8)
     }
 
-    private static func loadCandidateFilterDatabase() -> KanjiFilterDatabase {
-        let supplementalTexts: [String]
-        if let directory = candidateFilterIDSDirectory(),
-           let files = try? FileManager.default.contentsOfDirectory(
-               at: directory,
-               includingPropertiesForKeys: nil,
-               options: [.skipsHiddenFiles]
-           ) {
-            let supportedExtensions = Set(["txt", "tsv", "ids"])
-            supplementalTexts = files
-                .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
-                .sorted { $0.lastPathComponent < $1.lastPathComponent }
-                .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
-        } else {
-            supplementalTexts = []
-        }
-        return KanjiFilterDatabase(
-            text: loadBundledText(resource: "kanji-filter-data") ?? "",
-            supplementalIDSTexts: supplementalTexts
-        )
-    }
-
-    private static func candidateFilterIDSDirectory() -> URL? {
-        FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first?
-            .appendingPathComponent("myim", isDirectory: true)
-            .appendingPathComponent("CandidateFilter", isDirectory: true)
-            .appendingPathComponent("IDS", isDirectory: true)
-    }
-
-    private static func calculateCandidateFilterIDSSignature() -> [String] {
-        guard let directory = candidateFilterIDSDirectory(),
-              let files = try? FileManager.default.contentsOfDirectory(
-                  at: directory,
-                  includingPropertiesForKeys: [
-                      .contentModificationDateKey,
-                      .fileSizeKey
-                  ],
-                  options: [.skipsHiddenFiles]
-              ) else {
-            return []
-        }
-        let supportedExtensions = Set(["txt", "tsv", "ids"])
-        return files
-            .filter { supportedExtensions.contains($0.pathExtension.lowercased()) }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-            .map { file in
-                let values = try? file.resourceValues(forKeys: [
-                    .contentModificationDateKey,
-                    .fileSizeKey
-                ])
-                return [
-                    file.lastPathComponent,
-                    String(values?.fileSize ?? 0),
-                    String(values?.contentModificationDate?.timeIntervalSince1970 ?? 0)
-                ].joined(separator: ":")
-            }
-    }
-
-    private static let candidateFilterIDSGuide = """
-    myim 候補フィルター用IDS構成要素データ
-
-    対応拡張子: .txt .tsv .ids
-    対応形式: U+XXXX<Tab>対象文字<Tab>IDS記述
-    例: U+4F11<Tab>休<Tab>⿰亻木
-
-    ファイルはアプリへコピーされず、このフォルダから直接読み込まれます
-    追加や変更は次にOption+Fで候補フィルターを開始したときに反映されます
-    データの取得と利用では配布元のライセンスに従ってください
-    """
-
     private static func loadMozcDictionaryEngine() -> IndexedDictionaryEngine {
         guard
             let dictionaryURL = inputMethodResourceURL(
@@ -5683,28 +5407,6 @@ final class InputController: IMKInputController {
         let snapshot = loadImportedDictionaryRuntimeSnapshot()
         sharedImportedDictionarySnapshot = snapshot
         return snapshot
-    }
-
-    private static var disabledImportedDictionaryFilenames: Set<String> {
-        Set(UserDefaults.standard.stringArray(
-            forKey: disabledImportedDictionariesDefaultsKey
-        ) ?? [])
-    }
-
-    private static func setImportedDictionary(
-        _ filename: String,
-        enabled: Bool
-    ) {
-        var disabled = disabledImportedDictionaryFilenames
-        if enabled {
-            disabled.remove(filename)
-        } else {
-            disabled.insert(filename)
-        }
-        UserDefaults.standard.set(
-            disabled.sorted(),
-            forKey: disabledImportedDictionariesDefaultsKey
-        )
     }
 
     private static func bundledBasicDictionaryRevision() -> String? {
