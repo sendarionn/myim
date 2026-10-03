@@ -1,23 +1,5 @@
 @preconcurrency import AppKit
-
-struct FuzzySuggestion: Equatable {
-    let candidate: String
-    let reading: String
-    let distance: Int
-    let isLearnable: Bool
-
-    init(
-        candidate: String,
-        reading: String,
-        distance: Int,
-        isLearnable: Bool = true
-    ) {
-        self.candidate = candidate
-        self.reading = reading
-        self.distance = distance
-        self.isLearnable = isLearnable
-    }
-}
+import MyIMECore
 
 final class FuzzySuggestionWindowController {
     private static let spacing: CGFloat = 6

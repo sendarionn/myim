@@ -2431,3 +2431,4 @@
 - 辞書登録中の読み、確定済み文字列、貼り付け保留、表示名、登録出力の状態遷移を`DictionaryRegistrationSession`へ統合
 - 辞書登録処理に残っていたTab起動時代の関数名を現在の役割に合わせて整理
 - フィルター入力候補の生成、直接確定、条件適用と解除、ページング、候補絞り込みを`CandidateFilterCoordinator`へ統合
+- もしかして候補のモデル、候補順、重複除去、選択位置、ページング、通常候補との行位置対応を`FuzzySuggestionCoordinator`へ統合

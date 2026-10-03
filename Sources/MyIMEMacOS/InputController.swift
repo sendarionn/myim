@@ -101,7 +101,7 @@ final class InputController: IMKInputController {
     private var candidateSession = CandidateSession()
     private var candidateFilterCoordinator = CandidateFilterCoordinator()
     private var calendarSelectionSession = CalendarFormatSelectionSession()
-    private var fuzzySelection = CandidateSelectionState<FuzzySuggestion>()
+    private var fuzzySuggestionCoordinator = FuzzySuggestionCoordinator()
     private let userDictionaryStore: UserDictionaryStore
     private var importedDictionaries: [ImportedDictionary]
     private var importedConversionEngines: [String: ConversionEngine]
@@ -567,7 +567,7 @@ final class InputController: IMKInputController {
         }
 
         if isFuzzySuggestionEntryShortcut(event),
-           !fuzzySuggestions.isEmpty {
+           !fuzzySuggestionCoordinator.isEmpty {
             return selectFuzzySuggestion(index: 0, client: sender)
         }
 
@@ -2557,14 +2557,15 @@ final class InputController: IMKInputController {
     }
 
     private func enterFuzzySuggestionsOrConsumeArrow(client sender: Any) -> Bool {
-        guard !fuzzySuggestions.isEmpty else {
+        guard let index = fuzzySuggestionCoordinator
+            .indexAlignedWithNormalCandidate(
+                normalSelectedIndex: selectedCandidateIndex,
+                maximumCount: Self.maximumCandidateCount
+            ) else {
             return true
         }
-        let normalRow = selectedCandidateIndex.map {
-            $0 % Self.maximumCandidateCount
-        } ?? 0
         return selectFuzzySuggestion(
-            index: min(normalRow, fuzzySuggestions.count - 1),
+            index: index,
             client: sender
         )
     }
@@ -3167,10 +3168,7 @@ final class InputController: IMKInputController {
         }
 
         showCandidateWindow(client: sender)
-        let auxiliaryAnchorFrame = candidateAndInputFrame(for: sender)
-        updateFuzzySuggestionsIfNeeded(
-            near: auxiliaryAnchorFrame
-        )
+        updateFuzzySuggestionsIfNeeded()
         showInputPreview(client: sender)
     }
 
@@ -3196,15 +3194,13 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func updateFuzzySuggestionsIfNeeded(
-        near anchorFrame: NSRect
-    ) {
+    private func updateFuzzySuggestionsIfNeeded() {
         guard Self.diagnosticConfiguration.enables(.fuzzySuggestion),
               isFuzzySuggestionsEnabled,
               conversionReading.count >= 2 else {
             suggestionSearchCoordinator.cancel(.fuzzy)
             fuzzySuggestionWindow.hide()
-            fuzzySuggestions = []
+            fuzzySuggestionCoordinator.reset()
             selectedFuzzySuggestionIndex = nil
             return
         }
@@ -3252,7 +3248,7 @@ final class InputController: IMKInputController {
                     sender: self.client(),
                     detail: "source=fuzzy"
                 )
-                self.applySpellingSuggestions(matchTiers, near: anchorFrame)
+                self.applySpellingSuggestions(matchTiers)
             },
             onCancel: { [weak self] in
                 self?.trace(
@@ -3268,42 +3264,22 @@ final class InputController: IMKInputController {
     }
 
     private func applySpellingSuggestions(
-        _ matchTiers: [[FuzzyConversionMatch]],
-        near anchorFrame: NSRect
+        _ matchTiers: [[FuzzyConversionMatch]]
     ) {
-        let suggestionTiers = matchTiers.map { matches in
-            matches.compactMap { match in
-                match.candidates.first.map {
-                    FuzzySuggestion(
-                        candidate: $0,
-                        reading: match.reading,
-                        distance: match.distance
-                    )
-                }
-            }
-        }
-        let orderedTierIndices = TieredCandidateOrderer.orderedIndices(
-            for: suggestionTiers.map { $0.map(\.candidate) },
-            ranks: candidateSelectionRanks(for: conversionReading)
+        let changed = fuzzySuggestionCoordinator.replace(
+            matchTiers: matchTiers,
+            recencyRanks: candidateSelectionRanks(for: conversionReading),
+            preserveSelectionWhenUnchanged: fuzzySuggestionWindow.isVisible
         )
-        var seenCandidates = Set<String>()
-        let baseSuggestions = zip(suggestionTiers, orderedTierIndices).flatMap {
-            suggestions, indices in
-            indices.compactMap { index in
-                let suggestion = suggestions[index]
-                return seenCandidates.insert(suggestion.candidate).inserted
-                    ? suggestion
-                    : nil
-            }
-        }
-        let updatedSuggestions = baseSuggestions
-        if updatedSuggestions == fuzzySuggestions,
-           fuzzySuggestionWindow.isVisible {
+        if !changed, fuzzySuggestionWindow.isVisible {
             return
         }
-        fuzzySuggestions = updatedSuggestions
-        selectedFuzzySuggestionIndex = nil
-        guard !fuzzySuggestions.isEmpty else {
+        trace(
+            "candidateSelection.changed",
+            sender: client(),
+            detail: "fuzzy=none"
+        )
+        guard !fuzzySuggestionCoordinator.isEmpty else {
             fuzzySuggestionWindow.hide()
             return
         }
@@ -3319,15 +3295,15 @@ final class InputController: IMKInputController {
 
     private func showInitialFuzzySuggestionsIfCandidateVisible() {
         guard candidateWindow.visibleFrame != nil,
-              !fuzzySuggestions.isEmpty else {
+              let page = fuzzySuggestionCoordinator.initialPage(
+                  maximumCount: Self.initialFuzzySuggestionCount
+              ) else {
             fuzzySuggestionWindow.hide()
             return
         }
         fuzzySuggestionWindow.show(
-            suggestions: Array(fuzzySuggestions.prefix(
-                Self.initialFuzzySuggestionCount
-            )),
-            selectedIndex: nil,
+            suggestions: page.suggestions,
+            selectedIndex: page.selectedIndex,
             near: candidateWindow.frame,
             avoidingFrames: [candidateWindow.frame]
                 + candidateWindow.auxiliaryFrames,
@@ -3341,27 +3317,30 @@ final class InputController: IMKInputController {
         client sender: Any
     ) -> Bool? {
         guard interactionState == .selectingFuzzySuggestion,
-              let selectedFuzzySuggestionIndex,
-              fuzzySuggestions.indices.contains(selectedFuzzySuggestionIndex) else {
+              let selectedSuggestion = fuzzySuggestionCoordinator
+                .selectedSuggestion else {
             return nil
         }
         switch event.keyCode {
         case 36, 76:
-            let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
-            return acceptFuzzySuggestion(suggestion, suffix: "", client: sender)
+            return acceptFuzzySuggestion(
+                selectedSuggestion,
+                suffix: "",
+                client: sender
+            )
         case 48, 125:
-            let next = (selectedFuzzySuggestionIndex + 1)
-                % fuzzySuggestions.count
+            guard let next = fuzzySuggestionCoordinator.index(after: 1)
+            else { return true }
             return selectFuzzySuggestion(index: next, client: sender)
         case 49:
-            let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
-            return acceptFuzzySuggestion(suggestion, suffix: " ", client: sender)
+            return acceptFuzzySuggestion(
+                selectedSuggestion,
+                suffix: " ",
+                client: sender
+            )
         case 126:
-            let next = (
-                selectedFuzzySuggestionIndex
-                    - 1
-                    + fuzzySuggestions.count
-            ) % fuzzySuggestions.count
+            guard let next = fuzzySuggestionCoordinator.index(after: -1)
+            else { return true }
             return selectFuzzySuggestion(index: next, client: sender)
         case 123:
             if shouldEnterTranslationCandidates(
@@ -3394,28 +3373,23 @@ final class InputController: IMKInputController {
                   !characters.isEmpty else {
                 return false
             }
-            let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
-            _ = acceptFuzzySuggestion(suggestion, suffix: "", client: sender)
+            _ = acceptFuzzySuggestion(
+                selectedSuggestion,
+                suffix: "",
+                client: sender
+            )
             return nil
         }
     }
 
     private func returnToNormalCandidateSelection(client sender: Any) -> Bool {
-        if let selectedFuzzySuggestionIndex, !currentCandidates.isEmpty {
-            let fuzzyRow = selectedFuzzySuggestionIndex
-                % Self.maximumCandidateCount
-            let currentNormalIndex = selectedCandidateIndex ?? 0
-            let normalPageStart = currentNormalIndex
-                / Self.maximumCandidateCount
-                * Self.maximumCandidateCount
-            let normalPageEnd = min(
-                normalPageStart + Self.maximumCandidateCount,
-                currentCandidates.count
-            )
-            selectedCandidateIndex = min(
-                normalPageStart + fuzzyRow,
-                normalPageEnd - 1
-            )
+        if let normalIndex = fuzzySuggestionCoordinator
+            .normalCandidateIndexAlignedWithSelection(
+                normalCandidateCount: currentCandidates.count,
+                currentNormalIndex: selectedCandidateIndex,
+                maximumCount: Self.maximumCandidateCount
+            ) {
+            selectedCandidateIndex = normalIndex
         }
         selectedFuzzySuggestionIndex = nil
         if let selectedCandidateIndex,
@@ -3471,12 +3445,11 @@ final class InputController: IMKInputController {
     private func removeSelectedFuzzySuggestionFromUserDictionary(
         client sender: Any
     ) {
-        guard let selectedFuzzySuggestionIndex,
-              fuzzySuggestions.indices.contains(selectedFuzzySuggestionIndex) else {
+        guard let suggestion = fuzzySuggestionCoordinator.selectedSuggestion
+        else {
             NSSound.beep()
             return
         }
-        let suggestion = fuzzySuggestions[selectedFuzzySuggestionIndex]
         guard userDictionaryStore.canRemove(
             candidate: suggestion.candidate,
             matchingReadings: [suggestion.reading]
@@ -3506,16 +3479,15 @@ final class InputController: IMKInputController {
     }
 
     private func selectFuzzySuggestion(index: Int, client sender: Any) -> Bool {
-        guard fuzzySuggestions.indices.contains(index) else {
-            return true
-        }
-        let candidate = fuzzySuggestions[index].candidate
-        guard let resolvedIndex = fuzzySuggestions.firstIndex(where: {
-            $0.candidate == candidate
-        }) else { return true }
-        selectedFuzzySuggestionIndex = resolvedIndex
+        guard let suggestion = fuzzySuggestionCoordinator.select(index: index),
+              let resolvedIndex = fuzzySuggestionCoordinator.selectedIndex
+        else { return true }
+        trace(
+            "candidateSelection.changed",
+            sender: client(),
+            detail: "fuzzy=\(resolvedIndex)"
+        )
         candidateWindow.clearSelection()
-        let suggestion = fuzzySuggestions[resolvedIndex]
         let displayValue = suggestion.candidate + conversionSuffix
         setMarkedText(
             displayValue,
@@ -3523,9 +3495,12 @@ final class InputController: IMKInputController {
         )
         showFuzzySuggestionPage(selectedIndex: resolvedIndex, client: sender)
         showPreview(for: suggestion.candidate)
-        if !translationCandidateSession.contains(candidate, in: .fuzzy) {
+        if !translationCandidateSession.contains(
+            suggestion.candidate,
+            in: .fuzzy
+        ) {
             updateTranslationCandidates(
-                for: candidate,
+                for: suggestion.candidate,
                 destination: .fuzzy(reading: suggestion.reading),
                 client: sender
             )
@@ -3541,16 +3516,13 @@ final class InputController: IMKInputController {
             fuzzySuggestionWindow.hide()
             return
         }
-        let pageStart = selectedIndex
-            / Self.maximumCandidateCount
-            * Self.maximumCandidateCount
-        let pageEnd = min(
-            pageStart + Self.maximumCandidateCount,
-            fuzzySuggestions.count
-        )
+        guard fuzzySuggestionCoordinator.selectedIndex == selectedIndex,
+              let page = fuzzySuggestionCoordinator.selectedPage(
+                  maximumCount: Self.maximumCandidateCount
+              ) else { return }
         fuzzySuggestionWindow.show(
-            suggestions: Array(fuzzySuggestions[pageStart..<pageEnd]),
-            selectedIndex: selectedIndex - pageStart,
+            suggestions: page.suggestions,
+            selectedIndex: page.selectedIndex,
             near: candidateWindow.frame,
             avoidingFrames: [candidateWindow.frame]
                 + candidateWindow.auxiliaryFrames,
@@ -3801,12 +3773,8 @@ final class InputController: IMKInputController {
                         self.candidateValueForCommit
                     ) == source
                 case .fuzzy:
-                    sourceIsStillSelected = self.selectedFuzzySuggestionIndex
-                        .flatMap { index in
-                            self.fuzzySuggestions.indices.contains(index)
-                                ? self.fuzzySuggestions[index].candidate
-                                : nil
-                        } == source
+                    sourceIsStillSelected = self.fuzzySuggestionCoordinator
+                        .selectedSuggestion?.candidate == source
                 }
                 return sourceIsStillSelected
                     && self.acceptsAsyncResult(
@@ -3855,8 +3823,14 @@ final class InputController: IMKInputController {
                         for: source,
                         channel: .fuzzy
                     )
-                    self.selectedFuzzySuggestionIndex = self.fuzzySuggestions
-                        .firstIndex { $0.candidate == source }
+                    _ = self.fuzzySuggestionCoordinator.select(
+                        candidate: source
+                    )
+                    self.trace(
+                        "candidateSelection.changed",
+                        sender: self.client(),
+                        detail: "fuzzy=\(self.selectedFuzzySuggestionIndex.map(String.init) ?? "none")"
+                    )
                     if let index = self.selectedFuzzySuggestionIndex {
                         self.showFuzzySuggestionPage(
                             selectedIndex: index,
@@ -4227,7 +4201,7 @@ final class InputController: IMKInputController {
         schedulePanelSnapshots(afterCandidateShowFor: sender)
         if fuzzySuggestionWindow.isVisible {
             alignFuzzySuggestionWindowToCandidateRight()
-        } else if !fuzzySuggestions.isEmpty {
+        } else if !fuzzySuggestionCoordinator.isEmpty {
             showInitialFuzzySuggestionsIfCandidateVisible()
         }
         if emojiWindow.isVisible {
@@ -4421,13 +4395,6 @@ final class InputController: IMKInputController {
             )
             return matchesFullScreen || matchesVisibleScreen
         }
-    }
-
-    private func candidateAndInputFrame(for sender: Any) -> NSRect {
-        let inputFrame = inputLocation(for: sender)
-        let frame = candidateWindow.visibleFrame ?? candidateWindow.frame
-        guard inputFrame != .zero else { return frame }
-        return frame.union(inputFrame)
     }
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
@@ -4815,7 +4782,7 @@ final class InputController: IMKInputController {
         clearSessionTranslationCandidates()
         suggestionSearchCoordinator.cancel(.calendarFormat)
         panelCoordinator.dismissAll()
-        fuzzySuggestions = []
+        fuzzySuggestionCoordinator.reset()
         selectedFuzzySuggestionIndex = nil
         nextInputSuggestionCoordinator.clearCandidates()
         panelCoordinator.stopNextInputLifecycle()
@@ -4832,7 +4799,7 @@ final class InputController: IMKInputController {
     private func dismissFuzzySuggestions() {
         suggestionSearchCoordinator.cancel(.fuzzy)
         cancelCandidateTranslation()
-        fuzzySuggestions = []
+        fuzzySuggestionCoordinator.reset()
         selectedFuzzySuggestionIndex = nil
         fuzzySuggestionWindow.hide()
     }
@@ -4848,7 +4815,7 @@ final class InputController: IMKInputController {
             suggestionSearchCoordinator.cancel(.calendarFormat)
         }
         suggestionSearchCoordinator.cancel(.fuzzy)
-        fuzzySuggestions = []
+        fuzzySuggestionCoordinator.reset()
         selectedFuzzySuggestionIndex = nil
         panelCoordinator.dismiss(using: policy)
         resetCandidateFilters()
@@ -5218,7 +5185,7 @@ final class InputController: IMKInputController {
         candidateSession.reset()
         guard includingFuzzy else { return }
         clearSessionTranslationCandidates()
-        fuzzySelection.reset()
+        fuzzySuggestionCoordinator.reset()
     }
 
     private func hideConversionPanels() {
@@ -5617,19 +5584,14 @@ final class InputController: IMKInputController {
         }
     }
 
-    private var fuzzySuggestions: [FuzzySuggestion] {
-        get { fuzzySelection.values }
-        set { fuzzySelection.values = newValue }
-    }
-
     private var selectedFuzzySuggestionIndex: Int? {
-        get { fuzzySelection.selectedIndex }
+        get { fuzzySuggestionCoordinator.selectedIndex }
         set {
-            fuzzySelection.selectedIndex = newValue
+            _ = fuzzySuggestionCoordinator.select(index: newValue)
             trace(
                 "candidateSelection.changed",
                 sender: client(),
-                detail: "fuzzy=\(newValue.map(String.init) ?? "none")"
+                detail: "fuzzy=\(selectedFuzzySuggestionIndex.map(String.init) ?? "none")"
             )
         }
     }
