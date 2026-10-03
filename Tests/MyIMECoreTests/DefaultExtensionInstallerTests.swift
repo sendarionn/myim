@@ -51,7 +51,7 @@ struct DefaultExtensionInstallerTests {
     }
 
     @Test
-    func addsUnprefixedBinaryCandidateToInstalledExtension() throws {
+    func protectsUnknownLegacyNumericExtension() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let source = root.appendingPathComponent("source", isDirectory: true)
@@ -59,18 +59,23 @@ struct DefaultExtensionInstallerTests {
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try Data("current bundled numeric tools".utf8).write(
+            to: source.appendingPathComponent("numeric-tools.js")
+        )
         let installed = destination.appendingPathComponent("numeric-tools.js")
         try Data("""
           const sign = value < 0 ? "-" : ""
           return [sign + "0b" + Math.abs(value).toString(2)]
         """.utf8).write(to: installed)
 
-        try DefaultExtensionInstaller.installIfNeeded(from: source, into: destination)
+        let report = try DefaultExtensionInstaller.installIfNeeded(
+            from: source,
+            into: destination
+        )
 
         let migrated = try String(contentsOf: installed, encoding: .utf8)
-        #expect(migrated.contains(
-            "return [sign + digits]"
-        ))
+        #expect(migrated.contains("0b"))
+        #expect(report.conflicts.map(\.fileName) == ["numeric-tools.js"])
     }
 
     @Test
@@ -96,7 +101,7 @@ struct DefaultExtensionInstallerTests {
     }
 
     @Test
-    func removesDeprecatedDateTimeReadingsWithoutChangingOtherFormats() throws {
+    func protectsUnknownCustomizedDateTimeExtension() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let source = root.appendingPathComponent("source", isDirectory: true)
@@ -120,12 +125,16 @@ struct DefaultExtensionInstallerTests {
         """ + "\n"
         try Data(customized.utf8).write(to: installed)
 
-        try DefaultExtensionInstaller.installIfNeeded(from: source, into: destination)
+        let report = try DefaultExtensionInstaller.installIfNeeded(
+            from: source,
+            into: destination
+        )
 
         let migrated = try String(contentsOf: installed, encoding: .utf8)
         #expect(migrated.contains("dateFormats"))
-        #expect(!migrated.contains("dateTimeFormats"))
-        #expect(!migrated.contains("dateTimeReadings"))
+        #expect(migrated.contains("dateTimeFormats"))
+        #expect(migrated.contains("dateTimeReadings"))
+        #expect(report.conflicts.map(\.fileName) == ["datetime.js"])
     }
 
     @Test
@@ -215,5 +224,296 @@ struct DefaultExtensionInstallerTests {
         try DefaultExtensionInstaller.installIfNeeded(from: source, into: destination)
 
         #expect(try String(contentsOf: installed, encoding: .utf8) == "new default")
+    }
+
+    @Test
+    func automaticallyUpdatesAnInstalledBundledExtension() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        let source = directories.source.appendingPathComponent("datetime.js")
+        try Data("old bundled".utf8).write(to: source)
+        try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+
+        try Data("new bundled".utf8).write(to: source)
+        let report = try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+
+        let local = directories.destination.appendingPathComponent("datetime.js")
+        #expect(try String(contentsOf: local, encoding: .utf8) == "new bundled")
+        #expect(report.statuses == [DefaultExtensionStatus(
+            fileName: "datetime.js",
+            state: .bundledCurrent
+        )])
+    }
+
+    @Test
+    func reportsConflictWithoutOverwritingBothChangedExtension() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        let source = directories.source.appendingPathComponent("datetime.js")
+        let local = directories.destination.appendingPathComponent("datetime.js")
+        try Data("old bundled".utf8).write(to: source)
+        try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+        try Data("user edit".utf8).write(to: local)
+        try Data("new bundled".utf8).write(to: source)
+
+        let report = try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+
+        #expect(try String(contentsOf: local, encoding: .utf8) == "user edit")
+        #expect(report.conflicts.map(\.fileName) == ["datetime.js"])
+    }
+
+    @Test
+    func leavesAUserEditAloneWhenBundledContentHasNotChanged() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        let source = directories.source.appendingPathComponent("datetime.js")
+        let local = directories.destination.appendingPathComponent("datetime.js")
+        try Data("bundled".utf8).write(to: source)
+        try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+        try Data("user edit".utf8).write(to: local)
+
+        let report = try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+
+        #expect(try String(contentsOf: local, encoding: .utf8) == "user edit")
+        #expect(report.statuses.first?.state == .bundledModified)
+        #expect(report.conflicts.isEmpty)
+    }
+
+    @Test
+    func addsNewBundledExtensionWithoutTouchingUserExtension() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        let user = directories.destination.appendingPathComponent("custom.js")
+        try Data("custom".utf8).write(to: user)
+        try Data("default".utf8).write(
+            to: directories.source.appendingPathComponent("datetime.js")
+        )
+
+        let report = try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+
+        #expect(try String(contentsOf: user, encoding: .utf8) == "custom")
+        #expect(report.statuses == [
+            DefaultExtensionStatus(
+                fileName: "custom.js",
+                state: .userExtension
+            ),
+            DefaultExtensionStatus(
+                fileName: "datetime.js",
+                state: .bundledCurrent
+            )
+        ])
+    }
+
+    @Test
+    func keepingAnUpdateSuppressesOnlyThatBundledVersion() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        let source = directories.source.appendingPathComponent("datetime.js")
+        let local = directories.destination.appendingPathComponent("datetime.js")
+        try Data("version 1".utf8).write(to: source)
+        try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+        try Data("user edit".utf8).write(to: local)
+        try Data("version 2".utf8).write(to: source)
+
+        let kept = try DefaultExtensionInstaller.resolveConflicts(
+            fileNames: ["datetime.js"],
+            resolution: .keep,
+            from: directories.source,
+            into: directories.destination
+        )
+        let repeated = try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+        try Data("version 3".utf8).write(to: source)
+        let newer = try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+
+        #expect(kept.statuses.first?.state == .updateKept)
+        #expect(repeated.conflicts.isEmpty)
+        #expect(newer.conflicts.map(\.fileName) == ["datetime.js"])
+        #expect(try String(contentsOf: local, encoding: .utf8) == "user edit")
+    }
+
+    @Test
+    func updatingAConflictCreatesBackupAndRestoresAutomaticUpdates() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        let source = directories.source.appendingPathComponent("datetime.js")
+        let local = directories.destination.appendingPathComponent("datetime.js")
+        try Data("version 1".utf8).write(to: source)
+        try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+        try Data("user edit".utf8).write(to: local)
+        try Data("version 2".utf8).write(to: source)
+
+        let report = try DefaultExtensionInstaller.resolveConflicts(
+            fileNames: ["datetime.js"],
+            resolution: .update,
+            from: directories.source,
+            into: directories.destination,
+            now: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let files = try FileManager.default.contentsOfDirectory(
+            at: directories.destination,
+            includingPropertiesForKeys: nil
+        )
+        let backup = try #require(files.first {
+            $0.lastPathComponent.hasPrefix("datetime.js.backup-")
+        })
+
+        #expect(try String(contentsOf: local, encoding: .utf8) == "version 2")
+        #expect(try String(contentsOf: backup, encoding: .utf8) == "user edit")
+        #expect(report.statuses.first?.state == .bundledCurrent)
+    }
+
+    @Test
+    func failedConflictUpdateKeepsLocalFileAndPendingState() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        let source = directories.source.appendingPathComponent("datetime.js")
+        let local = directories.destination.appendingPathComponent("datetime.js")
+        try Data("version 1".utf8).write(to: source)
+        try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+        try Data("user edit".utf8).write(to: local)
+        try Data("version 2".utf8).write(to: source)
+        try FileManager.default.removeItem(at: source)
+
+        #expect(throws: (any Error).self) {
+            try DefaultExtensionInstaller.resolveConflicts(
+                fileNames: ["datetime.js"],
+                resolution: .update,
+                from: directories.source,
+                into: directories.destination
+            )
+        }
+        try Data("version 2".utf8).write(to: source)
+        let report = try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+
+        #expect(try String(contentsOf: local, encoding: .utf8) == "user edit")
+        #expect(report.conflicts.map(\.fileName) == ["datetime.js"])
+    }
+
+    @Test
+    func resolvesOnlyTheSelectedConflict() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        for name in ["datetime.js", "numeric-tools.js"] {
+            try Data("old \(name)".utf8).write(
+                to: directories.source.appendingPathComponent(name)
+            )
+        }
+        try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+        for name in ["datetime.js", "numeric-tools.js"] {
+            try Data("custom \(name)".utf8).write(
+                to: directories.destination.appendingPathComponent(name)
+            )
+            try Data("new \(name)".utf8).write(
+                to: directories.source.appendingPathComponent(name)
+            )
+        }
+
+        let report = try DefaultExtensionInstaller.resolveConflicts(
+            fileNames: ["datetime.js"],
+            resolution: .update,
+            from: directories.source,
+            into: directories.destination
+        )
+
+        #expect(try String(
+            contentsOf: directories.destination.appendingPathComponent(
+                "datetime.js"
+            ),
+            encoding: .utf8
+        ) == "new datetime.js")
+        #expect(try String(
+            contentsOf: directories.destination.appendingPathComponent(
+                "numeric-tools.js"
+            ),
+            encoding: .utf8
+        ) == "custom numeric-tools.js")
+        #expect(report.conflicts.map(\.fileName) == ["numeric-tools.js"])
+    }
+
+    @Test
+    func migratesKnownOldDateTimeWithoutTreatingItAsUserEdit() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        let source = directories.source.appendingPathComponent("datetime.js")
+        let previous = directories.source.appendingPathComponent(
+            "datetime.js.previous"
+        )
+        let local = directories.destination.appendingPathComponent("datetime.js")
+        try Data("calendar capable".utf8).write(to: source)
+        try Data("old bundled datetime".utf8).write(to: previous)
+        try Data("old bundled datetime".utf8).write(to: local)
+
+        let report = try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+
+        #expect(try String(contentsOf: local, encoding: .utf8) == "calendar capable")
+        #expect(report.statuses.first?.state == .bundledCurrent)
+    }
+
+    private func makeDirectories() throws -> (
+        root: URL,
+        source: URL,
+        destination: URL
+    ) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let destination = root.appendingPathComponent(
+            "destination",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: source,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: destination,
+            withIntermediateDirectories: true
+        )
+        return (root, source, destination)
     }
 }

@@ -7,6 +7,7 @@ actor JavaScriptExtensionClient {
         let prefix: String?
         let isEnabled: Bool
         let status: JavaScriptExtensionStatus?
+        let updateState: DefaultExtensionUpdateState
     }
 
     private static let disabledFileNamesDefaultsKey =
@@ -40,11 +41,15 @@ actor JavaScriptExtensionClient {
             .appendingPathComponent("Extensions", isDirectory: true)
     }
 
+    private nonisolated static var builtInExtensionDirectory: URL? {
+        Bundle.main.resourceURL?
+            .appendingPathComponent("Extensions", isDirectory: true)
+    }
+
     @discardableResult
     nonisolated static func prepareUserExtensionDirectory() -> URL? {
         guard let user = userExtensionDirectory else { return nil }
-        guard let builtIn = Bundle.main.resourceURL?
-            .appendingPathComponent("Extensions", isDirectory: true) else {
+        guard let builtIn = builtInExtensionDirectory else {
             try? FileManager.default.createDirectory(
                 at: user,
                 withIntermediateDirectories: true
@@ -80,9 +85,10 @@ actor JavaScriptExtensionClient {
     }
 
     func extensionInfos() -> (items: [ExtensionInfo], runtimeError: String?) {
-        guard let directory = Self.prepareUserExtensionDirectory() else {
+        guard let directory = Self.userExtensionDirectory else {
             return ([], "拡張フォルダが見つかりません")
         }
+        let updateStates = Self.extensionUpdateStates(in: directory)
         let files = ((try? FileManager.default.contentsOfDirectory(
             at: directory,
             includingPropertiesForKeys: nil,
@@ -97,10 +103,34 @@ actor JavaScriptExtensionClient {
                 fileName: file.lastPathComponent,
                 prefix: source.flatMap(Self.prefixMetadata),
                 isEnabled: !disabled.contains(file.lastPathComponent),
-                status: latestStatuses[file.lastPathComponent]
+                status: latestStatuses[file.lastPathComponent],
+                updateState: updateStates[file.lastPathComponent]
+                    ?? .userExtension
             )
         }
         return (items, latestRuntimeError)
+    }
+
+    func resolveExtensionUpdates(
+        fileNames: Set<String>,
+        resolution: DefaultExtensionConflictResolution
+    ) -> String? {
+        guard let source = Self.builtInExtensionDirectory,
+              let destination = Self.userExtensionDirectory else {
+            return "拡張フォルダが見つかりません"
+        }
+        do {
+            try DefaultExtensionInstaller.resolveConflicts(
+                fileNames: fileNames,
+                resolution: resolution,
+                from: source,
+                into: destination
+            )
+            reload()
+            return nil
+        } catch {
+            return "JavaScript拡張を更新できませんでした: \(error.localizedDescription)"
+        }
     }
 
     func reload() {
@@ -285,6 +315,10 @@ actor JavaScriptExtensionClient {
     }
 
     private static var extensionDirectories: [String] {
+        if let user = userExtensionDirectory,
+           FileManager.default.fileExists(atPath: user.path) {
+            return [user.path]
+        }
         if let user = prepareUserExtensionDirectory() {
             return [user.path]
         }
@@ -297,6 +331,19 @@ actor JavaScriptExtensionClient {
         Set(UserDefaults.standard.stringArray(
             forKey: disabledFileNamesDefaultsKey
         ) ?? [])
+    }
+
+    private nonisolated static func extensionUpdateStates(
+        in destination: URL
+    ) -> [String: DefaultExtensionUpdateState] {
+        guard let source = builtInExtensionDirectory,
+              let report = try? DefaultExtensionInstaller.installIfNeeded(
+                from: source,
+                into: destination
+              ) else { return [:] }
+        return Dictionary(uniqueKeysWithValues: report.statuses.map {
+            ($0.fileName, $0.state)
+        })
     }
 
     private nonisolated static func prefixMetadata(in source: String) -> String? {
