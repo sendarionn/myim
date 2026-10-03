@@ -2443,3 +2443,6 @@
 - 複数SKK辞書の取り込みと件数集計を`ImportedDictionaryStore`へ移し、設定ウィンドウの表示位置とシート表示を`SettingsWindowPresenter`へ分離
 - ユーザー辞書、インポート辞書、基本辞書、Mozc辞書の変換エンジンと続き候補生成を`ConversionDictionaryRuntime`へ統合し、辞書の再読込、有効・無効、基本辞書更新時の再構築を一か所で扱う構成へ変更
 - 一時的なdeactivate後の確定抑止と、activate直後のスペース抑止の時刻を`InputControllerLifecycleSession`へ移し、activate・deactivateの状態遷移と同時に更新する構成へ変更
+- 次入力候補から閉じ括弧を確定した後、次の入力時に同じ閉じ括弧が再度挿入される問題を修正
+- 次入力候補の確定時に旧候補Sessionを終了し、学習するかと次入力候補を更新するかを`NextInputCommitPolicy`で分けて判定するように変更し、入れ子括弧で次の閉じ括弧候補が出ない問題を修正
+- Spaceで次入力候補を確定する経路も同じ確定処理へ統一

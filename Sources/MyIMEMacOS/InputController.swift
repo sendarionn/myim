@@ -1684,8 +1684,12 @@ final class InputController: IMKInputController {
     private func handleSpace(space: String, client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
             if let value = nextInputSuggestionCoordinator.selectedCandidate {
-                recordNextInputCandidateSelection(value)
-                commit(value + space, to: sender, historyValue: value)
+                commitNextInputCandidate(
+                    value,
+                    appending: space,
+                    replacingMarkedText: false,
+                    to: sender
+                )
                 return true
             }
             guard space == "　" else { return false }
@@ -4151,14 +4155,19 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func commitNextInputCandidate(_ value: String, to sender: Any) {
+    private func commitNextInputCandidate(
+        _ value: String,
+        appending suffix: String = "",
+        replacingMarkedText: Bool = true,
+        to sender: Any
+    ) {
         recordNextInputCandidateSelection(value)
+        clearNextInputSuggestionState()
         commit(
-            value,
+            value + suffix,
             to: sender,
-            replacingMarkedText: true,
-            recordsInputHistory: closingBracketTracker
-                .shouldRecordAsNextInput(value)
+            replacingMarkedText: replacingMarkedText,
+            historyValue: value
         )
     }
 
@@ -4225,8 +4234,7 @@ final class InputController: IMKInputController {
         to sender: Any,
         replacingMarkedText: Bool = false,
         historyValue: String? = nil,
-        preferredNextInputCandidates: [String] = [],
-        recordsInputHistory: Bool = true
+        preferredNextInputCandidates: [String] = []
     ) {
         guard let textClient = sender as? IMKTextInput else {
             return
@@ -4241,12 +4249,11 @@ final class InputController: IMKInputController {
                 inputHistoryValue
             )
         }
-        let shouldRecordInputHistory = closingBracketTracker
-            .shouldRecordCommittedInput(
-                inputHistoryValue,
-                requested: recordsInputHistory
-            )
-            && !isGeneratedParticleCandidate(inputHistoryValue)
+        let nextInputPolicy = NextInputCommitPolicy.resolve(
+            committing: inputHistoryValue,
+            closingBracketTracker: closingBracketTracker,
+            isGeneratedParticle: isGeneratedParticleCandidate(inputHistoryValue)
+        )
 
         let markedRange = textClient.markedRange()
         let beginsAfterLineBreak = inputBeginsAfterLineBreak(
@@ -4279,12 +4286,13 @@ final class InputController: IMKInputController {
         symbolTipsWindow.hide()
         clearCalendarSelection()
         resetCandidateFilters()
-        if shouldRecordInputHistory {
+        if nextInputPolicy.updatesSuggestions {
             let structuralCandidates = closingBracketTracker.candidate.map {
                 [$0]
             } ?? []
             recordCommittedInput(
                 inputHistoryValue,
+                learnsInput: nextInputPolicy.learnsInput,
                 preferredCandidates: structuralCandidates
                     + preferredNextInputCandidates,
                 breakPreviousSequence: beginsAfterLineBreak,
@@ -4444,6 +4452,7 @@ final class InputController: IMKInputController {
 
     private func recordCommittedInput(
         _ value: String,
+        learnsInput: Bool,
         preferredCandidates: [String] = [],
         breakPreviousSequence: Bool = false,
         client sender: Any
@@ -4457,9 +4466,8 @@ final class InputController: IMKInputController {
             .learnedCandidates(
                 after: value,
                 predictionEnabled: Self.featureSettings.isNextInputPredictionEnabled,
-                learningEnabled: Self.diagnosticConfiguration.enables(
-                    .learning
-                ),
+                learningEnabled: learnsInput
+                    && Self.diagnosticConfiguration.enables(.learning),
                 breakPreviousSequence: breakPreviousSequence,
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
