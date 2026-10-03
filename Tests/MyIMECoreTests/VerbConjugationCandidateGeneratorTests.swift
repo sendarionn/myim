@@ -45,6 +45,37 @@ struct VerbConjugationCandidateGeneratorTests {
     }
 
     @Test(arguments: [
+        ("shiritakunai", "知りたくない"),
+        ("shiritakunakatta", "知りたくなかった"),
+        ("shiritakatta", "知りたかった"),
+        ("shiritakute", "知りたくて"),
+        ("shiritakereba", "知りたければ"),
+        ("shiritakunaru", "知りたくなる"),
+        ("shiritakunatta", "知りたくなった"),
+        ("shiritakunaranai", "知りたくならない")
+    ])
+    func conjugatesDesireExpressions(input: String, expected: String) {
+        #expect(generator.candidates(for: input).first == expected)
+    }
+
+    @Test(arguments: [
+        ("mitakunai", "見たくない"),
+        ("mitakatta", "見たかった"),
+        ("mitakunatta", "見たくなった"),
+        ("kakitakunai", "書きたくない"),
+        ("yomitakatta", "読みたかった"),
+        ("ikitakunatta", "行きたくなった"),
+        ("tabetakatta", "食べたかった"),
+        ("benkyoushitakunai", "勉強したくない")
+    ])
+    func appliesDesireExpressionsToVerbClasses(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
         ("kaiteiru", "書いている"),
         ("kakitai", "書きたい"),
         ("kakanai", "書かない"),
@@ -82,6 +113,8 @@ struct VerbConjugationCandidateGeneratorTests {
         #expect(generator.candidates(for: "pantai").isEmpty)
         #expect(generator.candidates(for: "tantai").isEmpty)
         #expect(generator.candidates(for: "sanai").isEmpty)
+        #expect(generator.candidates(for: "pantakunai").isEmpty)
+        #expect(generator.candidates(for: "tantakunatta").isEmpty)
         #expect(Set(generator.candidates(for: "kita")) == ["来た", "着た"])
     }
 

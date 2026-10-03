@@ -73,26 +73,55 @@ public struct VerbConjugationDictionary: Sendable {
 ///
 /// Verbs written in plain kana are left to the automatic kana candidates
 public struct VerbConjugationCandidateGenerator: Sendable {
-    private struct Following: Sendable {
-        let reading: String
-        let text: String
-        let form: VerbConjugationForm
+    private struct FollowingExpression: Sendable {
+        let requiredVerbForm: VerbConjugationForm
+        let readingSuffix: String
+        let surfaceSuffix: String
+
+        init(
+            _ readingSuffix: String,
+            _ surfaceSuffix: String,
+            requiring requiredVerbForm: VerbConjugationForm
+        ) {
+            self.requiredVerbForm = requiredVerbForm
+            self.readingSuffix = readingSuffix
+            self.surfaceSuffix = surfaceSuffix
+        }
     }
 
-    private static let followings: [Following] = [
-        Following(reading: "", text: "", form: .te),
-        Following(reading: "", text: "", form: .past),
-        Following(reading: "tai", text: "たい", form: .continuative),
-        Following(reading: "masu", text: "ます", form: .continuative),
-        Following(reading: "mashita", text: "ました", form: .continuative),
-        Following(reading: "masen", text: "ません", form: .continuative),
-        Following(reading: "iru", text: "いる", form: .te),
-        Following(reading: "ita", text: "いた", form: .te),
-        Following(reading: "inai", text: "いない", form: .te),
-        Following(reading: "imasu", text: "います", form: .te),
-        Following(reading: "nai", text: "ない", form: .negative),
-        Following(reading: "nakatta", text: "なかった", form: .negative)
+    /// 希望を表す「たい」と、その形容詞型の活用
+    private static let desireInflections: [FollowingExpression] = [
+        FollowingExpression("takunakatta", "たくなかった", requiring: .continuative),
+        FollowingExpression("takereba", "たければ", requiring: .continuative),
+        FollowingExpression("takunai", "たくない", requiring: .continuative),
+        FollowingExpression("takatta", "たかった", requiring: .continuative),
+        FollowingExpression("takute", "たくて", requiring: .continuative),
+        FollowingExpression("tai", "たい", requiring: .continuative)
     ]
+
+    /// 「たい」の活用ではなく「たく + なる」で構成される表現
+    private static let desireChanges: [FollowingExpression] = [
+        FollowingExpression("takunaranai", "たくならない", requiring: .continuative),
+        FollowingExpression("takunatta", "たくなった", requiring: .continuative),
+        FollowingExpression("takunaru", "たくなる", requiring: .continuative)
+    ]
+
+    private static let otherFollowings: [FollowingExpression] = [
+        FollowingExpression("", "", requiring: .te),
+        FollowingExpression("", "", requiring: .past),
+        FollowingExpression("masu", "ます", requiring: .continuative),
+        FollowingExpression("mashita", "ました", requiring: .continuative),
+        FollowingExpression("masen", "ません", requiring: .continuative),
+        FollowingExpression("iru", "いる", requiring: .te),
+        FollowingExpression("ita", "いた", requiring: .te),
+        FollowingExpression("inai", "いない", requiring: .te),
+        FollowingExpression("imasu", "います", requiring: .te),
+        FollowingExpression("nai", "ない", requiring: .negative),
+        FollowingExpression("nakatta", "なかった", requiring: .negative)
+    ]
+
+    private static let followingExpressions =
+        desireChanges + desireInflections + otherFollowings
 
     private let dictionary: VerbConjugationDictionary
 
@@ -103,24 +132,25 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     public func candidates(for input: String) -> [String] {
         let reading = RomajiCanonicalizer.canonicalInput(from: input)
         var costs: [String: (cost: Int, order: Int)] = [:]
-        for following in Self.followings
-        where reading.hasSuffix(following.reading) {
+        for following in Self.followingExpressions
+        where reading.hasSuffix(following.readingSuffix) {
             let formReading = String(
-                reading.dropLast(following.reading.count)
+                reading.dropLast(following.readingSuffix.count)
             )
             guard !formReading.isEmpty else { continue }
             for baseReading in Self.baseReadings(
                 forming: formReading,
-                as: following.form
+                as: following.requiredVerbForm
             ) {
                 let kanaReading = RomajiConverter().hiragana(from: baseReading)
                 for entry in dictionary.entries(for: baseReading)
                 where entry.surface != kanaReading {
                     guard let conjugated = Self.conjugate(
                         entry,
-                        to: following.form
+                        to: following.requiredVerbForm
                     ), conjugated.reading == formReading else { continue }
-                    let candidate = conjugated.surface + following.text
+                    let candidate = conjugated.surface
+                        + following.surfaceSuffix
                     let order = costs[candidate]?.order ?? costs.count
                     costs[candidate] = (
                         min(entry.cost, costs[candidate]?.cost ?? .max),

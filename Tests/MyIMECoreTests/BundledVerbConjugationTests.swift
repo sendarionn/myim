@@ -52,6 +52,29 @@ struct BundledVerbConjugationTests {
     }
 
     @Test(arguments: [
+        ("shiritakunai", "知りたくない"),
+        ("shiritakunakatta", "知りたくなかった"),
+        ("shiritakatta", "知りたかった"),
+        ("shiritakute", "知りたくて"),
+        ("shiritakereba", "知りたければ"),
+        ("shiritakunaru", "知りたくなる"),
+        ("shiritakunatta", "知りたくなった"),
+        ("shiritakunaranai", "知りたくならない"),
+        ("mitakunai", "見たくない"),
+        ("mitakatta", "見たかった"),
+        ("mitakunatta", "見たくなった"),
+        ("kakitakunai", "書きたくない"),
+        ("yomitakatta", "読みたかった"),
+        ("ikitakunatta", "行きたくなった")
+    ])
+    func ranksDesireExpressionsBeforeAutomaticKana(
+        input: String,
+        expected: String
+    ) throws {
+        #expect(try candidates(for: input).first == expected)
+    }
+
+    @Test(arguments: [
         ("kaiteiru", "書いている"),
         ("oyoideiru", "泳いでいる"),
         ("matteiru", "待っている"),
