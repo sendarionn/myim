@@ -36,6 +36,7 @@ public struct StandardConversionCandidateSource: Sendable {
     private let basicEngine: ConversionEngine
     private let symbolEngine: ConversionEngine
     private let systemEngine: IndexedDictionaryEngine
+    private let deferredSystemCandidates: DeferredSystemCandidates
     private let verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let maximumSystemPrefixCandidates: Int
     private let romajiConverter = RomajiConverter()
@@ -49,6 +50,8 @@ public struct StandardConversionCandidateSource: Sendable {
         symbolEngine: ConversionEngine,
         systemEngine: IndexedDictionaryEngine,
         verbInflectionGenerator: VerbInflectionCandidateGenerator,
+        deferredSystemCandidates: DeferredSystemCandidates =
+            DeferredSystemCandidates(),
         maximumSystemPrefixCandidates: Int = 2048
     ) {
         self.userEngine = userEngine
@@ -56,6 +59,7 @@ public struct StandardConversionCandidateSource: Sendable {
         self.basicEngine = basicEngine
         self.symbolEngine = symbolEngine
         self.systemEngine = systemEngine
+        self.deferredSystemCandidates = deferredSystemCandidates
         self.verbInflectionGenerator = verbInflectionGenerator
         self.maximumSystemPrefixCandidates = maximumSystemPrefixCandidates
     }
@@ -93,6 +97,14 @@ public struct StandardConversionCandidateSource: Sendable {
                 matching: $0,
                 limit: maximumSystemPrefixCandidates
             )
+        }
+        let deferredSystemExact = system.exact.filter { candidate in
+            lookupReadings.contains {
+                deferredSystemCandidates.contains(
+                    reading: RomajiCanonicalizer.canonicalInput(from: $0),
+                    candidate: candidate
+                )
+            }
         }
         let particles = particleCandidates(
             for: context.conversionReading
@@ -141,7 +153,10 @@ public struct StandardConversionCandidateSource: Sendable {
             javaScript: context.javaScriptCandidates,
             symbolExact: symbols.exact,
             basicExact: basic.exact,
-            systemExact: system.exact,
+            systemExact: system.exact.filter {
+                !deferredSystemExact.contains($0)
+            },
+            deferredSystemExact: deferredSystemExact,
             importedExact: imported.reading.exact,
             importedSpelling: imported.spelling.exact,
             inflection: inflections,

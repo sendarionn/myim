@@ -10,6 +10,7 @@ public struct CandidateAssembly: Sendable {
         public let symbolExact: [String]
         public let basicExact: [String]
         public let systemExact: [String]
+        public let deferredSystemExact: [String]
         public let importedExact: [String]
         public let importedSpelling: [String]
         public let inflection: [String]
@@ -40,6 +41,7 @@ public struct CandidateAssembly: Sendable {
             symbolExact: [String],
             basicExact: [String],
             systemExact: [String],
+            deferredSystemExact: [String] = [],
             importedExact: [String] = [],
             importedSpelling: [String] = [],
             inflection: [String],
@@ -69,6 +71,7 @@ public struct CandidateAssembly: Sendable {
             self.symbolExact = symbolExact
             self.basicExact = basicExact
             self.systemExact = systemExact
+            self.deferredSystemExact = deferredSystemExact
             self.importedExact = importedExact
             self.importedSpelling = importedSpelling
             self.inflection = inflection
@@ -191,7 +194,12 @@ public struct CandidateAssembly: Sendable {
                             ? [.generated]
                             : []
                     )
-                },
+                } + makeCandidates(
+                    input.deferredSystemExact,
+                    source: .systemDictionary,
+                    reading: input.reading,
+                    attributes: preserveLongVowel
+                ),
                 other: other,
                 english: makeCandidates(
                     input.english,

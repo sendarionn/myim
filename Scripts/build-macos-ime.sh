@@ -120,6 +120,9 @@ cp \
     "Sources/MyIMEMacOS/Resources/mozc-dictionary-source.json" \
     "$resources_directory/mozc-dictionary-source.json"
 cp \
+    "Sources/MyIMEMacOS/Resources/mozc-person-name-hints.tsv" \
+    "$resources_directory/mozc-person-name-hints.tsv"
+cp \
     "Sources/MyIMEMacOS/Resources/mozc-dictionary-NOTICE.txt" \
     "$resources_directory/mozc-dictionary-NOTICE.txt"
 cp -R \

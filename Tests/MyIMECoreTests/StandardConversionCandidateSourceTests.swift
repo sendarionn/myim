@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import MyIMECore
 
@@ -213,6 +214,48 @@ struct StandardConversionCandidateSourceTests {
         #expect(values.prefix(3) == ["校補", "候補", "好捕"])
     }
 
+    @Test
+    func deferredSystemCandidatesFollowParticleCompositions() {
+        let values = texts(
+            makeSource(
+                basicEntries: [DictionaryEntry(reading: "tsugi", candidates: ["次"])],
+                systemText: "tsugino\t調\n",
+                deferred: "tsugino\t調\n"
+            ),
+            "tugino"
+        )
+
+        #expect(values.prefix(2) == ["次の", "調"])
+    }
+
+    @Test
+    func undeferredSystemCandidatesKeepTheirExactMatchPriority() {
+        let values = texts(
+            makeSource(
+                basicEntries: [DictionaryEntry(reading: "tsugi", candidates: ["次"])],
+                systemText: "tsugino\t調\n"
+            ),
+            "tugino"
+        )
+
+        #expect(values.prefix(2) == ["調", "次の"])
+    }
+
+    @Test
+    func deferredSystemCandidatesStayAheadOfAutomaticKana() throws {
+        let values = texts(
+            makeSource(
+                systemText: "tanaka\t田仲\n",
+                deferred: "tanaka\t田仲\n"
+            ),
+            "tanaka"
+        )
+
+        let name = try #require(values.firstIndex(of: "田仲"))
+        let kana = try #require(values.firstIndex(of: "たなか"))
+        #expect(name < kana)
+    }
+
     private let madeBasic = [DictionaryEntry(reading: "made", candidates: ["まで"])]
     private let madeImported = [
         DictionaryEntry(reading: "made", candidates: ["メイド", "メード"]),
@@ -232,7 +275,9 @@ struct StandardConversionCandidateSourceTests {
     private func makeSource(
         userEntries: [DictionaryEntry] = [],
         importedEntries: [DictionaryEntry] = [],
-        basicEntries: [DictionaryEntry] = []
+        basicEntries: [DictionaryEntry] = [],
+        systemText: String = "",
+        deferred: String = ""
     ) -> StandardConversionCandidateSource {
         StandardConversionCandidateSource(
             userEngine: LayeredConversionEngine(engines: [
@@ -243,10 +288,11 @@ struct StandardConversionCandidateSourceTests {
             ]),
             basicEngine: ConversionEngine(entries: basicEntries),
             symbolEngine: ConversionEngine(entries: []),
-            systemEngine: IndexedDictionaryEngine(),
+            systemEngine: IndexedDictionaryEngine(data: Data(systemText.utf8)),
             verbInflectionGenerator: VerbInflectionCandidateGenerator(
                 entries: basicEntries
-            )
+            ),
+            deferredSystemCandidates: DeferredSystemCandidates(text: deferred)
         )
     }
 }
