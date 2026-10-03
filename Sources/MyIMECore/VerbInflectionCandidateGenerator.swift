@@ -14,8 +14,12 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         candidatesByReading = values
     }
 
-    public func candidates(for reading: String) -> [String] {
-        Self.candidates(for: reading) { baseReading in
+    public func candidates(
+        for reading: String,
+        conjugations: VerbConjugationDictionary = VerbConjugationDictionary()
+    ) -> [String] {
+        Self.candidates(for: reading, conjugations: conjugations) {
+            baseReading in
             candidatesByReading[baseReading] ?? []
         }
     }
@@ -65,8 +69,11 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         return generated
     }
 
+    /// Rules assume a verb class from the reading alone, so base forms whose
+    /// class is known from `conjugations` must match that assumption
     public static func candidates(
         for reading: String,
+        conjugations: VerbConjugationDictionary = VerbConjugationDictionary(),
         lookup: (String) -> [String]
     ) -> [String] {
         let normalized = RomajiCanonicalizer.canonicalInput(
@@ -78,7 +85,14 @@ public struct VerbInflectionCandidateGenerator: Sendable {
             let baseCandidates = lookup(rule.baseReading)
                 + (kanaReading.map(lookup) ?? [])
             for candidate in baseCandidates {
-                guard candidate.hasSuffix(rule.baseEnding) else {
+                guard candidate.hasSuffix(rule.baseEnding),
+                      rule.classes.map({
+                          conjugations.allows(
+                              reading: rule.baseReading,
+                              surface: candidate,
+                              classes: $0
+                          )
+                      }) ?? true else {
                     continue
                 }
                 let inflected = String(
@@ -172,14 +186,31 @@ public struct VerbInflectionCandidateGenerator: Sendable {
             ("shimasu", [("su", "す")], "します")
         ]
 
+        let ichidanSuffixes: Set<String> = [
+            "te", "ta", "nai", "nakatta", "masu", "mashita", "masen", "tai"
+        ]
+        let eitherClassSuffixes: Set<String> = [
+            "saserareru", "rareru", "saseru", "reru"
+        ]
         for group in suffixGroups where reading.hasSuffix(group.suffix) {
             let stem = String(reading.dropLast(group.suffix.count))
             for base in group.bases {
+                let classes: Set<VerbConjugationClass>?
+                if base.reading == "suru" {
+                    classes = [.suru]
+                } else if ichidanSuffixes.contains(group.suffix) {
+                    classes = [.ichidan]
+                } else if eitherClassSuffixes.contains(group.suffix) {
+                    classes = nil
+                } else {
+                    classes = [.godan, .godanIku]
+                }
                 result.append(
                     Rule(
                         baseReading: stem + base.reading,
                         baseEnding: base.ending,
-                        inflectedEnding: group.ending
+                        inflectedEnding: group.ending,
+                        classes: classes
                     )
                 )
             }
@@ -190,7 +221,8 @@ public struct VerbInflectionCandidateGenerator: Sendable {
                 Rule(
                     baseReading: "iku",
                     baseEnding: "く",
-                    inflectedEnding: "って"
+                    inflectedEnding: "って",
+                    classes: [.godanIku]
                 )
             )
         } else if reading == "itta" {
@@ -198,7 +230,8 @@ public struct VerbInflectionCandidateGenerator: Sendable {
                 Rule(
                     baseReading: "iku",
                     baseEnding: "く",
-                    inflectedEnding: "った"
+                    inflectedEnding: "った",
+                    classes: [.godanIku]
                 )
             )
         }
@@ -214,7 +247,8 @@ public struct VerbInflectionCandidateGenerator: Sendable {
                 Rule(
                     baseReading: "kuru",
                     baseEnding: "来る",
-                    inflectedEnding: ending
+                    inflectedEnding: ending,
+                    classes: [.kuru]
                 )
             )
         }
@@ -226,5 +260,6 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         let baseReading: String
         let baseEnding: String
         let inflectedEnding: String
+        let classes: Set<VerbConjugationClass>?
     }
 }

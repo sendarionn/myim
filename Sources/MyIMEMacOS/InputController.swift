@@ -36,6 +36,9 @@ final class InputController: IMKInputController {
     private static let sharedDeferredSystemCandidates = DeferredSystemCandidates(
         text: loadBundledText(resource: "mozc-person-name-hints") ?? ""
     )
+    private static let sharedVerbConjugations = VerbConjugationDictionary(
+        text: loadBundledText(resource: "mozc-verb-classes") ?? ""
+    )
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
     private static let sharedBasicCompoundGenerator =
@@ -2850,6 +2853,7 @@ final class InputController: IMKInputController {
             systemEngine: dictionaryRuntime.systemEngine,
             verbInflectionGenerator: dictionaryRuntime.verbInflectionGenerator,
             deferredSystemCandidates: Self.sharedDeferredSystemCandidates,
+            verbConjugations: Self.sharedVerbConjugations,
             maximumSystemPrefixCandidates:
                 Self.maximumMozcDictionaryPrefixCandidates
         )

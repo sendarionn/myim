@@ -37,6 +37,8 @@ public struct StandardConversionCandidateSource: Sendable {
     private let symbolEngine: ConversionEngine
     private let systemEngine: IndexedDictionaryEngine
     private let deferredSystemCandidates: DeferredSystemCandidates
+    private let verbConjugations: VerbConjugationDictionary
+    private let verbConjugationGenerator: VerbConjugationCandidateGenerator
     private let verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let maximumSystemPrefixCandidates: Int
     private let romajiConverter = RomajiConverter()
@@ -52,6 +54,8 @@ public struct StandardConversionCandidateSource: Sendable {
         verbInflectionGenerator: VerbInflectionCandidateGenerator,
         deferredSystemCandidates: DeferredSystemCandidates =
             DeferredSystemCandidates(),
+        verbConjugations: VerbConjugationDictionary =
+            VerbConjugationDictionary(),
         maximumSystemPrefixCandidates: Int = 2048
     ) {
         self.userEngine = userEngine
@@ -60,6 +64,10 @@ public struct StandardConversionCandidateSource: Sendable {
         self.symbolEngine = symbolEngine
         self.systemEngine = systemEngine
         self.deferredSystemCandidates = deferredSystemCandidates
+        self.verbConjugations = verbConjugations
+        verbConjugationGenerator = VerbConjugationCandidateGenerator(
+            dictionary: verbConjugations
+        )
         self.verbInflectionGenerator = verbInflectionGenerator
         self.maximumSystemPrefixCandidates = maximumSystemPrefixCandidates
     }
@@ -130,14 +138,20 @@ public struct StandardConversionCandidateSource: Sendable {
                 for: context.conversionReading
             )
             : []
+        let conjugations = verbConjugationGenerator.candidates(
+            for: context.conversionReading
+        )
         let inflections = mergedCandidates(
             readings: lookupReadings
         ) { reading in
-            verbInflectionGenerator.candidates(for: reading)
-                + VerbInflectionCandidateGenerator.candidates(
-                    for: reading,
-                    lookup: systemEngine.candidates
-                )
+            verbInflectionGenerator.candidates(
+                for: reading,
+                conjugations: verbConjugations
+            ) + VerbInflectionCandidateGenerator.candidates(
+                for: reading,
+                conjugations: verbConjugations,
+                lookup: systemEngine.candidates
+            )
         }
         return CandidateAssembly().candidates(from: .init(
             reading: context.conversionReading,
@@ -159,7 +173,7 @@ public struct StandardConversionCandidateSource: Sendable {
             deferredSystemExact: deferredSystemExact,
             importedExact: imported.reading.exact,
             importedSpelling: imported.spelling.exact,
-            inflection: inflections,
+            inflection: Self.removingDuplicates(conjugations + inflections),
             particle: particles,
             generatedParticles: generatedParticles,
             userPrefix: user.prefix,
@@ -279,6 +293,11 @@ public struct StandardConversionCandidateSource: Sendable {
                 prefix: typed.prefix.filter { !readingMatches.contains($0) }
             )
         )
+    }
+
+    private static func removingDuplicates(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        return values.filter { seen.insert($0).inserted }
     }
 
     private func recencyRanks(
