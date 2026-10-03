@@ -4,6 +4,30 @@ import Testing
 @Suite
 struct EnglishCandidateCaseRestorerTests {
     @Test
+    func createsInitialUppercaseCandidate() {
+        #expect(
+            EnglishCandidateCaseRestorer.initialUppercaseCandidate(
+                for: "gmail"
+            ) == "Gmail"
+        )
+        #expect(
+            EnglishCandidateCaseRestorer.initialUppercaseCandidate(
+                for: "openAI"
+            ) == "OpenAI"
+        )
+        #expect(
+            EnglishCandidateCaseRestorer.initialUppercaseCandidate(
+                for: "Gmail"
+            ) == nil
+        )
+        #expect(
+            EnglishCandidateCaseRestorer.initialUppercaseCandidate(
+                for: "gmail2"
+            ) == nil
+        )
+    }
+
+    @Test
     func createsAllUppercaseCandidate() {
         #expect(
             EnglishCandidateCaseRestorer.uppercaseCandidate(for: "myim")
@@ -20,6 +44,14 @@ struct EnglishCandidateCaseRestorerTests {
         #expect(
             EnglishCandidateCaseRestorer.uppercaseCandidate(for: "myim2")
                 == nil
+        )
+    }
+
+    @Test
+    func ordersInitialUppercaseBeforeAllUppercase() {
+        #expect(
+            EnglishCandidateCaseRestorer.caseCandidates(for: "gmail")
+                == ["Gmail", "GMAIL"]
         )
     }
 

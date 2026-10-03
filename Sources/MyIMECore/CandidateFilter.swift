@@ -297,6 +297,165 @@ public enum CandidateFilterChoice: Equatable, Sendable {
     }
 }
 
+public enum CandidateFilterDraftStage: Equatable, Sendable {
+    case conversion
+    case filter
+}
+
+public enum CandidateFilterDraftChoice: Equatable, Sendable {
+    case input(String)
+    case filter(CandidateFilterChoice)
+
+    public var label: String {
+        switch self {
+        case let .input(value): value
+        case let .filter(choice): choice.label
+        }
+    }
+}
+
+public struct CandidateFilterDraft: Equatable, Sendable {
+    public private(set) var input = ""
+    public private(set) var stage = CandidateFilterDraftStage.conversion
+    public private(set) var choices: [CandidateFilterDraftChoice] = []
+    public private(set) var selectedIndex: Int?
+
+    public init() {}
+
+    mutating func append(_ value: String) {
+        stage = .conversion
+        input.append(contentsOf: value)
+        selectedIndex = nil
+    }
+
+    @discardableResult
+    mutating func deleteBackward() -> Bool {
+        guard stage == .conversion, !input.isEmpty else { return false }
+        input.removeLast()
+        selectedIndex = nil
+        return true
+    }
+
+    mutating func enterFilterStage(input: String? = nil) {
+        if let input {
+            self.input = input
+        }
+        stage = .filter
+        selectedIndex = nil
+    }
+
+    mutating func returnToConversionStage() {
+        stage = .conversion
+        selectedIndex = nil
+    }
+
+    mutating func replaceChoices(_ choices: [CandidateFilterDraftChoice]) {
+        self.choices = choices
+        if let selectedIndex, !choices.indices.contains(selectedIndex) {
+            self.selectedIndex = nil
+        }
+    }
+
+    @discardableResult
+    mutating func moveSelection(by offset: Int) -> Bool {
+        guard !choices.isEmpty else { return false }
+        let initialIndex = offset > 0 ? -1 : 0
+        selectedIndex = (
+            (selectedIndex ?? initialIndex) + offset + choices.count
+        ) % choices.count
+        return true
+    }
+}
+
+public enum CandidateFilterSelectionResult: Equatable, Sendable {
+    case convertedInput(value: String, reading: String)
+    case conditionsChanged
+}
+
+public struct CandidateFilterInputSession: Equatable, Sendable {
+    public private(set) var conditions: [CandidateFilterCondition] = []
+    public private(set) var draft: CandidateFilterDraft?
+
+    public init() {}
+
+    public mutating func beginDraft() {
+        draft = CandidateFilterDraft()
+    }
+
+    public mutating func appendToDraft(_ value: String) {
+        draft?.append(value)
+    }
+
+    @discardableResult
+    public mutating func deleteBackwardFromDraft() -> Bool {
+        draft?.deleteBackward() ?? false
+    }
+
+    public mutating func enterFilterStage() {
+        draft?.enterFilterStage()
+    }
+
+    @discardableResult
+    public mutating func returnToConversionStage() -> Bool {
+        guard draft?.stage == .filter else { return false }
+        draft?.returnToConversionStage()
+        return true
+    }
+
+    public mutating func updateDraftChoices(
+        _ choices: [CandidateFilterDraftChoice]
+    ) {
+        draft?.replaceChoices(choices)
+    }
+
+    @discardableResult
+    public mutating func moveDraftSelection(by offset: Int) -> Bool {
+        draft?.moveSelection(by: offset) ?? false
+    }
+
+    public mutating func applySelectedChoice()
+        -> CandidateFilterSelectionResult? {
+        guard let draft,
+              let selectedIndex = draft.selectedIndex,
+              draft.choices.indices.contains(selectedIndex) else {
+            return nil
+        }
+        switch draft.choices[selectedIndex] {
+        case let .input(value):
+            let reading = draft.input
+            self.draft?.enterFilterStage(input: value)
+            return .convertedInput(value: value, reading: reading)
+        case let .filter(.apply(condition)):
+            if !conditions.contains(condition) {
+                conditions.append(condition)
+            }
+        case let .filter(.remove(index, _)):
+            if conditions.indices.contains(index) {
+                conditions.remove(at: index)
+            }
+        }
+        self.draft = nil
+        return .conditionsChanged
+    }
+
+    public mutating func cancelDraft() {
+        draft = nil
+    }
+
+    @discardableResult
+    public mutating func removeLastCondition() -> Bool {
+        draft = nil
+        guard !conditions.isEmpty else { return false }
+        conditions.removeLast()
+        return true
+    }
+
+    public mutating func reset() {
+        conditions = []
+        draft = nil
+    }
+}
+
 public struct CandidateFilterChoiceGenerator: Sendable {
     private let aliases: [String: [Character]]
 

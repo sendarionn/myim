@@ -60,6 +60,68 @@ public struct InputSession: Equatable, Sendable {
         return inputChanged
     }
 
+    @discardableResult
+    public mutating func setInput(
+        _ input: String,
+        cursorPosition: Int? = nil
+    ) -> Bool {
+        let editor = InputBufferEditor(
+            value: input,
+            cursor: cursorPosition
+        )
+        return synchronize(
+            input: editor.value,
+            cursorPosition: editor.cursor
+        )
+    }
+
+    @discardableResult
+    public mutating func insert(_ text: String) -> Bool {
+        var editor = InputBufferEditor(
+            value: input,
+            cursor: cursorPosition
+        )
+        editor.insert(text)
+        return synchronize(
+            input: editor.value,
+            cursorPosition: editor.cursor
+        )
+    }
+
+    @discardableResult
+    public mutating func deleteBackward(
+        unit: InputBufferDeletionUnit
+    ) -> Bool {
+        var editor = InputBufferEditor(
+            value: input,
+            cursor: cursorPosition
+        )
+        editor.deleteBackward(unit: unit)
+        return synchronize(
+            input: editor.value,
+            cursorPosition: editor.cursor
+        )
+    }
+
+    @discardableResult
+    public mutating func moveCursor(by offset: Int) -> Bool {
+        var editor = InputBufferEditor(
+            value: input,
+            cursor: cursorPosition
+        )
+        guard editor.move(by: offset) else { return false }
+        _ = synchronize(
+            input: editor.value,
+            cursorPosition: editor.cursor
+        )
+        return true
+    }
+
+    @discardableResult
+    public mutating func clear() -> Bool {
+        synchronize(input: "", cursorPosition: 0)
+    }
+
     public func snapshot(controllerID: String) -> InputSessionSnapshot? {
         guard let sessionGeneration else { return nil }
         return InputSessionSnapshot(

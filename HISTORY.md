@@ -2417,3 +2417,10 @@
 - 絵文字選択中のTabとShift TabをCarbonで先に捕捉し、InputMethodKitを経由しない入力先アプリへの流出を防止
 - 絵文字検索語句の変換中は上下矢印で変換候補を移動し、左右矢印で絵文字グリッドへ移行するように変更
 - 絵文字選択中のEscでパネルを閉じず、検索語句と変換候補の選択へ戻るように変更
+- 英字入力から先頭だけを大文字にした候補を生成し、全大文字候補の直前へ表示
+- 計算、単位、数値、記号の同期候補生成と優先分岐を`SpecialConversionCandidateSource`へ分離
+- 辞書参照、助詞合成、数字接頭辞、活用、かな、履歴の通常候補生成を`StandardConversionCandidateSource`へ分離
+- 入力文字列とカーソル位置を`InputSession`へ統合し、編集時点でrevisionとsnapshotを更新する構成へ変更
+- 次入力候補の自動終了Timerとパネル外クリック監視を`InputPanelCoordinator`へ移し、パネル終了時に監視も一括破棄する構成へ変更
+- フィルター入力の文字列、変換段階、選択候補、有効条件を`CandidateFilterInputSession`へ統合
+- 候補選択履歴と遅延保存を`CandidateSelectionHistoryStore`へ統合し、履歴更新と保存予約の分離を解消

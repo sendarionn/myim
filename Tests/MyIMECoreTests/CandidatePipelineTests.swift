@@ -181,13 +181,15 @@ struct CandidatePipelineTests {
                 kana: ["まいむ", "マイム"],
                 direct: ["myim"],
                 other: [],
-                trailing: ["MYIM"],
+                trailing: ["Myim", "MYIM"],
                 recencyRanks: ["MYIM": 100],
                 prioritizeKana: false
             )
         )
 
-        #expect(candidates == ["myim", "まいむ", "マイム", "MYIM"])
+        #expect(candidates == [
+            "myim", "まいむ", "マイム", "Myim", "MYIM"
+        ])
     }
 
     @Test

@@ -81,4 +81,40 @@ import Testing
             isActive: false
         ))
     }
+
+    @Test func ownsInputEditingAndInvalidatesSnapshotsImmediately() throws {
+        var session = InputSession()
+        session.activate(sessionGeneration: 12)
+        session.setInput("kou", cursorPosition: 3)
+        let snapshot = try #require(session.snapshot(controllerID: "A"))
+
+        session.insert("h")
+
+        #expect(session.input == "kouh")
+        #expect(session.cursorPosition == 4)
+        #expect(session.inputRevision == snapshot.inputRevision + 1)
+        #expect(!session.accepts(
+            snapshot,
+            controllerID: "A",
+            isActive: true
+        ))
+    }
+
+    @Test func cursorMovementInvalidatesPositionWithoutChangingRevision() throws {
+        var session = InputSession()
+        session.activate(sessionGeneration: 12)
+        session.setInput("kouho", cursorPosition: 5)
+        let snapshot = try #require(session.snapshot(controllerID: "A"))
+
+        let moved = session.moveCursor(by: -1)
+
+        #expect(moved)
+        #expect(session.inputRevision == snapshot.inputRevision)
+        #expect(session.cursorPosition == 4)
+        #expect(!session.accepts(
+            snapshot,
+            controllerID: "A",
+            isActive: true
+        ))
+    }
 }

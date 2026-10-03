@@ -11,6 +11,81 @@ final class InputPanelCoordinator {
     let translationCandidate = CandidateWindowController()
     let externalInformation = ExternalInformationWindowController()
     let symbolTips = SymbolTipsWindowController()
+    private var nextInputDismissTimer: Timer?
+    private var nextInputOutsideLocalMonitor: Any?
+    private var nextInputOutsideGlobalMonitor: Any?
+
+    deinit {
+        stopNextInputLifecycle()
+    }
+
+    func scheduleNextInputDismissal(
+        after interval: TimeInterval,
+        onDismiss: @escaping () -> Void
+    ) {
+        cancelNextInputDismissal()
+        nextInputDismissTimer = Timer.scheduledTimer(
+            withTimeInterval: interval,
+            repeats: false
+        ) { [weak self] timer in
+            guard let self,
+                  timer === nextInputDismissTimer else { return }
+            nextInputDismissTimer = nil
+            onDismiss()
+        }
+    }
+
+    func cancelNextInputDismissal() {
+        nextInputDismissTimer?.invalidate()
+        nextInputDismissTimer = nil
+    }
+
+    func startNextInputOutsideClickMonitoring(
+        onDismiss: @escaping () -> Void
+    ) {
+        stopNextInputOutsideClickMonitoring()
+        let mouseEvents: NSEvent.EventTypeMask = [
+            .leftMouseDown, .rightMouseDown, .otherMouseDown
+        ]
+        nextInputOutsideLocalMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: mouseEvents
+        ) { [weak self] event in
+            self?.dismissNextInputIfClickedOutside(onDismiss: onDismiss)
+            return event
+        }
+        nextInputOutsideGlobalMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: mouseEvents
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                self?.dismissNextInputIfClickedOutside(onDismiss: onDismiss)
+            }
+        }
+    }
+
+    func stopNextInputLifecycle() {
+        cancelNextInputDismissal()
+        stopNextInputOutsideClickMonitoring()
+    }
+
+    private func stopNextInputOutsideClickMonitoring() {
+        if let monitor = nextInputOutsideLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            nextInputOutsideLocalMonitor = nil
+        }
+        if let monitor = nextInputOutsideGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            nextInputOutsideGlobalMonitor = nil
+        }
+    }
+
+    private func dismissNextInputIfClickedOutside(
+        onDismiss: () -> Void
+    ) {
+        guard !candidate.contains(screenPoint: NSEvent.mouseLocation) else {
+            return
+        }
+        onDismiss()
+    }
 
     func showFilterConditions(
         _ labels: [String],
@@ -120,6 +195,7 @@ final class InputPanelCoordinator {
     }
 
     func dismiss(using policy: InputPanelDismissalPolicy) {
+        stopNextInputLifecycle()
         if policy.cancelsCalendarWork {
             candidate.hide()
         }
@@ -137,6 +213,7 @@ final class InputPanelCoordinator {
     }
 
     func dismissAll() {
+        stopNextInputLifecycle()
         candidate.hide()
         fuzzySuggestion.hide()
         translationCandidate.hide()
