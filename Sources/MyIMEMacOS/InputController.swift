@@ -1949,7 +1949,7 @@ final class InputController: IMKInputController {
         }
 
         if isDictionaryRegistrationShortcut(event) {
-            return beginDisplayNameRegistration(
+            return toggleDictionaryRegistrationField(
                 registration: &registration,
                 client: sender
             )
@@ -2086,11 +2086,10 @@ final class InputController: IMKInputController {
         guard var registration = dictionaryRegistrationSession else {
             return false
         }
-        let currentCandidate = registration.pastedCandidate
-            ?? selectedCandidateValue
+        let currentCandidate = selectedCandidateValue
             ?? inputBuffer.nilIfEmpty
         if currentCandidate == nil,
-           let completion = registration.completionWhenInputIsEmpty() {
+           let completion = registration.completionAbsorbingPendingPaste() {
             do {
                 try saveUserDictionaryEntry(
                     reading: completion.reading,
@@ -2113,11 +2112,13 @@ final class InputController: IMKInputController {
             return true
         }
         guard let currentCandidate else {
+            dictionaryRegistrationSession = registration
+            setMarkedText(registration.confirmedCandidate ?? "", in: sender)
+            showDictionaryRegistration(client: sender)
             NSSound.beep()
             return true
         }
-        if registration.pastedCandidate == nil,
-           selectedCandidateValue != nil {
+        if selectedCandidateValue != nil {
             recordSelectedCandidate()
         }
         registration.appendConfirmed(currentCandidate)
@@ -2141,31 +2142,22 @@ final class InputController: IMKInputController {
         refreshCandidates(client: sender)
     }
 
-    private func beginDisplayNameRegistration(
+    private func toggleDictionaryRegistrationField(
         registration: inout DictionaryRegistrationSession,
         client sender: Any
     ) -> Bool {
-        guard !registration.isEnteringDisplayName else {
-            NSSound.beep()
-            return true
-        }
-        let currentCandidate = registration.pastedCandidate
+        let pending = registration.pastedCandidate
             ?? selectedCandidateValue
             ?? inputBuffer.nilIfEmpty
-        let output = (registration.confirmedCandidate ?? "")
-            + (currentCandidate ?? "")
-        guard !output.isEmpty else {
-            NSSound.beep()
-            return true
+        if registration.pastedCandidate == nil,
+           selectedCandidateValue != nil {
+            recordSelectedCandidate()
         }
-        guard registration.beginDisplayName(output: output) else {
-            NSSound.beep()
-            return true
-        }
+        registration.toggleInputField(absorbing: pending)
         dictionaryRegistrationSession = registration
         clearInputBuffer()
         clearCandidateState()
-        setMarkedText("", in: sender)
+        setMarkedText(registration.confirmedCandidate ?? "", in: sender)
         showDictionaryRegistration(client: sender)
         return true
     }
@@ -2174,42 +2166,25 @@ final class InputController: IMKInputController {
         guard let registration = dictionaryRegistrationSession else {
             return
         }
-        let activeFieldLabel = switch registration.activeInputField {
-        case .insertedText: "挿入文字列"
-        case .displayText: "候補表示"
-        }
-        if let confirmedCandidate = registration.confirmedCandidate,
-           inputBuffer.isEmpty,
-           registration.pastedCandidate == nil {
-            candidateWindow.show(
-                candidates: [
-                    "入力中: \(activeFieldLabel)",
-                    "読み: \(registration.reading)",
-                    registration.isEnteringDisplayName
-                        ? "候補表示: \(confirmedCandidate)"
-                        : "挿入: \(confirmedCandidate)",
-                    registration.outputCandidate.map { "挿入: \($0)" }
-                ].compactMap { $0 },
-                selectedIndex: nil,
-                near: inputLocation(for: sender),
-                isAccented: true
+        let pending = registration.pastedCandidate ?? inputBuffer.nilIfEmpty
+        let fields: [(DictionaryRegistrationInputField, String, String)] = [
+            (.displayText, "表示", registration.displayText(pending: pending)),
+            (
+                .insertedText,
+                "挿入",
+                registration.visibleInsertedText(pending: pending)
             )
-            return
+        ]
+        let activeRow = fields.firstIndex {
+            $0.0 == registration.activeInputField
         }
-        let candidate = registration.pastedCandidate ?? inputBuffer.nilIfEmpty
         logPanelSnapshot(event: "candidatePanel.beforeShow", sender: sender)
         candidateWindow.show(
-            candidates: [
-                "入力中: \(activeFieldLabel)",
-                "読み: \(registration.reading)",
-                registration.outputCandidate.map { "挿入: \($0)" },
-                candidate.map {
-                    registration.isEnteringDisplayName
-                        ? "候補表示: \($0)"
-                        : "挿入: \($0)"
-                }
-            ].compactMap { $0 },
-            selectedIndex: nil,
+            candidates: ["読み: \(registration.reading)"] + fields.map {
+                "\($0.1): \($0.2)"
+                    + ($0.0 == registration.activeInputField ? "|" : "")
+            },
+            selectedIndex: activeRow.map { $0 + 1 },
             near: inputLocation(for: sender),
             isAccented: true
         )
