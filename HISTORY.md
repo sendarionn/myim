@@ -2428,3 +2428,5 @@
 - 次入力候補の学習、抑止、JavaScript候補の統合、選択状態、遅延保存を`NextInputSuggestionCoordinator`へ統合
 - ユーザー辞書の追加、削除、再読込、保存を`UserDictionaryStore`へ統合
 - フィルターモード内のかな変換、辞書検索、履歴順の候補生成を`CandidateFilterQuerySource`へ分離
+- 辞書登録中の読み、確定済み文字列、貼り付け保留、表示名、登録出力の状態遷移を`DictionaryRegistrationSession`へ統合
+- 辞書登録処理に残っていたTab起動時代の関数名を現在の役割に合わせて整理

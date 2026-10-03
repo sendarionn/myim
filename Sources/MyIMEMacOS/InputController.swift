@@ -24,18 +24,6 @@ final class InputController: IMKInputController {
     private static weak var emojiPanelController: InputController?
     private static var lifecycleGenerationTracker =
         InputLifecycleGenerationTracker()
-    private struct TabDictionaryRegistration {
-        let originalInput: String
-        let reading: String
-        var pastedCandidate: String?
-        var confirmedCandidate: String?
-        var outputCandidate: String?
-
-        var isEnteringDisplayName: Bool {
-            outputCandidate != nil
-        }
-    }
-
     private enum TranslationCandidateDestination {
         case normal
         case fuzzy(reading: String)
@@ -145,7 +133,7 @@ final class InputController: IMKInputController {
     private var javaScriptExtensionCandidates: [String] = []
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
-    private var tabDictionaryRegistration: TabDictionaryRegistration?
+    private var dictionaryRegistrationSession: DictionaryRegistrationSession?
     private var basicDictionaryStatus = "未確認"
     private let panelCoordinator = InputPanelCoordinator()
     private let definitionProvider = SystemDictionaryDefinitionProvider()
@@ -446,7 +434,7 @@ final class InputController: IMKInputController {
         }
 
         if isSystemUndoRedoShortcut(event) {
-            if !inputBuffer.isEmpty || tabDictionaryRegistration != nil {
+            if !inputBuffer.isEmpty || dictionaryRegistrationSession != nil {
                 clearCompositionForSystemPaste(in: sender)
             }
             if nextInputSuggestionCoordinator.hasCandidates {
@@ -496,7 +484,7 @@ final class InputController: IMKInputController {
         }
 
         if interactionState == .registeringDictionary {
-            return handleTabDictionaryRegistration(event, client: sender)
+            return handleDictionaryRegistration(event, client: sender)
         }
 
         if isUserDictionaryDeletionShortcut(event),
@@ -555,9 +543,9 @@ final class InputController: IMKInputController {
             return true
         }
 
-        if isTabDictionaryRegistrationShortcut(event),
+        if isDictionaryRegistrationShortcut(event),
            !inputBuffer.isEmpty {
-            return beginTabDictionaryRegistration(client: sender)
+            return beginDictionaryRegistration(client: sender)
         }
 
         if handleInputFormFunctionKey(event, client: sender) {
@@ -874,14 +862,14 @@ final class InputController: IMKInputController {
             return
         }
         if let aSelector,
-           tabDictionaryRegistration != nil,
+           dictionaryRegistrationSession != nil,
            let inputClient = client() {
             switch NSStringFromSelector(aSelector) {
             case "insertNewline:", "insertNewlineIgnoringFieldEditor:":
-                _ = confirmTabDictionaryRegistration(client: inputClient)
+                _ = confirmDictionaryRegistration(client: inputClient)
                 return
             case "cancelOperation:":
-                cancelTabDictionaryRegistration(client: inputClient)
+                cancelDictionaryRegistration(client: inputClient)
                 return
             default:
                 break
@@ -1364,8 +1352,8 @@ final class InputController: IMKInputController {
             return
         }
 
-        if tabDictionaryRegistration != nil {
-            showTabDictionaryRegistration(client: sender)
+        if dictionaryRegistrationSession != nil {
+            showDictionaryRegistration(client: sender)
             return
         }
         if reconversionOriginal != nil {
@@ -2191,7 +2179,7 @@ final class InputController: IMKInputController {
         commit(original, to: sender, replacingMarkedText: true)
     }
 
-    private func beginTabDictionaryRegistration(client sender: Any) -> Bool {
+    private func beginDictionaryRegistration(client sender: Any) -> Bool {
         guard let reading = UserDictionaryRegistrationReading.resolve(
             conversionReading: conversionReading,
             originalInput: inputBuffer
@@ -2199,32 +2187,32 @@ final class InputController: IMKInputController {
             NSSound.beep()
             return true
         }
-        let registration = TabDictionaryRegistration(
+        let registration = DictionaryRegistrationSession(
             originalInput: inputBuffer,
             reading: reading
         )
-        tabDictionaryRegistration = registration
+        dictionaryRegistrationSession = registration
         clearInputBuffer()
         clearCandidateState()
         previewWindow.hide()
         setMarkedText("", in: sender)
-        showTabDictionaryRegistration(client: sender)
+        showDictionaryRegistration(client: sender)
         return true
     }
 
-    private func isTabDictionaryRegistrationShortcut(_ event: NSEvent) -> Bool {
+    private func isDictionaryRegistrationShortcut(_ event: NSEvent) -> Bool {
         MyIMFeatureShortcut.dictionaryRegistration.shortcut.matches(event)
     }
 
-    private func handleTabDictionaryRegistration(
+    private func handleDictionaryRegistration(
         _ event: NSEvent,
         client sender: Any
     ) -> Bool {
-        guard var registration = tabDictionaryRegistration else {
+        guard var registration = dictionaryRegistrationSession else {
             return false
         }
 
-        if isTabDictionaryRegistrationShortcut(event) {
+        if isDictionaryRegistrationShortcut(event) {
             return beginDisplayNameRegistration(
                 registration: &registration,
                 client: sender
@@ -2237,15 +2225,14 @@ final class InputController: IMKInputController {
 
         switch event.keyCode {
         case 36, 76:
-            return confirmTabDictionaryRegistration(client: sender)
+            return confirmDictionaryRegistration(client: sender)
         case 49:
             if inputBuffer.isEmpty,
                registration.pastedCandidate == nil {
-                registration.confirmedCandidate =
-                    (registration.confirmedCandidate ?? "") + " "
-                tabDictionaryRegistration = registration
+                registration.appendSpace()
+                dictionaryRegistrationSession = registration
                 setMarkedText(registration.confirmedCandidate ?? "", in: sender)
-                showTabDictionaryRegistration(client: sender)
+                showDictionaryRegistration(client: sender)
                 return true
             }
             let currentCandidate = registration.pastedCandidate
@@ -2255,16 +2242,15 @@ final class InputController: IMKInputController {
                selectedCandidateValue != nil {
                 recordSelectedCandidate()
             }
-            registration.confirmedCandidate =
-                (registration.confirmedCandidate ?? "")
-                + currentCandidate
-                + " "
-            registration.pastedCandidate = nil
-            tabDictionaryRegistration = registration
+            registration.appendConfirmed(
+                currentCandidate,
+                trailingSpace: true
+            )
+            dictionaryRegistrationSession = registration
             clearInputBuffer()
             clearCandidateState()
             setMarkedText(registration.confirmedCandidate ?? "", in: sender)
-            showTabDictionaryRegistration(client: sender)
+            showDictionaryRegistration(client: sender)
             return true
         case 48:
             return handleTab(event, client: sender)
@@ -2287,20 +2273,19 @@ final class InputController: IMKInputController {
         case 51:
             if inputBuffer.isEmpty,
                registration.pastedCandidate == nil,
-               var confirmedCandidate = registration.confirmedCandidate,
-               !confirmedCandidate.isEmpty {
-                confirmedCandidate = InputBufferDeletion.deletingBackward(
-                    from: confirmedCandidate,
-                    unit: deletionUnit(for: event)
+               registration.deleteBackwardFromConfirmed(
+                   unit: deletionUnit(for: event)
+               ) {
+                dictionaryRegistrationSession = registration
+                setMarkedText(
+                    registration.confirmedCandidate ?? "",
+                    in: sender
                 )
-                registration.confirmedCandidate = confirmedCandidate.nilIfEmpty
-                tabDictionaryRegistration = registration
-                setMarkedText(confirmedCandidate, in: sender)
-                showTabDictionaryRegistration(client: sender)
+                showDictionaryRegistration(client: sender)
                 return true
             }
-            registration.pastedCandidate = nil
-            tabDictionaryRegistration = registration
+            registration.discardPendingPaste()
+            dictionaryRegistrationSession = registration
             if inputBuffer.isEmpty {
                 return true
             }
@@ -2309,7 +2294,7 @@ final class InputController: IMKInputController {
                 unit: deletionUnit(for: event)
             )
         case 53:
-            cancelTabDictionaryRegistration(client: sender)
+            cancelDictionaryRegistration(client: sender)
             return true
         default:
             break
@@ -2322,20 +2307,15 @@ final class InputController: IMKInputController {
                 NSSound.beep()
                 return true
             }
-            registration.confirmedCandidate =
-                DictionaryRegistrationTextAccumulator.confirmedText(
-                    confirmed: registration.confirmedCandidate,
-                    pendingPaste: registration.pastedCandidate
-                )
-            registration.pastedCandidate = pasted
-            tabDictionaryRegistration = registration
+            registration.replacePendingPaste(with: pasted)
+            dictionaryRegistrationSession = registration
             clearInputBuffer()
             clearCandidateState()
             setMarkedText(
                 (registration.confirmedCandidate ?? "") + pasted,
                 in: sender
             )
-            showTabDictionaryRegistration(client: sender)
+            showDictionaryRegistration(client: sender)
             return true
         }
 
@@ -2347,20 +2327,14 @@ final class InputController: IMKInputController {
               ) else {
             return true
         }
-        registration.confirmedCandidate =
-            DictionaryRegistrationTextAccumulator.confirmedText(
-                confirmed: registration.confirmedCandidate,
-                pendingPaste: registration.pastedCandidate
-            )
-        registration.pastedCandidate = nil
+        registration.absorbPendingPaste()
         if let selectedValue = selectedCandidateValue {
             recordSelectedCandidate()
-            registration.confirmedCandidate =
-                (registration.confirmedCandidate ?? "") + selectedValue
+            registration.appendConfirmed(selectedValue)
             clearInputBuffer()
             clearCandidateState()
         }
-        tabDictionaryRegistration = registration
+        dictionaryRegistrationSession = registration
         insertIntoInputBuffer(characters)
         selectedCandidateIndex = nil
         setMarkedText(
@@ -2373,27 +2347,27 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func confirmTabDictionaryRegistration(client sender: Any) -> Bool {
-        guard var registration = tabDictionaryRegistration else {
+    private func confirmDictionaryRegistration(client sender: Any) -> Bool {
+        guard var registration = dictionaryRegistrationSession else {
             return false
         }
         let currentCandidate = registration.pastedCandidate
             ?? selectedCandidateValue
             ?? inputBuffer.nilIfEmpty
         if currentCandidate == nil,
-           let confirmedCandidate = registration.confirmedCandidate {
+           let completion = registration.completionWhenInputIsEmpty() {
             do {
-                let output = registration.outputCandidate ?? confirmedCandidate
-                let display = registration.outputCandidate == nil
-                    ? nil
-                    : confirmedCandidate
                 try saveUserDictionaryEntry(
-                    reading: registration.reading,
-                    candidate: output,
-                    display: display
+                    reading: completion.reading,
+                    candidate: completion.output,
+                    display: completion.display
                 )
-                tabDictionaryRegistration = nil
-                commit(output, to: sender, replacingMarkedText: true)
+                dictionaryRegistrationSession = nil
+                commit(
+                    completion.output,
+                    to: sender,
+                    replacingMarkedText: true
+                )
             } catch {
                 NSLog(
                     "ユーザー辞書の保存に失敗: %@",
@@ -2411,20 +2385,18 @@ final class InputController: IMKInputController {
            selectedCandidateValue != nil {
             recordSelectedCandidate()
         }
-        registration.confirmedCandidate =
-            (registration.confirmedCandidate ?? "") + currentCandidate
-        registration.pastedCandidate = nil
-        tabDictionaryRegistration = registration
+        registration.appendConfirmed(currentCandidate)
+        dictionaryRegistrationSession = registration
         clearInputBuffer()
         clearCandidateState()
         setMarkedText(registration.confirmedCandidate ?? "", in: sender)
-        showTabDictionaryRegistration(client: sender)
+        showDictionaryRegistration(client: sender)
         return true
     }
 
-    private func cancelTabDictionaryRegistration(client sender: Any) {
-        guard let registration = tabDictionaryRegistration else { return }
-        tabDictionaryRegistration = nil
+    private func cancelDictionaryRegistration(client sender: Any) {
+        guard let registration = dictionaryRegistrationSession else { return }
+        dictionaryRegistrationSession = nil
         replaceInputBuffer(
             registration.originalInput,
             cursorPosition: registration.originalInput.count
@@ -2435,7 +2407,7 @@ final class InputController: IMKInputController {
     }
 
     private func beginDisplayNameRegistration(
-        registration: inout TabDictionaryRegistration,
+        registration: inout DictionaryRegistrationSession,
         client sender: Any
     ) -> Bool {
         guard !registration.isEnteringDisplayName else {
@@ -2451,19 +2423,20 @@ final class InputController: IMKInputController {
             NSSound.beep()
             return true
         }
-        registration.outputCandidate = output
-        registration.confirmedCandidate = nil
-        registration.pastedCandidate = nil
-        tabDictionaryRegistration = registration
+        guard registration.beginDisplayName(output: output) else {
+            NSSound.beep()
+            return true
+        }
+        dictionaryRegistrationSession = registration
         clearInputBuffer()
         clearCandidateState()
         setMarkedText("", in: sender)
-        showTabDictionaryRegistration(client: sender)
+        showDictionaryRegistration(client: sender)
         return true
     }
 
-    private func showTabDictionaryRegistration(client sender: Any) {
-        guard let registration = tabDictionaryRegistration else {
+    private func showDictionaryRegistration(client sender: Any) {
+        guard let registration = dictionaryRegistrationSession else {
             return
         }
         if let confirmedCandidate = registration.confirmedCandidate,
@@ -2563,7 +2536,7 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = resolvedIndex
         selectedFuzzySuggestionIndex = nil
         showCandidateWindow(client: sender)
-        let registrationPrefix = tabDictionaryRegistration?
+        let registrationPrefix = dictionaryRegistrationSession?
             .confirmedCandidate ?? compositionPrefix
         setMarkedText(
             registrationPrefix
@@ -2665,7 +2638,7 @@ final class InputController: IMKInputController {
         returnApplication: NSRunningApplication?
     ) -> Bool {
         guard inputBuffer.isEmpty,
-              tabDictionaryRegistration == nil else {
+              dictionaryRegistrationSession == nil else {
             return true
         }
         dismissNextInputSuggestions(clearMarkedTextIn: sender)
@@ -4161,7 +4134,7 @@ final class InputController: IMKInputController {
         )
         clearInputBuffer()
         reconversionOriginal = nil
-        tabDictionaryRegistration = nil
+        dictionaryRegistrationSession = nil
         clearCandidateState(includingFuzzy: true)
         cancelPrimarySuggestionSearches()
         hideConversionPanels()
@@ -4235,7 +4208,7 @@ final class InputController: IMKInputController {
         }
 
         let isAccentedInput = CandidatePanelAccentPolicy.isAccented(
-            isDictionaryRegistration: tabDictionaryRegistration != nil
+            isDictionaryRegistration: dictionaryRegistrationSession != nil
         )
         guard let anchorFrame = candidateInputLocation(for: sender) else {
             candidateWindow.hide()
@@ -4803,7 +4776,7 @@ final class InputController: IMKInputController {
         cancelCandidateTranslation()
         clearInputBuffer()
         reconversionOriginal = nil
-        tabDictionaryRegistration = nil
+        dictionaryRegistrationSession = nil
         clearCandidateState(includingFuzzy: true)
         hideConversionPanels()
         emojiWindow.hide()
@@ -5121,7 +5094,8 @@ final class InputController: IMKInputController {
     }
 
     private var compositionPrefix: String {
-        if let confirmedCandidate = tabDictionaryRegistration?.confirmedCandidate {
+        if let confirmedCandidate = dictionaryRegistrationSession?
+            .confirmedCandidate {
             return confirmedCandidate
         }
         return ""
@@ -5577,7 +5551,7 @@ final class InputController: IMKInputController {
     private var interactionState: InputInteractionState {
         InputInteractionState.resolve(
             hasInput: !inputBuffer.isEmpty,
-            isRegisteringDictionary: tabDictionaryRegistration != nil,
+            isRegisteringDictionary: dictionaryRegistrationSession != nil,
             hasSelectedCandidate: selectedCandidateIndex != nil,
             hasSelectedFuzzySuggestion: selectedFuzzySuggestionIndex != nil,
             hasSelectedNextInput:
