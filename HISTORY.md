@@ -2439,3 +2439,5 @@
 - 入力先のactivate、deactivate猶予、古いControllerの判定、終了時の確定判定を`InputControllerLifecycleSession`としてCoreへ分離し、世代Trackerと猶予Taskを`InputLifecycleCoordinator`へ統合
 - 機能設定のUserDefaultsキー、既定値、旧翻訳言語設定の読み替え、インポート辞書の有効状態を`InputFeatureSettings`としてCoreへ統合
 - 候補フィルター用IDSデータのフォルダ準備、変更検出、読み込み、ダウンロード保存を`CandidateFilterIDSStore`、変更時の再読込を`CandidateFilterDatabaseCache`としてCoreへ分離
+- TKGJE基本辞書の更新判定、キャッシュ保存、状態表示を`BasicDictionaryUpdater`と`BasicDictionaryStatus`としてCoreへ分離
+- 複数SKK辞書の取り込みと件数集計を`ImportedDictionaryStore`へ移し、設定ウィンドウの表示位置とシート表示を`SettingsWindowPresenter`へ分離

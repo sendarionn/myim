@@ -7,6 +7,16 @@ public struct ImportedDictionarySummary: Equatable, Sendable {
     public let skippedEntryCount: Int
 }
 
+public struct ImportedDictionaryBatchSummary: Equatable, Sendable {
+    public let readingCount: Int
+    public let candidateCount: Int
+    public let skippedEntryCount: Int
+
+    public var description: String {
+        "読み \(readingCount)件、候補 \(candidateCount)件、対象外 \(skippedEntryCount)件"
+    }
+}
+
 public struct ImportedDictionary: Equatable, Sendable {
     public let fileURL: URL
     public let entries: [DictionaryEntry]
@@ -65,6 +75,32 @@ public struct ImportedDictionaryStore: Sendable {
             readingCount: result.entries.count,
             candidateCount: result.entries.reduce(0) { $0 + $1.candidates.count },
             skippedEntryCount: result.skippedEntryCount
+        )
+    }
+
+    public func importSKKFiles(
+        _ urls: [URL],
+        fileManager: FileManager = .default,
+        onImported: (ImportedDictionarySummary) -> Void = { _ in }
+    ) throws -> ImportedDictionaryBatchSummary {
+        var readingCount = 0
+        var candidateCount = 0
+        var skippedEntryCount = 0
+        for url in urls {
+            let summary = try importSKK(
+                data: Data(contentsOf: url),
+                sourceFilename: url.lastPathComponent,
+                fileManager: fileManager
+            )
+            readingCount += summary.readingCount
+            candidateCount += summary.candidateCount
+            skippedEntryCount += summary.skippedEntryCount
+            onImported(summary)
+        }
+        return ImportedDictionaryBatchSummary(
+            readingCount: readingCount,
+            candidateCount: candidateCount,
+            skippedEntryCount: skippedEntryCount
         )
     }
 

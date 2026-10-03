@@ -112,14 +112,14 @@ final class InputController: IMKInputController {
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
     private var dictionaryRegistrationSession: DictionaryRegistrationSession?
-    private var basicDictionaryStatus = "未確認"
+    private var basicDictionaryStatus = BasicDictionaryStatus.unchecked
     private let panelCoordinator = InputPanelCoordinator()
     private let locationCoordinator = InputLocationCoordinator(
         logger: lifecycleLogger
     )
     private let definitionProvider = SystemDictionaryDefinitionProvider()
     private let romajiConverter = RomajiConverter()
-    private var settingsWindow: NSWindow?
+    private let settingsWindowPresenter = SettingsWindowPresenter()
     private var activeInputClient: Any?
     private let lifecycleCoordinator = InputLifecycleCoordinator(
         clientBundleIdentifier: nil
@@ -329,8 +329,11 @@ final class InputController: IMKInputController {
         trace("InputController.created", sender: inputClient)
 
         basicDictionaryStatus = bundledEntries.isEmpty
-            ? "読込失敗"
-            : "読込済み（TKGJE \(bundledEntries.count)＋Mozc \(indexedMozcEngine.readingCount)input）"
+            ? .loadFailed
+            : .loaded(
+                basicReadingCount: bundledEntries.count,
+                mozcReadingCount: indexedMozcEngine.readingCount
+            )
         rebuildFuzzyConversionEngine()
         updateBasicDictionaryIfNeeded(nil)
     }
@@ -918,51 +921,15 @@ final class InputController: IMKInputController {
 
     @objc
     private func openSettingsWindow(_ sender: Any?) {
-        if let settingsWindow {
-            resetSettingsScrollPosition(settingsWindow)
-            placeSettingsWindowOnActiveScreen(settingsWindow)
-            NSApp.activate(ignoringOtherApps: true)
-            settingsWindow.makeKeyAndOrderFront(nil)
-            return
-        }
-
-        let panel = SettingsWindowBuilder.make(
-            target: self,
-            states: settingsFeatureStates,
-            actions: settingsActions
-        )
-        settingsWindow = panel
-        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        resetSettingsScrollPosition(panel)
-        placeSettingsWindowOnActiveScreen(panel)
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-    }
-
-    private func placeSettingsWindowOnActiveScreen(_ window: NSWindow) {
         let inputFrame = activeInputClient.map { inputLocation(for: $0) }
             ?? .zero
-        let pointer = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first {
-            inputFrame != .zero && $0.frame.intersects(inputFrame)
-        } ?? NSScreen.screens.first {
-            $0.frame.contains(pointer)
-        } ?? NSScreen.main
-        guard let visibleFrame = screen?.visibleFrame else { return }
-        let origin = NSPoint(
-            x: visibleFrame.midX - window.frame.width / 2,
-            y: visibleFrame.midY - window.frame.height / 2
-        )
-        window.setFrameOrigin(origin)
-    }
-
-    private func resetSettingsScrollPosition(_ window: NSWindow) {
-        guard let scrollView = window.contentView as? NSScrollView else {
-            return
+        settingsWindowPresenter.show(near: inputFrame) {
+            SettingsWindowBuilder.make(
+                target: self,
+                states: settingsFeatureStates,
+                actions: settingsActions
+            )
         }
-        window.layoutIfNeeded()
-        scrollView.contentView.scroll(to: .zero)
-        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     private var settingsFeatureStates: SettingsWindowBuilder.FeatureStates {
@@ -1035,19 +1002,11 @@ final class InputController: IMKInputController {
             [weak self] response in
             guard response == .OK, let self else { return }
             do {
-                var readingCount = 0
-                var candidateCount = 0
-                var skippedCount = 0
-                for url in panel.urls {
-                    let summary = try Self.importedDictionaryStore.importSKK(
-                        data: Data(contentsOf: url),
-                        sourceFilename: url.lastPathComponent
-                    )
-                    readingCount += summary.readingCount
-                    candidateCount += summary.candidateCount
-                    skippedCount += summary.skippedEntryCount
+                let summary = try Self.importedDictionaryStore.importSKKFiles(
+                    panel.urls
+                ) {
                     Self.featureSettings.setImportedDictionary(
-                        summary.fileURL.lastPathComponent,
+                        $0.fileURL.lastPathComponent,
                         enabled: true
                     )
                 }
@@ -1060,7 +1019,7 @@ final class InputController: IMKInputController {
                 rebuildConversionEngine()
                 let alert = NSAlert()
                 alert.messageText = "SKK辞書をインポートしました"
-                alert.informativeText = "読み \(readingCount)件、候補 \(candidateCount)件、対象外 \(skippedCount)件"
+                alert.informativeText = summary.description
                 alert.runModal()
             } catch {
                 let alert = NSAlert(error: error)
@@ -1068,11 +1027,7 @@ final class InputController: IMKInputController {
                 alert.runModal()
             }
         }
-        if let settingsWindow {
-            panel.beginSheetModal(for: settingsWindow, completionHandler: completion)
-        } else {
-            completion(panel.runModal())
-        }
+        settingsWindowPresenter.run(panel, completion: completion)
     }
 
     @objc
@@ -1212,7 +1167,7 @@ final class InputController: IMKInputController {
         alert.messageText = "myimの状態"
         alert.informativeText = [
             "ユーザー辞書: \(userDictionaryStore.count)読み",
-            "TKGJE更新: \(basicDictionaryStatus)",
+            "TKGJE更新: \(basicDictionaryStatus.description)",
             "保護入力: \(secureInputStatusDescription)"
         ].joined(separator: "\n")
         alert.addButton(withTitle: "閉じる")
@@ -1712,11 +1667,11 @@ final class InputController: IMKInputController {
 
     @objc
     private func updateBasicDictionaryIfNeeded(_ sender: Any?) {
-        guard basicDictionaryStatus != "確認中" else {
+        guard !basicDictionaryStatus.isChecking else {
             return
         }
 
-        basicDictionaryStatus = "確認中"
+        basicDictionaryStatus = .checking
         let force = sender != nil
         Task { @MainActor [weak self] in
             do {
@@ -1726,57 +1681,50 @@ final class InputController: IMKInputController {
                     guard let self else {
                         return
                     }
-                    basicDictionaryStatus =
-                        "確認済み（\(basicEntries.count)読み）"
-                    return
-                }
-                let cache = try Self.basicDictionaryCache()
-                let currentRevision = try cache.loadMetadata()?.sourceRevision
-                    ?? Self.bundledBasicDictionaryRevision()
-
-                guard currentRevision.map({
-                    snapshot.generatedAt > $0
-                }) ?? true else {
-                    if let self, basicEntries.isEmpty {
-                        basicEntries = Self.addingBundledRequiredEntries(
-                            to: snapshot.entries
-                        )
-                        rebuildConversionEngine(basicDictionaryChanged: true)
-                    }
-                    self?.basicDictionaryStatus =
-                        "最新版（\(snapshot.entries.count)読み）"
-                    return
-                }
-
-                try cache.save(
-                    dictionaryText: snapshot.dictionaryText,
-                    metadata: DictionaryCacheMetadata(
-                        syncedAt: Date(),
-                        entryCount: snapshot.entries.count,
-                        sourceRevision: snapshot.generatedAt,
-                        sourceEntryCount: snapshot.sourceEntryCount
+                    basicDictionaryStatus = .checked(
+                        readingCount: basicEntries.count
                     )
+                    return
+                }
+                let updater = BasicDictionaryUpdater(
+                    cache: try Self.basicDictionaryCache(),
+                    bundledRevision: Self.bundledBasicDictionaryRevision()
                 )
-
+                let result = try updater.apply(snapshot, syncedAt: Date())
                 guard let self else {
                     return
                 }
-                basicEntries = Self.addingBundledRequiredEntries(
-                    to: snapshot.entries
-                )
-                rebuildConversionEngine(basicDictionaryChanged: true)
-                basicDictionaryStatus = "更新完了（\(snapshot.entries.count)読み）"
-
-                if !inputBuffer.isEmpty, let inputClient = client() {
-                    selectedCandidateIndex = nil
-                    previewWindow.hide()
-                    refreshCandidates(client: inputClient)
+                switch result {
+                case .alreadyLatest:
+                    if basicEntries.isEmpty {
+                        applyBasicDictionarySnapshot(snapshot)
+                    }
+                    basicDictionaryStatus = .latest(
+                        readingCount: snapshot.entries.count
+                    )
+                case .updated:
+                    applyBasicDictionarySnapshot(snapshot)
+                    basicDictionaryStatus = .updated(
+                        readingCount: snapshot.entries.count
+                    )
+                    if !inputBuffer.isEmpty, let inputClient = client() {
+                        selectedCandidateIndex = nil
+                        previewWindow.hide()
+                        refreshCandidates(client: inputClient)
+                    }
                 }
             } catch {
-                self?.basicDictionaryStatus = "確認失敗"
+                self?.basicDictionaryStatus = .checkFailed
                 NSLog("TKGJE基本辞書の更新に失敗: %@", error.localizedDescription)
             }
         }
+    }
+
+    private func applyBasicDictionarySnapshot(
+        _ snapshot: TKGDictionarySnapshot
+    ) {
+        basicEntries = Self.addingBundledRequiredEntries(to: snapshot.entries)
+        rebuildConversionEngine(basicDictionaryChanged: true)
     }
 
     private func handleSpace(space: String, client sender: Any) -> Bool {
