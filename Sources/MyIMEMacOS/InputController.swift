@@ -99,7 +99,7 @@ final class InputController: IMKInputController {
     private var activatedAt: TimeInterval?
     private var secureInputPassthroughActive = false
     private var candidateSession = CandidateSession()
-    private var candidateFilterSession = CandidateFilterInputSession()
+    private var candidateFilterCoordinator = CandidateFilterCoordinator()
     private var calendarSelectionSession = CalendarFormatSelectionSession()
     private var fuzzySelection = CandidateSelectionState<FuzzySuggestion>()
     private let userDictionaryStore: UserDictionaryStore
@@ -465,7 +465,7 @@ final class InputController: IMKInputController {
         }
 
 
-        if candidateFilterSession.draft != nil {
+        if candidateFilterCoordinator.draft != nil {
             return handleCandidateFilterInput(event, client: sender)
         }
 
@@ -883,14 +883,14 @@ final class InputController: IMKInputController {
             nextInputSuggestionCoordinator.breakSequence()
         }
         if let aSelector,
-           candidateFilterSession.draft != nil
+           candidateFilterCoordinator.draft != nil
                 || candidateSession.unfilteredCandidates != nil,
            let inputClient = client() {
             let command = NSStringFromSelector(aSelector)
             if let offset = CandidateFilterArrowNavigation.offset(
                 forCommand: command
             ) {
-                if candidateFilterSession.draft != nil {
+                if candidateFilterCoordinator.draft != nil {
                     moveCandidateFilterDraftSelection(
                         by: offset,
                         client: inputClient
@@ -905,14 +905,14 @@ final class InputController: IMKInputController {
             }
             switch command {
             case "cancelOperation:":
-                if candidateFilterSession.draft != nil {
+                if candidateFilterCoordinator.draft != nil {
                     handleCandidateFilterEscape(client: inputClient)
                 } else {
                     removeLastCandidateFilter(client: inputClient)
                 }
                 return
             case "deleteBackward:":
-                if candidateFilterSession.draft?.stage == .filter {
+                if candidateFilterCoordinator.draft?.stage == .filter {
                     return
                 }
             case "insertNewline:", "insertNewlineIgnoringFieldEditor:":
@@ -2837,7 +2837,7 @@ final class InputController: IMKInputController {
         previewWindow.hide()
         selectedCandidateIndex = nil
         showCandidateWindow(client: sender)
-        candidateFilterSession.beginDraft()
+        candidateFilterCoordinator.beginDraft()
         updateCandidateFilterChoices(client: sender)
         return true
     }
@@ -2846,16 +2846,12 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool {
-        guard let draft = candidateFilterSession.draft else { return false }
+        guard let draft = candidateFilterCoordinator.draft else { return false }
         switch event.keyCode {
         case 36, 76:
-            if draft.stage == .conversion,
-               draft.selectedIndex == nil,
-               CandidateFilterInputConfirmationPolicy.canConfirmDirectly(
-                   input: draft.input,
-                   queryVariants: candidateFilterQueryVariants(for: draft.input)
-               ) {
-                candidateFilterSession.enterFilterStage()
+            if candidateFilterCoordinator.enterFilterStageForDirectInput(
+                queryVariants: candidateFilterQueryVariants(for: draft.input)
+            ) {
                 updateCandidateFilterChoices(client: sender)
                 return true
             }
@@ -2871,7 +2867,7 @@ final class InputController: IMKInputController {
             }
             return true
         case 51:
-            if candidateFilterSession.deleteBackwardFromDraft() {
+            if candidateFilterCoordinator.deleteBackwardFromDraft() {
                 updateCandidateFilterChoices(client: sender)
             }
             return true
@@ -2888,7 +2884,7 @@ final class InputController: IMKInputController {
               !characters.isEmpty else {
             return true
         }
-        candidateFilterSession.appendToDraft(characters)
+        candidateFilterCoordinator.appendToDraft(characters)
         updateCandidateFilterChoices(client: sender)
         return true
     }
@@ -2897,31 +2893,45 @@ final class InputController: IMKInputController {
         by offset: Int,
         client sender: Any
     ) {
-        guard candidateFilterSession.moveDraftSelection(by: offset) else {
+        guard candidateFilterCoordinator.moveDraftSelection(by: offset) else {
             return
         }
         showCandidateFilterChoices(client: sender)
     }
 
     private func handleCandidateFilterEscape(client sender: Any) {
-        guard candidateFilterSession.draft != nil else { return }
-        if candidateFilterSession.returnToConversionStage() {
+        switch candidateFilterCoordinator.escape(
+            hasUnfilteredCandidates:
+                candidateSession.unfilteredCandidates != nil
+        ) {
+        case .refreshDraftChoices:
             updateCandidateFilterChoices(client: sender)
-        } else {
-            removeLastCandidateFilter(client: sender)
+        case .showFilteredCandidates:
+            showFilteredCandidates(client: sender)
+        case .restoreUnfilteredCandidates:
+            restoreUnfilteredCandidatesAfterRemovingFilters(client: sender)
+        case .inactive, .cancelDraft:
+            break
         }
     }
 
     private func removeLastCandidateFilter(client sender: Any) {
-        guard candidateSession.unfilteredCandidates != nil else {
-            candidateFilterSession.cancelDraft()
-            return
-        }
-        _ = candidateFilterSession.removeLastCondition()
-        guard candidateFilterSession.conditions.isEmpty else {
+        switch candidateFilterCoordinator.removeLastCondition(
+            hasUnfilteredCandidates:
+                candidateSession.unfilteredCandidates != nil
+        ) {
+        case .showFilteredCandidates:
             showFilteredCandidates(client: sender)
-            return
+        case .restoreUnfilteredCandidates:
+            restoreUnfilteredCandidatesAfterRemovingFilters(client: sender)
+        case .inactive, .cancelDraft, .refreshDraftChoices:
+            break
         }
+    }
+
+    private func restoreUnfilteredCandidatesAfterRemovingFilters(
+        client sender: Any
+    ) {
         _ = candidateSession.restoreUnfilteredCandidates()
         selectedCandidateIndex = nil
         resetCandidateFilters()
@@ -2930,29 +2940,12 @@ final class InputController: IMKInputController {
     }
 
     private func updateCandidateFilterChoices(client sender: Any) {
-        guard let draft = candidateFilterSession.draft else { return }
-        var choices: [CandidateFilterDraftChoice] = []
-        var seen = Set<String>()
-        if draft.input.isEmpty {
-            choices = []
-        } else if draft.stage == .filter {
-            for choice in Self.candidateFilterChoiceGenerator.choices(
-                for: draft.input,
-                activeConditions: candidateFilterSession.conditions
-            ) where seen.insert(choice.label).inserted {
-                choices.append(.filter(choice))
-            }
-        } else {
-            let queries = candidateFilterQueryVariants(for: draft.input)
-            let conversionCandidates = queries.count > 1
-                ? queries.dropFirst()
-                : queries[...]
-            for convertedInput in conversionCandidates
-            where seen.insert(convertedInput).inserted {
-                choices.append(.input(convertedInput))
-            }
-        }
-        candidateFilterSession.updateDraftChoices(choices)
+        candidateFilterCoordinator.refreshChoices(
+            queryVariants: { [self] input in
+                candidateFilterQueryVariants(for: input)
+            },
+            choiceGenerator: Self.candidateFilterChoiceGenerator
+        )
         showCandidateFilterChoices(client: sender)
     }
 
@@ -2968,23 +2961,16 @@ final class InputController: IMKInputController {
     }
 
     private func showCandidateFilterChoices(client sender: Any) {
-        guard let draft = candidateFilterSession.draft else { return }
-        let selectedIndex = draft.selectedIndex ?? 0
-        let pageStart = selectedIndex / Self.maximumCandidateCount
-            * Self.maximumCandidateCount
-        let pageEnd = min(
-            pageStart + Self.maximumCandidateCount,
-            draft.choices.count
-        )
-        let visibleChoices = pageStart < pageEnd
-            ? Array(draft.choices[pageStart..<pageEnd])
-            : []
+        guard let draft = candidateFilterCoordinator.draft,
+              let page = candidateFilterCoordinator.visibleDraftPage(
+                  maximumCount: Self.maximumCandidateCount
+              ) else { return }
         if !candidateWindow.isVisible {
             showCandidateWindow(client: sender)
         }
         candidateFilterDraftWindow.show(
-            candidates: visibleChoices.map(\.label),
-            selectedIndex: draft.selectedIndex.map { $0 - pageStart },
+            candidates: page.choices.map(\.label),
+            selectedIndex: page.selectedIndex,
             near: inputLocation(for: sender),
             isAccented: true,
             reservesEmptyRow: true,
@@ -2995,7 +2981,8 @@ final class InputController: IMKInputController {
     }
 
     private func applySelectedCandidateFilter(client sender: Any) -> Bool {
-        guard let result = candidateFilterSession.applySelectedChoice() else {
+        guard let result = candidateFilterCoordinator.applySelectedChoice()
+        else {
             return true
         }
         switch result {
@@ -3016,11 +3003,11 @@ final class InputController: IMKInputController {
     private func showFilteredCandidates(client sender: Any) {
         guard let unfilteredCandidates = candidateSession.unfilteredCandidates
         else { return }
-        let filteredTexts = CandidateFilter(
-            kanjiDatabase: Self.candidateFilterDatabase
-        ).filtered(
+        let filteredTexts = candidateFilterCoordinator.filteredCandidates(
             unfilteredCandidates.map(\.storageText),
-            conditions: candidateFilterSession.conditions,
+            using: CandidateFilter(
+                kanjiDatabase: Self.candidateFilterDatabase
+            ),
             semanticScorer: { query, candidate in
                 CandidateSemanticScorer.score(
                     query: query,
@@ -3045,7 +3032,7 @@ final class InputController: IMKInputController {
     }
 
     private func showCandidateFilterSummary(client sender: Any) {
-        guard !candidateFilterSession.conditions.isEmpty else {
+        guard !candidateFilterCoordinator.conditions.isEmpty else {
             hideCandidateFilterConditionPanels()
             return
         }
@@ -3056,14 +3043,14 @@ final class InputController: IMKInputController {
 
     private func showCandidateFilterConditionPanels(client sender: Any) {
         panelCoordinator.showFilterConditions(
-            candidateFilterSession.conditions.map(\.label),
+            candidateFilterCoordinator.conditionLabels,
             near: inputLocation(for: sender)
         )
     }
 
     private func layoutCandidateFilterPanels() {
         panelCoordinator.layoutFilterPanels(
-            includingDraft: candidateFilterSession.draft != nil
+            includingDraft: candidateFilterCoordinator.draft != nil
         )
     }
 
@@ -3073,7 +3060,7 @@ final class InputController: IMKInputController {
 
     private func resetCandidateFilters() {
         candidateSession.clearFilterBackup()
-        candidateFilterSession.reset()
+        candidateFilterCoordinator.reset()
         candidateFilterDraftWindow.hide()
         hideCandidateFilterConditionPanels()
     }
