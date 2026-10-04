@@ -74,11 +74,6 @@
     <key>NSServices</key>
     <array>
         <dict>
-            <key>NSKeyEquivalent</key>
-            <dict>
-                <key>default</key>
-                <string>^~d</string>
-            </dict>
             <key>NSMenuItem</key>
             <dict>
                 <key>default</key>
@@ -88,6 +83,8 @@
             <string>captureSelection</string>
             <key>NSPortName</key>
             <string>myim</string>
+            <key>NSRequiredContext</key>
+            <dict/>
             <key>NSSendTypes</key>
             <array>
                 <string>public.utf8-plain-text</string>

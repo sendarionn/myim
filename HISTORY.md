@@ -2487,3 +2487,4 @@
 - 辞書登録で貼り付けた直後のReturnで、貼り付けを確定するだけで登録されなかったため、変換の不要な貼り付けはReturn1回で登録されるように修正
 - Selection Bridge PoCはad-hoc署名の再インストールでアクセシビリティ許可を安定して維持できず、Clipboardの一時変更がRaycast等の履歴へ残るため削除
 - 選択文字列取得のPhase 1をmacOS Services方式で再試作し、一般Clipboardやアクセシビリティ権限を使わずService用Pasteboardから文字列を受け取る構成へ変更
+- macOS Serviceへ空の`NSRequiredContext`を追加してServicesメニューへ表示可能にし、Commandキー以外を指定できない`NSKeyEquivalent`から無効な`⌃⌥D`宣言を削除
