@@ -50,8 +50,6 @@ if let command = CommandLine.arguments.dropFirst().first {
 
 let application = NSApplication.shared
 application.setActivationPolicy(.accessory)
-let selectionServiceProvider = SelectionServiceProvider()
-application.servicesProvider = selectionServiceProvider
 guard let server = IMKServer(
     name: connectionName,
     bundleIdentifier: bundleIdentifier
@@ -62,6 +60,6 @@ guard let server = IMKServer(
 
 NSLog("myim: IMKServer initialized bundle=%@ connection=%@", bundleIdentifier, connectionName)
 
-withExtendedLifetime((server, selectionServiceProvider)) {
+withExtendedLifetime(server) {
     application.run()
 }

@@ -4,10 +4,15 @@ set -euo pipefail
 
 repository_root=${0:A:h:h}
 app_source="$repository_root/.build/myim.app"
+selection_service_source="$repository_root/.build/myim-selection.service"
 input_methods_directory="$HOME/Library/Input Methods"
+services_directory="$HOME/Library/Services"
 app_destination="$input_methods_directory/myim.app"
+selection_service_destination="$services_directory/myim-selection.service"
 staged_destination="$input_methods_directory/.myim.installing.app"
+staged_selection_service="$services_directory/.myim-selection.installing.service"
 previous_destination="$input_methods_directory/.myim.previous.app"
+previous_selection_service="$services_directory/.myim-selection.previous.service"
 legacy_destination="$input_methods_directory/my-ime.app"
 launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
@@ -77,6 +82,8 @@ stop_process() {
 
 cleanup_staging() {
     [[ ! -e "$staged_destination" ]] || rm -rf "$staged_destination"
+    [[ ! -e "$staged_selection_service" ]] \
+        || rm -rf "$staged_selection_service"
 }
 
 restore_previous_application() {
@@ -85,6 +92,14 @@ restore_previous_application() {
     /usr/bin/rsync -aE --delete \
         "$previous_destination/" \
         "$app_destination/"
+}
+
+restore_previous_selection_service() {
+    [[ -e "$previous_selection_service" ]] || return 0
+    mkdir -p "$selection_service_destination"
+    /usr/bin/rsync -aE --delete \
+        "$previous_selection_service/" \
+        "$selection_service_destination/"
 }
 
 installed_build_number=0
@@ -126,14 +141,19 @@ stop_process myim
 stop_process my-ime
 stop_process myim-external-browser
 stop_process myim-extension-host
+stop_process myim-selection-service
 
-mkdir -p "$input_methods_directory"
+mkdir -p "$input_methods_directory" "$services_directory"
 cleanup_staging
 trap cleanup_staging EXIT
 ditto "$app_source" "$staged_destination"
 codesign --verify --deep --strict "$staged_destination"
+ditto "$selection_service_source" "$staged_selection_service"
+codesign --verify --deep --strict "$staged_selection_service"
 
 [[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
+[[ ! -e "$previous_selection_service" ]] \
+    || rm -rf "$previous_selection_service"
 if [[ -e "$app_destination" ]]; then
     ditto "$app_destination" "$previous_destination"
     /usr/bin/rsync -aE --delete \
@@ -145,19 +165,48 @@ else
         "$staged_destination/" \
         "$app_destination/"
 fi
+if [[ -e "$selection_service_destination" ]]; then
+    ditto \
+        "$selection_service_destination" \
+        "$previous_selection_service"
+    /usr/bin/rsync -aE --delete \
+        "$staged_selection_service/" \
+        "$selection_service_destination/"
+else
+    mkdir -p "$selection_service_destination"
+    /usr/bin/rsync -aE \
+        "$staged_selection_service/" \
+        "$selection_service_destination/"
+fi
 if ! codesign --verify --deep --strict "$app_destination"; then
     restore_previous_application
     echo "myim.app の検証に失敗したため旧版へ戻しました" >&2
     exit 1
 fi
+if ! codesign --verify --deep --strict "$selection_service_destination"; then
+    restore_previous_selection_service
+    echo "myim-selection.service の検証に失敗したため旧版へ戻しました" >&2
+    exit 1
+fi
 cleanup_staging
 [[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
+[[ ! -e "$previous_selection_service" ]] \
+    || rm -rf "$previous_selection_service"
 [[ ! -e "$legacy_destination" ]] || rm -rf "$legacy_destination"
 
 installed_executable="$app_destination/Contents/MacOS/myim"
 if ! cmp -s "$source_executable" "$installed_executable"; then
     restore_previous_application
     echo "インストール先のmyimバイナリがビルド結果と一致しません" >&2
+    exit 1
+fi
+source_selection_service_executable="$selection_service_source/Contents/MacOS/myim-selection-service"
+installed_selection_service_executable="$selection_service_destination/Contents/MacOS/myim-selection-service"
+if ! cmp -s \
+    "$source_selection_service_executable" \
+    "$installed_selection_service_executable"; then
+    restore_previous_selection_service
+    echo "インストール先のSelection Serviceがビルド結果と一致しません" >&2
     exit 1
 fi
 installed_build_number=$(
@@ -169,9 +218,21 @@ if [[ "$installed_build_number" != "$next_build_number" ]]; then
     echo "myim.app のビルド番号が更新されていません" >&2
     exit 1
 fi
+installed_selection_service_build_number=$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+        "$selection_service_destination/Contents/Info.plist"
+)
+if [[ "$installed_selection_service_build_number" != "$next_build_number" ]]; then
+    restore_previous_selection_service
+    echo "myim-selection.service のビルド番号が更新されていません" >&2
+    exit 1
+fi
 "$installed_executable" --install-default-extensions
 "$launch_services_register" -u "$app_source" 2>/dev/null || true
+"$launch_services_register" -u "$selection_service_source" 2>/dev/null \
+    || true
 "$launch_services_register" -f "$app_destination"
+"$launch_services_register" -f "$selection_service_destination"
 /System/Library/CoreServices/pbs -update
 "$installed_executable" --register-input-source
 "$installed_executable" --enable-input-source

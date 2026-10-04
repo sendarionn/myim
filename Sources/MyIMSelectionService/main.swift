@@ -2,7 +2,7 @@ import AppKit
 import MyIMECore
 import os
 
-final class SelectionServiceProvider: NSObject {
+private final class SelectionServiceProvider: NSObject {
     private static let legacyStringType = NSPasteboard.PasteboardType(
         "NSStringPboardType"
     )
@@ -32,4 +32,14 @@ final class SelectionServiceProvider: NSObject {
         )
         NSSound(named: "Tink")?.play()
     }
+}
+
+private let portName = "myim-selection-service"
+let application = NSApplication.shared
+application.setActivationPolicy(.prohibited)
+private let provider = SelectionServiceProvider()
+NSRegisterServicesProvider(provider, portName)
+
+withExtendedLifetime(provider) {
+    application.run()
 }

@@ -12,11 +12,15 @@ helpers_directory="$contents_directory/Helpers"
 browser_bundle="$helpers_directory/myim-external-browser.app"
 browser_contents="$browser_bundle/Contents"
 browser_executable_directory="$browser_contents/MacOS"
+selection_service_bundle="$repository_root/.build/myim-selection.service"
+selection_service_contents="$selection_service_bundle/Contents"
+selection_service_executable_directory="$selection_service_contents/MacOS"
 iconset_directory="$repository_root/.build/myim.iconset"
 menu_assets_directory="$repository_root/.build/myim-menu-assets"
 ime_executable="$executable_directory/myim"
 browser_executable="$browser_executable_directory/myim-external-browser"
 extension_host="$helpers_directory/myim-extension-host"
+selection_service_executable="$selection_service_executable_directory/myim-selection-service"
 code_sign_identity=${MYIM_CODE_SIGN_IDENTITY:--}
 architectures=(${=MYIM_ARCHITECTURES:-})
 version=${MYIM_VERSION:-}
@@ -30,21 +34,33 @@ done
 swift build "${swift_build_arguments[@]}" --product myim-macos
 swift build "${swift_build_arguments[@]}" --product myim-external-browser
 swift build "${swift_build_arguments[@]}" --product myim-extension-host
+swift build "${swift_build_arguments[@]}" --product myim-selection-service
 products_directory=$(swift build "${swift_build_arguments[@]}" --show-bin-path)
 
-rm -rf "$application_bundle" "$iconset_directory" "$menu_assets_directory"
+rm -rf \
+    "$application_bundle" \
+    "$selection_service_bundle" \
+    "$iconset_directory" \
+    "$menu_assets_directory"
 
 mkdir -p \
     "$executable_directory" \
     "$resources_directory" \
     "$frameworks_directory" \
-    "$browser_executable_directory"
+    "$browser_executable_directory" \
+    "$selection_service_executable_directory"
 mkdir -p "$iconset_directory"
 mkdir -p "$menu_assets_directory"
 cp "$products_directory/myim-macos" "$ime_executable"
 cp "$products_directory/myim-external-browser" "$browser_executable"
 cp "$products_directory/myim-extension-host" "$extension_host"
+cp \
+    "$products_directory/myim-selection-service" \
+    "$selection_service_executable"
 cp "macOS/ExternalBrowser-Info.plist" "$browser_contents/Info.plist"
+cp \
+    "macOS/SelectionService-Info.plist" \
+    "$selection_service_contents/Info.plist"
 
 developer_rpaths=("${(@f)$(otool -l "$ime_executable" | awk '
     /cmd LC_RPATH/ {
@@ -88,6 +104,9 @@ if [[ -n "$version" ]]; then
     /usr/libexec/PlistBuddy \
         -c "Set :CFBundleShortVersionString $version" \
         "$browser_contents/Info.plist"
+    /usr/libexec/PlistBuddy \
+        -c "Set :CFBundleShortVersionString $version" \
+        "$selection_service_contents/Info.plist"
 fi
 if [[ -n "$build_number" ]]; then
     /usr/libexec/PlistBuddy \
@@ -96,6 +115,9 @@ if [[ -n "$build_number" ]]; then
     /usr/libexec/PlistBuddy \
         -c "Set :CFBundleVersion $build_number" \
         "$browser_contents/Info.plist"
+    /usr/libexec/PlistBuddy \
+        -c "Set :CFBundleVersion $build_number" \
+        "$selection_service_contents/Info.plist"
 fi
 cp "macOS/InfoPlist.strings" "$resources_directory/InfoPlist.strings"
 cp \
@@ -198,11 +220,15 @@ iconutil -c icns "$iconset_directory" -o "$resources_directory/AppIcon.icns"
 chmod +x "$ime_executable"
 chmod +x "$browser_executable"
 chmod +x "$extension_host"
+chmod +x "$selection_service_executable"
 xattr -cr "$application_bundle"
+xattr -cr "$selection_service_bundle"
 
 plutil -lint "$contents_directory/Info.plist"
 plutil -lint "$browser_contents/Info.plist"
+plutil -lint "$selection_service_contents/Info.plist"
 if [[ "$code_sign_identity" == "-" ]]; then
+    codesign --force --sign - "$selection_service_bundle"
     codesign --force --sign - "$extension_host"
     codesign --force --sign - "$browser_bundle"
     codesign \
@@ -211,6 +237,12 @@ if [[ "$code_sign_identity" == "-" ]]; then
         --entitlements "macOS/myim.entitlements" \
         "$application_bundle"
 else
+    codesign \
+        --force \
+        --sign "$code_sign_identity" \
+        --options runtime \
+        --timestamp \
+        "$selection_service_bundle"
     codesign \
         --force \
         --sign "$code_sign_identity" \
@@ -232,3 +264,4 @@ else
 fi
 
 echo "$application_bundle"
+echo "$selection_service_bundle"

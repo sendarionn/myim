@@ -2488,3 +2488,4 @@
 - Selection Bridge PoCはad-hoc署名の再インストールでアクセシビリティ許可を安定して維持できず、Clipboardの一時変更がRaycast等の履歴へ残るため削除
 - 選択文字列取得のPhase 1をmacOS Services方式で再試作し、一般Clipboardやアクセシビリティ権限を使わずService用Pasteboardから文字列を受け取る構成へ変更
 - macOS Serviceへ空の`NSRequiredContext`を追加してServicesメニューへ表示可能にし、Commandキー以外を指定できない`NSKeyEquivalent`から無効な`⌃⌥D`宣言を削除
+- Input Methods内のmyim.appではService有効状態が保持されないため、本体からService宣言を分離し、標準の`~/Library/Services`へ独立した`myim-selection.service`を配置する構成へ変更

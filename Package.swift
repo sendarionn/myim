@@ -16,6 +16,10 @@ let package = Package(
         .executable(
             name: "myim-external-browser",
             targets: ["MyIMExternalBrowser"]
+        ),
+        .executable(
+            name: "myim-selection-service",
+            targets: ["MyIMSelectionService"]
         )
     ],
     dependencies: [],
@@ -56,6 +60,13 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("JavaScriptCore")
+            ]
+        ),
+        .executableTarget(
+            name: "MyIMSelectionService",
+            dependencies: ["MyIMECore"],
+            swiftSettings: [
+                .swiftLanguageMode(.v5)
             ]
         ),
         .testTarget(
