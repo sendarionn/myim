@@ -72,4 +72,17 @@ struct BundledParticleCompositionTests {
         #expect(!candidates.contains("メイドは"))
         #expect(!candidates.contains("メードは"))
     }
+
+    @Test
+    func doesNotGenerateNounPlusVerbTeForm() throws {
+        let source = try #require(Self.source)
+
+        let candidates = source.candidates(for: .init(
+            input: "shiteite",
+            conversionReading: "shiteite"
+        )).map(\.storageText)
+
+        #expect(!candidates.contains("指定て"))
+        #expect(candidates.contains("していて"))
+    }
 }

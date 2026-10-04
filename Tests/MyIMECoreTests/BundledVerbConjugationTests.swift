@@ -93,6 +93,11 @@ struct BundledVerbConjugationTests {
     }
 
     @Test
+    func keepsRepresentativeTeFormCandidate() throws {
+        #expect(try candidates(for: "ninjite").contains("任じて"))
+    }
+
+    @Test
     func keepsNounsAndExactWordsAhead() throws {
         #expect(try candidates(for: "kitai").first == "期待")
         #expect(try candidates(for: "kaitai").first == "解体")

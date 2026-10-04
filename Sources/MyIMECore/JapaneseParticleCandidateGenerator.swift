@@ -49,8 +49,7 @@ public enum JapaneseParticleCandidateGenerator {
         Particle(reading: "ya", text: "や"),
         Particle(reading: "ka", text: "か"),
         Particle(reading: "ne", text: "ね"),
-        Particle(reading: "yo", text: "よ"),
-        Particle(reading: "te", text: "て")
+        Particle(reading: "yo", text: "よ")
     ]
 
     public static func candidates(

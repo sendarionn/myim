@@ -5,6 +5,7 @@ import Testing
 struct JapaneseParticleCandidateGeneratorTests {
     private let dictionary = [
         "kouho": ["候補"],
+        "shitei": ["指定"],
         "sentaku": ["選択"]
     ]
 
@@ -35,6 +36,11 @@ struct JapaneseParticleCandidateGeneratorTests {
     @Test
     func requiresAnExactDictionaryStem() {
         #expect(candidates(for: "mityakuwp").isEmpty)
+    }
+
+    @Test
+    func doesNotTreatVerbTeFormAsASimpleParticle() {
+        #expect(!candidates(for: "shiteite").contains("指定て"))
     }
 
     @Test
