@@ -1,6 +1,5 @@
 @preconcurrency import AppKit
 import MyIMECore
-import os
 
 enum CandidateNavigationDirection: Equatable {
     case left
@@ -158,10 +157,6 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
 }
 
 final class CandidateWindowController: NSObject {
-    private static let layoutLogger = Logger(
-        subsystem: "io.github.sendarionn.inputmethod.myime",
-        category: "candidate-row-layout"
-    )
     private static let itemIdentifier = NSUserInterfaceItemIdentifier(
         "candidateItem"
     )
@@ -414,20 +409,6 @@ final class CandidateWindowController: NSObject {
             itemSize(
                 for: candidates[$0],
                 showsAlternateCommitIndicator: self.alternateCommitIndicators[$0]
-            )
-        }
-        for index in candidates.indices
-        where self.alternateCommitIndicators[index] {
-            let textWidth = labelWidth(
-                text: candidates[index],
-                font: CandidatePanelItemStyle.font
-            )
-            let indicatorWidth = labelWidth(
-                text: "●",
-                font: CandidatePanelItemStyle.accessoryFont
-            )
-            Self.layoutLogger.notice(
-                "alternate row measured index=\(index, privacy: .public) characters=\(candidates[index].count, privacy: .public) textWidth=\(textWidth, privacy: .public) indicatorWidth=\(indicatorWidth, privacy: .public) rowWidth=\(measuredItemSizes[index].width, privacy: .public)"
             )
         }
 
