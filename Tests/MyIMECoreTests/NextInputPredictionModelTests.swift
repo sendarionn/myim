@@ -257,35 +257,36 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func ranksFrequentSequenceAheadOfLessFrequentSequence() {
+    func ranksRecentSequenceAheadOfMoreFrequentSequence() {
         var model = NextInputPredictionModel()
         record(["実装", "に", "進んで"], repetitions: 6, in: &model)
         record(["実装", "を", "行う"], repetitions: 3, in: &model)
 
         let candidates = model.candidates(after: "実装", limit: 16)
 
-        #expect(index(of: "に進んで", in: candidates) < index(
-            of: "を行う",
+        #expect(index(of: "を行う", in: candidates) < index(
+            of: "に進んで",
             in: candidates
         ))
     }
 
     @Test
-    func longerMatchingContextCanOutrankShorterContext() {
+    func longerMatchingContextDoesNotOutrankMoreRecentUse() {
         var model = NextInputPredictionModel()
-        record(["実装", "を", "確認"], repetitions: 8, in: &model)
         record(
             ["修正", "の", "実装", "に", "進んで"],
             repetitions: 3,
             in: &model
         )
+        record(["実装", "を", "確認"], repetitions: 3, in: &model)
 
         let candidates = model.candidates(
             after: ["修正", "の", "実装"],
             limit: 16
         )
 
-        #expect(candidates.first == "に進んで")
+        #expect(candidates.first == "を確認")
+        #expect(candidates.contains("に進んで"))
     }
 
     @Test
@@ -316,9 +317,9 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func repeatedAcceptedSuggestionsPromoteASequenceWithWeakEvidence() {
+    func twoAcceptedEpisodesPromoteASequence() {
         var model = NextInputPredictionModel()
-        for _ in 0..<12 {
+        for _ in 0..<2 {
             model.record("実装")
             model.record("に", source: .acceptedSuggestion)
             model.record("進んで", source: .acceptedSuggestion)
@@ -332,9 +333,9 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func acceptedSuggestionsBelowTheWeightedThresholdDoNotPromoteASequence() {
+    func oneAcceptedEpisodeDoesNotPromoteASequence() {
         var model = NextInputPredictionModel()
-        for _ in 0..<11 {
+        for _ in 0..<1 {
             model.record("実装")
             model.record("に", source: .acceptedSuggestion)
             model.record("進んで", source: .acceptedSuggestion)
@@ -344,10 +345,10 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func acceptedSuggestionsDoNotOutrankStrongerDirectEvidence() {
+    func recentlySelectedEpisodeOutranksOlderDirectSequence() {
         var model = NextInputPredictionModel()
         record(["実装", "を", "行う"], repetitions: 6, in: &model)
-        for _ in 0..<12 {
+        for _ in 0..<2 {
             model.record("実装")
             model.record("に", source: .acceptedSuggestion)
             model.record("進んで", source: .acceptedSuggestion)
@@ -355,8 +356,8 @@ struct NextInputPredictionModelTests {
 
         let candidates = model.candidates(after: "実装", limit: 16)
 
-        #expect(index(of: "を行う", in: candidates) < index(
-            of: "に進んで",
+        #expect(index(of: "に進んで", in: candidates) < index(
+            of: "を行う",
             in: candidates
         ))
     }
@@ -454,7 +455,7 @@ struct NextInputPredictionModelTests {
     @Test
     func countsEachAcceptedEpisodeOnceWithoutSequenceBreaks() {
         var model = NextInputPredictionModel()
-        for _ in 0..<11 {
+        for _ in 0..<1 {
             model.record("実装")
             model.record("に", source: .acceptedSuggestion)
             model.record("進んで", source: .acceptedSuggestion)
@@ -500,7 +501,7 @@ struct NextInputPredictionModelTests {
     @Test
     func reselectingAPromotedCandidateKeepsItsTokens() {
         var model = NextInputPredictionModel()
-        for _ in 0..<12 {
+        for _ in 0..<2 {
             model.record("実装")
             model.record("に", source: .acceptedSuggestion)
             model.record("進んで", source: .acceptedSuggestion)

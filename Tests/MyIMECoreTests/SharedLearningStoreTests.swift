@@ -13,9 +13,9 @@ struct SharedLearningStoreTests {
         let vscode = NextInputSuggestionCoordinator(store: fixture.store)
         let chrome = NextInputSuggestionCoordinator(store: fixture.store)
 
-        learnRepetitions(3, in: vscode)
+        learnRepetitions(1, in: vscode)
         vscode.flush()
-        learnRepetitions(9, in: chrome)
+        learnRepetitions(1, in: chrome)
         chrome.flush()
 
         let reloaded = try JSONDecoder().decode(
@@ -32,7 +32,7 @@ struct SharedLearningStoreTests {
         let vscode = NextInputSuggestionCoordinator(store: fixture.store)
         let chrome = NextInputSuggestionCoordinator(store: fixture.store)
 
-        for round in 0..<12 {
+        for round in 0..<2 {
             learnRepetitions(1, in: round.isMultiple(of: 2) ? vscode : chrome)
         }
         let afterTyping = learn("実装", source: .directInput, in: chrome)
@@ -126,7 +126,7 @@ struct SharedLearningStoreTests {
         let fixture = Fixture()
         defer { fixture.remove() }
         let coordinator = NextInputSuggestionCoordinator(store: fixture.store)
-        learnRepetitions(12, in: coordinator)
+        learnRepetitions(2, in: coordinator)
         try fixture.store.suppress("を", after: "実装")
         fixture.store.flush()
 

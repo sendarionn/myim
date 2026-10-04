@@ -74,9 +74,8 @@ public struct NextInputPredictionModel: Codable, Sendable {
     public static let maximumContextTokenCount = 4
     public static let maximumPredictionTokenCount = 4
     public static let minimumDirectSequenceCount = 3
-    // Accepted suggestions are real commits, but count weakly so repeatedly
-    // accepting a recommendation cannot promote a sequence too quickly
-    private static let acceptedSuggestionEvidenceWeight = 0.25
+    /// Selecting the same run of suggestions this many times combines it
+    public static let minimumEpisodePromotionCount = 2
 
     private struct CandidateStat: Codable, Sendable {
         var count: Int
@@ -91,6 +90,8 @@ public struct NextInputPredictionModel: Codable, Sendable {
     private struct SequenceCandidateStat: Codable, Sendable {
         var tokens: [String]
         var directCount: Int
+        /// For a multi-token candidate this counts selection episodes only,
+        /// since sentence spans containing accepted tokens are not recorded
         var acceptedSuggestionCount: Int
         var lastUsed: Int
     }
@@ -114,7 +115,6 @@ public struct NextInputPredictionModel: Codable, Sendable {
 
     private struct RankedPrediction {
         let prediction: NextInputPrediction
-        let score: Double
         let lastUsed: Int
         let contextLength: Int
     }
@@ -158,8 +158,14 @@ public struct NextInputPredictionModel: Codable, Sendable {
         case .acceptedSuggestion:
             extendEpisode(with: normalized)
         }
-        for token in normalized {
-            recordSentenceToken(token, source: source)
+        for (index, token) in normalized.enumerated() {
+            // A combined suggestion is used as a whole, so its first token
+            // alone was not chosen after the preceding context
+            recordSentenceToken(
+                token,
+                source: source,
+                refreshesRecency: index > 0 || normalized.count == 1
+            )
         }
         if source == .acceptedSuggestion {
             recordEpisodeEvidence()
@@ -168,17 +174,19 @@ public struct NextInputPredictionModel: Codable, Sendable {
 
     private mutating func recordSentenceToken(
         _ normalized: String,
-        source: NextInputLearningSource
+        source: NextInputLearningSource,
+        refreshesRecency: Bool
     ) {
-
         sequence += 1
         if let previous = lastInput, previous != normalized {
             var context = contexts[previous]
                 ?? Context(candidates: [:], lastUsed: sequence)
             var stat = context.candidates[normalized]
-                ?? CandidateStat(count: 0, lastUsed: sequence)
+                ?? CandidateStat(count: 0, lastUsed: 0)
             stat.count = min(stat.count + 1, Int.max - 1)
-            stat.lastUsed = sequence
+            if refreshesRecency {
+                stat.lastUsed = sequence
+            }
             context.candidates[normalized] = stat
             context.candidates = Self.compactedCandidates(
                 context.candidates,
@@ -188,7 +196,11 @@ public struct NextInputPredictionModel: Codable, Sendable {
             contexts[previous] = context
         }
 
-        recordVariableLengthSequences(endingWith: normalized, source: source)
+        recordVariableLengthSequences(
+            endingWith: normalized,
+            source: source,
+            refreshesRecency: refreshesRecency
+        )
         recentInputs.append(normalized)
         recentSources.append(source)
         let retained = Self.maximumContextTokenCount
@@ -283,16 +295,13 @@ public struct NextInputPredictionModel: Codable, Sendable {
 
         if let immediate = normalizedContext.last,
            let context = contexts[immediate] {
-            let total = max(1, context.candidates.values.reduce(0) {
-                $0 + $1.count
-            })
             for (text, stat) in context.candidates
             where !suppressed.contains(text) {
-                rankedByText[text] = rankedPrediction(
-                    tokens: [text],
-                    directCount: stat.count,
-                    acceptedSuggestionCount: 0,
-                    occurrenceCount: total,
+                rankedByText[text] = RankedPrediction(
+                    prediction: NextInputPrediction(
+                        text: text,
+                        sourceTokens: [text]
+                    ),
                     lastUsed: stat.lastUsed,
                     contextLength: 1
                 )
@@ -312,19 +321,20 @@ public struct NextInputPredictionModel: Codable, Sendable {
                 let text = stat.tokens.joined()
                 guard !suppressed.contains(text),
                       text.count <= Self.maximumValueLength,
-                      stat.tokens.count == 1
-                        || Self.hasEnoughSequenceEvidence(stat)
+                      Self.isEligible(stat)
                 else {
                     continue
                 }
-                let ranked = rankedPrediction(
-                    tokens: stat.tokens,
-                    directCount: stat.directCount,
-                    acceptedSuggestionCount: stat.acceptedSuggestionCount,
-                    occurrenceCount: stored.occurrenceCount,
+                let ranked = RankedPrediction(
+                    prediction: NextInputPrediction(
+                        text: text,
+                        sourceTokens: stat.tokens
+                    ),
                     lastUsed: stat.lastUsed,
                     contextLength: contextLength
                 )
+                // Every matching context is a suffix of the current one, so
+                // the candidate keeps its most recent use among them
                 if let current = rankedByText[text],
                    !Self.shouldRank(ranked, before: current) {
                     continue
@@ -458,7 +468,8 @@ public struct NextInputPredictionModel: Codable, Sendable {
 
     private mutating func recordVariableLengthSequences(
         endingWith value: String,
-        source: NextInputLearningSource
+        source: NextInputLearningSource,
+        refreshesRecency: Bool
     ) {
         let window = recentInputs + [value]
         let windowSources = recentSources + [source]
@@ -526,7 +537,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
                         tokens: tokens,
                         directCount: 0,
                         acceptedSuggestionCount: 0,
-                        lastUsed: sequence
+                        lastUsed: 0
                     )
                 switch source {
                 case .directInput:
@@ -537,7 +548,9 @@ public struct NextInputPredictionModel: Codable, Sendable {
                         Int.max - 1
                     )
                 }
-                stat.lastUsed = sequence
+                if refreshesRecency {
+                    stat.lastUsed = sequence
+                }
                 context.candidates[candidateKey] = stat
                 context.candidates = Self.compactedSequenceCandidates(
                     context.candidates,
@@ -549,76 +562,25 @@ public struct NextInputPredictionModel: Codable, Sendable {
         }
     }
 
-    private func rankedPrediction(
-        tokens: [String],
-        directCount: Int,
-        acceptedSuggestionCount: Int,
-        occurrenceCount: Int,
-        lastUsed: Int,
-        contextLength: Int
-    ) -> RankedPrediction {
-        let effectiveCount = Self.effectiveCount(
-            directCount: directCount,
-            acceptedSuggestionCount: acceptedSuggestionCount
-        )
-        let conditionalProbability = min(
-            1,
-            effectiveCount / Double(max(1, occurrenceCount))
-        )
-        let age = max(0, sequence - lastUsed)
-        let recency = 8 / Double(age + 1)
-        let score = Double(contextLength) * 50
-            + log2(1 + effectiveCount) * 8
-            + conditionalProbability * 20
-            + recency
-        return RankedPrediction(
-            prediction: NextInputPrediction(
-                text: tokens.joined(),
-                sourceTokens: tokens
-            ),
-            score: score,
-            lastUsed: lastUsed,
-            contextLength: contextLength
-        )
-    }
-
+    /// Candidates are ordered by their last use alone; context length only
+    /// breaks ties
     private static func shouldRank(
         _ lhs: RankedPrediction,
         before rhs: RankedPrediction
     ) -> Bool {
-        if lhs.contextLength == 1, rhs.contextLength == 1,
-           lhs.prediction.sourceTokens.count == 1,
-           rhs.prediction.sourceTokens.count == 1,
-           lhs.lastUsed != rhs.lastUsed {
-            return lhs.lastUsed > rhs.lastUsed
-        }
-        if lhs.score != rhs.score { return lhs.score > rhs.score }
+        if lhs.lastUsed != rhs.lastUsed { return lhs.lastUsed > rhs.lastUsed }
         if lhs.contextLength != rhs.contextLength {
             return lhs.contextLength > rhs.contextLength
         }
-        if lhs.lastUsed != rhs.lastUsed { return lhs.lastUsed > rhs.lastUsed }
-        let lhsLength = lhs.prediction.sourceTokens.count
-        let rhsLength = rhs.prediction.sourceTokens.count
-        if lhsLength != rhsLength { return lhsLength > rhsLength }
         return lhs.prediction.text < rhs.prediction.text
     }
 
-    private static func hasEnoughSequenceEvidence(
-        _ stat: SequenceCandidateStat
-    ) -> Bool {
-        effectiveCount(
-            directCount: stat.directCount,
-            acceptedSuggestionCount: stat.acceptedSuggestionCount
-        ) >= Double(minimumDirectSequenceCount)
-    }
-
-    private static func effectiveCount(
-        directCount: Int,
-        acceptedSuggestionCount: Int
-    ) -> Double {
-        Double(directCount)
-            + Double(acceptedSuggestionCount)
-                * acceptedSuggestionEvidenceWeight
+    /// A multi-token candidate is offered once it was typed as a sentence
+    /// often enough or selected as the same run of suggestions twice
+    private static func isEligible(_ stat: SequenceCandidateStat) -> Bool {
+        stat.tokens.count == 1
+            || stat.directCount >= minimumDirectSequenceCount
+            || stat.acceptedSuggestionCount >= minimumEpisodePromotionCount
     }
 
     private mutating func removeSequenceCandidates(matching text: String) {

@@ -198,7 +198,7 @@ struct NextInputCommitFlowTests {
     @Test
     func repeatedNextInputSelectionsPromoteTheirCommitSequence() {
         let flow = CommitFlow()
-        for _ in 0..<12 {
+        for _ in 0..<2 {
             flow.commitInput("実装")
             flow.offerNextInput("に")
             flow.select("に")
