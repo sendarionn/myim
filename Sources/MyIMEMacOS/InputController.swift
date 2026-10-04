@@ -4290,7 +4290,10 @@ final class InputController: IMKInputController {
         let nextInputPolicy = NextInputCommitPolicy.resolve(
             committing: inputHistoryValue,
             closingBracketTracker: closingBracketTracker,
-            isGeneratedParticle: isGeneratedParticleCandidate(inputHistoryValue)
+            isGeneratedParticle: isGeneratedParticleCandidate(
+                inputHistoryValue
+            ),
+            selectedCandidate: candidateSession.selectedCandidate
         )
 
         let markedRange = textClient.markedRange()

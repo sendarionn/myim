@@ -50,6 +50,43 @@ struct NextInputCommitFlowTests {
     }
 
     @Test
+    func explicitlySelectedGeneratedParticleLearnsAndUpdatesSuggestions() {
+        let policy = NextInputCommitPolicy.resolve(
+            committing: "に",
+            closingBracketTracker: ClosingBracketTracker(),
+            isGeneratedParticle: true,
+            selectedCandidate: Candidate(
+                storageText: "に",
+                source: .particleComposition,
+                attributes: [.generated]
+            )
+        )
+
+        #expect(policy == NextInputCommitPolicy(
+            learnsInput: true,
+            updatesSuggestions: true
+        ))
+    }
+
+    @Test
+    func unrelatedSelectionDoesNotMakeAGeneratedParticleLearnable() {
+        let policy = NextInputCommitPolicy.resolve(
+            committing: "に",
+            closingBracketTracker: ClosingBracketTracker(),
+            isGeneratedParticle: true,
+            selectedCandidate: Candidate(
+                storageText: "別候補",
+                source: .basicDictionary
+            )
+        )
+
+        #expect(policy == NextInputCommitPolicy(
+            learnsInput: false,
+            updatesSuggestions: false
+        ))
+    }
+
+    @Test
     func openingBracketOffersItsClosingAsNextInput() {
         let flow = CommitFlow()
 
@@ -176,6 +213,29 @@ struct NextInputCommitFlowTests {
 
         #expect(flow.coordinator.candidates.contains("に進んで"))
     }
+
+    @Test
+    func selectedGeneratedParticleContributesToACommitSequence() {
+        let flow = CommitFlow()
+        for _ in 0..<3 {
+            flow.commitInput("実装")
+            flow.commitInput(
+                "に",
+                isGeneratedParticle: true,
+                selectedCandidate: Candidate(
+                    storageText: "に",
+                    source: .particleComposition,
+                    attributes: [.generated]
+                )
+            )
+            flow.commitInput("進んで")
+            flow.breakSequence()
+        }
+
+        flow.commitInput("実装")
+
+        #expect(flow.coordinator.candidates.contains("に進んで"))
+    }
 }
 
 /// Mirrors the order InputController uses when committing text so the
@@ -197,12 +257,15 @@ private final class CommitFlow {
     func commitInput(
         _ value: String,
         learningTokens: [String]? = nil,
-        learningSource: NextInputLearningSource = .directInput
+        learningSource: NextInputLearningSource = .directInput,
+        isGeneratedParticle: Bool = false,
+        selectedCandidate: Candidate? = nil
     ) {
         let policy = NextInputCommitPolicy.resolve(
             committing: value,
             closingBracketTracker: tracker,
-            isGeneratedParticle: false
+            isGeneratedParticle: isGeneratedParticle,
+            selectedCandidate: selectedCandidate
         )
         text += value
         tracker.consume(value)

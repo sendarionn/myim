@@ -12,14 +12,22 @@ public struct NextInputCommitPolicy: Equatable, Sendable {
     public static func resolve(
         committing value: String,
         closingBracketTracker: ClosingBracketTracker,
-        isGeneratedParticle: Bool
+        isGeneratedParticle: Bool,
+        selectedCandidate: Candidate? = nil
     ) -> Self {
-        Self(
+        let wasExplicitlySelected = selectedCandidate.map {
+            ($0.storageText == value || $0.commitText == value)
+                && $0.hasSource(.particleComposition)
+                && $0.hasAttribute(.generated)
+        } ?? false
+        let acceptsGeneratedParticle = !isGeneratedParticle
+            || wasExplicitlySelected
+        return Self(
             learnsInput: closingBracketTracker.shouldRecordCommittedInput(
                 value,
-                requested: !isGeneratedParticle
+                requested: acceptsGeneratedParticle
             ),
-            updatesSuggestions: !isGeneratedParticle
+            updatesSuggestions: acceptsGeneratedParticle
         )
     }
 }
