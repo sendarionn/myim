@@ -2182,7 +2182,9 @@ final class InputController: IMKInputController {
         candidateWindow.show(
             candidates: ["読み: \(registration.reading)"] + fields.map {
                 "\($0.1): \($0.2)"
-                    + ($0.0 == registration.activeInputField ? "|" : "")
+            },
+            inputCaretIndicators: [false] + fields.map {
+                $0.0 == registration.activeInputField
             },
             selectedIndex: activeRow.map { $0 + 1 },
             near: inputLocation(for: sender),

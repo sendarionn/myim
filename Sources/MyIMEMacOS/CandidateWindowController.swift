@@ -28,17 +28,131 @@ enum CandidatePanelItemStyle {
     static let verticalPadding: CGFloat = 9
     static let accessorySpacing: CGFloat = 8
     static let accessoryFont = NSFont.systemFont(ofSize: 8)
+    static let inputCaretWidth: CGFloat = 1
+    static let inputCaretHeight: CGFloat = 16
     static let height = ceil(
         font.ascender - font.descender + font.leading
     ) + verticalPadding * 2
 }
 
+private final class CandidateInlineCaretView: NSView {
+    private static let caretSpacing: CGFloat = 1
+    private var text = ""
+    private var textColor = NSColor.labelColor
+    private var isCaretVisible = true
+    private var caretTimer: DispatchSourceTimer?
+
+    override var isFlipped: Bool { true }
+
+    override var intrinsicContentSize: NSSize {
+        let textSize = Self.textSize(for: text)
+        return NSSize(
+            width: ceil(
+                textSize.width
+                    + Self.caretSpacing
+                    + CandidatePanelItemStyle.inputCaretWidth
+            ),
+            height: max(
+                ceil(textSize.height),
+                CandidatePanelItemStyle.inputCaretHeight
+            )
+        )
+    }
+
+    deinit {
+        caretTimer?.cancel()
+    }
+
+    static func requiredWidth(for text: String) -> CGFloat {
+        ceil(
+            textSize(for: text).width
+                + caretSpacing
+                + CandidatePanelItemStyle.inputCaretWidth
+        )
+    }
+
+    func configure(text: String, color: NSColor, isActive: Bool) {
+        if self.text != text {
+            self.text = text
+            invalidateIntrinsicContentSize()
+        }
+        textColor = color
+        updateCaretTimer(isActive: isActive)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let attributes = Self.textAttributes(color: textColor)
+        let textSize = (text as NSString).size(withAttributes: attributes)
+        let textOrigin = NSPoint(
+            x: 0,
+            y: max((bounds.height - textSize.height) / 2, 0)
+        )
+        (text as NSString).draw(at: textOrigin, withAttributes: attributes)
+
+        guard isCaretVisible else { return }
+        let caretRect = NSRect(
+            x: textSize.width + Self.caretSpacing,
+            y: max(
+                (bounds.height - CandidatePanelItemStyle.inputCaretHeight) / 2,
+                0
+            ),
+            width: CandidatePanelItemStyle.inputCaretWidth,
+            height: CandidatePanelItemStyle.inputCaretHeight
+        )
+        textColor.setFill()
+        caretRect.fill()
+    }
+
+    private static func textSize(for text: String) -> NSSize {
+        (text as NSString).size(
+            withAttributes: textAttributes(color: .labelColor)
+        )
+    }
+
+    private static func textAttributes(color: NSColor)
+        -> [NSAttributedString.Key: Any] {
+        [
+            .font: CandidatePanelItemStyle.font,
+            .foregroundColor: color
+        ]
+    }
+
+    private func updateCaretTimer(isActive: Bool) {
+        guard isActive else {
+            caretTimer?.cancel()
+            caretTimer = nil
+            isCaretVisible = true
+            return
+        }
+        guard caretTimer == nil else { return }
+        isCaretVisible = true
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(
+            deadline: .now() + .milliseconds(500),
+            repeating: .milliseconds(500),
+            leeway: .milliseconds(50)
+        )
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.isCaretVisible.toggle()
+            self.needsDisplay = true
+        }
+        caretTimer = timer
+        timer.resume()
+    }
+}
+
 final class CandidatePanelRowView: NSView {
     private let label = NSTextField(labelWithString: "")
+    private let inlineCaretView = CandidateInlineCaretView()
+    private let inputCaretTrailingSpacer = NSView()
     private let accessoryLabel = NSTextField(labelWithString: "●")
     private let contentStack = NSStackView()
     private var text = ""
     private var showsAlternateCommitIndicator = false
+    private var showsInputCaret = false
     private var fixedWidthConstraint: NSLayoutConstraint?
     private var fixedHeightConstraint: NSLayoutConstraint?
 
@@ -50,6 +164,21 @@ final class CandidatePanelRowView: NSView {
         label.font = CandidatePanelItemStyle.font
         label.lineBreakMode = .byTruncatingTail
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        inlineCaretView.translatesAutoresizingMaskIntoConstraints = false
+        inlineCaretView.setContentHuggingPriority(.required, for: .horizontal)
+        inlineCaretView.setContentCompressionResistancePriority(
+            .required,
+            for: .horizontal
+        )
+        inputCaretTrailingSpacer.translatesAutoresizingMaskIntoConstraints = false
+        inputCaretTrailingSpacer.setContentHuggingPriority(
+            .defaultLow,
+            for: .horizontal
+        )
+        inputCaretTrailingSpacer.setContentCompressionResistancePriority(
+            .defaultLow,
+            for: .horizontal
+        )
         accessoryLabel.font = CandidatePanelItemStyle.accessoryFont
         accessoryLabel.alignment = .center
         accessoryLabel.setContentHuggingPriority(.required, for: .horizontal)
@@ -64,6 +193,8 @@ final class CandidatePanelRowView: NSView {
         contentStack.spacing = CandidatePanelItemStyle.accessorySpacing
         contentStack.detachesHiddenViews = true
         contentStack.addArrangedSubview(label)
+        contentStack.addArrangedSubview(inlineCaretView)
+        contentStack.addArrangedSubview(inputCaretTrailingSpacer)
         contentStack.addArrangedSubview(accessoryLabel)
         addSubview(contentStack)
         NSLayoutConstraint.activate([
@@ -87,11 +218,17 @@ final class CandidatePanelRowView: NSView {
     func configure(
         text: String,
         isSelected: Bool,
-        showsAlternateCommitIndicator: Bool = false
+        showsAlternateCommitIndicator: Bool = false,
+        showsInputCaret: Bool = false
     ) {
         self.text = text
         self.showsAlternateCommitIndicator = showsAlternateCommitIndicator
+        self.showsInputCaret = showsInputCaret
         label.stringValue = text
+        label.isHidden = showsInputCaret
+        inlineCaretView.isHidden = !showsInputCaret
+        contentStack.setCustomSpacing(0, after: inlineCaretView)
+        inputCaretTrailingSpacer.isHidden = !showsInputCaret
         accessoryLabel.isHidden = !showsAlternateCommitIndicator
         layer?.backgroundColor = isSelected
             ? NSColor.controlAccentColor.cgColor
@@ -99,6 +236,13 @@ final class CandidatePanelRowView: NSView {
         label.textColor = isSelected
             ? .alternateSelectedControlTextColor
             : .labelColor
+        inlineCaretView.configure(
+            text: text,
+            color: isSelected
+                ? .alternateSelectedControlTextColor
+                : .labelColor,
+            isActive: showsInputCaret
+        )
         accessoryLabel.textColor = isSelected
             ? .alternateSelectedControlTextColor
             : .secondaryLabelColor
@@ -108,7 +252,8 @@ final class CandidatePanelRowView: NSView {
         configure(
             text: text,
             isSelected: isSelected,
-            showsAlternateCommitIndicator: showsAlternateCommitIndicator
+            showsAlternateCommitIndicator: showsAlternateCommitIndicator,
+            showsInputCaret: showsInputCaret
         )
     }
 
@@ -139,11 +284,16 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
         }
     }
 
-    func configure(text: String, showsAlternateCommitIndicator: Bool) {
+    func configure(
+        text: String,
+        showsAlternateCommitIndicator: Bool,
+        showsInputCaret: Bool
+    ) {
         rowView.configure(
             text: text,
             isSelected: isSelected,
-            showsAlternateCommitIndicator: showsAlternateCommitIndicator
+            showsAlternateCommitIndicator: showsAlternateCommitIndicator,
+            showsInputCaret: showsInputCaret
         )
     }
 
@@ -175,6 +325,7 @@ final class CandidateWindowController: NSObject {
     private let guideLabel: NSTextView
     private var candidates: [String] = []
     private var alternateCommitIndicators: [Bool] = []
+    private var inputCaretIndicators: [Bool] = []
     private var itemSizes: [NSSize] = []
 
     override init() {
@@ -387,6 +538,7 @@ final class CandidateWindowController: NSObject {
     func show(
         candidates: [String],
         alternateCommitIndicators: [Bool] = [],
+        inputCaretIndicators: [Bool] = [],
         selectedIndex: Int?,
         near anchorFrame: NSRect,
         guide: String? = nil,
@@ -405,10 +557,16 @@ final class CandidateWindowController: NSObject {
                 ? alternateCommitIndicators[$0]
                 : false
         }
+        self.inputCaretIndicators = candidates.indices.map {
+            inputCaretIndicators.indices.contains($0)
+                ? inputCaretIndicators[$0]
+                : false
+        }
         let measuredItemSizes = candidates.indices.map {
             itemSize(
                 for: candidates[$0],
-                showsAlternateCommitIndicator: self.alternateCommitIndicators[$0]
+                showsAlternateCommitIndicator: self.alternateCommitIndicators[$0],
+                showsInputCaret: self.inputCaretIndicators[$0]
             )
         }
 
@@ -460,7 +618,8 @@ final class CandidateWindowController: NSObject {
                 minimumPanelText.map {
                     itemSize(
                         for: $0,
-                        showsAlternateCommitIndicator: false
+                        showsAlternateCommitIndicator: false,
+                        showsInputCaret: false
                     ).width
                 }
                     ?? CandidatePanelItemStyle.minimumWidth
@@ -644,12 +803,15 @@ final class CandidateWindowController: NSObject {
 
     private func itemSize(
         for candidate: String,
-        showsAlternateCommitIndicator: Bool
+        showsAlternateCommitIndicator: Bool,
+        showsInputCaret: Bool
     ) -> NSSize {
-        let textWidth = labelWidth(
-            text: candidate,
-            font: CandidatePanelItemStyle.font
-        )
+        let textWidth = showsInputCaret
+            ? CandidateInlineCaretView.requiredWidth(for: candidate)
+            : labelWidth(
+                text: candidate,
+                font: CandidatePanelItemStyle.font
+            )
         let accessoryWidth = showsAlternateCommitIndicator
             ? labelWidth(
                 text: "●",
@@ -756,7 +918,8 @@ extension CandidateWindowController: NSCollectionViewDataSource {
         candidateItem.configure(
             text: candidates[indexPath.item],
             showsAlternateCommitIndicator:
-                alternateCommitIndicators[indexPath.item]
+                alternateCommitIndicators[indexPath.item],
+            showsInputCaret: inputCaretIndicators[indexPath.item]
         )
         return candidateItem
     }
