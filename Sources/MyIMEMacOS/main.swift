@@ -59,7 +59,6 @@ guard let server = IMKServer(
 }
 
 NSLog("myim: IMKServer initialized bundle=%@ connection=%@", bundleIdentifier, connectionName)
-SelectionBridgeGlobalHotKey.shared.activate()
 
 withExtendedLifetime(server) {
     application.run()
