@@ -9,6 +9,7 @@ app_destination="$input_methods_directory/myim.app"
 staged_destination="$input_methods_directory/.myim.installing.app"
 previous_destination="$input_methods_directory/.myim.previous.app"
 legacy_destination="$input_methods_directory/my-ime.app"
+launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 
 status_value() {
     local executable=$1
@@ -169,6 +170,9 @@ if [[ "$installed_build_number" != "$next_build_number" ]]; then
     exit 1
 fi
 "$installed_executable" --install-default-extensions
+"$launch_services_register" -u "$app_source" 2>/dev/null || true
+"$launch_services_register" -f "$app_destination"
+/System/Library/CoreServices/pbs -update
 "$installed_executable" --register-input-source
 "$installed_executable" --enable-input-source
 wait_for_status "$installed_executable" registered 1

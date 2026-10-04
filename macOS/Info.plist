@@ -71,6 +71,30 @@
     <string>public.app-category.productivity</string>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>NSServices</key>
+    <array>
+        <dict>
+            <key>NSKeyEquivalent</key>
+            <dict>
+                <key>default</key>
+                <string>^~d</string>
+            </dict>
+            <key>NSMenuItem</key>
+            <dict>
+                <key>default</key>
+                <string>myimで選択文字列を取得</string>
+            </dict>
+            <key>NSMessage</key>
+            <string>captureSelection</string>
+            <key>NSPortName</key>
+            <string>myim</string>
+            <key>NSSendTypes</key>
+            <array>
+                <string>public.utf8-plain-text</string>
+                <string>NSStringPboardType</string>
+            </array>
+        </dict>
+    </array>
     <key>tsInputMethodCharacterRepertoireKey</key>
     <array>
         <string>Hira</string>
