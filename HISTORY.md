@@ -2490,4 +2490,5 @@
 - macOS Serviceへ空の`NSRequiredContext`を追加してServicesメニューへ表示可能にし、Commandキー以外を指定できない`NSKeyEquivalent`から無効な`⌃⌥D`宣言を削除
 - Input Methods内のmyim.appではService有効状態が保持されないため、本体からService宣言を分離し、標準の`~/Library/Services`へ独立した`myim-selection.service`を配置する構成へ変更
 - 選択文字列を「挿入文字列」の初期値として受け取り、「読み」「候補表示」とともに既存ユーザー辞書へ保存する独立登録ウィンドウをSelection Serviceへ追加
+- 選択文字列の登録ウィンドウへ標準編集メニューを追加し、入力欄で切り取り、コピー、ペースト、全選択、取り消し、やり直しのショートカットを利用可能に変更
 - 開発史監査用にCodex・Claude Code・ChatGPT Data Exportからmyim関連の会話を`.research/`へsnapshotし、共通形式へ正規化する`Scripts/collect-research.py`を追加
