@@ -264,6 +264,14 @@ public struct NextInputPredictionModel: Codable, Sendable {
                     stat.acceptedSuggestionCount + 1,
                     Int.max - 1
                 )
+                // Deleting a candidate also resets its counts, so building it
+                // again twice afterwards is a new request for it
+                if stat.acceptedSuggestionCount
+                    >= Self.minimumEpisodePromotionCount {
+                    suppressedCandidates.removeAll {
+                        $0 == episode.tokens.joined()
+                    }
+                }
             }
             stat.lastUsed = sequence
             context.candidates[candidateKey] = stat

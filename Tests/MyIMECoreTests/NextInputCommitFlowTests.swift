@@ -269,6 +269,98 @@ struct NextInputCommitFlowTests {
 
         #expect(!flow.coordinator.candidates.contains("に進んで"))
     }
+
+    @Test
+    func oneRealSelectionRunIsNotCombined() {
+        let flow = CommitFlow.seededWithImplementationFollowers()
+
+        flow.commitInput("実装")
+        flow.selectAndCommit("に")
+        flow.selectAndCommit("進んで")
+        flow.commitInput("実装")
+
+        #expect(!flow.coordinator.candidates.contains("に進んで"))
+    }
+
+    @Test
+    func twoRealSelectionRunsAreCombinedWithTheirTokens() {
+        let flow = CommitFlow.seededWithImplementationFollowers()
+
+        for _ in 0..<2 {
+            flow.commitInput("実装")
+            flow.selectAndCommit("に")
+            flow.selectAndCommit("進んで")
+        }
+        flow.commitInput("実装")
+
+        let combined = flow.coordinator.candidateModels.first {
+            $0.commitText == "に進んで"
+        }
+        #expect(combined.flatMap(NextInputCandidateMetadata.sourceTokens)
+            == ["に", "進んで"])
+    }
+
+    @Test
+    func combinedCandidateComesFirstAfterItsSelection() {
+        let flow = CommitFlow.seededWithImplementationFollowers()
+        for _ in 0..<2 {
+            flow.commitInput("実装")
+            flow.selectAndCommit("に")
+            flow.selectAndCommit("進んで")
+        }
+        flow.commitInput("実装")
+        flow.selectAndCommit("を")
+        flow.commitInput("実装")
+        flow.selectAndCommit("に進んで")
+
+        flow.commitInput("実装")
+
+        #expect(flow.coordinator.candidates.first == "に進んで")
+    }
+
+    @Test
+    func deletedCombinedCandidateReturnsAfterTwoNewSelectionRuns() throws {
+        let flow = CommitFlow.seededWithImplementationFollowers()
+        for _ in 0..<2 {
+            flow.commitInput("実装")
+            flow.selectAndCommit("に")
+            flow.selectAndCommit("進んで")
+        }
+        flow.commitInput("実装")
+        flow.select("に進んで")
+        try flow.coordinator.suppressSelectedCandidate()
+        flow.commitInput("、")
+
+        for _ in 0..<2 {
+            flow.commitInput("実装")
+            flow.selectAndCommit("に")
+            flow.selectAndCommit("進んで")
+        }
+        flow.commitInput("実装")
+
+        #expect(flow.coordinator.candidates.contains("に進んで"))
+    }
+
+    @Test
+    func deletedCombinedCandidateStaysHiddenAfterOneNewSelectionRun() throws {
+        let flow = CommitFlow.seededWithImplementationFollowers()
+        for _ in 0..<2 {
+            flow.commitInput("実装")
+            flow.selectAndCommit("に")
+            flow.selectAndCommit("進んで")
+        }
+        flow.commitInput("実装")
+        flow.select("に進んで")
+        try flow.coordinator.suppressSelectedCandidate()
+        flow.commitInput("、")
+
+        flow.commitInput("実装")
+        flow.selectAndCommit("に")
+        flow.selectAndCommit("進んで")
+        flow.commitInput("実装")
+
+        #expect(!flow.coordinator.candidates.contains("に進んで"))
+    }
 }
 
 /// Mirrors the order InputController uses when committing text so the
@@ -355,6 +447,22 @@ private final class CommitFlow {
             learningTokens: sourceTokens,
             learningSource: .acceptedSuggestion
         )
+    }
+
+    /// Typed history that makes に, を and 進んで real next-input
+    /// candidates without ever following 実装 with に進んで
+    static func seededWithImplementationFollowers() -> CommitFlow {
+        let flow = CommitFlow()
+        for token in ["実装", "を", "。", "実装", "に", "。", "確認", "に", "進んで", "。"] {
+            flow.commitInput(token)
+        }
+        return flow
+    }
+
+    /// Selects a candidate the coordinator really offers and commits it
+    func selectAndCommit(_ candidate: String) {
+        select(candidate)
+        commitSelectedNextInput()
     }
 
     func type(_ characters: String) {
