@@ -27,9 +27,16 @@ public struct DictionaryRegistrationSession: Equatable, Sendable {
     private var confirmedDisplayText: String?
     private var confirmedInsertedText: String?
 
-    public init(originalInput: String, reading: String) {
+    public init(
+        originalInput: String,
+        reading: String,
+        prefilledInsertedText: String? = nil
+    ) {
         self.originalInput = originalInput
         self.reading = reading
+        if let prefilledInsertedText, !prefilledInsertedText.isEmpty {
+            confirmedInsertedText = prefilledInsertedText
+        }
     }
 
     public var isInsertedTextCustomized: Bool {

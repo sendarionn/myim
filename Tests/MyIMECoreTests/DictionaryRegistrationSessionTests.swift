@@ -4,6 +4,22 @@ import Testing
 @Suite
 struct DictionaryRegistrationSessionTests {
     @Test
+    func prefilledInsertedTextIsKeptSeparateFromDisplayText() throws {
+        var session = DictionaryRegistrationSession(
+            originalInput: "myim",
+            reading: "myim",
+            prefilledInsertedText: "https://github.com/sendarionn/myim"
+        )
+
+        session.appendConfirmed("myim GitHub")
+        let completion = try #require(session.completionWhenInputIsEmpty())
+
+        #expect(completion.reading == "myim")
+        #expect(completion.display == "myim GitHub")
+        #expect(completion.output == "https://github.com/sendarionn/myim")
+    }
+
+    @Test
     func startsByEditingTheDisplayWithBothFieldsPresent() {
         let session = DictionaryRegistrationSession(
             originalInput: "gg",
