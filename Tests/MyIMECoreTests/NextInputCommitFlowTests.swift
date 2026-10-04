@@ -215,6 +215,25 @@ struct NextInputCommitFlowTests {
     }
 
     @Test
+    func repeatedSelectionsWithoutBreaksDoNotAppendTheNextRepetition() {
+        let flow = CommitFlow()
+        for _ in 0..<12 {
+            flow.commitInput("実装")
+            flow.offerNextInput("に")
+            flow.select("に")
+            flow.commitSelectedNextInput()
+            flow.offerNextInput("進んで")
+            flow.select("進んで")
+            flow.commitSelectedNextInput()
+        }
+        flow.commitInput("実装")
+
+        #expect(flow.coordinator.candidates.contains("に進んで"))
+        #expect(!flow.coordinator.candidates.contains("に進んで実装"))
+        #expect(!flow.coordinator.candidates.contains("に進んで実装に"))
+    }
+
+    @Test
     func selectedGeneratedParticleContributesToACommitSequence() {
         let flow = CommitFlow()
         for _ in 0..<3 {
@@ -235,6 +254,20 @@ struct NextInputCommitFlowTests {
         flow.commitInput("実装")
 
         #expect(flow.coordinator.candidates.contains("に進んで"))
+    }
+
+    @Test
+    func unselectedGeneratedParticleDoesNotJoinACommitSequence() {
+        let flow = CommitFlow()
+        for _ in 0..<3 {
+            flow.commitInput("実装")
+            flow.commitInput("に", isGeneratedParticle: true)
+            flow.commitInput("進んで")
+        }
+
+        flow.commitInput("実装")
+
+        #expect(!flow.coordinator.candidates.contains("に進んで"))
     }
 }
 
@@ -320,9 +353,7 @@ private final class CommitFlow {
         commitInput(
             value,
             learningTokens: sourceTokens,
-            learningSource: sourceTokens == nil
-                ? .directInput
-                : .acceptedSuggestion
+            learningSource: .acceptedSuggestion
         )
     }
 

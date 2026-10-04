@@ -1,16 +1,27 @@
 import Foundation
 
+/// Next-input interaction of one input client
+///
+/// The candidate session and typing cursor belong to this client, while
+/// learned knowledge lives in the shared `NextInputLearningStore`
 public final class NextInputSuggestionCoordinator {
-    private var predictionModel: NextInputPredictionModel
+    private let store: NextInputLearningStore
+    private var cursor = NextInputSequenceCursor()
     private var session = NextInputCandidateSession()
-    private let writer: DeferredJSONFileWriter<NextInputPredictionModel>
 
-    public init(
+    public init(store: NextInputLearningStore) {
+        self.store = store
+    }
+
+    /// Creates a coordinator with its own store, for a single client
+    public convenience init(
         predictionModel: NextInputPredictionModel,
         writer: DeferredJSONFileWriter<NextInputPredictionModel>
     ) {
-        self.predictionModel = predictionModel
-        self.writer = writer
+        self.init(store: NextInputLearningStore(
+            model: predictionModel,
+            writer: writer
+        ))
     }
 
     public var candidates: [String] {
@@ -47,7 +58,7 @@ public final class NextInputSuggestionCoordinator {
     }
 
     public func candidatesAfterLastInput(limit: Int) -> [String] {
-        predictionModel.candidatesAfterLastInput(limit: limit)
+        store.predictions(after: cursor, limit: limit).map(\.text)
     }
 
     public func learnedCandidates(
@@ -79,17 +90,18 @@ public final class NextInputSuggestionCoordinator {
     ) -> [Candidate] {
         guard predictionEnabled else { return [] }
         if breakPreviousSequence {
-            predictionModel.breakSequence()
-        }
-        if learningEnabled {
-            predictionModel.record(tokens: committedTokens, source: learningSource)
-            writer.schedule(predictionModel)
+            breakSequence()
         }
         let predictions: [NextInputPrediction]
         if learningEnabled {
-            predictions = predictionModel.predictionsAfterLastInput(limit: limit)
+            store.record(
+                tokens: committedTokens,
+                source: learningSource,
+                cursor: &cursor
+            )
+            predictions = store.predictions(after: cursor, limit: limit)
         } else {
-            predictions = predictionModel.predictions(after: value, limit: limit)
+            predictions = store.predictions(after: value, limit: limit)
         }
         return predictions.map(NextInputCandidateMetadata.candidate)
     }
@@ -124,11 +136,11 @@ public final class NextInputSuggestionCoordinator {
         unsuppressibleCandidates: Set<String> = []
     ) {
         let visibleDictionaryCandidates = dictionaryCandidates.filter {
-            !predictionModel.isSuppressed($0.commitText, after: context)
+            !store.isSuppressed($0.commitText, after: context)
         }
         let visiblePreferredCandidates = preferredCandidates.filter {
             unsuppressibleCandidates.contains($0.commitText)
-                || !predictionModel.isSuppressed($0.commitText, after: context)
+                || !store.isSuppressed($0.commitText, after: context)
         }
         let candidates = NextInputCandidateMerger.merged(
             preferred: visiblePreferredCandidates,
@@ -146,7 +158,7 @@ public final class NextInputSuggestionCoordinator {
         after context: String
     ) -> Bool {
         let visibleGenerated = generated.filter {
-            !predictionModel.isSuppressed($0, after: context)
+            !store.isSuppressed($0, after: context)
         }.map { Candidate(storageText: $0, source: .nextInput) }
         let merged = NextInputCandidateMerger.merged(
             preferred: session.candidateModels,
@@ -159,20 +171,18 @@ public final class NextInputSuggestionCoordinator {
     }
 
     public func isSuppressed(_ candidate: String, after context: String) -> Bool {
-        predictionModel.isSuppressed(candidate, after: context)
+        store.isSuppressed(candidate, after: context)
     }
 
     public func forgetLearnedCandidate(_ candidate: String) {
-        predictionModel.forgetLearnedCandidate(candidate)
-        writer.schedule(predictionModel)
+        store.forgetLearnedCandidate(candidate)
     }
 
     public func suppressSelectedCandidate() throws {
         guard let candidate = session.selectedCandidate,
               let context = session.context else { return }
-        predictionModel.suppress(candidate, after: context)
         defer { _ = session.removeSelectedCandidate() }
-        try writer.writeImmediately(predictionModel)
+        try store.suppress(candidate, after: context)
     }
 
     public func pageRange(pageSize: Int) -> Range<Int> {
@@ -205,15 +215,15 @@ public final class NextInputSuggestionCoordinator {
     }
 
     public func breakSequence() {
-        predictionModel.breakSequence()
+        cursor = NextInputSequenceCursor()
     }
 
     public func removeAllLearning() throws {
-        predictionModel.removeAll()
-        try writer.writeImmediately(predictionModel)
+        cursor = NextInputSequenceCursor()
+        try store.removeAll()
     }
 
     public func flush() {
-        writer.flush()
+        store.flush()
     }
 }

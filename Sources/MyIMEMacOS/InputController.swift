@@ -33,6 +33,35 @@ final class InputController: IMKInputController {
         entries: loadBundledEntries(resource: "symbol-dictionary")
     )
     private static let sharedMozcConversionEngine = loadMozcDictionaryEngine()
+    // Learning shared by every InputController; each controller only keeps
+    // its own candidate session and typing context
+    private static let sharedCandidateSelectionHistoryStore =
+        CandidateSelectionHistoryStore(
+            history: loadCandidateSelectionHistory(),
+            writer: DeferredJSONFileWriter(
+                fileURL: candidateSelectionHistoryURL(),
+                queueLabel: "myim.candidate-selection-history",
+                errorHandler: {
+                    NSLog(
+                        "候補選択履歴の保存に失敗: %@",
+                        $0.localizedDescription
+                    )
+                }
+            )
+        )
+    private static let sharedNextInputLearningStore = NextInputLearningStore(
+        model: loadNextInputPredictionModel(),
+        writer: DeferredJSONFileWriter(
+            fileURL: nextInputPredictionModelURL(),
+            queueLabel: "myim.next-input-history",
+            errorHandler: {
+                NSLog(
+                    "次入力履歴の保存に失敗: %@",
+                    $0.localizedDescription
+                )
+            }
+        )
+    )
     private static let sharedDeferredSystemCandidates = DeferredSystemCandidates(
         text: loadBundledText(resource: "mozc-person-name-hints") ?? ""
     )
@@ -215,8 +244,6 @@ final class InputController: IMKInputController {
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.sharedBasicEntries
         let indexedMozcEngine = Self.sharedMozcConversionEngine
-        let selectionHistory = Self.loadCandidateSelectionHistory()
-        let nextInputModel = Self.loadNextInputPredictionModel()
 
         userDictionaryStore = UserDictionaryStore(
             entries: cachedUserEntries,
@@ -242,31 +269,9 @@ final class InputController: IMKInputController {
             compoundGenerator: Self.sharedBasicCompoundGenerator,
             systemEngine: indexedMozcEngine
         )
-        candidateSelectionHistoryStore = CandidateSelectionHistoryStore(
-            history: selectionHistory,
-            writer: DeferredJSONFileWriter(
-                fileURL: Self.candidateSelectionHistoryURL(),
-                queueLabel: "myim.candidate-selection-history",
-                errorHandler: {
-                    NSLog(
-                        "候補選択履歴の保存に失敗: %@",
-                        $0.localizedDescription
-                    )
-                }
-            )
-        )
+        candidateSelectionHistoryStore = Self.sharedCandidateSelectionHistoryStore
         nextInputSuggestionCoordinator = NextInputSuggestionCoordinator(
-            predictionModel: nextInputModel,
-            writer: DeferredJSONFileWriter(
-                fileURL: Self.nextInputPredictionModelURL(),
-                queueLabel: "myim.next-input-history",
-                errorHandler: {
-                    NSLog(
-                        "次入力履歴の保存に失敗: %@",
-                        $0.localizedDescription
-                    )
-                }
-            )
+            store: Self.sharedNextInputLearningStore
         )
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
         super.init(server: server, delegate: delegate, client: inputClient)
@@ -4192,9 +4197,6 @@ final class InputController: IMKInputController {
         to sender: Any
     ) {
         let sourceTokens = nextInputSuggestionCoordinator.selectedSourceTokens
-        let learningSource: NextInputLearningSource = sourceTokens == nil
-            ? .directInput
-            : .acceptedSuggestion
         recordNextInputCandidateSelection(value)
         clearNextInputSuggestionState()
         commit(
@@ -4203,7 +4205,7 @@ final class InputController: IMKInputController {
             replacingMarkedText: replacingMarkedText,
             historyValue: value,
             historyTokens: sourceTokens,
-            historyLearningSource: learningSource
+            historyLearningSource: .acceptedSuggestion
         )
     }
 

@@ -51,6 +51,21 @@ public enum NextInputCandidateMetadata {
     }
 }
 
+/// Typing context of one input client: the recent commits and the current
+/// run of accepted suggestions
+///
+/// Learned statistics are shared by every client, while each client keeps
+/// its own cursor so commits in different apps are not joined into one
+/// sequence
+public struct NextInputSequenceCursor: Sendable {
+    fileprivate var recentInputs: [String] = []
+    fileprivate var recentSources: [NextInputLearningSource] = []
+    fileprivate var episode: NextInputPredictionModel.SuggestionEpisode?
+    public fileprivate(set) var lastInput: String?
+
+    public init() {}
+}
+
 public struct NextInputPredictionModel: Codable, Sendable {
     public static let maximumContextCount = 2_048
     public static let maximumFollowersPerContext = 16
@@ -86,6 +101,17 @@ public struct NextInputPredictionModel: Codable, Sendable {
         var lastUsed: Int
     }
 
+    /// Consecutively accepted suggestions after `context`
+    ///
+    /// Sentence history keeps every committed token, while an episode keeps
+    /// only what the user accepted from suggestions in one run, so the next
+    /// direct input is never appended to it
+    fileprivate struct SuggestionEpisode: Sendable {
+        let context: [String]
+        var tokens: [String]
+        var selectionCount: Int
+    }
+
     private struct RankedPrediction {
         let prediction: NextInputPrediction
         let score: Double
@@ -98,6 +124,11 @@ public struct NextInputPredictionModel: Codable, Sendable {
     private var sequenceContexts: [String: SequenceContext] = [:]
     private var suppressedCandidates: [String] = []
     private var recentInputs: [String] = []
+    private var recentSources: [NextInputLearningSource] = []
+    private var episode: SuggestionEpisode?
+    /// Multi-token statistics before version 2 counted windows across
+    /// repetitions with the source of the last token only
+    private static let sequenceSchemaVersion = 2
     private var sequence = 0
     public private(set) var lastInput: String?
 
@@ -107,10 +138,38 @@ public struct NextInputPredictionModel: Codable, Sendable {
         _ value: String,
         source: NextInputLearningSource = .directInput
     ) {
-        guard let normalized = Self.normalizedValue(value) else {
+        record(tokens: [value], source: source)
+    }
+
+    /// `tokens` are one commit; accepted suggestions passed together count
+    /// as one selection
+    public mutating func record(
+        tokens: [String],
+        source: NextInputLearningSource = .directInput
+    ) {
+        let normalized = tokens.compactMap(Self.normalizedValue)
+        guard !normalized.isEmpty, normalized.count == tokens.count else {
             breakSequence()
             return
         }
+        switch source {
+        case .directInput:
+            episode = nil
+        case .acceptedSuggestion:
+            extendEpisode(with: normalized)
+        }
+        for token in normalized {
+            recordSentenceToken(token, source: source)
+        }
+        if source == .acceptedSuggestion {
+            recordEpisodeEvidence()
+        }
+    }
+
+    private mutating func recordSentenceToken(
+        _ normalized: String,
+        source: NextInputLearningSource
+    ) {
 
         sequence += 1
         if let previous = lastInput, previous != normalized {
@@ -131,19 +190,77 @@ public struct NextInputPredictionModel: Codable, Sendable {
 
         recordVariableLengthSequences(endingWith: normalized, source: source)
         recentInputs.append(normalized)
-        recentInputs = Array(recentInputs.suffix(
-            Self.maximumContextTokenCount + Self.maximumPredictionTokenCount
-        ))
+        recentSources.append(source)
+        let retained = Self.maximumContextTokenCount
+            + Self.maximumPredictionTokenCount
+        recentInputs = Array(recentInputs.suffix(retained))
+        recentSources = Array(recentSources.suffix(retained))
         lastInput = normalized
         compactIfNeeded()
     }
 
-    public mutating func record(
-        tokens: [String],
-        source: NextInputLearningSource = .directInput
-    ) {
-        for token in tokens {
-            record(token, source: source)
+    private mutating func extendEpisode(with tokens: [String]) {
+        if var current = episode,
+           current.tokens.count + tokens.count
+            <= Self.maximumPredictionTokenCount {
+            current.tokens += tokens
+            current.selectionCount += 1
+            episode = current
+            return
+        }
+        let context = Array(recentInputs.suffix(Self.maximumContextTokenCount))
+        episode = context.isEmpty || tokens.count
+            > Self.maximumPredictionTokenCount
+            ? nil
+            : SuggestionEpisode(
+                context: context,
+                tokens: tokens,
+                selectionCount: 1
+            )
+    }
+
+    /// Counts an episode the user built from several selections; picking an
+    /// already combined suggestion only refreshes its recency
+    private mutating func recordEpisodeEvidence() {
+        guard let episode, episode.tokens.count >= 2,
+              episode.tokens.joined().count <= Self.maximumValueLength else {
+            return
+        }
+        let candidateKey = Self.key(for: episode.tokens)
+        let counts = episode.selectionCount >= 2
+        for contextLength in 1...episode.context.count {
+            let contextKey = Self.key(for: Array(
+                episode.context.suffix(contextLength)
+            ))
+            var context = sequenceContexts[contextKey]
+                ?? SequenceContext(
+                    candidates: [:], occurrenceCount: 0,
+                    lastUsed: sequence
+                )
+            guard counts || context.candidates[candidateKey] != nil else {
+                continue
+            }
+            var stat = context.candidates[candidateKey]
+                ?? SequenceCandidateStat(
+                    tokens: episode.tokens,
+                    directCount: 0,
+                    acceptedSuggestionCount: 0,
+                    lastUsed: sequence
+                )
+            if counts {
+                stat.acceptedSuggestionCount = min(
+                    stat.acceptedSuggestionCount + 1,
+                    Int.max - 1
+                )
+            }
+            stat.lastUsed = sequence
+            context.candidates[candidateKey] = stat
+            context.candidates = Self.compactedSequenceCandidates(
+                context.candidates,
+                limit: Self.maximumFollowersPerContext
+            )
+            context.lastUsed = sequence
+            sequenceContexts[contextKey] = context
         }
     }
 
@@ -260,6 +377,44 @@ public struct NextInputPredictionModel: Codable, Sendable {
         return suppressedCandidates.contains(candidate)
     }
 
+    /// Records with `cursor` as the typing context instead of the model's own
+    public mutating func record(
+        tokens: [String],
+        source: NextInputLearningSource = .directInput,
+        cursor: inout NextInputSequenceCursor
+    ) {
+        let ownCursor = sequenceCursor
+        sequenceCursor = cursor
+        record(tokens: tokens, source: source)
+        cursor = sequenceCursor
+        sequenceCursor = ownCursor
+    }
+
+    public func predictions(
+        after cursor: NextInputSequenceCursor,
+        limit: Int = 7
+    ) -> [NextInputPrediction] {
+        guard !cursor.recentInputs.isEmpty else { return [] }
+        return predictions(after: cursor.recentInputs, limit: limit)
+    }
+
+    private var sequenceCursor: NextInputSequenceCursor {
+        get {
+            var cursor = NextInputSequenceCursor()
+            cursor.recentInputs = recentInputs
+            cursor.recentSources = recentSources
+            cursor.episode = episode
+            cursor.lastInput = lastInput
+            return cursor
+        }
+        set {
+            recentInputs = newValue.recentInputs
+            recentSources = newValue.recentSources
+            episode = newValue.episode
+            lastInput = newValue.lastInput
+        }
+    }
+
     public func predictionsAfterLastInput(limit: Int = 7)
         -> [NextInputPrediction] {
         guard !recentInputs.isEmpty else { return [] }
@@ -275,12 +430,16 @@ public struct NextInputPredictionModel: Codable, Sendable {
         sequenceContexts = [:]
         suppressedCandidates = []
         recentInputs = []
+        recentSources = []
+        episode = nil
         sequence = 0
         lastInput = nil
     }
 
     public mutating func breakSequence() {
         recentInputs = []
+        recentSources = []
+        episode = nil
         lastInput = nil
     }
 
@@ -302,6 +461,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
         source: NextInputLearningSource
     ) {
         let window = recentInputs + [value]
+        let windowSources = recentSources + [source]
         guard window.count >= 2 else { return }
         let immediatePredictionStart = window.count - 1
         let observedContextLength = min(
@@ -334,6 +494,14 @@ public struct NextInputPredictionModel: Codable, Sendable {
             let predictionStart = window.count - predictionLength
             let tokens = Array(window[predictionStart...])
             guard tokens.joined().count <= Self.maximumValueLength else {
+                continue
+            }
+            // Multi-token sentence evidence needs every token typed directly;
+            // accepted runs are learned as episodes instead
+            if predictionLength >= 2,
+               windowSources[predictionStart...].contains(where: {
+                   $0 != .directInput
+               }) {
                 continue
             }
             let maximumContextLength = min(
@@ -403,7 +571,6 @@ public struct NextInputPredictionModel: Codable, Sendable {
             + log2(1 + effectiveCount) * 8
             + conditionalProbability * 20
             + recency
-            + Double(max(0, tokens.count - 1)) * 2
         return RankedPrediction(
             prediction: NextInputPrediction(
                 text: tokens.joined(),
@@ -430,6 +597,9 @@ public struct NextInputPredictionModel: Codable, Sendable {
             return lhs.contextLength > rhs.contextLength
         }
         if lhs.lastUsed != rhs.lastUsed { return lhs.lastUsed > rhs.lastUsed }
+        let lhsLength = lhs.prediction.sourceTokens.count
+        let rhsLength = rhs.prediction.sourceTokens.count
+        if lhsLength != rhsLength { return lhsLength > rhsLength }
         return lhs.prediction.text < rhs.prediction.text
     }
 
@@ -528,6 +698,21 @@ public struct NextInputPredictionModel: Codable, Sendable {
         })
     }
 
+    private static func droppingMultiTokenCandidates(
+        _ contexts: [String: SequenceContext]
+    ) -> [String: SequenceContext] {
+        var result: [String: SequenceContext] = [:]
+        for (key, var context) in contexts {
+            context.candidates = context.candidates.filter {
+                $0.value.tokens.count == 1
+            }
+            if !context.candidates.isEmpty {
+                result[key] = context
+            }
+        }
+        return result
+    }
+
     private static func key(for tokens: [String]) -> String {
         tokens.map { "\($0.utf8.count):\($0)" }.joined(separator: "|")
     }
@@ -538,7 +723,21 @@ public struct NextInputPredictionModel: Codable, Sendable {
         case sequence
         case lastInput
         case recentInputs
+        case recentSources
+        case sequenceVersion
         case suppressedCandidates
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(contexts, forKey: .contexts)
+        try container.encode(sequenceContexts, forKey: .sequenceContexts)
+        try container.encode(sequence, forKey: .sequence)
+        try container.encodeIfPresent(lastInput, forKey: .lastInput)
+        try container.encode(recentInputs, forKey: .recentInputs)
+        try container.encode(recentSources, forKey: .recentSources)
+        try container.encode(Self.sequenceSchemaVersion, forKey: .sequenceVersion)
+        try container.encode(suppressedCandidates, forKey: .suppressedCandidates)
     }
 
     public init(from decoder: Decoder) throws {
@@ -595,11 +794,37 @@ public struct NextInputPredictionModel: Codable, Sendable {
             )
             sequenceContexts[key] = context
         }
+        let storedVersion = try container.decodeIfPresent(
+            Int.self,
+            forKey: .sequenceVersion
+        ) ?? 1
+        if storedVersion < Self.sequenceSchemaVersion {
+            sequenceContexts = Self.droppingMultiTokenCandidates(
+                sequenceContexts
+            )
+        }
         compactIfNeeded()
-        recentInputs = recentInputs.compactMap(Self.normalizedValue)
-        recentInputs = Array(recentInputs.suffix(
-            Self.maximumContextTokenCount + Self.maximumPredictionTokenCount
-        ))
+        let storedSources = try container.decodeIfPresent(
+            [NextInputLearningSource].self,
+            forKey: .recentSources
+        ) ?? []
+        var restoredInputs: [String] = []
+        var restoredSources: [NextInputLearningSource] = []
+        let sourceOffset = recentInputs.count - storedSources.count
+        for (index, value) in recentInputs.enumerated() {
+            guard let normalized = Self.normalizedValue(value) else { continue }
+            restoredInputs.append(normalized)
+            let sourceIndex = index - sourceOffset
+            restoredSources.append(
+                storedSources.indices.contains(sourceIndex)
+                    ? storedSources[sourceIndex]
+                    : .directInput
+            )
+        }
+        let retained = Self.maximumContextTokenCount
+            + Self.maximumPredictionTokenCount
+        recentInputs = Array(restoredInputs.suffix(retained))
+        recentSources = Array(restoredSources.suffix(retained))
         if let lastInput, Self.normalizedValue(lastInput) == nil {
             self.lastInput = nil
         }

@@ -320,11 +320,8 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<12 {
             model.record("実装")
-            model.record(
-                tokens: ["に", "進んで"],
-                source: .acceptedSuggestion
-            )
-            model.breakSequence()
+            model.record("に", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedSuggestion)
         }
 
         let prediction = model.predictions(after: "実装").first {
@@ -339,11 +336,8 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<11 {
             model.record("実装")
-            model.record(
-                tokens: ["に", "進んで"],
-                source: .acceptedSuggestion
-            )
-            model.breakSequence()
+            model.record("に", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedSuggestion)
         }
 
         #expect(!model.candidates(after: "実装").contains("に進んで"))
@@ -355,11 +349,8 @@ struct NextInputPredictionModelTests {
         record(["実装", "を", "行う"], repetitions: 6, in: &model)
         for _ in 0..<12 {
             model.record("実装")
-            model.record(
-                tokens: ["に", "進んで"],
-                source: .acceptedSuggestion
-            )
-            model.breakSequence()
+            model.record("に", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedSuggestion)
         }
 
         let candidates = model.candidates(after: "実装", limit: 16)
@@ -383,6 +374,149 @@ struct NextInputPredictionModelTests {
         }
 
         #expect(Date().timeIntervalSince(start) < 2)
+    }
+
+    @Test
+    func directRepetitionWithoutSequenceBreaksStillPromotesTheContinuation() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<3 {
+            model.record(tokens: ["実装"])
+            model.record(tokens: ["に"])
+            model.record(tokens: ["進んで"])
+        }
+
+        #expect(model.candidates(after: "実装", limit: 16).contains("に進んで"))
+    }
+
+    @Test
+    func reselectingACombinedSuggestionAloneDoesNotPromoteIt() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<20 {
+            model.record("実装")
+            model.record(tokens: ["に", "進んで"], source: .acceptedSuggestion)
+        }
+
+        #expect(!model.candidates(after: "実装", limit: 16).contains("に進んで"))
+    }
+
+    @Test
+    func endsAnEpisodeAtASequenceBoundary() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<12 {
+            model.record("実装")
+            model.record("に", source: .acceptedSuggestion)
+            model.breakSequence()
+            model.record("進んで", source: .acceptedSuggestion)
+        }
+
+        #expect(!model.candidates(after: "実装", limit: 16).contains("に進んで"))
+    }
+
+    @Test
+    func dropsMultiTokenStatisticsSavedBeforeEpisodeSeparation() throws {
+        var model = NextInputPredictionModel()
+        record(["実装", "に", "進んで"], repetitions: 3, in: &model)
+        var json = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(model)
+        ) as! [String: Any]
+        json.removeValue(forKey: "sequenceVersion")
+
+        let restored = try JSONDecoder().decode(
+            NextInputPredictionModel.self,
+            from: JSONSerialization.data(withJSONObject: json)
+        )
+
+        #expect(!restored.candidates(after: "実装", limit: 16).contains("に進んで"))
+        #expect(restored.candidates(after: "実装", limit: 16).contains("に"))
+        #expect(restored.candidates(after: ["実装", "に"], limit: 16)
+            .contains("進んで"))
+    }
+
+    @Test
+    func repeatedAcceptedEpisodesDoNotLearnTheNextRepetition() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<12 {
+            model.record("実装")
+            model.record("に", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedSuggestion)
+        }
+
+        let texts = model.predictions(after: "実装", limit: 16).map(\.text)
+
+        #expect(texts.contains("に進んで"))
+        #expect(!texts.contains("に進んで実装"))
+        #expect(!texts.contains("に進んで実装に"))
+        #expect(!texts.contains("に進んで実装に進んで"))
+        #expect(!model.candidates(after: "進んで", limit: 16)
+            .contains("実装に進んで"))
+    }
+
+    @Test
+    func countsEachAcceptedEpisodeOnceWithoutSequenceBreaks() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<11 {
+            model.record("実装")
+            model.record("に", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedSuggestion)
+        }
+        model.record("実装")
+
+        #expect(!model.candidates(after: "実装", limit: 16).contains("に進んで"))
+
+        model.record("に", source: .acceptedSuggestion)
+        model.record("進んで", source: .acceptedSuggestion)
+        model.record("実装")
+
+        #expect(model.candidates(after: "実装", limit: 16).contains("に進んで"))
+    }
+
+    @Test
+    func keepsSentenceTransitionsAcrossAcceptedEpisodes() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<12 {
+            model.record("実装")
+            model.record("に", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedSuggestion)
+        }
+
+        #expect(model.candidates(after: "進んで", limit: 16).contains("実装"))
+        #expect(model.candidates(after: "実装", limit: 16).contains("に"))
+    }
+
+    @Test
+    func doesNotCountMixedSourceSequencesAsDirectEvidence() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<12 {
+            model.record("確認")
+            model.record("に", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedSuggestion)
+            model.record("実装")
+        }
+
+        #expect(!model.candidates(after: "確認", limit: 16)
+            .contains("に進んで実装"))
+    }
+
+    @Test
+    func reselectingAPromotedCandidateKeepsItsTokens() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<12 {
+            model.record("実装")
+            model.record("に", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedSuggestion)
+        }
+        for _ in 0..<3 {
+            model.record("実装")
+            model.record(tokens: ["に", "進んで"], source: .acceptedSuggestion)
+        }
+        model.record("実装")
+
+        let prediction = model.predictions(after: "実装", limit: 16).first {
+            $0.text == "に進んで"
+        }
+        #expect(prediction?.sourceTokens == ["に", "進んで"])
+        #expect(!model.candidates(after: "実装", limit: 16)
+            .contains("に進んで実装"))
     }
 
     private func record(
