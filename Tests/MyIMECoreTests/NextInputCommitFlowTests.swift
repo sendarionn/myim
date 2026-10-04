@@ -157,6 +157,25 @@ struct NextInputCommitFlowTests {
         #expect(flow.text.hasSuffix("ABC"))
         #expect(flow.coordinator.candidates.contains("D"))
     }
+
+    @Test
+    func repeatedNextInputSelectionsPromoteTheirCommitSequence() {
+        let flow = CommitFlow()
+        for _ in 0..<12 {
+            flow.commitInput("実装")
+            flow.offerNextInput("に")
+            flow.select("に")
+            flow.commitSelectedNextInput()
+            flow.offerNextInput("進んで")
+            flow.select("進んで")
+            flow.commitSelectedNextInput()
+            flow.breakSequence()
+        }
+
+        flow.commitInput("実装")
+
+        #expect(flow.coordinator.candidates.contains("に進んで"))
+    }
 }
 
 /// Mirrors the order InputController uses when committing text so the
@@ -218,6 +237,17 @@ private final class CommitFlow {
             return
         }
         coordinator.select(index: index)
+    }
+
+    func offerNextInput(_ value: String) {
+        coordinator.beginSuggestions(
+            context: coordinator.context ?? "",
+            preferredCandidates: [],
+            learnedCandidates: [NextInputCandidateMetadata.candidate(
+                from: NextInputPrediction(text: value, sourceTokens: [value])
+            )],
+            dictionaryCandidates: []
+        )
     }
 
     func commitSelectedNextInput() {

@@ -316,7 +316,7 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func acceptedSuggestionDoesNotCreateASequenceWithoutDirectEvidence() {
+    func repeatedAcceptedSuggestionsPromoteASequenceWithWeakEvidence() {
         var model = NextInputPredictionModel()
         for _ in 0..<12 {
             model.record("実装")
@@ -327,7 +327,47 @@ struct NextInputPredictionModelTests {
             model.breakSequence()
         }
 
+        let prediction = model.predictions(after: "実装").first {
+            $0.text == "に進んで"
+        }
+
+        #expect(prediction?.sourceTokens == ["に", "進んで"])
+    }
+
+    @Test
+    func acceptedSuggestionsBelowTheWeightedThresholdDoNotPromoteASequence() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<11 {
+            model.record("実装")
+            model.record(
+                tokens: ["に", "進んで"],
+                source: .acceptedSuggestion
+            )
+            model.breakSequence()
+        }
+
         #expect(!model.candidates(after: "実装").contains("に進んで"))
+    }
+
+    @Test
+    func acceptedSuggestionsDoNotOutrankStrongerDirectEvidence() {
+        var model = NextInputPredictionModel()
+        record(["実装", "を", "行う"], repetitions: 6, in: &model)
+        for _ in 0..<12 {
+            model.record("実装")
+            model.record(
+                tokens: ["に", "進んで"],
+                source: .acceptedSuggestion
+            )
+            model.breakSequence()
+        }
+
+        let candidates = model.candidates(after: "実装", limit: 16)
+
+        #expect(index(of: "を行う", in: candidates) < index(
+            of: "に進んで",
+            in: candidates
+        ))
     }
 
     @Test

@@ -59,6 +59,9 @@ public struct NextInputPredictionModel: Codable, Sendable {
     public static let maximumContextTokenCount = 4
     public static let maximumPredictionTokenCount = 4
     public static let minimumDirectSequenceCount = 3
+    // Accepted suggestions are real commits, but count weakly so repeatedly
+    // accepting a recommendation cannot promote a sequence too quickly
+    private static let acceptedSuggestionEvidenceWeight = 0.25
 
     private struct CandidateStat: Codable, Sendable {
         var count: Int
@@ -193,7 +196,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
                 guard !suppressed.contains(text),
                       text.count <= Self.maximumValueLength,
                       stat.tokens.count == 1
-                        || stat.directCount >= Self.minimumDirectSequenceCount
+                        || Self.hasEnoughSequenceEvidence(stat)
                 else {
                     continue
                 }
@@ -386,8 +389,10 @@ public struct NextInputPredictionModel: Codable, Sendable {
         lastUsed: Int,
         contextLength: Int
     ) -> RankedPrediction {
-        let effectiveCount = Double(directCount)
-            + Double(acceptedSuggestionCount) * 0.25
+        let effectiveCount = Self.effectiveCount(
+            directCount: directCount,
+            acceptedSuggestionCount: acceptedSuggestionCount
+        )
         let conditionalProbability = min(
             1,
             effectiveCount / Double(max(1, occurrenceCount))
@@ -426,6 +431,24 @@ public struct NextInputPredictionModel: Codable, Sendable {
         }
         if lhs.lastUsed != rhs.lastUsed { return lhs.lastUsed > rhs.lastUsed }
         return lhs.prediction.text < rhs.prediction.text
+    }
+
+    private static func hasEnoughSequenceEvidence(
+        _ stat: SequenceCandidateStat
+    ) -> Bool {
+        effectiveCount(
+            directCount: stat.directCount,
+            acceptedSuggestionCount: stat.acceptedSuggestionCount
+        ) >= Double(minimumDirectSequenceCount)
+    }
+
+    private static func effectiveCount(
+        directCount: Int,
+        acceptedSuggestionCount: Int
+    ) -> Double {
+        Double(directCount)
+            + Double(acceptedSuggestionCount)
+                * acceptedSuggestionEvidenceWeight
     }
 
     private mutating func removeSequenceCandidates(matching text: String) {
