@@ -2491,4 +2491,6 @@
 - Input Methods内のmyim.appではService有効状態が保持されないため、本体からService宣言を分離し、標準の`~/Library/Services`へ独立した`myim-selection.service`を配置する構成へ変更
 - 選択文字列を「挿入文字列」の初期値として受け取り、「読み」「候補表示」とともに既存ユーザー辞書へ保存する独立登録ウィンドウをSelection Serviceへ追加
 - 選択文字列の登録ウィンドウへ標準編集メニューを追加し、入力欄で切り取り、コピー、ペースト、全選択、取り消し、やり直しのショートカットを利用可能に変更
+- 候補表示と挿入文字列が異なる候補で、右端の`●`が表示文字列の領域を奪って見切れる問題を修正
+- 候補行の幅を文字の描画幅ではなく実際の`NSTextField`必要幅から計算し、「HP連携システム」などの表示が端で見切れる問題を修正
 - 開発史監査用にCodex・Claude Code・ChatGPT Data Exportからmyim関連の会話を`.research/`へsnapshotし、共通形式へ正規化する`Scripts/collect-research.py`を追加

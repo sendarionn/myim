@@ -1,5 +1,6 @@
 @preconcurrency import AppKit
 import MyIMECore
+import os
 
 enum CandidateNavigationDirection: Equatable {
     case left
@@ -157,6 +158,10 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
 }
 
 final class CandidateWindowController: NSObject {
+    private static let layoutLogger = Logger(
+        subsystem: "io.github.sendarionn.inputmethod.myime",
+        category: "candidate-row-layout"
+    )
     private static let itemIdentifier = NSUserInterfaceItemIdentifier(
         "candidateItem"
     )
@@ -411,6 +416,20 @@ final class CandidateWindowController: NSObject {
                 showsAlternateCommitIndicator: self.alternateCommitIndicators[$0]
             )
         }
+        for index in candidates.indices
+        where self.alternateCommitIndicators[index] {
+            let textWidth = labelWidth(
+                text: candidates[index],
+                font: CandidatePanelItemStyle.font
+            )
+            let indicatorWidth = labelWidth(
+                text: "●",
+                font: CandidatePanelItemStyle.accessoryFont
+            )
+            Self.layoutLogger.notice(
+                "alternate row measured index=\(index, privacy: .public) characters=\(candidates[index].count, privacy: .public) textWidth=\(textWidth, privacy: .public) indicatorWidth=\(indicatorWidth, privacy: .public) rowWidth=\(measuredItemSizes[index].width, privacy: .public)"
+            )
+        }
 
         let screen = NSScreen.inputScreen(containing: anchorFrame)
         let visibleFrame = screen?.visibleFrame
@@ -646,27 +665,33 @@ final class CandidateWindowController: NSObject {
         for candidate: String,
         showsAlternateCommitIndicator: Bool
     ) -> NSSize {
-        let textWidth = ceil(
-                (candidate as NSString).size(
-                withAttributes: [.font: CandidatePanelItemStyle.font]
-            ).width
+        let textWidth = labelWidth(
+            text: candidate,
+            font: CandidatePanelItemStyle.font
         )
         let accessoryWidth = showsAlternateCommitIndicator
-            ? ceil(("●" as NSString).size(
-                withAttributes: [.font: CandidatePanelItemStyle.accessoryFont]
-            ).width) + CandidatePanelItemStyle.accessorySpacing
+            ? labelWidth(
+                text: "●",
+                font: CandidatePanelItemStyle.accessoryFont
+            ) + CandidatePanelItemStyle.accessorySpacing
             : 0
         return NSSize(
-            width: min(
-                max(
-                    textWidth + accessoryWidth
-                        + CandidatePanelItemStyle.horizontalPadding * 2,
-                    CandidatePanelItemStyle.minimumWidth
-                ),
-                CandidatePanelItemStyle.maximumWidth
+            width: CandidateRowWidth.resolve(
+                textWidth: textWidth,
+                accessoryWidth: accessoryWidth,
+                horizontalPadding: CandidatePanelItemStyle.horizontalPadding,
+                minimumWidth: CandidatePanelItemStyle.minimumWidth,
+                maximumTextWidth: CandidatePanelItemStyle.maximumWidth,
+                maximumPanelWidth: CandidatePanelItemStyle.maximumPanelWidth
             ),
             height: Self.itemHeight
         )
+    }
+
+    private func labelWidth(text: String, font: NSFont) -> CGFloat {
+        let field = NSTextField(labelWithString: text)
+        field.font = font
+        return ceil(field.fittingSize.width)
     }
 
     private func positionPanels(
