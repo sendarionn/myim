@@ -67,20 +67,23 @@ public struct TranslationCandidateSource: Sendable {
 /// What one translation panel shows: its language name and the rows
 public struct TranslationPanelContent: Equatable, Sendable {
     public let targetIdentifier: String
-    public let caption: String
+    public let caption: String?
     public let candidates: [String]
 
-    /// One panel per group in the same order, captioned with the
-    /// language's display name
+    /// One panel per group in the same order; the language name is shown
+    /// only when several languages are configured
     public static func panels(
-        for groups: [TranslationCandidateGroup]
+        for groups: [TranslationCandidateGroup],
+        configuredLanguageCount: Int
     ) -> [Self] {
         groups.map {
             Self(
                 targetIdentifier: $0.targetIdentifier,
-                caption: TranslationTargetLanguage.language(
-                    forIdentifier: $0.targetIdentifier
-                )?.name ?? $0.targetIdentifier,
+                caption: configuredLanguageCount > 1
+                    ? TranslationTargetLanguage.language(
+                        forIdentifier: $0.targetIdentifier
+                    )?.name ?? $0.targetIdentifier
+                    : nil,
                 candidates: $0.candidates.map(\.storageText)
             )
         }

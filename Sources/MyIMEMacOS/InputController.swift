@@ -2382,6 +2382,7 @@ final class InputController: IMKInputController {
             near: anchorFrame,
             returnTo: returnApplication
         ) else {
+            trace("calendar.dateCancelled", sender: sender)
             clearCalendarSelection()
             candidateWindow.hide()
             return true
@@ -2394,6 +2395,11 @@ final class InputController: IMKInputController {
         suggestionSearchCoordinator.cancel(.calendarFormat)
         calendarSelectionSession.beginFormatLoading()
         candidateWindow.hide()
+        trace(
+            "calendar.formats.start",
+            sender: sender,
+            detail: "controller=\(ObjectIdentifier(self).hashValue)"
+        )
         suggestionSearchCoordinator.start(
             .calendarFormat,
             query: String(date.timeIntervalSinceReferenceDate),
@@ -2402,10 +2408,24 @@ final class InputController: IMKInputController {
                     .calendarCandidates(for: date)
             },
             validate: { [weak self] in
-                self?.calendarSelectionSession.isActive == true
+                guard let self else { return false }
+                guard self.calendarSelectionSession.isActive else {
+                    self.trace(
+                        "calendar.formats.rejected",
+                        sender: sender,
+                        detail: "reason=sessionInactive"
+                    )
+                    return false
+                }
+                return true
             },
             apply: { [weak self] candidates in
                 guard let self else { return }
+                self.trace(
+                    "calendar.formats.complete",
+                    sender: sender,
+                    detail: "count=\(candidates.count)"
+                )
                 self.calendarSelectionSession.replaceCandidates(
                     self.candidatesOrderedByRecency(candidates)
                 )
@@ -2538,7 +2558,10 @@ final class InputController: IMKInputController {
         )
     }
 
-    private func clearCalendarSelection() {
+    private func clearCalendarSelection(caller: String = #function) {
+        if calendarSelectionSession.isActive {
+            trace("calendar.clear", sender: client(), detail: "caller=\(caller)")
+        }
         suggestionSearchCoordinator.cancel(.calendarFormat)
         calendarSelectionSession.reset()
         panelCoordinator.clearCalendarPresentation()
@@ -3608,7 +3631,11 @@ final class InputController: IMKInputController {
             $0.prefix(Self.maximumCandidateCount)
         }
         let shownCount = panelCoordinator.showTranslationCandidates(
-            TranslationPanelContent.panels(for: visibleGroups).map {
+            TranslationPanelContent.panels(
+                for: visibleGroups,
+                configuredLanguageCount: Self.featureSettings
+                    .translationTargetLanguages.count
+            ).map {
                 (candidates: $0.candidates, caption: $0.caption)
             },
             beside: sourceFrame,
@@ -3889,15 +3916,7 @@ final class InputController: IMKInputController {
     }
 
     private func showCandidateWindow(client sender: Any) {
-        let selectedIndex = selectedCandidateIndex ?? 0
-        let pageRange = LinearCandidateNavigator.pageRange(
-            containing: selectedIndex,
-            pageSize: Self.maximumCandidateCount,
-            candidateCount: currentCandidates.count
-        )
-        let pageStart = pageRange.lowerBound
-        let pageEnd = pageRange.upperBound
-        guard pageStart < pageEnd else {
+        guard !currentCandidates.isEmpty else {
             candidateWindow.hide()
             return
         }
@@ -3905,6 +3924,8 @@ final class InputController: IMKInputController {
         let isAccentedInput = CandidatePanelAccentPolicy.isAccented(
             isDictionaryRegistration: dictionaryRegistrationSession != nil
         )
+        // Asking the client for the location can handle the next key event
+        // before it returns, so the page is read from the candidates after it
         let anchor = locationCoordinator.candidateAnchor(for: sender)
         guard let anchorFrame = anchor.location else {
             candidateWindow.hide()
@@ -3917,9 +3938,17 @@ final class InputController: IMKInputController {
             return
         }
         cancelCandidateLocationRetry()
-        let pageCandidates = Array(
-            currentCandidateModels[pageStart..<pageEnd]
+        let pageRange = LinearCandidateNavigator.pageRange(
+            containing: selectedCandidateIndex ?? 0,
+            pageSize: Self.maximumCandidateCount,
+            candidateCount: currentCandidateModels.count
         )
+        guard !pageRange.isEmpty else {
+            candidateWindow.hide()
+            return
+        }
+        let pageStart = pageRange.lowerBound
+        let pageCandidates = Array(currentCandidateModels[pageRange])
         candidateWindow.show(
             candidates: pageCandidates.map(\.displayText),
             alternateCommitIndicators: pageCandidates.map(

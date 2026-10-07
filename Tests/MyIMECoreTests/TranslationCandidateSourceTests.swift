@@ -92,7 +92,10 @@ struct TranslationCandidateSourceTests {
             )
         }
 
-        let panels = TranslationPanelContent.panels(for: groups)
+        let panels = TranslationPanelContent.panels(
+            for: groups,
+            configuredLanguageCount: 3
+        )
 
         #expect(panels.map(\.caption) == ["英語", "中国語（簡体字）", "韓国語"])
         #expect(panels.map(\.candidates) == [["en"], ["zh-Hans"], ["ko"]])
@@ -107,7 +110,41 @@ struct TranslationCandidateSourceTests {
                     candidates: [Candidate(storageText: "a", source: .translation)]
                 )
             }
-            #expect(TranslationPanelContent.panels(for: groups).count == count)
+            #expect(TranslationPanelContent.panels(
+                for: groups,
+                configuredLanguageCount: count
+            ).count == count)
         }
+    }
+
+    @Test
+    func singleConfiguredLanguageHasNoCaption() {
+        let groups = [TranslationCandidateGroup(
+            targetIdentifier: "en",
+            candidates: [Candidate(storageText: "love", source: .translation)]
+        )]
+
+        let panels = TranslationPanelContent.panels(
+            for: groups,
+            configuredLanguageCount: 1
+        )
+
+        #expect(panels.map(\.caption) == [nil])
+        #expect(panels.map(\.candidates) == [["love"]])
+    }
+
+    @Test
+    func oneResultOfSeveralLanguagesKeepsItsCaption() {
+        let groups = [TranslationCandidateGroup(
+            targetIdentifier: "ko",
+            candidates: [Candidate(storageText: "사랑", source: .translation)]
+        )]
+
+        let panels = TranslationPanelContent.panels(
+            for: groups,
+            configuredLanguageCount: 3
+        )
+
+        #expect(panels.map(\.caption) == ["韓国語"])
     }
 }

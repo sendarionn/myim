@@ -227,7 +227,7 @@ final class InputPanelCoordinator {
     /// rather than shrunk when the screen is too narrow
     @discardableResult
     func showTranslationCandidates(
-        _ panels: [(candidates: [String], caption: String)],
+        _ panels: [(candidates: [String], caption: String?)],
         beside sourceFrame: NSRect,
         onLeft: Bool,
         near anchorFrame: NSRect
