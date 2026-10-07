@@ -46,6 +46,26 @@ struct FuzzySuggestionSourceTests {
         #expect(!candidates.contains("候補"))
     }
 
+    @Test
+    func typedLongVowelDoesNotSuggestUnrelatedExpandedReadingCandidate() async {
+        let entries = [
+            DictionaryEntry(input: "byuu", candidates: ["ビュー", "別府"])
+        ]
+        let repository = FuzzyEngineRepository()
+        repository.prepare(for: entries)
+        let source = makeSource(
+            query: "byu-",
+            entries: entries,
+            repository: repository
+        )
+
+        let candidates = await source.matchTiers()
+            .flatMap { $0 }
+            .flatMap(\.candidates)
+
+        #expect(!candidates.contains("別府"))
+    }
+
     private func makeSource(
         query: String,
         entries: [DictionaryEntry],

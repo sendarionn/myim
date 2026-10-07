@@ -1,10 +1,15 @@
 public enum FuzzyConversionMatchFilter {
     public static func filtered(
         _ matches: [FuzzyConversionMatch],
+        for input: String,
         excluding visibleCandidates: Set<String>
     ) -> [FuzzyConversionMatch] {
         matches.compactMap { match in
-            let candidates = match.candidates.filter {
+            let notationMatches = LongVowelNotationCandidateFilter.candidates(
+                match.candidates,
+                for: input
+            )
+            let candidates = notationMatches.filter {
                 !visibleCandidates.contains($0)
             }
             guard !candidates.isEmpty else {

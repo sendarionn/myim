@@ -256,6 +256,66 @@ struct StandardConversionCandidateSourceTests {
         #expect(name < kana)
     }
 
+    @Test
+    func expandedLongVowelLookupDoesNotPreserveUnrelatedSystemCandidate() {
+        let source = makeSource(systemText: """
+        beppu\t別府
+        byuu\tビュー
+        byuu\t別府
+        """)
+
+        let generated = source.candidates(for: .init(
+            input: "byu-",
+            conversionReading: "byu-"
+        ))
+        let visible = visibleCandidates(
+            generated,
+            input: "byu-",
+            reading: "byu-"
+        )
+
+        #expect(generated.contains {
+            $0.storageText == "別府" && $0.hasSource(.systemDictionary)
+        })
+        #expect(visible.contains("ビュー"))
+        #expect(!visible.contains("別府"))
+        #expect(texts(source, "beppu").contains("別府"))
+    }
+
+    @Test
+    func directHyphenDictionaryMatchesRemainVisible() {
+        let source = makeSource(
+            userEntries: [DictionaryEntry(
+                reading: "wi-fi",
+                candidates: ["Wi-Fi"]
+            )],
+            symbolEntries: [DictionaryEntry(
+                reading: "nyu-",
+                candidates: ["ν"]
+            )]
+        )
+
+        let symbol = visibleCandidates(
+            source.candidates(for: .init(
+                input: "nyu-",
+                conversionReading: "nyu-"
+            )),
+            input: "nyu-",
+            reading: "nyu-"
+        )
+        let user = visibleCandidates(
+            source.candidates(for: .init(
+                input: "Wi-Fi",
+                conversionReading: "Wi-Fi"
+            )),
+            input: "Wi-Fi",
+            reading: "Wi-Fi"
+        )
+
+        #expect(symbol.contains("ν"))
+        #expect(user.contains("Wi-Fi"))
+    }
+
     private let madeBasic = [DictionaryEntry(reading: "made", candidates: ["まで"])]
     private let madeImported = [
         DictionaryEntry(reading: "made", candidates: ["メイド", "メード"]),
@@ -272,10 +332,21 @@ struct StandardConversionCandidateSourceTests {
         )).map(\.storageText)
     }
 
+    private func visibleCandidates(
+        _ candidates: [Candidate],
+        input: String,
+        reading: String
+    ) -> [String] {
+        var session = CandidateSession()
+        session.replace(with: candidates, input: input, reading: reading)
+        return session.candidateTexts
+    }
+
     private func makeSource(
         userEntries: [DictionaryEntry] = [],
         importedEntries: [DictionaryEntry] = [],
         basicEntries: [DictionaryEntry] = [],
+        symbolEntries: [DictionaryEntry] = [],
         systemText: String = "",
         deferred: String = ""
     ) -> StandardConversionCandidateSource {
@@ -287,7 +358,7 @@ struct StandardConversionCandidateSourceTests {
                 ConversionEngine(entries: importedEntries)
             ]),
             basicEngine: ConversionEngine(entries: basicEntries),
-            symbolEngine: ConversionEngine(entries: []),
+            symbolEngine: ConversionEngine(entries: symbolEntries),
             systemEngine: IndexedDictionaryEngine(data: Data(systemText.utf8)),
             verbInflectionGenerator: VerbInflectionCandidateGenerator(
                 entries: basicEntries

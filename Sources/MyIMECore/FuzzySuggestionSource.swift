@@ -50,6 +50,7 @@ public struct FuzzySuggestionSource: Sendable {
             }
             let filtered = Array(FuzzyConversionMatchFilter.filtered(
                 combined,
+                for: query,
                 excluding: visibleCandidates
             ))
             let compounds = compoundGenerator
@@ -75,7 +76,13 @@ public struct FuzzySuggestionSource: Sendable {
                         seenReadings.insert($0.reading).inserted
                     }
                 }
-                .filter { !visibleCandidates.contains($0.text) }
+                .filter {
+                    !visibleCandidates.contains($0.text)
+                        && LongVowelNotationCandidateFilter.candidates(
+                            [$0.text],
+                            for: query
+                        ).isEmpty == false
+                }
             return FuzzySuggestionTierBuilder.build(
                 directTypoMatches: filtered,
                 compounds: compounds

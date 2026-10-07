@@ -29,6 +29,7 @@ public struct CandidateAssembly: Sendable {
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
         public let includeAutomaticKanaCandidates: Bool
+        public let longVowelNotationProtectedCandidates: Set<String>
 
         public init(
             reading: String,
@@ -59,7 +60,8 @@ public struct CandidateAssembly: Sendable {
             recencyRanks: [String: Int],
             contextualCandidates: [String],
             prioritizeKana: Bool,
-            includeAutomaticKanaCandidates: Bool = true
+            includeAutomaticKanaCandidates: Bool = true,
+            longVowelNotationProtectedCandidates: Set<String> = []
         ) {
             self.reading = reading
             self.kana = kana
@@ -91,20 +93,20 @@ public struct CandidateAssembly: Sendable {
             self.prioritizeKana = prioritizeKana
             self.includeAutomaticKanaCandidates =
                 includeAutomaticKanaCandidates
+            self.longVowelNotationProtectedCandidates =
+                longVowelNotationProtectedCandidates
         }
     }
 
     public init() {}
 
     public func candidates(from input: Input) -> [Candidate] {
-        let preserveLongVowel: CandidateOrigin.Attributes = [
-            .preservesLongVowelNotation
-        ]
         let direct = makeCandidates(
             input.userExact,
             source: .userDictionary,
             reading: input.reading,
-            attributes: preserveLongVowel
+            preservingLongVowelNotation:
+                input.longVowelNotationProtectedCandidates
         ) + makeCandidates(
             input.learnedExact,
             source: .selectionHistory,
@@ -125,22 +127,26 @@ public struct CandidateAssembly: Sendable {
             input.symbolExact,
             source: .symbolDictionary,
             reading: input.reading,
-            attributes: preserveLongVowel
+            preservingLongVowelNotation:
+                input.longVowelNotationProtectedCandidates
         ) + makeCandidates(
             input.basicExact,
             source: .basicDictionary,
             reading: input.reading,
-            attributes: preserveLongVowel
+            preservingLongVowelNotation:
+                input.longVowelNotationProtectedCandidates
         ) + makeCandidates(
             input.systemExact,
             source: .systemDictionary,
             reading: input.reading,
-            attributes: preserveLongVowel
+            preservingLongVowelNotation:
+                input.longVowelNotationProtectedCandidates
         ) + makeCandidates(
             input.importedExact,
             source: .importedDictionary,
             reading: input.reading,
-            attributes: preserveLongVowel
+            preservingLongVowelNotation:
+                input.longVowelNotationProtectedCandidates
         ) + makeCandidates(
             input.inflection,
             source: .verbInflection,
@@ -154,7 +160,8 @@ public struct CandidateAssembly: Sendable {
             input.userPrefix,
             source: .userDictionary,
             reading: input.reading,
-            attributes: preserveLongVowel
+            preservingLongVowelNotation:
+                input.longVowelNotationProtectedCandidates
         ) + makeCandidates(
             input.learnedCompletion,
             source: .selectionHistory,
@@ -198,7 +205,8 @@ public struct CandidateAssembly: Sendable {
                     input.deferredSystemExact,
                     source: .systemDictionary,
                     reading: input.reading,
-                    attributes: preserveLongVowel
+                    preservingLongVowelNotation:
+                        input.longVowelNotationProtectedCandidates
                 ),
                 other: other,
                 english: makeCandidates(
@@ -233,14 +241,17 @@ public struct CandidateAssembly: Sendable {
         _ values: [String],
         source: CandidateSourceKind,
         reading: String,
-        attributes: CandidateOrigin.Attributes = []
+        attributes: CandidateOrigin.Attributes = [],
+        preservingLongVowelNotation: Set<String> = []
     ) -> [Candidate] {
         values.map {
             Candidate(
                 storageText: $0,
                 source: source,
                 reading: reading,
-                attributes: attributes
+                attributes: preservingLongVowelNotation.contains($0)
+                    ? attributes.union(.preservesLongVowelNotation)
+                    : attributes
             )
         }
     }

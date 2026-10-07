@@ -199,6 +199,27 @@ public enum RomajiCanonicalizer {
     }
 
     public static func exactLookupInputs(from input: String) -> [String] {
+        var inputs = longVowelNotationPreservingLookupInputs(from: input)
+        if inputs.isEmpty {
+            inputs = unexpandedLookupInputs(from: input)
+        }
+        for value in inputs {
+            let expanded = longVowelInput(from: value)
+            if expanded != value, !inputs.contains(expanded) {
+                inputs.append(expanded)
+            }
+        }
+        return inputs
+    }
+
+    public static func longVowelNotationPreservingLookupInputs(
+        from input: String
+    ) -> [String] {
+        guard input.contains("-") else { return [] }
+        return unexpandedLookupInputs(from: input)
+    }
+
+    private static func unexpandedLookupInputs(from input: String) -> [String] {
         let raw = input.lowercased()
         let canonical = canonicalInput(from: raw)
         var inputs = raw == canonical ? [raw] : [raw, canonical]
@@ -210,12 +231,6 @@ public enum RomajiCanonicalizer {
             let moraicN = moraicNBeforeYInput(from: value)
             if moraicN != value, !inputs.contains(moraicN) {
                 inputs.append(moraicN)
-            }
-        }
-        for value in inputs {
-            let expanded = longVowelInput(from: value)
-            if expanded != value, !inputs.contains(expanded) {
-                inputs.append(expanded)
             }
         }
         return inputs

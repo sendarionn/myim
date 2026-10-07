@@ -25,6 +25,7 @@ struct FuzzyConversionMatchFilterTests {
 
         let filtered = FuzzyConversionMatchFilter.filtered(
             matches,
+            for: "genninn",
             excluding: ["原因"]
         )
 
@@ -64,7 +65,31 @@ struct FuzzyConversionMatchFilterTests {
 
         #expect(FuzzyConversionMatchFilter.filtered(
             matches,
+            for: "hitsuyou",
             excluding: []
         ) == matches)
+    }
+
+    @Test
+    func typedLongVowelKeepsOnlyMatchingSurfaceNotation() {
+        let matches = [
+            FuzzyConversionMatch(
+                reading: "byuu",
+                candidates: ["ビュー", "別府"],
+                distance: 1
+            )
+        ]
+
+        #expect(FuzzyConversionMatchFilter.filtered(
+            matches,
+            for: "byu-",
+            excluding: []
+        ) == [
+            FuzzyConversionMatch(
+                reading: "byuu",
+                candidates: ["ビュー"],
+                distance: 1
+            )
+        ])
     }
 }

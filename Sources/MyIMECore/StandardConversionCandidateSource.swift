@@ -84,6 +84,17 @@ public struct StandardConversionCandidateSource: Sendable {
                 originalInput: context.input
             )
         )
+        let notationPreservingReadings = RomajiCanonicalizer
+            .longVowelNotationPreservingLookupInputs(
+                from: context.conversionReading
+            )
+        let notationPreservingUserReadings = RomajiCanonicalizer
+            .longVowelNotationPreservingLookupInputs(
+                from: UserDictionaryLookupReading.resolve(
+                    conversionReading: context.conversionReading,
+                    originalInput: context.input
+                )
+            )
         let user = mergedGroups(
             readings: userLookupReadings,
             lookup: { userEngine.candidateGroups(matching: $0) }
@@ -106,6 +117,30 @@ public struct StandardConversionCandidateSource: Sendable {
                 limit: maximumSystemPrefixCandidates
             )
         }
+        let longVowelNotationProtectedCandidates = Set(
+            mergedGroups(
+                readings: notationPreservingUserReadings,
+                lookup: { userEngine.candidateGroups(matching: $0) }
+            ).all
+            + mergedGroups(
+                readings: notationPreservingReadings,
+                lookup: { symbolEngine.candidateGroups(matching: $0) }
+            ).exact
+            + mergedGroups(
+                readings: notationPreservingReadings,
+                lookup: { basicEngine.candidateGroups(matching: $0) }
+            ).exact
+            + mergedGroups(readings: notationPreservingReadings) {
+                systemEngine.candidateGroups(
+                    matching: $0,
+                    limit: maximumSystemPrefixCandidates
+                )
+            }.exact
+            + importedGroups(
+                readings: notationPreservingReadings,
+                spellings: []
+            ).reading.exact
+        )
         let deferredSystemExact = system.exact.filter { candidate in
             lookupReadings.contains {
                 deferredSystemCandidates.contains(
@@ -194,7 +229,9 @@ public struct StandardConversionCandidateSource: Sendable {
                 learningEnabled: context.learningEnabled
             ),
             contextualCandidates: context.contextualCandidates,
-            prioritizeKana: kana.first?.count == 1
+            prioritizeKana: kana.first?.count == 1,
+            longVowelNotationProtectedCandidates:
+                longVowelNotationProtectedCandidates
         ))
     }
 

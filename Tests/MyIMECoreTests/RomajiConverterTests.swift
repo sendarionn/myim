@@ -20,6 +20,20 @@ struct RomajiConverterTests {
         #expect(converter.katakana(from: "twuin") == "トゥイン")
     }
 
+    @Test(arguments: [
+        ("kyu-", "きゅー"), ("shu-", "しゅー"),
+        ("chu-", "ちゅー"), ("nyu-", "にゅー"),
+        ("hyu-", "ひゅー"), ("myu-", "みゅー"),
+        ("ryu-", "りゅー"), ("gyu-", "ぎゅー"),
+        ("byu-", "びゅー"), ("pyu-", "ぴゅー")
+    ])
+    func convertsContractedSoundsWithTypedLongVowels(
+        input: String,
+        expected: String
+    ) {
+        #expect(RomajiConverter().hiragana(from: input) == expected)
+    }
+
     @Test
     func createsJapaneseSymbolCandidates() {
         #expect(
@@ -171,6 +185,20 @@ struct RomajiConverterTests {
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "huru-re")
                 == ["huru-re", "furu-re", "huruure", "furuure"]
+        )
+        #expect(
+            RomajiCanonicalizer.dictionaryLookupInputs(from: "byu-")
+                == ["byu-", "byuu"]
+        )
+        #expect(
+            RomajiCanonicalizer
+                .longVowelNotationPreservingLookupInputs(from: "byu-")
+                == ["byu-"]
+        )
+        #expect(
+            RomajiCanonicalizer
+                .longVowelNotationPreservingLookupInputs(from: "byuu")
+                .isEmpty
         )
     }
 
