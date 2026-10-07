@@ -315,7 +315,30 @@ final class InputController: IMKInputController {
         trace("InputController.deinit", sender: nil)
     }
 
+    /// Key handling slower than this is logged, since the client app waits
+    /// for it before drawing the next character
+    private static let slowKeyHandlingThreshold = Duration.milliseconds(50)
+
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
+        let clock = ContinuousClock()
+        let start = clock.now
+        let handled = handleUnmeasured(event, client: sender)
+        let elapsed = clock.now - start
+        if elapsed >= Self.slowKeyHandlingThreshold, let event,
+           event.type == .keyDown {
+            let milliseconds = elapsed.components.seconds * 1_000
+                + elapsed.components.attoseconds / 1_000_000_000_000_000
+            Self.lifecycleLogger.notice(
+                "slow key handling ms=\(milliseconds, privacy: .public) keyCode=\(event.keyCode, privacy: .public) app=\(self.lifecycleCoordinator.clientBundleIdentifier ?? "unknown", privacy: .public) compositionLength=\(self.inputBuffer.count, privacy: .public) candidateCount=\(self.currentCandidateModels.count, privacy: .public)"
+            )
+        }
+        return handled
+    }
+
+    private func handleUnmeasured(
+        _ event: NSEvent!,
+        client sender: Any!
+    ) -> Bool {
         guard let event, let sender else {
             return false
         }
