@@ -8,7 +8,10 @@ final class InputPanelCoordinator {
     let calendar = CalendarWindowController()
     let emoji = EmojiWindowController.shared
     let fuzzySuggestion = FuzzySuggestionWindowController()
-    let translationCandidate = CandidateWindowController()
+    /// One panel per target language with results, nearest to the source
+    /// first; panels beyond the current count are kept hidden for reuse
+    private var translationCandidates: [CandidateWindowController] = []
+    private var visibleTranslationCandidateCount = 0
     let externalInformation = ExternalInformationWindowController()
     let symbolTips = SymbolTipsWindowController()
     private var nextInputDismissTimer: Timer?
@@ -185,16 +188,125 @@ final class InputPanelCoordinator {
         )
     }
 
-    func reserveTranslationCandidateSpace(onLeft: Bool) {
-        guard !translationCandidate.isVisible else {
+    static let translationPanelSpacing: CGFloat = 8
+
+    var visibleTranslationCandidateFrames: [NSRect] {
+        translationCandidates.prefix(visibleTranslationCandidateCount)
+            .compactMap(\.visibleFrame)
+    }
+
+    /// Keeps room for `languageCount` panels before any translation has
+    /// arrived, so panels appearing later do not push the candidates aside
+    func reserveTranslationCandidateSpace(
+        languageCount: Int,
+        onLeft: Bool
+    ) {
+        guard visibleTranslationCandidateCount == 0 else {
             keepCandidateGroupInsideScreen()
             return
         }
-        let reservedWidth = CandidatePanelItemStyle.maximumWidth + 8
+        guard let groupFrame = conversionGroupFrame(),
+              let visibleFrame = NSScreen.inputScreen(
+                containing: candidate.frame
+              )?.visibleFrame else { return }
+        let reservedWidth = HorizontalPanelGroupPlacement.reservedWidth(
+            panelCount: languageCount,
+            panelWidth: CandidatePanelItemStyle.maximumWidth,
+            spacing: Self.translationPanelSpacing,
+            groupWidth: groupFrame.width,
+            visibleWidth: visibleFrame.width
+        )
         keepCandidateGroupInsideScreen(
             reservedLeftWidth: onLeft ? reservedWidth : 0,
             reservedRightWidth: onLeft ? 0 : reservedWidth
         )
+    }
+
+    /// Shows one panel per group, extending away from `sourceFrame`, and
+    /// returns how many fit on the screen; the outermost ones are dropped
+    /// rather than shrunk when the screen is too narrow
+    @discardableResult
+    func showTranslationCandidates(
+        _ panels: [(candidates: [String], caption: String)],
+        beside sourceFrame: NSRect,
+        onLeft: Bool,
+        near anchorFrame: NSRect
+    ) -> Int {
+        hideTranslationCandidates()
+        while translationCandidates.count < panels.count {
+            translationCandidates.append(CandidateWindowController())
+        }
+        var previousFrame = sourceFrame
+        for (window, panel) in zip(translationCandidates, panels) {
+            window.show(
+                candidates: panel.candidates,
+                selectedIndex: nil,
+                near: anchorFrame,
+                caption: panel.caption,
+                isAccented: false
+            )
+            if onLeft {
+                window.placeLeft(
+                    of: previousFrame,
+                    spacing: Self.translationPanelSpacing
+                )
+            } else {
+                window.placeRight(
+                    of: previousFrame,
+                    spacing: Self.translationPanelSpacing
+                )
+            }
+            previousFrame = window.frame
+        }
+        visibleTranslationCandidateCount = panels.count
+        if let groupFrame = conversionGroupFrame(),
+           let visibleFrame = NSScreen.inputScreen(
+            containing: candidate.frame
+           )?.visibleFrame {
+            let fitting = HorizontalPanelGroupPlacement.fittingPanelCount(
+                panelWidths: translationCandidates.prefix(panels.count)
+                    .map { ($0.visibleFrame ?? $0.frame).width },
+                spacing: Self.translationPanelSpacing,
+                groupWidth: groupFrame.width,
+                visibleWidth: visibleFrame.width
+            )
+            translationCandidates[fitting..<panels.count].forEach {
+                $0.hide()
+            }
+            visibleTranslationCandidateCount = fitting
+        }
+        keepCandidateGroupInsideScreen()
+        return visibleTranslationCandidateCount
+    }
+
+    func selectTranslationCandidate(_ selection: TranslationCandidateSelection) {
+        for (groupIndex, window) in translationCandidates
+            .prefix(visibleTranslationCandidateCount).enumerated() {
+            if groupIndex == selection.groupIndex {
+                window.select(index: selection.candidateIndex)
+            } else {
+                window.clearSelection()
+            }
+        }
+    }
+
+    func clearTranslationCandidateSelection() {
+        translationCandidates.forEach { $0.clearSelection() }
+    }
+
+    func hideTranslationCandidates() {
+        translationCandidates.forEach { $0.hide() }
+        visibleTranslationCandidateCount = 0
+    }
+
+    /// Normal candidates and fuzzy suggestions, without translations
+    private func conversionGroupFrame() -> NSRect? {
+        let frames = [
+            candidate.visibleFrame,
+            fuzzySuggestion.visibleFrame
+        ].compactMap { $0 }
+        guard let first = frames.first else { return nil }
+        return frames.dropFirst().reduce(first) { $0.union($1) }
     }
 
     func keepCandidateGroupInsideScreen(
@@ -203,9 +315,8 @@ final class InputPanelCoordinator {
     ) {
         let frames = [
             candidate.visibleFrame,
-            fuzzySuggestion.visibleFrame,
-            translationCandidate.visibleFrame
-        ].compactMap { $0 }
+            fuzzySuggestion.visibleFrame
+        ].compactMap { $0 } + visibleTranslationCandidateFrames
         guard let firstFrame = frames.first,
               let visibleFrame = NSScreen.inputScreen(
                 containing: candidate.frame
@@ -223,13 +334,14 @@ final class InputPanelCoordinator {
         )
         candidate.offsetHorizontally(by: offset)
         fuzzySuggestion.offsetHorizontally(by: offset)
-        translationCandidate.offsetHorizontally(by: offset)
+        translationCandidates.prefix(visibleTranslationCandidateCount)
+            .forEach { $0.offsetHorizontally(by: offset) }
     }
 
     func hideConversionPanels() {
         candidate.hide()
         fuzzySuggestion.hide()
-        translationCandidate.hide()
+        hideTranslationCandidates()
         externalInformation.hide()
     }
 
@@ -255,7 +367,7 @@ final class InputPanelCoordinator {
         stopNextInputLifecycle()
         candidate.hide()
         fuzzySuggestion.hide()
-        translationCandidate.hide()
+        hideTranslationCandidates()
         emoji.hide()
         externalInformation.hide()
         symbolTips.hide()

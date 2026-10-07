@@ -17,6 +17,13 @@ final class InputController: IMKInputController {
     private enum TranslationCandidateDestination {
         case normal
         case fuzzy(reading: String)
+
+        var channel: TranslationCandidateChannel {
+            switch self {
+            case .normal: .normal
+            case .fuzzy: .fuzzy
+            }
+        }
     }
 
     private static let featureSettings = InputFeatureSettings()
@@ -169,10 +176,6 @@ final class InputController: IMKInputController {
 
     private var fuzzySuggestionWindow: FuzzySuggestionWindowController {
         panelCoordinator.fuzzySuggestion
-    }
-
-    private var translationCandidateWindow: CandidateWindowController {
-        panelCoordinator.translationCandidate
     }
 
     private var previewWindow: ExternalInformationWindowController {
@@ -606,7 +609,7 @@ final class InputController: IMKInputController {
                 direction: direction,
                 from: candidateWindow.frame
            ) {
-            return selectTranslationCandidate(index: 0, client: sender)
+            return enterTranslationCandidates(client: sender)
         }
         let offset = direction == .left ? -1 : 1
         return selectedCandidateIndex == nil
@@ -3073,7 +3076,7 @@ final class InputController: IMKInputController {
                 direction: .left,
                 from: fuzzySuggestionWindow.visibleFrame ?? candidateWindow.frame
             ) {
-                return selectTranslationCandidate(index: 0, client: sender)
+                return enterTranslationCandidates(client: sender)
             }
             return returnToNormalCandidateSelection(client: sender)
         case 124:
@@ -3081,7 +3084,7 @@ final class InputController: IMKInputController {
                 direction: .right,
                 from: fuzzySuggestionWindow.visibleFrame ?? candidateWindow.frame
             ) {
-                return selectTranslationCandidate(index: 0, client: sender)
+                return enterTranslationCandidates(client: sender)
             }
             return returnToNormalCandidateSelection(client: sender)
         case 53:
@@ -3479,7 +3482,10 @@ final class InputController: IMKInputController {
               !Self.featureSettings.translationTargetLanguages.isEmpty else {
             return
         }
-        reserveTranslationCandidateSpace(for: destination)
+        panelCoordinator.reserveTranslationCandidateSpace(
+            languageCount: Self.featureSettings.translationTargetLanguages.count,
+            onLeft: destination.channel.extendsLeft
+        )
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
@@ -3492,7 +3498,7 @@ final class InputController: IMKInputController {
             query: source,
             operation: {
                 try await translationSource
-                    .candidates(for: source)
+                    .groups(for: source)
             },
             validate: { [weak self] in
                 guard let self else { return false }
@@ -3513,44 +3519,37 @@ final class InputController: IMKInputController {
                         sender: sender
                     )
             },
-            apply: { [weak self] translationCandidates in
+            apply: { [weak self] groups in
                 guard let self else { return }
                 self.trace(
                     "translation.complete",
                     sender: sender,
-                    detail: "source=\(source) count=\(translationCandidates.count)"
+                    detail: "source=\(source) languages=\(groups.map(\.targetIdentifier)) count=\(groups.map(\.candidates.count))"
                 )
-                guard !translationCandidates.isEmpty else {
-                    return
-                }
+                let channel = destination.channel
+                self.translationCandidateSession.store(
+                    groups,
+                    for: source,
+                    channel: channel
+                )
                 switch destination {
                 case .normal:
-                    self.translationCandidateSession.store(
-                        translationCandidates,
-                        for: source,
-                        channel: .normal
-                    )
                     self.showCandidateWindow(client: sender)
                     guard self.candidateWindow.visibleFrame != nil else {
-                        self.translationCandidateWindow.hide()
+                        self.hideTranslationCandidatePanels()
                         return
                     }
                     let sourceRow = self.selectedCandidateIndex.map {
                         $0 % Self.maximumCandidateCount
                     } ?? 0
-                    self.showTranslationCandidateWindow(
-                        translationCandidates,
+                    self.showTranslationCandidatePanels(
+                        groups,
                         beside: self.candidateWindow.rowFrame(at: sourceRow)
                             ?? self.candidateWindow.frame,
-                        onLeft: true,
+                        channel: channel,
                         client: sender
                     )
                 case .fuzzy:
-                    self.translationCandidateSession.store(
-                        translationCandidates,
-                        for: source,
-                        channel: .fuzzy
-                    )
                     _ = self.fuzzySuggestionCoordinator.select(
                         candidate: source
                     )
@@ -3566,18 +3565,18 @@ final class InputController: IMKInputController {
                         )
                     }
                     guard self.fuzzySuggestionWindow.visibleFrame != nil else {
-                        self.translationCandidateWindow.hide()
+                        self.hideTranslationCandidatePanels()
                         return
                     }
-                    self.showTranslationCandidateWindow(
-                        translationCandidates,
+                    self.showTranslationCandidatePanels(
+                        groups,
                         beside: self.selectedFuzzySuggestionIndex.flatMap {
                             self.fuzzySuggestionWindow.rowFrame(
                                 at: $0 % Self.maximumCandidateCount
                             )
                         } ?? self.fuzzySuggestionWindow.visibleFrame
                             ?? self.candidateWindow.frame,
-                        onLeft: false,
+                        channel: channel,
                         client: sender
                     )
                 }
@@ -3597,64 +3596,69 @@ final class InputController: IMKInputController {
         suggestionSearchCoordinator.cancel(.translation)
     }
 
-    private func showTranslationCandidateWindow(
-        _ candidates: [Candidate],
+    /// Shows one panel per language in setting order; a source without
+    /// translations closes the previous source's panels
+    private func showTranslationCandidatePanels(
+        _ groups: [TranslationCandidateGroup],
         beside sourceFrame: NSRect,
-        onLeft: Bool,
+        channel: TranslationCandidateChannel,
         client sender: Any
     ) {
-        translationCandidateSession.show(candidates)
-        translationCandidateWindow.show(
-            candidates: Array(candidates.prefix(Self.maximumCandidateCount))
-                .map(\.storageText),
-            selectedIndex: nil,
-            near: inputLocation(for: sender),
-            isAccented: false
-        )
-        if onLeft {
-            translationCandidateWindow.placeLeft(of: sourceFrame)
-        } else {
-            translationCandidateWindow.placeRight(of: sourceFrame)
+        let visibleGroups = groups.map {
+            $0.prefix(Self.maximumCandidateCount)
         }
-        panelCoordinator.keepCandidateGroupInsideScreen()
+        let shownCount = panelCoordinator.showTranslationCandidates(
+            TranslationPanelContent.panels(for: visibleGroups).map {
+                (candidates: $0.candidates, caption: $0.caption)
+            },
+            beside: sourceFrame,
+            onLeft: channel.extendsLeft,
+            near: inputLocation(for: sender)
+        )
+        translationCandidateSession.show(
+            Array(visibleGroups.prefix(shownCount)),
+            channel: channel
+        )
     }
 
-    private func reserveTranslationCandidateSpace(
-        for destination: TranslationCandidateDestination
-    ) {
-        switch destination {
-        case .normal:
-            panelCoordinator.reserveTranslationCandidateSpace(onLeft: true)
-        case .fuzzy:
-            panelCoordinator.reserveTranslationCandidateSpace(onLeft: false)
-        }
+    private func hideTranslationCandidatePanels() {
+        translationCandidateSession.show([], channel: .normal)
+        panelCoordinator.hideTranslationCandidates()
     }
 
     private func shouldEnterTranslationCandidates(
         direction: CandidateNavigationDirection,
         from sourceFrame: NSRect
     ) -> Bool {
-        guard translationCandidateWindow.isVisible,
-              !translationCandidateSession.visibleCandidates.isEmpty else {
+        guard translationCandidateSession.hasVisibleCandidates,
+              let nearestFrame = panelCoordinator
+                .visibleTranslationCandidateFrames.first else {
             return false
         }
-        return translationCandidateWindow.frame.midX < sourceFrame.midX
+        return nearestFrame.midX < sourceFrame.midX
             ? direction == .left
             : direction == .right
     }
 
-    private func selectTranslationCandidate(
-        index: Int,
-        client sender: Any
-    ) -> Bool {
+    /// Entering from the source starts at the top of the nearest panel
+    private func enterTranslationCandidates(client sender: Any) -> Bool {
         guard let candidate = translationCandidateSession.select(
-            index: index,
+            TranslationCandidateSelection(groupIndex: 0, candidateIndex: 0),
             returningToFuzzy: selectedFuzzySuggestionIndex != nil
         ) else {
             return true
         }
+        return showTranslationCandidateSelection(candidate, client: sender)
+    }
+
+    private func showTranslationCandidateSelection(
+        _ candidate: Candidate,
+        client sender: Any
+    ) -> Bool {
         candidateWindow.clearSelection()
-        translationCandidateWindow.select(index: index)
+        if let selection = translationCandidateSession.selection {
+            panelCoordinator.selectTranslationCandidate(selection)
+        }
         setMarkedText(candidate.storageText, in: sender)
         return true
     }
@@ -3663,62 +3667,66 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool? {
-        guard let selectedTranslationCandidateIndex =
-                translationCandidateSession.selectedIndex,
-              translationCandidateSession.visibleCandidates.indices.contains(
-                selectedTranslationCandidateIndex
-              ) else { return nil }
-        let visibleCandidates = translationCandidateSession.visibleCandidates
+        guard let selectedCandidate =
+                translationCandidateSession.selectedCandidate else {
+            return nil
+        }
         switch InputKey(keyCode: event.keyCode) {
         case .returnKey:
-            commit(
-                visibleCandidates[selectedTranslationCandidateIndex].storageText,
-                to: sender
-            )
+            commit(selectedCandidate.storageText, to: sender)
             return true
         case .tab, .downArrow:
-            return selectTranslationCandidate(
-                index: (selectedTranslationCandidateIndex + 1)
-                    % visibleCandidates.count,
-                client: sender
-            )
+            return translationCandidateSession.moveVertically(by: 1).map {
+                showTranslationCandidateSelection($0, client: sender)
+            } ?? true
         case .upArrow:
-            return selectTranslationCandidate(
-                index: (selectedTranslationCandidateIndex - 1
-                    + visibleCandidates.count)
-                    % visibleCandidates.count,
-                client: sender
-            )
-        case .leftArrow, .rightArrow, .escape:
-            translationCandidateSession.clearSelection()
-            translationCandidateWindow.clearSelection()
-            if translationCandidateSession.returnWasFuzzy,
-               let selectedFuzzySuggestionIndex {
-                return selectFuzzySuggestion(
-                    index: selectedFuzzySuggestionIndex,
+            return translationCandidateSession.moveVertically(by: -1).map {
+                showTranslationCandidateSelection($0, client: sender)
+            } ?? true
+        case let key where key == .leftArrow || key == .rightArrow:
+            switch translationCandidateSession.moveHorizontally(
+                movingLeft: key == .leftArrow
+            ) {
+            case let .selected(candidate):
+                return showTranslationCandidateSelection(
+                    candidate,
                     client: sender
                 )
+            case .returnedToSource:
+                return returnFromTranslationCandidates(client: sender)
+            case .unchanged:
+                return true
             }
-            if let selectedCandidateIndex {
-                return selectCandidate(index: selectedCandidateIndex, client: sender)
-            }
-            return true
+        case .escape:
+            return returnFromTranslationCandidates(client: sender)
         case .space:
-            commit(
-                visibleCandidates[selectedTranslationCandidateIndex].storageText
-                    + " ",
-                to: sender
-            )
+            commit(selectedCandidate.storageText + " ", to: sender)
             return true
-        case .delete, .inputFormFunction, .other:
+        default:
             return false
         }
+    }
+
+    private func returnFromTranslationCandidates(client sender: Any) -> Bool {
+        translationCandidateSession.clearSelection()
+        panelCoordinator.clearTranslationCandidateSelection()
+        if translationCandidateSession.returnWasFuzzy,
+           let selectedFuzzySuggestionIndex {
+            return selectFuzzySuggestion(
+                index: selectedFuzzySuggestionIndex,
+                client: sender
+            )
+        }
+        if let selectedCandidateIndex {
+            return selectCandidate(index: selectedCandidateIndex, client: sender)
+        }
+        return true
     }
 
     private func clearSessionTranslationCandidates() {
         cancelCandidateTranslation()
         translationCandidateSession.reset()
-        translationCandidateWindow.hide()
+        panelCoordinator.hideTranslationCandidates()
     }
 
     private func isWebSearchShortcut(_ event: NSEvent) -> Bool {
@@ -4913,7 +4921,8 @@ final class InputController: IMKInputController {
         if let fuzzyFrame = fuzzySuggestionWindow.visibleFrame {
             result = result.union(fuzzyFrame)
         }
-        if let translationFrame = translationCandidateWindow.visibleFrame {
+        for translationFrame in panelCoordinator
+            .visibleTranslationCandidateFrames {
             result = result.union(translationFrame)
         }
         if let emojiFrame = emojiWindow.visibleFrame {

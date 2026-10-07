@@ -22,3 +22,16 @@ public enum CandidateRowWidth {
         )
     }
 }
+
+/// A caption fits its text but never reaches beyond its panel, which
+/// widens for a longer caption so it does not cover a neighbouring panel
+public enum CaptionedPanelWidth {
+    public static func resolve(
+        contentWidth: Double,
+        captionWidth: Double,
+        maximumWidth: Double
+    ) -> (panel: Double, caption: Double) {
+        let panel = min(max(contentWidth, captionWidth), maximumWidth)
+        return (panel, min(captionWidth, panel))
+    }
+}

@@ -241,6 +241,94 @@ struct CandidateFilterTests {
 }
 
 @Suite struct HorizontalPanelGroupPlacementTests {
+    @Test func reservesOnePanelForOneLanguageAsBefore() {
+        #expect(HorizontalPanelGroupPlacement.reservedWidth(
+            panelCount: 1,
+            panelWidth: 240,
+            spacing: 8,
+            groupWidth: 300,
+            visibleWidth: 1_440
+        ) == 248)
+    }
+
+    @Test func reservesEveryLanguagePanelWithinTheScreen() {
+        #expect(HorizontalPanelGroupPlacement.reservedWidth(
+            panelCount: 3,
+            panelWidth: 240,
+            spacing: 8,
+            groupWidth: 300,
+            visibleWidth: 1_440
+        ) == 744)
+        #expect(HorizontalPanelGroupPlacement.reservedWidth(
+            panelCount: 6,
+            panelWidth: 240,
+            spacing: 8,
+            groupWidth: 300,
+            visibleWidth: 1_440
+        ) == 1_140)
+    }
+
+    @Test func panelsWithinTheReservationDoNotMoveTheGroup() {
+        // Candidates at the left edge are moved once for three languages
+        let reserved = HorizontalPanelGroupPlacement.reservedWidth(
+            panelCount: 3,
+            panelWidth: 240,
+            spacing: 8,
+            groupWidth: 200,
+            visibleWidth: 1_440
+        )
+        let shift = HorizontalPanelGroupPlacement.offset(
+            groupMinX: 40,
+            groupMaxX: 240,
+            visibleMinX: 0,
+            visibleMaxX: 1_440,
+            reservedLeftWidth: reserved
+        )
+        #expect(shift == 704)
+
+        // Three narrower panels then appear on the left
+        let panelsWidth = 3 * (120 + 8.0)
+        #expect(HorizontalPanelGroupPlacement.offset(
+            groupMinX: 40 + shift - panelsWidth,
+            groupMaxX: 240 + shift,
+            visibleMinX: 0,
+            visibleMaxX: 1_440
+        ) == 0)
+    }
+
+    @Test func multiplePanelGroupIsKeptInsideTheScreen() {
+        #expect(HorizontalPanelGroupPlacement.offset(
+            groupMinX: -260,
+            groupMaxX: 400,
+            visibleMinX: 0,
+            visibleMaxX: 1_440
+        ) == 260)
+    }
+
+    @Test func fitsEveryPanelOnAWideScreen() {
+        #expect(HorizontalPanelGroupPlacement.fittingPanelCount(
+            panelWidths: [120, 100, 140],
+            spacing: 8,
+            groupWidth: 300,
+            visibleWidth: 1_440
+        ) == 3)
+    }
+
+    @Test func dropsOutermostPanelsThatCannotFit() {
+        #expect(HorizontalPanelGroupPlacement.fittingPanelCount(
+            panelWidths: [240, 240, 240],
+            spacing: 8,
+            groupWidth: 300,
+            visibleWidth: 820
+        ) == 2)
+        #expect(HorizontalPanelGroupPlacement.fittingPanelCount(
+            panelWidths: [240],
+            spacing: 8,
+            groupWidth: 700,
+            visibleWidth: 800
+        ) == 1)
+    }
+
     @Test func keepsGroupPositionWhenAlreadyVisible() {
         #expect(HorizontalPanelGroupPlacement.offset(
             groupMinX: 100,

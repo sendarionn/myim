@@ -257,6 +257,39 @@ public enum HorizontalPanelGroupPlacement {
         }
         return 0
     }
+
+    /// Number of panels, nearest first, that fit beside a group of
+    /// `groupWidth`; at least one is kept so a narrow screen still shows
+    /// the nearest panel
+    public static func fittingPanelCount(
+        panelWidths: [Double],
+        spacing: Double,
+        groupWidth: Double,
+        visibleWidth: Double
+    ) -> Int {
+        var width = groupWidth
+        var count = 0
+        for panelWidth in panelWidths {
+            width += spacing + panelWidth
+            guard width <= visibleWidth else { break }
+            count += 1
+        }
+        return panelWidths.isEmpty ? 0 : max(count, 1)
+    }
+
+    /// Space kept beside the group before `panelCount` panels of at most
+    /// `panelWidth` appear, so their arrival does not move the group;
+    /// it never exceeds what the screen can give
+    public static func reservedWidth(
+        panelCount: Int,
+        panelWidth: Double,
+        spacing: Double,
+        groupWidth: Double,
+        visibleWidth: Double
+    ) -> Double {
+        let requested = Double(max(panelCount, 0)) * (panelWidth + spacing)
+        return min(requested, max(visibleWidth - groupWidth, 0))
+    }
 }
 
 public enum CandidateFilterCondition: Equatable, Sendable {

@@ -4,10 +4,11 @@ import MyIMECore
 struct AppleTranslationCandidateSource {
     let targetIdentifiers: [String]
 
-    func candidates(for input: String) async throws -> [Candidate] {
+    func groups(for input: String) async throws
+        -> [TranslationCandidateGroup] {
         try await TranslationCandidateSource(
             targetIdentifiers: targetIdentifiers
-        ).candidates(for: input) { input, targetIdentifier in
+        ).groups(for: input) { input, targetIdentifier in
 #if canImport(Translation)
             if #available(macOS 15.0, *) {
                 return await AppleTranslationCandidateProvider()

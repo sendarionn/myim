@@ -517,8 +517,15 @@ final class CandidateWindowController: NSObject {
             max(anchorFrame.maxY - panel.frame.height, visibleFrame.minY),
             visibleFrame.maxY - panel.frame.height
         )
+        let deltaX = x - panel.frame.minX
+        let deltaY = y - panel.frame.minY
         panel.setFrameOrigin(NSPoint(x: x, y: y))
-        guidePanel.orderOut(nil)
+        // A caption stays attached to its panel
+        guard guidePanel.isVisible else { return }
+        guidePanel.setFrameOrigin(NSPoint(
+            x: guidePanel.frame.minX + deltaX,
+            y: guidePanel.frame.minY + deltaY
+        ))
     }
 
     func offsetHorizontally(by offset: CGFloat) {
@@ -542,6 +549,7 @@ final class CandidateWindowController: NSObject {
         selectedIndex: Int?,
         near anchorFrame: NSRect,
         guide: String? = nil,
+        caption: String? = nil,
         isAccented: Bool = false,
         reservedRightWidth: CGFloat = 0,
         reservesEmptyRow: Bool = false,
@@ -574,8 +582,12 @@ final class CandidateWindowController: NSObject {
         let visibleFrame = screen?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
 
-        let guideText = guide?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let hasGuide = PanelShortcutGuideStyle.isEnabled && !guideText.isEmpty
+        // A caption names the panel itself, so it is shown even while
+        // shortcut guides are disabled
+        let guideText = (caption ?? guide)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasGuide = (caption != nil || PanelShortcutGuideStyle.isEnabled)
+            && !guideText.isEmpty
         let guideParagraphStyle = NSMutableParagraphStyle()
         guideParagraphStyle.lineBreakMode = .byCharWrapping
         guideLabel.textStorage?.setAttributedString(NSAttributedString(
@@ -601,7 +613,7 @@ final class CandidateWindowController: NSObject {
                 }
                 .max() ?? 0
             : 0
-        let guideWidth = hasGuide
+        let shortcutGuideWidth = hasGuide
             ? min(
                 max(
                     measuredGuideWidth
@@ -611,7 +623,7 @@ final class CandidateWindowController: NSObject {
                 min(Self.maximumGuideWidth, maximumPanelWidth)
             )
             : 0
-        let panelWidth = min(
+        let contentWidth = min(
             max(
                 measuredItemSizes.map(\.width).max()
                     ?? CandidatePanelItemStyle.minimumWidth,
@@ -626,6 +638,21 @@ final class CandidateWindowController: NSObject {
             ),
             maximumPanelWidth
         )
+        let panelWidth: CGFloat
+        let guideWidth: CGFloat
+        if caption != nil, hasGuide {
+            let width = CaptionedPanelWidth.resolve(
+                contentWidth: contentWidth,
+                captionWidth: measuredGuideWidth
+                    + PanelShortcutGuideStyle.horizontalPadding * 2,
+                maximumWidth: maximumPanelWidth
+            )
+            panelWidth = width.panel
+            guideWidth = width.caption
+        } else {
+            panelWidth = contentWidth
+            guideWidth = shortcutGuideWidth
+        }
         itemSizes = candidates.map { _ in
             NSSize(width: panelWidth, height: Self.itemHeight)
         }
