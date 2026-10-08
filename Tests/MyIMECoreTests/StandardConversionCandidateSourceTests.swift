@@ -316,6 +316,57 @@ struct StandardConversionCandidateSourceTests {
         #expect(user.contains("Wi-Fi"))
     }
 
+    @Test(arguments: [
+        ("cc", "テストCC"),
+        ("rlj", "テストRLJ"),
+        ("zz", "テストZZ"),
+        ("abc", "テストABC"),
+        ("byu-", "テストBYU")
+    ])
+    func arbitraryUserDictionaryReadingsReachTheVisibleCandidates(
+        reading: String,
+        expected: String
+    ) {
+        let source = makeSource(userEntries: [DictionaryEntry(
+            reading: reading,
+            candidates: [expected]
+        )])
+        let visible = visibleCandidates(
+            source.candidates(for: .init(
+                input: reading,
+                conversionReading: ConversionReadingResolver.resolve(reading)
+            )),
+            input: reading,
+            reading: ConversionReadingResolver.resolve(reading)
+        )
+
+        #expect(visible.contains(expected))
+    }
+
+    @Test(arguments: [
+        ("cc", "セールスCC"),
+        ("rlj", "リモートロックジャパン")
+    ])
+    func exactUserDictionaryCandidateMayUseLongVowelNotation(
+        reading: String,
+        expected: String
+    ) {
+        let source = makeSource(userEntries: [DictionaryEntry(
+            reading: reading,
+            candidates: [expected]
+        )])
+        let visible = visibleCandidates(
+            source.candidates(for: .init(
+                input: reading,
+                conversionReading: reading
+            )),
+            input: reading,
+            reading: reading
+        )
+
+        #expect(visible.contains(expected))
+    }
+
     private let madeBasic = [DictionaryEntry(reading: "made", candidates: ["まで"])]
     private let madeImported = [
         DictionaryEntry(reading: "made", candidates: ["メイド", "メード"]),

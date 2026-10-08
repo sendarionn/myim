@@ -105,8 +105,7 @@ public struct CandidateAssembly: Sendable {
             input.userExact,
             source: .userDictionary,
             reading: input.reading,
-            preservingLongVowelNotation:
-                input.longVowelNotationProtectedCandidates
+            attributes: [.preservesLongVowelNotation]
         ) + makeCandidates(
             input.learnedExact,
             source: .selectionHistory,

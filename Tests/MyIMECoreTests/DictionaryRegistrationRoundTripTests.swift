@@ -66,4 +66,75 @@ struct DictionaryRegistrationRoundTripTests {
         let candidate = Candidate(storageText: "知る", source: .userDictionary)
         #expect(!candidate.hasDistinctCommitText)
     }
+
+    @Test
+    func arbitraryReadingsRemainVisibleBeforeAndAfterReload() throws {
+        let registrations = [
+            ("cc", "テストCC"),
+            ("rlj", "テストRLJ"),
+            ("zz", "テストZZ"),
+            ("abc", "テストABC"),
+            ("byu-", "テストBYU"),
+            ("cc", "セールスCC"),
+            ("rlj", "リモートロックジャパン")
+        ]
+        var savedText = ""
+        let store = UserDictionaryStore(entries: []) {
+            savedText = DictionarySerializer.text(from: $0)
+        }
+        for (reading, candidate) in registrations {
+            try store.add(reading: reading, candidate: candidate)
+        }
+
+        for entries in [
+            store.entries,
+            try DictionaryParser().parse(savedText)
+        ] {
+            for (reading, candidate) in registrations {
+                #expect(visibleCandidates(
+                    entries: entries,
+                    input: reading
+                ).contains(candidate))
+            }
+        }
+    }
+
+    private func visibleCandidates(
+        entries: [DictionaryEntry],
+        input: String
+    ) -> [String] {
+        let runtime = ConversionDictionaryRuntime(
+            userEntries: entries,
+            imported: ImportedDictionaryRuntime(dictionaries: []),
+            disabledImportedFilenames: [],
+            basicEntries: [],
+            basicEngine: ConversionEngine(entries: []),
+            verbInflectionGenerator: VerbInflectionCandidateGenerator(
+                entries: []
+            ),
+            compoundGenerator: CompoundDictionaryCandidateGenerator(
+                entries: []
+            ),
+            systemEngine: IndexedDictionaryEngine()
+        )
+        let source = StandardConversionCandidateSource(
+            userEngine: runtime.userDictionaryEngine,
+            importedEngine: runtime.importedEngine,
+            basicEngine: runtime.basicEngine,
+            symbolEngine: ConversionEngine(entries: []),
+            systemEngine: runtime.systemEngine,
+            verbInflectionGenerator: runtime.verbInflectionGenerator
+        )
+        let reading = ConversionReadingResolver.resolve(input)
+        var session = CandidateSession()
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: reading
+            )),
+            input: input,
+            reading: reading
+        )
+        return session.candidateTexts
+    }
 }
