@@ -942,13 +942,16 @@ final class InputController: IMKInputController {
             externalInformationPanel: Self.featureSettings.isExternalInformationPanelEnabled,
             systemDictionaryPreview: Self.featureSettings.isSystemDictionaryPreviewEnabled,
             webSearch: Self.featureSettings.isWebSearchEnabled,
-            importedDictionaries: dictionaryRuntime.imported.dictionaries.map {
-                    SettingsWindowBuilder.ImportedDictionaryState(
-                        filename: $0.fileURL.lastPathComponent,
-                        isEnabled: !Self.featureSettings.disabledImportedDictionaryFilenames
-                            .contains($0.fileURL.lastPathComponent)
-                    )
-                }
+            importedDictionaries: ImportedDictionaryChecklist.items(
+                dictionaries: dictionaryRuntime.imported.dictionaries,
+                disabledFilenames: Self.featureSettings
+                    .disabledImportedDictionaryFilenames
+            ).map {
+                SettingsWindowBuilder.ImportedDictionaryState(
+                    filename: $0.filename,
+                    isEnabled: $0.isEnabled
+                )
+            }
         )
     }
 
@@ -1017,6 +1020,13 @@ final class InputController: IMKInputController {
                         .disabledImportedDictionaryFilenames
                 )
                 rebuildFuzzyConversionEngine()
+                settingsWindowPresenter.refreshIfPresented {
+                    SettingsWindowBuilder.make(
+                        target: self,
+                        states: self.settingsFeatureStates,
+                        actions: self.settingsActions
+                    )
+                }
                 let alert = NSAlert()
                 alert.messageText = "SKK辞書をインポートしました"
                 alert.informativeText = summary.description
