@@ -74,6 +74,10 @@ final class ExternalInformationWindowController: NSObject {
     var onInteractionEnded: (() -> Void)?
     var onDiagnosticEvent: ((String) -> Void)?
 
+    var isVisible: Bool {
+        definitionPanel.isVisible || informationPanelIsVisible
+    }
+
     override init() {
         definitionTextView = InteractiveInformationTextView(frame: .zero)
         definitionPanel = Self.makePanel(

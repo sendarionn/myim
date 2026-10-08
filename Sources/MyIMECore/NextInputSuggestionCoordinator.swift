@@ -106,13 +106,14 @@ public final class NextInputSuggestionCoordinator {
         return predictions.map(NextInputCandidateMetadata.candidate)
     }
 
+    @discardableResult
     public func beginSuggestions(
         context: String,
         preferredCandidates: [String],
         learnedCandidates: [String],
         dictionaryCandidates: [String],
         unsuppressibleCandidates: Set<String> = []
-    ) {
+    ) -> Bool {
         beginSuggestions(
             context: context,
             preferredCandidates: preferredCandidates.map {
@@ -128,13 +129,14 @@ public final class NextInputSuggestionCoordinator {
         )
     }
 
+    @discardableResult
     public func beginSuggestions(
         context: String,
         preferredCandidates: [Candidate],
         learnedCandidates: [Candidate],
         dictionaryCandidates: [Candidate],
         unsuppressibleCandidates: Set<String> = []
-    ) {
+    ) -> Bool {
         let visibleDictionaryCandidates = dictionaryCandidates.filter {
             !store.isSuppressed($0.commitText, after: context)
         }
@@ -150,6 +152,7 @@ public final class NextInputSuggestionCoordinator {
                 + visibleDictionaryCandidates.count
         )
         session.begin(context: context, candidates: candidates)
+        return !candidates.isEmpty
     }
 
     @discardableResult

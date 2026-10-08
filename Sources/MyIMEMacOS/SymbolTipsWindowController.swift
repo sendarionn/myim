@@ -34,6 +34,7 @@ final class SymbolTipsWindowController {
     }
 
     var visibleFrame: NSRect? { panel.isVisible ? panel.frame : nil }
+    var isVisible: Bool { panel.isVisible }
 
     func show(_ tips: SymbolTips, beside anchor: NSRect) {
         text.stringValue = [

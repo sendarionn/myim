@@ -4446,11 +4446,19 @@ final class InputController: IMKInputController {
         trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
         suggestionSearchCoordinator.cancel(.calendarFormat)
-        panelCoordinator.dismissAll()
+        let hidesSharedEmoji = shouldDismissSharedEmojiPanel
+        panelCoordinator.dismissAll(hidesSharedEmoji: hidesSharedEmoji)
+        if hidesSharedEmoji {
+            Self.emojiPanelController = nil
+        }
+        tracePanelDismissal(
+            source: "all",
+            preserved: [],
+            ignoresSharedEmoji: !hidesSharedEmoji
+        )
         fuzzySuggestionCoordinator.reset()
         selectedFuzzySuggestionIndex = nil
-        nextInputSuggestionCoordinator.clearCandidates()
-        panelCoordinator.stopNextInputLifecycle()
+        clearNextInputSuggestionState()
         cancelPrimarySuggestionSearches()
         suggestionSearchCoordinator.cancel(.dictionaryDefinition)
         clearCalendarSelection()
@@ -4482,7 +4490,20 @@ final class InputController: IMKInputController {
         suggestionSearchCoordinator.cancel(.fuzzy)
         fuzzySuggestionCoordinator.reset()
         selectedFuzzySuggestionIndex = nil
-        panelCoordinator.dismiss(using: policy)
+        let hidesSharedEmoji = shouldDismissSharedEmojiPanel
+        panelCoordinator.dismiss(
+            using: policy,
+            hidesSharedEmoji: hidesSharedEmoji
+        )
+        if hidesSharedEmoji {
+            Self.emojiPanelController = nil
+        }
+        tracePanelDismissal(
+            source: "policy",
+            preserved: Set(InputPanelKind.allCases)
+                .subtracting(policy.panelsToDismiss),
+            ignoresSharedEmoji: !hidesSharedEmoji
+        )
         resetCandidateFilters()
         if !policy.preservesCalendar {
             clearCalendarSelection()
@@ -4597,7 +4618,7 @@ final class InputController: IMKInputController {
             after: predictionContext,
             limit: 16
         ).map { Candidate(storageText: $0, source: .nextInput) }
-        nextInputSuggestionCoordinator.beginSuggestions(
+        let hasCandidates = nextInputSuggestionCoordinator.beginSuggestions(
             context: predictionContext,
             preferredCandidates: preferredCandidates.map {
                 Candidate(storageText: $0, source: .nextInput)
@@ -4608,8 +4629,13 @@ final class InputController: IMKInputController {
                 closingBracketTracker.shouldBypassCandidateSuppression($0)
             })
         )
-        if !nextInputSuggestionCoordinator.hasCandidates {
-            panelCoordinator.stopNextInputLifecycle()
+        if !hasCandidates {
+            panelCoordinator.dismissNextInputPresentation()
+            trace(
+                "panel.hide",
+                sender: sender,
+                detail: "kind=nextInput reason=noCandidates"
+            )
         } else {
             showNextInputCandidateWindow(client: sender)
             startNextInputOutsideClickMonitoring()
@@ -4661,7 +4687,7 @@ final class InputController: IMKInputController {
             pageSize: Self.maximumCandidateCount
         )
         guard !pageRange.isEmpty else {
-            candidateWindow.hide()
+            panelCoordinator.dismissNextInputPresentation()
             return
         }
         candidateWindow.show(
@@ -4681,6 +4707,11 @@ final class InputController: IMKInputController {
             after: Self.nextInputDismissInterval
         ) { [weak self] in
             guard let self else { return }
+            trace(
+                "panel.hide",
+                sender: client(),
+                detail: "kind=nextInput reason=timeout"
+            )
             dismissNextInputSuggestions(clearMarkedTextIn: client())
         }
     }
@@ -4692,8 +4723,7 @@ final class InputController: IMKInputController {
             setMarkedText("", in: sender)
         }
         clearNextInputSuggestionState()
-        candidateWindow.hide()
-        previewWindow.hide()
+        panelCoordinator.dismissNextInputPresentation()
     }
 
     private func clearNextInputSuggestionState() {
@@ -4706,8 +4736,41 @@ final class InputController: IMKInputController {
         panelCoordinator.startNextInputOutsideClickMonitoring {
             [weak self] in
             guard let self else { return }
+            trace(
+                "panel.hide",
+                sender: client(),
+                detail: "kind=nextInput reason=outsideClick"
+            )
             dismissNextInputSuggestions(clearMarkedTextIn: client())
         }
+    }
+
+    private var shouldDismissSharedEmojiPanel: Bool {
+        SharedPanelDismissalPolicy.shouldDismiss(
+            ownerID: Self.emojiPanelController?.controllerID,
+            requestingControllerID: controllerID
+        )
+    }
+
+    private func tracePanelDismissal(
+        source: String,
+        preserved: Set<InputPanelKind>,
+        ignoresSharedEmoji: Bool
+    ) {
+        let remainingPanels = panelCoordinator.visiblePanelKinds
+        var expectedRemaining = preserved
+        if ignoresSharedEmoji {
+            expectedRemaining.insert(.emoji)
+        }
+        let remaining = remainingPanels.map(\.rawValue).sorted()
+        let unexpected = remainingPanels
+            .subtracting(expectedRemaining)
+            .map(\.rawValue).sorted()
+        trace(
+            "panelDismiss.complete",
+            sender: client(),
+            detail: "source=\(source) remaining=\(remaining.joined(separator: ",")) unexpected=\(unexpected.joined(separator: ","))"
+        )
     }
 
     private func updateMarkedText(in sender: Any) {

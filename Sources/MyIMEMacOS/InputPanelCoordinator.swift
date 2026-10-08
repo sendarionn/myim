@@ -20,6 +20,38 @@ final class InputPanelCoordinator {
     private var calendarAnchorFrame: NSRect?
     private var calendarReturnApplication: NSRunningApplication?
 
+    var visiblePanelKinds: Set<InputPanelKind> {
+        var result = Set<InputPanelKind>()
+        if candidate.isVisible {
+            result.insert(.candidate)
+        }
+        if fuzzySuggestion.isVisible {
+            result.insert(.fuzzySuggestion)
+        }
+        if translationCandidates.contains(where: \.isVisible) {
+            result.insert(.translationCandidates)
+        }
+        if emoji.isVisible {
+            result.insert(.emoji)
+        }
+        if externalInformation.isVisible {
+            result.insert(.externalInformation)
+        }
+        if symbolTips.isVisible {
+            result.insert(.symbolTips)
+        }
+        if candidateFilterDraft.isVisible {
+            result.insert(.candidateFilterDraft)
+        }
+        if candidateFilterConditions.contains(where: \.isVisible) {
+            result.insert(.candidateFilterConditions)
+        }
+        if calendar.isVisible {
+            result.insert(.calendar)
+        }
+        return result
+    }
+
     deinit {
         stopNextInputLifecycle()
     }
@@ -345,34 +377,47 @@ final class InputPanelCoordinator {
         externalInformation.hide()
     }
 
-    func dismiss(using policy: InputPanelDismissalPolicy) {
+    func dismissNextInputPresentation() {
         stopNextInputLifecycle()
-        if policy.cancelsCalendarWork {
-            candidate.hide()
-        }
-        fuzzySuggestion.hide()
-        emoji.hide()
-        symbolTips.hide()
-        candidateFilterDraft.hide()
-        hideFilterConditions()
-        if !policy.preservesExternalInformation {
-            externalInformation.hide()
-        }
-        if !policy.preservesCalendar {
-            clearCalendarPresentation()
+        candidate.hide()
+        externalInformation.hide()
+    }
+
+    func dismiss(
+        using policy: InputPanelDismissalPolicy,
+        hidesSharedEmoji: Bool
+    ) {
+        stopNextInputLifecycle()
+        for panel in policy.panelsToDismiss {
+            switch panel {
+            case .candidate:
+                candidate.hide()
+            case .fuzzySuggestion:
+                fuzzySuggestion.hide()
+            case .translationCandidates:
+                hideTranslationCandidates()
+            case .emoji:
+                if hidesSharedEmoji {
+                    emoji.hide()
+                }
+            case .externalInformation:
+                externalInformation.hide()
+            case .symbolTips:
+                symbolTips.hide()
+            case .candidateFilterDraft:
+                candidateFilterDraft.hide()
+            case .candidateFilterConditions:
+                hideFilterConditions()
+            case .calendar:
+                clearCalendarPresentation()
+            }
         }
     }
 
-    func dismissAll() {
-        stopNextInputLifecycle()
-        candidate.hide()
-        fuzzySuggestion.hide()
-        hideTranslationCandidates()
-        emoji.hide()
-        externalInformation.hide()
-        symbolTips.hide()
-        candidateFilterDraft.hide()
-        hideFilterConditions()
-        clearCalendarPresentation()
+    func dismissAll(hidesSharedEmoji: Bool) {
+        dismiss(
+            using: .inputBecameEmpty,
+            hidesSharedEmoji: hidesSharedEmoji
+        )
     }
 }

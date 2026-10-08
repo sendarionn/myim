@@ -97,6 +97,22 @@ struct NextInputSuggestionCoordinatorTests {
     }
 
     @Test
+    func beginningAnEmptySuggestionSetReportsNoVisibleCandidates() {
+        let fixture = makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+        let hasCandidates = fixture.coordinator.beginSuggestions(
+            context: "候補なし",
+            preferredCandidates: [String](),
+            learnedCandidates: [String](),
+            dictionaryCandidates: [String]()
+        )
+
+        #expect(!hasCandidates)
+        #expect(!fixture.coordinator.hasCandidates)
+    }
+
+    @Test
     func selectedSequenceCandidateRetainsItsSourceTokens() {
         let fixture = makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
