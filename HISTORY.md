@@ -2549,3 +2549,4 @@
 
 - myimのUIとインタラクションの判断基準を`DESIGN.md`へ整理
 - UI変更時に`DESIGN.md`を確認する上位ルールを`AGENTS.md`へ追加し、操作ラベルの個別規則をデザイン原則側へ移動
+- `MISCELLANEOUS.md`を現行の候補生成、順位、正規化、誤入力補完、次入力学習、JavaScript拡張の仕様へ同期
