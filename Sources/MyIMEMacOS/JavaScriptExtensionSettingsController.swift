@@ -12,14 +12,20 @@ final class JavaScriptExtensionSettingsController: NSObject {
     private var scrollView: NSScrollView?
     private var selectedUpdateFileNames = Set<String>()
     private var updateError: String?
+    private var shouldOfferUpdateConfirmation = false
+    private var isPresentingUpdateConfirmation = false
 
     init(client: JavaScriptExtensionClient) {
         self.client = client
     }
 
     func show() {
+        let isNewPresentation = panel?.isVisible != true
         let panel = panel ?? makePanel()
         self.panel = panel
+        if isNewPresentation {
+            shouldOfferUpdateConfirmation = true
+        }
         refresh()
         NSApp.activate(ignoringOtherApps: true)
         panel.center()
@@ -72,11 +78,24 @@ final class JavaScriptExtensionSettingsController: NSObject {
         resolveSelectedExtensions(as: .keep)
     }
 
+    @objc
+    private func updateKeptExtension(_ sender: NSButton) {
+        guard let fileName = sender.identifier?.rawValue else { return }
+        resolveExtensions([fileName], as: .update)
+    }
+
     private func resolveSelectedExtensions(
         as resolution: DefaultExtensionConflictResolution
     ) {
         let fileNames = selectedUpdateFileNames
         guard !fileNames.isEmpty else { return }
+        resolveExtensions(fileNames, as: resolution)
+    }
+
+    private func resolveExtensions(
+        _ fileNames: Set<String>,
+        as resolution: DefaultExtensionConflictResolution
+    ) {
         Task { [weak self] in
             guard let self else { return }
             let error = await client.resolveExtensionUpdates(
@@ -271,10 +290,52 @@ final class JavaScriptExtensionSettingsController: NSObject {
                     item.fileName
                 ) ? .on : .off
                 row.addArrangedSubview(selection)
+            } else if item.updateState == .updateKept {
+                let update = NSButton(
+                    title: "更新する",
+                    target: self,
+                    action: #selector(updateKeptExtension(_:))
+                )
+                update.identifier = NSUserInterfaceItemIdentifier(
+                    item.fileName
+                )
+                row.addArrangedSubview(update)
             }
             stack.addArrangedSubview(row)
         }
         updateContentFrame(stack)
+        offerUpdateConfirmationIfNeeded(for: conflicts)
+    }
+
+    private func offerUpdateConfirmationIfNeeded(
+        for conflicts: [JavaScriptExtensionClient.ExtensionInfo]
+    ) {
+        guard shouldOfferUpdateConfirmation else { return }
+        shouldOfferUpdateConfirmation = false
+        guard !conflicts.isEmpty,
+              !isPresentingUpdateConfirmation,
+              let panel else { return }
+        isPresentingUpdateConfirmation = true
+        let fileNames = Set(conflicts.map(\.fileName))
+        let alert = NSAlert()
+        alert.messageText = "標準JavaScript拡張を更新しますか"
+        alert.informativeText = """
+        ローカルで変更された標準拡張に更新があります
+
+        \(fileNames.sorted().joined(separator: "\n"))
+
+        更新すると同梱の新しい内容に置き換え、現在のファイルをバックアップします
+        更新しない場合は現在の内容を維持します
+        """
+        alert.addButton(withTitle: "更新する")
+        alert.addButton(withTitle: "更新しない")
+        alert.beginSheetModal(for: panel) { [weak self] response in
+            guard let self else { return }
+            self.isPresentingUpdateConfirmation = false
+            let resolution: DefaultExtensionConflictResolution =
+                response == .alertFirstButtonReturn ? .update : .keep
+            self.resolveExtensions(fileNames, as: resolution)
+        }
     }
 
     private func updateContentFrame(_ stack: NSStackView) {
@@ -303,7 +364,7 @@ final class JavaScriptExtensionSettingsController: NSObject {
         case .updateAvailable:
             "同梱拡張 · 更新あり · ローカル変更あり"
         case .updateKept:
-            "同梱拡張 · 現在のものを維持"
+            "同梱拡張 · 古いバージョンを維持中"
         case .userExtension:
             "ユーザー拡張"
         }

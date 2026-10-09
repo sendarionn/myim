@@ -362,6 +362,76 @@ struct DefaultExtensionInstallerTests {
     }
 
     @Test
+    func keptUpdatesCanBeInstalledLaterWithoutResolvingOtherFiles() throws {
+        let directories = try makeDirectories()
+        defer { try? FileManager.default.removeItem(at: directories.root) }
+        for name in ["datetime.js", "numeric-tools.js"] {
+            try Data("version 1 \(name)".utf8).write(
+                to: directories.source.appendingPathComponent(name)
+            )
+        }
+        try DefaultExtensionInstaller.installIfNeeded(
+            from: directories.source,
+            into: directories.destination
+        )
+        for name in ["datetime.js", "numeric-tools.js"] {
+            try Data("user edit \(name)".utf8).write(
+                to: directories.destination.appendingPathComponent(name)
+            )
+            try Data("version 2 \(name)".utf8).write(
+                to: directories.source.appendingPathComponent(name)
+            )
+        }
+
+        let kept = try DefaultExtensionInstaller.resolveConflicts(
+            fileNames: ["datetime.js"],
+            resolution: .keep,
+            from: directories.source,
+            into: directories.destination
+        )
+        #expect(kept.statuses == [
+            DefaultExtensionStatus(
+                fileName: "datetime.js",
+                state: .updateKept
+            ),
+            DefaultExtensionStatus(
+                fileName: "numeric-tools.js",
+                state: .updateAvailable
+            )
+        ])
+
+        let updated = try DefaultExtensionInstaller.resolveConflicts(
+            fileNames: ["datetime.js"],
+            resolution: .update,
+            from: directories.source,
+            into: directories.destination
+        )
+
+        #expect(try String(
+            contentsOf: directories.destination.appendingPathComponent(
+                "datetime.js"
+            ),
+            encoding: .utf8
+        ) == "version 2 datetime.js")
+        #expect(try String(
+            contentsOf: directories.destination.appendingPathComponent(
+                "numeric-tools.js"
+            ),
+            encoding: .utf8
+        ) == "user edit numeric-tools.js")
+        #expect(updated.statuses == [
+            DefaultExtensionStatus(
+                fileName: "datetime.js",
+                state: .bundledCurrent
+            ),
+            DefaultExtensionStatus(
+                fileName: "numeric-tools.js",
+                state: .updateAvailable
+            )
+        ])
+    }
+
+    @Test
     func updatingAConflictCreatesBackupAndRestoresAutomaticUpdates() throws {
         let directories = try makeDirectories()
         defer { try? FileManager.default.removeItem(at: directories.root) }

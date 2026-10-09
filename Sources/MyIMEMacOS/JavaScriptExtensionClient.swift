@@ -119,18 +119,23 @@ actor JavaScriptExtensionClient {
               let destination = Self.userExtensionDirectory else {
             return "拡張フォルダが見つかりません"
         }
-        do {
-            try DefaultExtensionInstaller.resolveConflicts(
-                fileNames: fileNames,
-                resolution: resolution,
-                from: source,
-                into: destination
-            )
-            reload()
-            return nil
-        } catch {
-            return "JavaScript拡張を更新できませんでした: \(error.localizedDescription)"
+        var failures: [String] = []
+        for fileName in fileNames.sorted() {
+            do {
+                try DefaultExtensionInstaller.resolveConflicts(
+                    fileNames: [fileName],
+                    resolution: resolution,
+                    from: source,
+                    into: destination
+                )
+            } catch {
+                failures.append("\(fileName): \(error.localizedDescription)")
+            }
         }
+        reload()
+        guard !failures.isEmpty else { return nil }
+        return "JavaScript拡張を更新できませんでした\n"
+            + failures.joined(separator: "\n")
     }
 
     func reload() {
