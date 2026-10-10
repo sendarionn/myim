@@ -2,13 +2,33 @@ import Foundation
 
 struct RomajiTypoScorer {
     static func cost(from source: String, to target: String) -> Double {
+        cost(from: source, to: target, treatsHyphenAsVowel: false)
+    }
+
+    /// A wider, second-stage score for long inputs that already failed the
+    /// ordinary typo lookup. A hyphen can stand in for a missing long vowel,
+    /// but all other edits retain the ordinary keyboard-aware costs.
+    static func aggressiveCost(from source: String, to target: String) -> Double {
+        cost(from: source, to: target, treatsHyphenAsVowel: true)
+    }
+
+    private static func cost(
+        from source: String,
+        to target: String,
+        treatsHyphenAsVowel: Bool
+    ) -> Double {
         let source = Array(source)
         let target = Array(target)
         guard !source.isEmpty else {
             return target.reduce(0) { $0 + insertionCost($1) }
         }
         guard !target.isEmpty else {
-            return source.reduce(0) { $0 + deletionCost($1) }
+            return source.reduce(0) {
+                $0 + deletionCost(
+                    $1,
+                    treatsHyphenAsVowel: treatsHyphenAsVowel
+                )
+            }
         }
 
         var previousPrevious = [Double](
@@ -23,19 +43,26 @@ struct RomajiTypoScorer {
 
         for sourceIndex in 1...source.count {
             var current = [Double](repeating: 0, count: target.count + 1)
-            current[0] = previous[0] + deletionCost(source[sourceIndex - 1])
+            current[0] = previous[0] + deletionCost(
+                source[sourceIndex - 1],
+                treatsHyphenAsVowel: treatsHyphenAsVowel
+            )
             for targetIndex in 1...target.count {
                 let sourceCharacter = source[sourceIndex - 1]
                 let targetCharacter = target[targetIndex - 1]
                 current[targetIndex] = min(
                     previous[targetIndex]
-                        + deletionCost(sourceCharacter),
+                        + deletionCost(
+                            sourceCharacter,
+                            treatsHyphenAsVowel: treatsHyphenAsVowel
+                        ),
                     current[targetIndex - 1]
                         + insertionCost(targetCharacter),
                     previous[targetIndex - 1]
                         + substitutionCost(
                             sourceCharacter,
-                            targetCharacter
+                            targetCharacter,
+                            treatsHyphenAsVowel: treatsHyphenAsVowel
                         )
                 )
                 if sourceIndex > 1,
@@ -55,19 +82,32 @@ struct RomajiTypoScorer {
     }
 
     private static func insertionCost(_ character: Character) -> Double {
-        vowels.contains(character) ? 0.35 : 0.8
+        return vowels.contains(character) ? 0.35 : 0.8
     }
 
-    private static func deletionCost(_ character: Character) -> Double {
-        vowels.contains(character) ? 0.35 : 0.8
+    private static func deletionCost(
+        _ character: Character,
+        treatsHyphenAsVowel: Bool
+    ) -> Double {
+        if treatsHyphenAsVowel, character == "-" {
+            return 0.35
+        }
+        return vowels.contains(character) ? 0.35 : 0.8
     }
 
     private static func substitutionCost(
         _ source: Character,
-        _ target: Character
+        _ target: Character,
+        treatsHyphenAsVowel: Bool
     ) -> Double {
         guard source != target else {
             return 0
+        }
+        if treatsHyphenAsVowel {
+            if source == "-" && vowels.contains(target)
+                || target == "-" && vowels.contains(source) {
+                return 0.2
+            }
         }
         if RomajiPhoneticRelation.differsByVoicing(source, target) {
             return 1.4

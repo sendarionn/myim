@@ -4,6 +4,21 @@ import Testing
 @Suite
 struct RomajiTypoScorerTests {
     @Test
+    func treatsHyphenAsAVowelPlaceholderOnlyInAggressiveSearch() {
+        let ordinary = RomajiTypoScorer.cost(
+            from: "de-tsb-su",
+            to: "deetabeesu"
+        )
+        let aggressive = RomajiTypoScorer.aggressiveCost(
+            from: "de-tsb-su",
+            to: "deetabeesu"
+        )
+
+        #expect(ordinary == 2.7)
+        #expect(aggressive < ordinary)
+    }
+
+    @Test
     func givesAdjacentKeySubstitutionLowerCost() {
         let adjacent = RomajiTypoScorer.cost(from: "r", to: "t")
         let unrelated = RomajiTypoScorer.cost(from: "r", to: "p")

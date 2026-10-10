@@ -21,9 +21,15 @@ public struct FuzzyConversionEngine: Sendable {
     }
 
     private static let indexedMaximumDistance = 2
+    private static let aggressiveMinimumInputLength = 7
+    private static let aggressiveMinimumConsonantCount = 4
+    private static let aggressiveCandidateLimit = 192
+    private static let aggressiveMatchLimit = 12
     private static let dictionaryOrderWeight = 0.32
     private let indexedEntries: [IndexedEntry]
     private let deletionIndex: SymmetricDeleteIndex
+    private let aggressiveEntries: [IndexedEntry]
+    private let consonantIndex: RomajiConsonantIndex
     private let entriesByReading: [String: IndexedEntry]
 
     public init(entries: [DictionaryEntry]) {
@@ -47,6 +53,7 @@ public struct FuzzyConversionEngine: Sendable {
         }
 
         var entries: [IndexedEntry] = []
+        var canonicalEntries: [IndexedEntry] = []
         var indexedByReading: [String: IndexedEntry] = [:]
         for (order, reading) in readingOrder.enumerated() {
             let canonicalEntry = IndexedEntry(
@@ -56,6 +63,7 @@ public struct FuzzyConversionEngine: Sendable {
                 order: order
             )
             indexedByReading[reading] = canonicalEntry
+            canonicalEntries.append(canonicalEntry)
             for searchReading in Self.fuzzyReadingVariants(from: reading) {
                 entries.append(
                     IndexedEntry(
@@ -71,6 +79,12 @@ public struct FuzzyConversionEngine: Sendable {
         deletionIndex = SymmetricDeleteIndex(
             terms: entries.map { String($0.characters) },
             maximumDistance: Self.indexedMaximumDistance
+        )
+        aggressiveEntries = canonicalEntries
+        consonantIndex = RomajiConsonantIndex(
+            terms: canonicalEntries.map {
+                Self.consonantSkeleton(in: $0.reading)
+            }
         )
         entriesByReading = indexedByReading
     }
@@ -158,8 +172,27 @@ public struct FuzzyConversionEngine: Sendable {
             }
         }
 
+        if maximumDistance == nil {
+            let ordinaryMaximumCost = Self.maximumTypoCost(
+                forLength: source.count
+            )
+            let acceptedOrdinaryReadings = Set(bestMatches.compactMap {
+                $0.value.4 <= ordinaryMaximumCost ? $0.key : nil
+            })
+            if acceptedOrdinaryReadings.isEmpty {
+                for match in aggressiveMatches(
+                    for: reading
+                ) {
+                    bestMatches[match.0.reading] = match
+                }
+            }
+        }
+
         var matches = bestMatches.values.filter {
-            $0.4 <= Self.maximumTypoCost(forLength: source.count)
+            let maximumCost = $0.1 > Self.indexedMaximumDistance
+                ? Self.maximumAggressiveTypoCost(forLength: source.count)
+                : Self.maximumTypoCost(forLength: source.count)
+            return $0.4 <= maximumCost
         }
         matches.sort {
             if $0.3 != $1.3 {
@@ -206,6 +239,64 @@ public struct FuzzyConversionEngine: Sendable {
         default:
             1.25
         }
+    }
+
+    private func aggressiveMatches(
+        for reading: String
+    ) -> [(IndexedEntry, Int, Int, Double, Double)] {
+        let source = Array(reading)
+        let skeleton = Self.consonantSkeleton(in: reading)
+        guard source.count >= Self.aggressiveMinimumInputLength,
+              skeleton.count >= Self.aggressiveMinimumConsonantCount else {
+            return []
+        }
+        let maximumCost = Self.maximumAggressiveTypoCost(
+            forLength: source.count
+        )
+        let identifiers = consonantIndex.rankedCandidateIdentifiers(
+            for: skeleton,
+            minimumSharedNGramCount: 2,
+            limit: Self.aggressiveCandidateLimit
+        )
+        var matches: [(IndexedEntry, Int, Int, Double, Double)] = []
+        for identifier in identifiers {
+            let entry = aggressiveEntries[identifier]
+            guard entry.reading != reading else {
+                continue
+            }
+            let typoCost = RomajiTypoScorer.aggressiveCost(
+                from: reading,
+                to: entry.reading
+            )
+            guard typoCost <= maximumCost else { continue }
+            let prefixLength = Self.commonPrefixLength(
+                source,
+                entry.characters
+            )
+            matches.append((
+                entry,
+                Self.indexedMaximumDistance + 1,
+                prefixLength,
+                typoCost + Self.dictionaryOrderPenalty(entry.order),
+                typoCost
+            ))
+        }
+        matches.sort {
+            if $0.3 != $1.3 { return $0.3 < $1.3 }
+            if $0.2 != $1.2 { return $0.2 > $1.2 }
+            return $0.0.order < $1.0.order
+        }
+        return Array(matches.prefix(Self.aggressiveMatchLimit))
+    }
+
+    private static func maximumAggressiveTypoCost(forLength length: Int) -> Double {
+        min(2.1, 1.35 + Double(max(0, length - 7)) * 0.1)
+    }
+
+    private static func consonantSkeleton(in reading: String) -> String {
+        String(reading.filter {
+            $0.isASCII && $0.isLetter && !"aeiou".contains($0)
+        })
     }
 
     private static func fuzzyReadingVariants(from reading: String) -> [String] {

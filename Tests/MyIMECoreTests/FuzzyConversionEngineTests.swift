@@ -15,7 +15,8 @@ struct FuzzyConversionEngineTests {
         DictionaryEntry(reading: "konnichiha", candidates: ["こんにちは"]),
         DictionaryEntry(reading: "shinbun", candidates: ["新聞"]),
         DictionaryEntry(reading: "toukyou", candidates: ["東京"]),
-        DictionaryEntry(reading: "gakkou", candidates: ["学校"])
+        DictionaryEntry(reading: "gakkou", candidates: ["学校"]),
+        DictionaryEntry(reading: "deetabeesu", candidates: ["データベース"])
     ])
 
     @Test
@@ -157,5 +158,67 @@ struct FuzzyConversionEngineTests {
         #expect(engine.matches(for: "kakkou").allSatisfy {
             $0.reading != "gakkou"
         })
+    }
+
+    @Test
+    func findsMultipleErrorsOnlyInTheAggressiveSecondStage() {
+        let match = engine.matches(for: "de-tsb-su").first {
+            $0.reading == "deetabeesu"
+        }
+
+        #expect(match?.candidates == ["データベース"])
+        #expect(match?.distance == 3)
+        #expect(engine.matches(
+            for: "de-tsb-su",
+            maximumDistance: 2
+        ).allSatisfy { $0.reading != "deetabeesu" })
+    }
+
+    @Test(arguments: [
+        "dtbeesu",       // multiple missing vowels
+        "de-tabe-su"     // multiple long-vowel notation differences
+    ])
+    func findsDatabaseAcrossPhoneticallyPlausibleErrors(_ input: String) {
+        #expect(engine.matches(for: input).contains {
+            $0.reading == "deetabeesu"
+        })
+    }
+
+    @Test
+    func findsMultipleAdjacentKeySubstitutions() {
+        #expect(engine.matches(for: "jonnichiga").contains {
+            $0.reading == "konnichiha"
+        })
+    }
+
+    @Test
+    func findsCombinedOmissionAndTransposition() {
+        #expect(engine.matches(for: "konncihia").contains {
+            $0.reading == "konnichiha"
+        })
+    }
+
+    @Test
+    func aggressiveSearchStillRejectsUnrelatedLongInput() {
+        #expect(engine.matches(for: "qx-zvbnm").isEmpty)
+    }
+
+    @Test
+    func closeCorrectionPreventsTheAggressiveFallback() {
+        let rankedEngine = FuzzyConversionEngine(entries: [
+            DictionaryEntry(
+                reading: "de-tsb-sa",
+                candidates: ["近い候補"]
+            ),
+            DictionaryEntry(
+                reading: "deetabeesu",
+                candidates: ["データベース"]
+            )
+        ])
+
+        let matches = rankedEngine.matches(for: "de-tsb-su")
+
+        #expect(matches.first?.candidates == ["近い候補"])
+        #expect(matches.allSatisfy { $0.candidates != ["データベース"] })
     }
 }

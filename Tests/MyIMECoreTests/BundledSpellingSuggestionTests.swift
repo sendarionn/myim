@@ -94,6 +94,13 @@ struct BundledSpellingSuggestionTests {
         #expect(suggestions.prefix(4).contains(expected))
     }
 
+    @Test
+    func findsDatabaseFromMultipleRomajiErrors() async throws {
+        let suggestions = try await suggestions(for: "de-tsb-su")
+
+        #expect(suggestions.prefix(4).contains("データベース"))
+    }
+
     private func suggestions(for query: String) async throws -> [String] {
         let fixture = try #require(Self.fixture)
         let source = FuzzySuggestionSource(
