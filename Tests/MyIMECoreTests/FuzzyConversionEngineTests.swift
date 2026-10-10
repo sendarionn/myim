@@ -221,4 +221,30 @@ struct FuzzyConversionEngineTests {
         #expect(matches.first?.candidates == ["近い候補"])
         #expect(matches.allSatisfy { $0.candidates != ["データベース"] })
     }
+
+    @Test
+    func doesNotDropAnIntentionalSymbolToCreateADictionaryReading() {
+        let symbolEngine = FuzzyConversionEngine(entries: [
+            DictionaryEntry(
+                reading: "foo=barbaz",
+                candidates: ["記号を含む入力"]
+            ),
+            DictionaryEntry(
+                reading: "foobarbaz",
+                candidates: ["記号なし"]
+            ),
+            DictionaryEntry(
+                reading: "version",
+                candidates: ["バージョン"]
+            )
+        ])
+
+        let symbolMatches = symbolEngine.matches(for: "foo=barbaz")
+        #expect(symbolMatches.allSatisfy {
+            $0.reading != "foobarbaz"
+        })
+        #expect(symbolEngine.matches(for: "version10").allSatisfy {
+            $0.reading != "version"
+        })
+    }
 }

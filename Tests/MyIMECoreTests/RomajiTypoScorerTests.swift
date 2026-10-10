@@ -18,6 +18,18 @@ struct RomajiTypoScorerTests {
         #expect(aggressive < ordinary)
     }
 
+    @Test(arguments: ["=", "_", "0", ")", "^"])
+    func scoresKeysNearTheLongVowelKeyAsVowelPlaceholders(
+        _ key: Character
+    ) {
+        let source = "d\(key)ta"
+
+        #expect(RomajiTypoScorer.aggressiveCost(
+            from: source,
+            to: "deeta"
+        ) < RomajiTypoScorer.cost(from: source, to: "deeta"))
+    }
+
     @Test
     func givesAdjacentKeySubstitutionLowerCost() {
         let adjacent = RomajiTypoScorer.cost(from: "r", to: "t")

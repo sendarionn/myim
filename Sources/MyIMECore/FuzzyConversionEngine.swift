@@ -102,6 +102,10 @@ public struct FuzzyConversionEngine: Sendable {
         guard !source.isEmpty, allowedDistance >= 0, limit > 0 else {
             return []
         }
+        if reading.contains(where: { !$0.isLetter && $0 != "'" }),
+           entriesByReading[reading] != nil {
+            return []
+        }
 
         var bestMatches: [
             String: (IndexedEntry, Int, Int, Double, Double)
@@ -176,9 +180,18 @@ public struct FuzzyConversionEngine: Sendable {
             let ordinaryMaximumCost = Self.maximumTypoCost(
                 forLength: source.count
             )
-            let acceptedOrdinaryReadings = Set(bestMatches.compactMap {
-                $0.value.4 <= ordinaryMaximumCost ? $0.key : nil
-            })
+            let acceptedOrdinaryReadings: Set<String> = Set(
+                bestMatches.compactMap { element -> String? in
+                    guard element.value.4 <= ordinaryMaximumCost,
+                          Self.hasKeyboardLayoutEvidenceIfNeeded(
+                            from: reading,
+                            to: element.value.0.reading
+                          ) else {
+                        return nil
+                    }
+                    return element.key
+                }
+            )
             if acceptedOrdinaryReadings.isEmpty {
                 for match in aggressiveMatches(
                     for: reading
@@ -193,6 +206,10 @@ public struct FuzzyConversionEngine: Sendable {
                 ? Self.maximumAggressiveTypoCost(forLength: source.count)
                 : Self.maximumTypoCost(forLength: source.count)
             return $0.4 <= maximumCost
+                && Self.hasKeyboardLayoutEvidenceIfNeeded(
+                    from: reading,
+                    to: $0.0.reading
+                )
         }
         matches.sort {
             if $0.3 != $1.3 {
@@ -269,6 +286,10 @@ public struct FuzzyConversionEngine: Sendable {
                 to: entry.reading
             )
             guard typoCost <= maximumCost else { continue }
+            guard Self.hasKeyboardLayoutEvidenceIfNeeded(
+                from: reading,
+                to: entry.reading
+            ) else { continue }
             let prefixLength = Self.commonPrefixLength(
                 source,
                 entry.characters
@@ -297,6 +318,22 @@ public struct FuzzyConversionEngine: Sendable {
         String(reading.filter {
             $0.isASCII && $0.isLetter && !"aeiou".contains($0)
         })
+    }
+
+    private static func hasKeyboardLayoutEvidenceIfNeeded(
+        from source: String,
+        to target: String
+    ) -> Bool {
+        let specialCharacters = source.filter {
+            !$0.isLetter && $0 != "'" && $0 != "-"
+        }
+        guard !specialCharacters.isEmpty else { return true }
+        if specialCharacters.allSatisfy({ target.contains($0) }) {
+            return true
+        }
+        return RomajiTypoScorer.aggressiveCost(from: source, to: target)
+            + 0.15
+            < RomajiTypoScorer.cost(from: source, to: target)
     }
 
     private static func fuzzyReadingVariants(from reading: String) -> [String] {

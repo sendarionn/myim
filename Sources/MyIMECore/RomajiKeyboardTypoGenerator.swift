@@ -1,35 +1,14 @@
 import Foundation
 
 public enum RomajiKeyboardTypoGenerator {
-    private struct Position {
-        let x: Double
-        let y: Double
-    }
-
-    private static let positions: [Character: Position] = {
-        var result: [Character: Position] = [:]
-        let rows: [(String, Double)] = [
-            ("qwertyuiop", 0),
-            ("asdfghjkl", 0.25),
-            ("zxcvbnm", 0.75)
-        ]
-        for (y, row) in rows.enumerated() {
-            for (index, character) in row.0.enumerated() {
-                result[character] = Position(
-                    x: Double(index) + row.1,
-                    y: Double(y)
-                )
-            }
-        }
-        return result
-    }()
+    private static let correctionTargets = Set("abcdefghijklmnopqrstuvwxyz")
 
     public static func corrections(for input: String) -> [String] {
         let characters = Array(input.lowercased())
         var corrections: [String] = []
         for index in characters.indices {
             let source = characters[index]
-            let neighbors = positions.keys.compactMap { target -> (
+            let neighbors = correctionTargets.compactMap { target -> (
                 Character,
                 Double
             )? in
@@ -92,10 +71,6 @@ public enum RomajiKeyboardTypoGenerator {
         from source: Character,
         to target: Character
     ) -> Double? {
-        guard let source = positions[source], let target = positions[target]
-        else {
-            return nil
-        }
-        return hypot(source.x - target.x, source.y - target.y)
+        RomajiKeyboardGeometry.minimumDistance(from: source, to: target)
     }
 }

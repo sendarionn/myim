@@ -6,8 +6,9 @@ struct RomajiTypoScorer {
     }
 
     /// A wider, second-stage score for long inputs that already failed the
-    /// ordinary typo lookup. A hyphen can stand in for a missing long vowel,
-    /// but all other edits retain the ordinary keyboard-aware costs.
+    /// ordinary typo lookup. A physical key at or beside the long-vowel key
+    /// can stand in for a missing vowel, while all other edits retain the
+    /// ordinary keyboard-aware costs.
     static func aggressiveCost(from source: String, to target: String) -> Double {
         cost(from: source, to: target, treatsHyphenAsVowel: true)
     }
@@ -107,6 +108,12 @@ struct RomajiTypoScorer {
             if source == "-" && vowels.contains(target)
                 || target == "-" && vowels.contains(source) {
                 return 0.2
+            }
+            if vowels.contains(target),
+               let distance = RomajiKeyboardGeometry
+                   .distanceFromLongVowelKey(source),
+               distance <= 1.05 {
+                return 0.2 + distance * 0.15
             }
         }
         if RomajiPhoneticRelation.differsByVoicing(source, target) {
