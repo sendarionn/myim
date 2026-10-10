@@ -102,11 +102,6 @@ public struct FuzzyConversionEngine: Sendable {
         guard !source.isEmpty, allowedDistance >= 0, limit > 0 else {
             return []
         }
-        if reading.contains(where: { !$0.isLetter && $0 != "'" }),
-           entriesByReading[reading] != nil {
-            return []
-        }
-
         var bestMatches: [
             String: (IndexedEntry, Int, Int, Double, Double)
         ] = [:]
@@ -331,8 +326,24 @@ public struct FuzzyConversionEngine: Sendable {
         if specialCharacters.allSatisfy({ target.contains($0) }) {
             return true
         }
+        let hasDirectPhysicalNeighbor = specialCharacters.contains {
+            sourceCharacter in
+            target.contains { targetCharacter in
+                guard targetCharacter.isLetter,
+                      let distance = RomajiKeyboardGeometry.minimumDistance(
+                        from: sourceCharacter,
+                        to: targetCharacter
+                      ) else {
+                    return false
+                }
+                return distance <= 1.25
+            }
+        }
+        if hasDirectPhysicalNeighbor {
+            return true
+        }
         return RomajiTypoScorer.aggressiveCost(from: source, to: target)
-            + 0.15
+            + 0.5
             < RomajiTypoScorer.cost(from: source, to: target)
     }
 

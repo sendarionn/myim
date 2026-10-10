@@ -7,6 +7,7 @@ import Testing
 @Suite(.serialized)
 struct BundledSpellingSuggestionTests {
     private struct Fixture: Sendable {
+        let entries: [DictionaryEntry]
         let basic: ConversionEngine
         let system: IndexedDictionaryEngine
         let compound: CompoundDictionaryCandidateGenerator
@@ -36,6 +37,7 @@ struct BundledSpellingSuggestionTests {
             )
         )
         return Fixture(
+            entries: entries,
             basic: ConversionEngine(entries: entries),
             system: system,
             compound: CompoundDictionaryCandidateGenerator(entries: entries),
@@ -135,6 +137,60 @@ struct BundledSpellingSuggestionTests {
         #expect(reading == input)
         #expect(normal.isEmpty)
         #expect(suggestions.prefix(4).contains("データベース"))
+    }
+
+    @Test(arguments: ["de=tab0su", "de-tsb-su"])
+    func learnedExactInputKeepsDatabaseSuggestionWithoutDuplicatingIt(
+        input: String
+    ) async throws {
+        let fixture = try #require(Self.fixture)
+        let learned = try #require(UnselectedInputLearningPolicy.entry(
+            originalInput: input,
+            hasSelectedCandidate: false
+        ))
+        let learnedEntry = DictionaryEntry(
+            reading: learned.reading,
+            candidates: [learned.candidate]
+        )
+        let userDictionary = LayeredConversionEngine(engines: [
+            ConversionEngine(entries: [learnedEntry])
+        ])
+        let repository = FuzzyEngineRepository()
+        repository.prepare(
+            baseEntries: fixture.entries
+                + VerbInflectionCandidateGenerator.typoSearchEntries(
+                    from: fixture.entries
+                ),
+            baseKey: "learned-exact-input-test",
+            userEntries: [learnedEntry]
+        )
+        let normal = StandardConversionCandidateSource(
+            userEngine: userDictionary,
+            importedEngine: Self.importedSKK,
+            basicEngine: fixture.basic,
+            symbolEngine: ConversionEngine(entries: []),
+            systemEngine: fixture.system,
+            verbInflectionGenerator: VerbInflectionCandidateGenerator(
+                entries: []
+            )
+        ).candidates(for: .init(input: input, conversionReading: input))
+        let source = FuzzySuggestionSource(
+            query: input,
+            visibleCandidates: Set(normal.map(\.storageText)),
+            userDictionary: userDictionary,
+            importedDictionary: Self.importedSKK,
+            basicDictionary: fixture.basic,
+            mozcDictionary: fixture.system,
+            compoundGenerator: fixture.compound,
+            fuzzyRepository: repository
+        )
+        let suggestions = await source.matchTiers()
+            .flatMap { $0 }
+            .flatMap(\.candidates)
+
+        #expect(normal.map(\.storageText).contains(input))
+        #expect(suggestions.contains("データベース"))
+        #expect(!suggestions.contains(input))
     }
 
     @Test(arguments: [

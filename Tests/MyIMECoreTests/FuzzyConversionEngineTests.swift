@@ -174,6 +174,25 @@ struct FuzzyConversionEngineTests {
         ).allSatisfy { $0.reading != "deetabeesu" })
     }
 
+    @Test(arguments: ["de-tsb-su", "de=tab0su"])
+    func exactLearnedInputDoesNotStopOtherTypoCorrections(_ input: String) {
+        let learnedEngine = FuzzyConversionEngine(entries: [
+            DictionaryEntry(reading: input, candidates: [input]),
+            DictionaryEntry(
+                reading: "deetabeesu",
+                candidates: ["データベース"]
+            )
+        ])
+
+        let matches = learnedEngine.matches(for: input)
+
+        #expect(matches.contains {
+            $0.reading == "deetabeesu"
+                && $0.candidates.contains("データベース")
+        })
+        #expect(matches.allSatisfy { $0.reading != input })
+    }
+
     @Test(arguments: [
         "dtbeesu",       // multiple missing vowels
         "de-tabe-su"     // multiple long-vowel notation differences
