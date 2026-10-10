@@ -122,20 +122,18 @@ public struct StandardConversionCandidateSource: Sendable {
                 readings: notationPreservingUserReadings,
                 lookup: { userEngine.candidateGroups(matching: $0) }
             ).all
-            + mergedGroups(
+            + mergedCandidates(
                 readings: notationPreservingReadings,
-                lookup: { symbolEngine.candidateGroups(matching: $0) }
-            ).exact
-            + mergedGroups(
+                lookup: symbolEngine.candidates
+            )
+            + mergedCandidates(
                 readings: notationPreservingReadings,
-                lookup: { basicEngine.candidateGroups(matching: $0) }
-            ).exact
-            + mergedGroups(readings: notationPreservingReadings) {
-                systemEngine.candidateGroups(
-                    matching: $0,
-                    limit: maximumSystemPrefixCandidates
-                )
-            }.exact
+                lookup: basicEngine.candidates
+            )
+            + mergedCandidates(
+                readings: notationPreservingReadings,
+                lookup: systemEngine.candidates
+            )
             + importedGroups(
                 readings: notationPreservingReadings,
                 spellings: []

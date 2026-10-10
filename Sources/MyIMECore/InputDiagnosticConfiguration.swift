@@ -17,7 +17,7 @@ public struct InputDiagnosticConfiguration: Equatable, Sendable {
     public let hiddenPanels: Set<InputDiagnosticFeature>
 
     public init(environment: [String: String]) {
-        traceEnabled = environment["MYIM_SESSION_TRACE"] != "0"
+        traceEnabled = environment["MYIM_SESSION_TRACE"] == "1"
         minimalMode = environment["MYIM_DIAGNOSTIC_MINIMAL"] == "1"
         disabledFeatures = Self.features(
             in: environment["MYIM_DIAGNOSTIC_DISABLE"]

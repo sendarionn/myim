@@ -6,7 +6,7 @@ public struct LayeredConversionEngine: Sendable {
     }
 
     public func candidates(for reading: String) -> [String] {
-        candidateGroups(matching: reading).exact
+        unique(engines.flatMap { $0.candidates(for: reading) })
     }
 
     public func readings(for candidate: String) -> [String] {
@@ -21,8 +21,10 @@ public struct LayeredConversionEngine: Sendable {
         var seen = Set<String>()
         var exact: [String] = []
         var prefix: [String] = []
-        for engine in engines {
-            let groups = engine.candidateGroups(matching: reading)
+        let groupsByLayer = engines.map {
+            $0.candidateGroups(matching: reading)
+        }
+        for groups in groupsByLayer {
             for candidate in groups.exact where seen.insert(candidate).inserted {
                 exact.append(candidate)
                 if exact.count == limit {
@@ -30,8 +32,7 @@ public struct LayeredConversionEngine: Sendable {
                 }
             }
         }
-        for engine in engines {
-            let groups = engine.candidateGroups(matching: reading)
+        for groups in groupsByLayer {
             for candidate in groups.prefix where seen.insert(candidate).inserted {
                 prefix.append(candidate)
                 if exact.count + prefix.count == limit {

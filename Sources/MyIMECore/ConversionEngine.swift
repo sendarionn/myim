@@ -38,7 +38,12 @@ public struct ConversionEngine: Sendable {
     }
 
     public func candidates(for reading: String) -> [String] {
-        candidateGroups(matching: reading).exact
+        var seen = Set<String>()
+        return exactLookupInputs(for: reading).flatMap {
+            candidatesByReading[$0] ?? []
+        }.filter {
+            seen.insert($0).inserted
+        }
     }
 
     public func readings(for candidate: String) -> [String] {
@@ -61,15 +66,7 @@ public struct ConversionEngine: Sendable {
             return DictionaryCandidateGroups()
         }
 
-        var lookupInputs = RomajiCanonicalizer.exactLookupInputs(
-            from: rawInput
-        )
-        for input in lookupInputs {
-            if let hiragana = RomajiConverter().hiragana(from: input),
-               !lookupInputs.contains(hiragana) {
-                lookupInputs.append(hiragana)
-            }
-        }
+        let lookupInputs = exactLookupInputs(for: rawInput)
         var seen = Set<String>()
         var exact: [String] = []
         var prefix: [String] = []
@@ -108,6 +105,19 @@ public struct ConversionEngine: Sendable {
         }
 
         return DictionaryCandidateGroups(exact: exact, prefix: prefix)
+    }
+
+    private func exactLookupInputs(for reading: String) -> [String] {
+        let rawInput = reading.lowercased()
+        guard !rawInput.isEmpty else { return [] }
+        var inputs = RomajiCanonicalizer.exactLookupInputs(from: rawInput)
+        for input in inputs {
+            if let hiragana = RomajiConverter().hiragana(from: input),
+               !inputs.contains(hiragana) {
+                inputs.append(hiragana)
+            }
+        }
+        return inputs
     }
 
     private func lowerBound(of value: String) -> Int {

@@ -2,18 +2,18 @@ import Testing
 @testable import MyIMECore
 
 @Suite struct InputDiagnosticConfigurationTests {
-    @Test func enablesSessionTraceByDefault() {
+    @Test func disablesSessionTraceByDefault() {
         let configuration = InputDiagnosticConfiguration(environment: [:])
 
-        #expect(configuration.traceEnabled)
+        #expect(!configuration.traceEnabled)
     }
 
-    @Test func allowsSessionTraceToBeDisabledExplicitly() {
+    @Test func allowsSessionTraceToBeEnabledExplicitly() {
         let configuration = InputDiagnosticConfiguration(environment: [
-            "MYIM_SESSION_TRACE": "0"
+            "MYIM_SESSION_TRACE": "1"
         ])
 
-        #expect(!configuration.traceEnabled)
+        #expect(configuration.traceEnabled)
     }
 
     @Test func disablesFeaturesIndependently() {

@@ -157,6 +157,10 @@ final class InputController: IMKInputController {
         location: NSNotFound,
         length: 0
     )
+    private var keyHandlingLatencyWindow = LatencySampleWindow(
+        capacity: 128,
+        slowThresholdMicroseconds: 50_000
+    )
 
     private var candidateWindow: CandidateWindowController {
         panelCoordinator.candidate
@@ -318,16 +322,26 @@ final class InputController: IMKInputController {
     /// Key handling slower than this is logged, since the client app waits
     /// for it before drawing the next character
     private static let slowKeyHandlingThreshold = Duration.milliseconds(50)
+    private static let slowCandidateRefreshThreshold = Duration.milliseconds(40)
 
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
         let clock = ContinuousClock()
         let start = clock.now
         let handled = handleUnmeasured(event, client: sender)
         let elapsed = clock.now - start
+        if let event, event.type == .keyDown {
+            let microseconds = Self.microseconds(elapsed)
+            if let summary = keyHandlingLatencyWindow.record(
+                microseconds: microseconds
+            ) {
+                Self.lifecycleLogger.notice(
+                    "key handling distribution samples=\(summary.count, privacy: .public) totalMs=\(summary.totalMicroseconds / 1_000, privacy: .public) p50Ms=\(summary.p50Microseconds / 1_000, privacy: .public) p95Ms=\(summary.p95Microseconds / 1_000, privacy: .public) p99Ms=\(summary.p99Microseconds / 1_000, privacy: .public) maxMs=\(summary.maximumMicroseconds / 1_000, privacy: .public) over50ms=\(summary.slowSampleCount, privacy: .public) app=\(self.lifecycleCoordinator.clientBundleIdentifier ?? "unknown", privacy: .public)"
+                )
+            }
+        }
         if elapsed >= Self.slowKeyHandlingThreshold, let event,
            event.type == .keyDown {
-            let milliseconds = elapsed.components.seconds * 1_000
-                + elapsed.components.attoseconds / 1_000_000_000_000_000
+            let milliseconds = Self.milliseconds(elapsed)
             Self.lifecycleLogger.notice(
                 "slow key handling ms=\(milliseconds, privacy: .public) keyCode=\(event.keyCode, privacy: .public) app=\(self.lifecycleCoordinator.clientBundleIdentifier ?? "unknown", privacy: .public) compositionLength=\(self.inputBuffer.count, privacy: .public) candidateCount=\(self.currentCandidateModels.count, privacy: .public)"
             )
@@ -2848,6 +2862,12 @@ final class InputController: IMKInputController {
     }
 
     private func refreshCandidates(client sender: Any) {
+        let performanceClock = ContinuousClock()
+        let refreshStart = performanceClock.now
+        var reloadDuration = Duration.zero
+        var englishDuration = Duration.zero
+        var sourceDuration = Duration.zero
+        var presentationDuration = Duration.zero
         trace("candidateGeneration.start", sender: sender)
         defer {
             trace(
@@ -2855,13 +2875,21 @@ final class InputController: IMKInputController {
                 sender: sender,
                 detail: "candidateCount=\(currentCandidates.count)"
             )
+            let totalDuration = performanceClock.now - refreshStart
+            if totalDuration >= Self.slowCandidateRefreshThreshold {
+                Self.lifecycleLogger.notice(
+                    "slow candidate refresh totalMs=\(Self.milliseconds(totalDuration), privacy: .public) reloadMs=\(Self.milliseconds(reloadDuration), privacy: .public) englishMs=\(Self.milliseconds(englishDuration), privacy: .public) sourceMs=\(Self.milliseconds(sourceDuration), privacy: .public) presentationMs=\(Self.milliseconds(presentationDuration), privacy: .public) candidateCount=\(self.currentCandidateModels.count, privacy: .public)"
+                )
+            }
         }
         guard !inputBuffer.isEmpty else {
             clearCandidateState(includingFuzzy: true)
             dismissInputSessionPanels(using: .inputBecameEmpty)
             return
         }
+        let reloadStart = performanceClock.now
         reloadUserDictionaryFromDiskIfNeeded()
+        reloadDuration = performanceClock.now - reloadStart
         if !Self.diagnosticConfiguration.minimalMode {
             updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
         }
@@ -2907,9 +2935,11 @@ final class InputController: IMKInputController {
             updateOfficialCandidatesIfNeeded(for: suggestionInput)
         }
 
+        let englishStart = performanceClock.now
         let englishCandidates = Self.featureSettings.isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
+        englishDuration = performanceClock.now - englishStart
         let remoteCandidates = suggestionSearchCoordinator.query(for: .official)
             == conversionReading
             ? officialCandidates
@@ -2932,6 +2962,7 @@ final class InputController: IMKInputController {
             maximumSystemPrefixCandidates:
                 Self.maximumMozcDictionaryPrefixCandidates
         )
+        let sourceStart = performanceClock.now
         let orderedCandidates = standardSource.candidates(for: .init(
             input: inputBuffer,
             conversionReading: conversionReading,
@@ -2942,18 +2973,22 @@ final class InputController: IMKInputController {
             contextualCandidates: contextualCandidates,
             learningEnabled: Self.diagnosticConfiguration.enables(.learning)
         ))
+        sourceDuration = performanceClock.now - sourceStart
+        let presentationStart = performanceClock.now
         replaceCurrentCandidates(with: orderedCandidates)
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
             candidateWindow.hide()
             showInputPreview(client: sender)
+            presentationDuration = performanceClock.now - presentationStart
             return
         }
 
         showCandidateWindow(client: sender)
         updateFuzzySuggestionsIfNeeded()
         showInputPreview(client: sender)
+        presentationDuration = performanceClock.now - presentationStart
     }
 
     private func replaceCurrentCandidates(with candidates: [String]) {
@@ -3411,6 +3446,12 @@ final class InputController: IMKInputController {
             },
             apply: { [weak self] suggestions in
                 guard let self else { return }
+                guard CandidateResultUpdatePolicy.changes(
+                    current: self.officialCandidates,
+                    updated: suggestions
+                ) else {
+                    return
+                }
                 self.officialCandidates = suggestions
                 if let inputClient = self.client() {
                     self.refreshCandidates(client: inputClient)
@@ -3464,6 +3505,12 @@ final class InputController: IMKInputController {
             },
             apply: { [weak self] candidates in
                 guard let self else { return }
+                guard CandidateResultUpdatePolicy.changes(
+                    current: self.javaScriptExtensionCandidates,
+                    updated: candidates
+                ) else {
+                    return
+                }
                 self.javaScriptExtensionCandidates = candidates
                 if let inputClient = self.client() {
                     self.refreshCandidates(client: inputClient)
@@ -3513,6 +3560,12 @@ final class InputController: IMKInputController {
             apply: { [weak self] candidates in
                 guard let self else { return }
                 self.postalAddressCache[postalCode] = candidates
+                guard CandidateResultUpdatePolicy.changes(
+                    current: self.postalAddressCandidates,
+                    updated: candidates
+                ) else {
+                    return
+                }
                 self.postalAddressCandidates = candidates
                 if let inputClient = self.client() {
                     self.refreshCandidates(client: inputClient)
@@ -4867,6 +4920,15 @@ final class InputController: IMKInputController {
             .replacingOccurrences(of: "\n", with: "\\n")
         let message = "[S\(session) R\(inputRevision) C\(controllerID)] \(event) app=\(application) composition=\(escapedComposition) marked=\(NSStringFromRange(markedRange)) selected=\(NSStringFromRange(selectedRange)) \(detail)"
         Self.lifecycleLogger.notice("\(message, privacy: .public)")
+    }
+
+    private static func milliseconds(_ duration: Duration) -> Int64 {
+        microseconds(duration) / 1_000
+    }
+
+    private static func microseconds(_ duration: Duration) -> Int64 {
+        duration.components.seconds * 1_000_000
+            + duration.components.attoseconds / 1_000_000_000_000
     }
 
     private func schedulePanelSnapshots(afterCandidateShowFor sender: Any) {
