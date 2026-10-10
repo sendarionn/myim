@@ -108,11 +108,56 @@ struct BundledSpellingSuggestionTests {
         #expect(suggestions.prefix(3).contains("データベース"))
     }
 
-    private func suggestions(for query: String) async throws -> [String] {
+    /// InputController searches with the resolved reading and excludes the
+    /// normal candidates, which the typo leaves empty
+    @Test(arguments: ["de=tab0su", "de-tsb-su"])
+    func suggestsDatabaseWhenTheTypoLeavesNoNormalCandidate(
+        input: String
+    ) async throws {
+        let fixture = try #require(Self.fixture)
+        let reading = ConversionReadingResolver.resolve(input)
+        let normal = StandardConversionCandidateSource(
+            userEngine: LayeredConversionEngine(engines: []),
+            importedEngine: Self.importedSKK,
+            basicEngine: fixture.basic,
+            symbolEngine: ConversionEngine(entries: []),
+            systemEngine: fixture.system,
+            verbInflectionGenerator: VerbInflectionCandidateGenerator(
+                entries: []
+            )
+        ).candidates(for: .init(input: input, conversionReading: reading))
+
+        let suggestions = try await suggestions(
+            for: reading,
+            visibleCandidates: Set(normal.map(\.storageText))
+        )
+
+        #expect(reading == input)
+        #expect(normal.isEmpty)
+        #expect(suggestions.prefix(4).contains("データベース"))
+    }
+
+    @Test(arguments: [
+        ("10=", "10="),
+        ("2026nen", "2026nen"),
+        ("de=", "de"),
+        ("kana", "kana")
+    ])
+    func keepsTheReadingOfOrdinaryDigitAndSymbolInput(
+        input: String,
+        reading: String
+    ) {
+        #expect(ConversionReadingResolver.resolve(input) == reading)
+    }
+
+    private func suggestions(
+        for query: String,
+        visibleCandidates: Set<String> = []
+    ) async throws -> [String] {
         let fixture = try #require(Self.fixture)
         let source = FuzzySuggestionSource(
             query: query,
-            visibleCandidates: [],
+            visibleCandidates: visibleCandidates,
             userDictionary: LayeredConversionEngine(engines: []),
             importedDictionary: Self.importedSKK,
             basicDictionary: fixture.basic,

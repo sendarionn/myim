@@ -29,6 +29,8 @@ final class InputController: IMKInputController {
     private static let featureSettings = InputFeatureSettings()
     private static let maximumCandidateCount = 4
     private static let initialFuzzySuggestionCount = 4
+    /// Gap between the input line and the candidate panel below it
+    private static let candidatePanelAnchorSpacing: CGFloat = 8
     private static let fuzzySuggestionDisplayDelay = Duration.milliseconds(120)
     private static let maximumMozcDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
@@ -1923,6 +1925,10 @@ final class InputController: IMKInputController {
 
         guard flags.isEmpty else { return false }
         guard !currentCandidates.isEmpty else {
+            // Spelling suggestions are then the only candidates to choose
+            if !fuzzySuggestionCoordinator.isEmpty {
+                return selectFuzzySuggestion(index: 0, client: sender)
+            }
             return true
         }
         let nextIndex = (
@@ -2980,6 +2986,12 @@ final class InputController: IMKInputController {
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
             candidateWindow.hide()
+            // A typo can leave no normal candidate, which is where
+            // spelling suggestions are needed most
+            if fuzzySuggestionWindow.isVisible {
+                showInitialFuzzySuggestionsIfCandidateVisible()
+            }
+            updateFuzzySuggestionsIfNeeded()
             showInputPreview(client: sender)
             presentationDuration = performanceClock.now - presentationStart
             return
@@ -3103,10 +3115,6 @@ final class InputController: IMKInputController {
             fuzzySuggestionWindow.hide()
             return
         }
-        guard candidateWindow.visibleFrame != nil else {
-            fuzzySuggestionWindow.hide()
-            return
-        }
         showInitialFuzzySuggestionsIfCandidateVisible()
         if let inputClient = client() {
             showInputPreview(client: inputClient)
@@ -3114,11 +3122,14 @@ final class InputController: IMKInputController {
     }
 
     private func showInitialFuzzySuggestionsIfCandidateVisible() {
-        guard candidateWindow.visibleFrame != nil,
-              let page = fuzzySuggestionCoordinator.initialPage(
+        guard let page = fuzzySuggestionCoordinator.initialPage(
                   maximumCount: Self.initialFuzzySuggestionCount
               ) else {
             fuzzySuggestionWindow.hide()
+            return
+        }
+        guard candidateWindow.visibleFrame != nil else {
+            showFuzzySuggestionsWithoutCandidates(page)
             return
         }
         fuzzySuggestionWindow.show(
@@ -3129,6 +3140,33 @@ final class InputController: IMKInputController {
                 + candidateWindow.auxiliaryFrames,
             isAccented: false,
             prepareAnchor: prepareCandidateAnchorForFuzzyPanel
+        )
+    }
+
+    /// Without normal candidates the suggestions take the candidate panel's
+    /// place below the input instead of leaving nothing on screen
+    private func showFuzzySuggestionsWithoutCandidates(
+        _ page: FuzzySuggestionPage
+    ) {
+        guard let sender = client(),
+              let inputFrame = locationCoordinator.candidateAnchor(
+                for: sender
+              ).location else {
+            fuzzySuggestionWindow.hide()
+            return
+        }
+        let spacing = fuzzySuggestionWindow.spacingFromCandidatePanel
+        fuzzySuggestionWindow.show(
+            suggestions: page.suggestions,
+            selectedIndex: page.selectedIndex,
+            near: NSRect(
+                x: inputFrame.minX - spacing,
+                y: inputFrame.minY - Self.candidatePanelAnchorSpacing,
+                width: 0,
+                height: 0
+            ),
+            avoidingFrames: [inputFrame],
+            isAccented: false
         )
     }
 
@@ -3336,14 +3374,14 @@ final class InputController: IMKInputController {
         selectedIndex: Int,
         client sender: Any
     ) {
-        guard candidateWindow.visibleFrame != nil else {
-            fuzzySuggestionWindow.hide()
-            return
-        }
         guard fuzzySuggestionCoordinator.selectedIndex == selectedIndex,
               let page = fuzzySuggestionCoordinator.selectedPage(
                   maximumCount: Self.maximumCandidateCount
               ) else { return }
+        guard candidateWindow.visibleFrame != nil else {
+            showFuzzySuggestionsWithoutCandidates(page)
+            return
+        }
         fuzzySuggestionWindow.show(
             suggestions: page.suggestions,
             selectedIndex: page.selectedIndex,
