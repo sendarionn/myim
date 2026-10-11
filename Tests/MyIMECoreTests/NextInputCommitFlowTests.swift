@@ -489,6 +489,64 @@ struct NextInputCommitFlowTests {
         #expect(prediction?.sourceTokens == ["東京都", "中野区"])
     }
 
+    /// The usual repetition: 東京都 is converted, then 中野区 is picked from
+    /// the next-input suggestions learned from one typed occurrence
+    @Test
+    func selectingTheSuggestedFollowerLearnsThePhraseForPrefixSearch() {
+        let flow = CommitFlow.seededWithTypedTokyoNakano()
+        for _ in 0..<NextInputPredictionModel.minimumEpisodePromotionCount {
+            flow.commitInput("東京都", reading: "toukyouto")
+            flow.selectAndCommit("中野区")
+            flow.commitInput("。")
+        }
+
+        for input in ["toukyouto", "toukyoutonaka"] {
+            let prediction = flow.coordinator.learnedCompoundPredictions(
+                matchingPrefix: input,
+                excluding: ["東京都"]
+            ).first
+            #expect(prediction?.text == "東京都中野区")
+            #expect(prediction?.sourceTokens == ["東京都", "中野区"])
+            #expect(prediction?.sourceReadings == ["toukyouto", "nakanoku"])
+        }
+    }
+
+    @Test
+    func oneSelectedFollowerDoesNotLearnThePhraseYet() {
+        let flow = CommitFlow.seededWithTypedTokyoNakano()
+        flow.commitInput("東京都", reading: "toukyouto")
+        flow.selectAndCommit("中野区")
+        flow.commitInput("。")
+
+        #expect(flow.coordinator.learnedCompoundPredictions(
+            matchingPrefix: "toukyouto",
+            excluding: []
+        ).isEmpty)
+    }
+
+    @Test
+    func committingThePhraseLearnedFromSelectionsKeepsItsBoundaries() {
+        let flow = CommitFlow.seededWithTypedTokyoNakano()
+        for _ in 0..<NextInputPredictionModel.minimumEpisodePromotionCount {
+            flow.commitInput("東京都", reading: "toukyouto")
+            flow.selectAndCommit("中野区")
+            flow.commitInput("。")
+        }
+        let prediction = flow.coordinator.learnedCompoundPredictions(
+            matchingPrefix: "toukyoutonaka",
+            excluding: []
+        ).first
+        let textBeforeCommit = flow.text
+
+        flow.commitLearnedCompound(prediction)
+
+        #expect(flow.text == textBeforeCommit + "東京都中野区")
+        #expect(flow.coordinator.learnedCompoundPredictions(
+            matchingPrefix: "toukyouto",
+            excluding: []
+        ).map(\.text) == ["東京都中野区"])
+    }
+
     @Test
     func committingLearnedCompoundKeepsItsOriginalBoundaries() {
         let flow = CommitFlow()
@@ -635,6 +693,16 @@ private final class CommitFlow {
         for token in ["実装", "を", "。", "実装", "に", "。", "確認", "に", "進んで", "。"] {
             flow.commitInput(token)
         }
+        return flow
+    }
+
+    /// 東京都 and 中野区 typed once, so 中野区 is offered after 東京都
+    /// without the pair being learned as a phrase
+    static func seededWithTypedTokyoNakano() -> CommitFlow {
+        let flow = CommitFlow()
+        flow.commitInput("東京都", reading: "toukyouto")
+        flow.commitInput("中野区", reading: "nakanoku")
+        flow.commitInput("。")
         return flow
     }
 

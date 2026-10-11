@@ -235,10 +235,13 @@ public struct NextInputPredictionModel: Codable, Sendable {
             guard let text = Self.normalizedValue(token.text) else {
                 return nil
             }
-            return NextInputLearningToken(
-                text: text,
-                reading: Self.normalizedReading(token.reading)
-            )
+            // A suggestion is picked without typing it, so it takes the
+            // reading the user typed for the same text before
+            let reading = Self.normalizedReading(token.reading)
+                ?? (source == .acceptedSuggestion
+                    ? typedReading(for: text)
+                    : nil)
+            return NextInputLearningToken(text: text, reading: reading)
         }
         guard !normalized.isEmpty,
               normalized.count == learningTokens.count else {
@@ -264,6 +267,31 @@ public struct NextInputPredictionModel: Codable, Sendable {
         if source == .acceptedSuggestion {
             recordEpisodeEvidence()
         }
+    }
+
+    /// Most recent reading typed for `text`, taken from the learned
+    /// statistics rather than guessed from the text
+    private func typedReading(for text: String) -> String? {
+        var latest: (reading: String, lastUsed: Int)?
+        func consider(_ tokens: [String], _ readings: [String?], _ lastUsed: Int) {
+            for (token, reading) in zip(tokens, readings)
+            where token == text {
+                guard let reading, !reading.isEmpty,
+                      latest.map({ lastUsed > $0.lastUsed }) ?? true else {
+                    continue
+                }
+                latest = (reading, lastUsed)
+            }
+        }
+        for stat in learnedPhrases.values {
+            consider(stat.tokens, stat.readings, stat.lastUsed)
+        }
+        for context in sequenceContexts.values {
+            for stat in context.candidates.values {
+                consider(stat.tokens, stat.readings ?? [], stat.lastUsed)
+            }
+        }
+        return latest?.reading
     }
 
     private mutating func recordSentenceToken(
