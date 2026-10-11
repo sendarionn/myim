@@ -3287,11 +3287,11 @@ final class InputController: IMKInputController {
         suffix: String,
         client sender: Any
     ) -> Bool {
-        if suggestion.isLearnable {
+        if let entry = suggestion.userDictionaryEntry {
             do {
                 try saveUserDictionaryEntry(
-                    reading: suggestion.reading,
-                    candidate: suggestion.candidate
+                    reading: entry.reading,
+                    candidate: entry.candidate
                 )
             } catch {
                 NSLog(

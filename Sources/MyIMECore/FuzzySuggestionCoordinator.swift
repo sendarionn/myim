@@ -23,6 +23,42 @@ public struct FuzzySuggestion: Equatable, Sendable {
     }
 }
 
+public struct UserDictionaryRegistration: Equatable, Sendable {
+    public let reading: String
+    public let candidate: String
+
+    public init(reading: String, candidate: String) {
+        self.reading = reading
+        self.candidate = candidate
+    }
+}
+
+extension FuzzySuggestion {
+    /// Entry saved when the user commits this suggestion; a learned phrase
+    /// is saved with the whole reading of its units, never the partial
+    /// input it was found from, and not at all while a reading is missing
+    public var userDictionaryEntry: UserDictionaryRegistration? {
+        guard !sourceTokens.isEmpty else {
+            return isLearnable
+                ? UserDictionaryRegistration(
+                    reading: reading,
+                    candidate: candidate
+                )
+                : nil
+        }
+        let readings = sourceReadings.compactMap { $0 }
+        guard readings.count == sourceTokens.count,
+              readings.allSatisfy({ !$0.isEmpty }),
+              sourceTokens.joined() == candidate else {
+            return nil
+        }
+        return UserDictionaryRegistration(
+            reading: readings.joined(),
+            candidate: candidate
+        )
+    }
+}
+
 public struct FuzzySuggestionPage: Equatable, Sendable {
     public let suggestions: [FuzzySuggestion]
     public let selectedIndex: Int?
