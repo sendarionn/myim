@@ -317,6 +317,206 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
+    func findsLearnedCompoundAcrossTokenBoundariesByReadingPrefix() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            model.record(learningTokens: [
+                NextInputLearningToken(text: "東京都", reading: "toukyouto"),
+                NextInputLearningToken(text: "中野区", reading: "nakanoku")
+            ])
+            model.breakSequence()
+        }
+
+        for prefix in ["toukyouto", "toukyoutonaka", "toukyoutonakano"] {
+            let prediction = model.learnedCompoundPredictions(
+                matchingPrefix: prefix
+            ).first
+            #expect(prediction?.text == "東京都中野区")
+            #expect(prediction?.reading == "toukyoutonakanoku")
+            #expect(prediction?.sourceTokens == ["東京都", "中野区"])
+        }
+    }
+
+    @Test
+    func findsThreeAndFourTokenLearnedCompounds() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            model.record(learningTokens: [
+                NextInputLearningToken(text: "開発", reading: "kaihatsu"),
+                NextInputLearningToken(text: "環境", reading: "kankyou"),
+                NextInputLearningToken(text: "設定", reading: "settei"),
+                NextInputLearningToken(text: "確認", reading: "kakunin")
+            ])
+            model.breakSequence()
+        }
+
+        let predictions = model.learnedCompoundPredictions(
+            matchingPrefix: "kaihatsukankyouse"
+        )
+
+        #expect(predictions.first?.text == "開発環境設定確認")
+        #expect(predictions.first?.sourceTokens.count == 4)
+    }
+
+    @Test
+    func doesNotFindACompoundBeforeTheLearningThreshold() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<(NextInputPredictionModel.minimumDirectSequenceCount - 1) {
+            model.record(learningTokens: [
+                NextInputLearningToken(text: "よろしく", reading: "yoroshiku"),
+                NextInputLearningToken(
+                    text: "お願いします",
+                    reading: "onegaishimasu"
+                )
+            ])
+            model.breakSequence()
+        }
+
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "yoroshiku"
+        ).isEmpty)
+    }
+
+    @Test
+    func doesNotGuessMissingReadingsOrMatchAnUnrelatedPrefix() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            model.record(tokens: ["東京都", "中野区"])
+            model.breakSequence()
+        }
+
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "toukyouto"
+        ).isEmpty)
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "oosaka"
+        ).isEmpty)
+    }
+
+    @Test
+    func ignoresAnExtremelyShortPrefixAndVisibleCandidate() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            model.record(learningTokens: [
+                NextInputLearningToken(text: "東京都", reading: "toukyouto"),
+                NextInputLearningToken(text: "中野区", reading: "nakanoku")
+            ])
+            model.breakSequence()
+        }
+
+        #expect(model.learnedCompoundPredictions(matchingPrefix: "to").isEmpty)
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "toukyouto",
+            excluding: ["東京都中野区"]
+        ).isEmpty)
+    }
+
+    @Test
+    func acceptedSelectionsPromoteAReadingBackedCompound() {
+        var model = NextInputPredictionModel()
+        for _ in 0..<NextInputPredictionModel.minimumEpisodePromotionCount {
+            model.record(learningTokens: [
+                NextInputLearningToken(text: "東京都", reading: "toukyouto")
+            ])
+            model.record(
+                learningTokens: [
+                    NextInputLearningToken(text: "中野区", reading: "nakanoku")
+                ],
+                source: .acceptedSuggestion
+            )
+            model.breakSequence()
+        }
+
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "toukyoutonaka"
+        ).first?.text == "東京都中野区")
+    }
+
+    @Test
+    func learnedCompoundReadingSurvivesPersistence() throws {
+        var model = NextInputPredictionModel()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            model.record(learningTokens: [
+                NextInputLearningToken(text: "ABC", reading: "abc"),
+                NextInputLearningToken(text: "123", reading: "123")
+            ])
+            model.breakSequence()
+        }
+        let restored = try JSONDecoder().decode(
+            NextInputPredictionModel.self,
+            from: JSONEncoder().encode(model)
+        )
+
+        #expect(restored.learnedCompoundPredictions(
+            matchingPrefix: "abc"
+        ).first?.text == "ABC123")
+    }
+
+    @Test
+    func selectingAnExistingCombinedCompoundDoesNotGrowIt() {
+        var model = NextInputPredictionModel()
+        let tokens = [
+            NextInputLearningToken(text: "開発", reading: "kaihatsu"),
+            NextInputLearningToken(text: "環境", reading: "kankyou"),
+            NextInputLearningToken(text: "設定", reading: "settei")
+        ]
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            model.record(learningTokens: tokens)
+            model.breakSequence()
+        }
+        for _ in 0..<8 {
+            model.record(learningTokens: [
+                NextInputLearningToken(text: "前置き", reading: "maeoki")
+            ])
+            model.record(
+                learningTokens: tokens,
+                source: .acceptedSuggestion
+            )
+            model.breakSequence()
+        }
+
+        let predictions = model.learnedCompoundPredictions(
+            matchingPrefix: "maeoki"
+        )
+        #expect(!predictions.contains { $0.text == "前置き開発環境設定" })
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "kaihatsu"
+        ).first?.text == "開発環境設定")
+    }
+
+    @Test
+    func suppressesAndRelearnsACompoundOnlyAfterTheFullThreshold() {
+        var model = NextInputPredictionModel()
+        let tokens = [
+            NextInputLearningToken(text: "東京都", reading: "toukyouto"),
+            NextInputLearningToken(text: "中野区", reading: "nakanoku")
+        ]
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            model.record(learningTokens: tokens)
+            model.breakSequence()
+        }
+        model.suppress("東京都中野区", after: "learnedCompound")
+
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "toukyouto"
+        ).isEmpty)
+
+        for _ in 0..<(NextInputPredictionModel.minimumDirectSequenceCount - 1) {
+            model.record(learningTokens: tokens)
+            model.breakSequence()
+        }
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "toukyouto"
+        ).isEmpty)
+
+        model.record(learningTokens: tokens)
+        model.breakSequence()
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "toukyouto"
+        ).first?.text == "東京都中野区")
+    }
+
+    @Test
     func twoAcceptedEpisodesPromoteASequence() {
         var model = NextInputPredictionModel()
         for _ in 0..<2 {
@@ -372,6 +572,34 @@ struct NextInputPredictionModelTests {
         let start = Date()
         for _ in 0..<10_000 {
             _ = model.candidates(after: "文脈999", limit: 16)
+        }
+
+        #expect(Date().timeIntervalSince(start) < 2)
+    }
+
+    @Test
+    func learnedCompoundPrefixLookupRemainsBounded() {
+        var model = NextInputPredictionModel()
+        for index in 0..<1_000 {
+            for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+                model.record(learningTokens: [
+                    NextInputLearningToken(
+                        text: "都道府県\(index)",
+                        reading: "todoufuken\(index)"
+                    ),
+                    NextInputLearningToken(
+                        text: "市区町村\(index)",
+                        reading: "shikuchouson\(index)"
+                    )
+                ])
+                model.breakSequence()
+            }
+        }
+        let start = Date()
+        for _ in 0..<10_000 {
+            _ = model.learnedCompoundPredictions(
+                matchingPrefix: "todoufuken999"
+            )
         }
 
         #expect(Date().timeIntervalSince(start) < 2)

@@ -66,6 +66,66 @@ struct FuzzySuggestionSourceTests {
         #expect(!candidates.contains("別府"))
     }
 
+    @Test
+    func placesLearnedCompoundInFuzzySuggestionsBesideNormalCandidates() async {
+        let repository = FuzzyEngineRepository()
+        repository.prepare(for: [])
+        let learned = LearnedCompoundPrediction(
+            text: "東京都中野区",
+            reading: "toukyoutonakanoku",
+            sourceTokens: ["東京都", "中野区"],
+            sourceReadings: ["toukyouto", "nakanoku"]
+        )
+        let source = FuzzySuggestionSource(
+            query: "toukyoutonaka",
+            visibleCandidates: ["東京都"],
+            userDictionary: LayeredConversionEngine(engines: []),
+            basicDictionary: ConversionEngine(entries: []),
+            mozcDictionary: IndexedDictionaryEngine(),
+            compoundGenerator: CompoundDictionaryCandidateGenerator(
+                entries: []
+            ),
+            fuzzyRepository: repository,
+            learnedCompounds: [learned]
+        )
+
+        let match = await source.matchTiers().first?.first
+
+        #expect(match?.candidates == ["東京都中野区"])
+        #expect(match?.isLearnable == false)
+        #expect(match?.sourceTokens == ["東京都", "中野区"])
+    }
+
+    @Test
+    func excludesLearnedCompoundAlreadyVisibleAsANormalCandidate() async {
+        let repository = FuzzyEngineRepository()
+        repository.prepare(for: [])
+        let learned = LearnedCompoundPrediction(
+            text: "東京都中野区",
+            reading: "toukyoutonakanoku",
+            sourceTokens: ["東京都", "中野区"],
+            sourceReadings: ["toukyouto", "nakanoku"]
+        )
+        let source = FuzzySuggestionSource(
+            query: "toukyouto",
+            visibleCandidates: ["東京都中野区"],
+            userDictionary: LayeredConversionEngine(engines: []),
+            basicDictionary: ConversionEngine(entries: []),
+            mozcDictionary: IndexedDictionaryEngine(),
+            compoundGenerator: CompoundDictionaryCandidateGenerator(
+                entries: []
+            ),
+            fuzzyRepository: repository,
+            learnedCompounds: [learned]
+        )
+
+        let candidates = await source.matchTiers()
+            .flatMap { $0 }
+            .flatMap(\.candidates)
+
+        #expect(!candidates.contains("東京都中野区"))
+    }
+
     private func makeSource(
         query: String,
         entries: [DictionaryEntry],

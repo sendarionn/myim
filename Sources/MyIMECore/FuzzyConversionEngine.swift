@@ -4,11 +4,24 @@ public struct FuzzyConversionMatch: Equatable, Sendable {
     public let reading: String
     public let candidates: [String]
     public let distance: Int
+    public let isLearnable: Bool
+    public let sourceTokens: [String]
+    public let sourceReadings: [String?]
 
-    public init(reading: String, candidates: [String], distance: Int) {
+    public init(
+        reading: String,
+        candidates: [String],
+        distance: Int,
+        isLearnable: Bool = true,
+        sourceTokens: [String] = [],
+        sourceReadings: [String?] = []
+    ) {
         self.reading = reading
         self.candidates = candidates
         self.distance = distance
+        self.isLearnable = isLearnable
+        self.sourceTokens = sourceTokens
+        self.sourceReadings = sourceReadings
     }
 }
 

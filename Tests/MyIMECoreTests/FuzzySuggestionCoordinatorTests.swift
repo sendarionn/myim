@@ -108,4 +108,26 @@ struct FuzzySuggestionCoordinatorTests {
         #expect(selected?.candidate == "候補2")
         #expect(coordinator.selectedIndex == 1)
     }
+
+    @Test
+    func preservesLearnedCompoundBoundariesAndDoesNotMarkItLearnable() {
+        var coordinator = FuzzySuggestionCoordinator()
+        coordinator.replace(
+            matchTiers: [[FuzzyConversionMatch(
+                reading: "toukyoutonakanoku",
+                candidates: ["東京都中野区"],
+                distance: 0,
+                isLearnable: false,
+                sourceTokens: ["東京都", "中野区"],
+                sourceReadings: ["toukyouto", "nakanoku"]
+            )]],
+            recencyRanks: [:]
+        )
+
+        let suggestion = coordinator.select(index: 0)
+
+        #expect(suggestion?.isLearnable == false)
+        #expect(suggestion?.sourceTokens == ["東京都", "中野区"])
+        #expect(suggestion?.sourceReadings == ["toukyouto", "nakanoku"])
+    }
 }

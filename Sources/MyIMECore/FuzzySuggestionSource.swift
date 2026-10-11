@@ -7,6 +7,7 @@ public struct FuzzySuggestionSource: Sendable {
     private let mozcDictionary: IndexedDictionaryEngine
     private let compoundGenerator: CompoundDictionaryCandidateGenerator
     private let fuzzyRepository: FuzzyEngineRepository
+    private let learnedCompounds: [LearnedCompoundPrediction]
 
     public init(
         query: String,
@@ -18,7 +19,8 @@ public struct FuzzySuggestionSource: Sendable {
         basicDictionary: ConversionEngine,
         mozcDictionary: IndexedDictionaryEngine,
         compoundGenerator: CompoundDictionaryCandidateGenerator,
-        fuzzyRepository: FuzzyEngineRepository
+        fuzzyRepository: FuzzyEngineRepository,
+        learnedCompounds: [LearnedCompoundPrediction] = []
     ) {
         self.query = query
         self.visibleCandidates = visibleCandidates
@@ -28,6 +30,7 @@ public struct FuzzySuggestionSource: Sendable {
         self.mozcDictionary = mozcDictionary
         self.compoundGenerator = compoundGenerator
         self.fuzzyRepository = fuzzyRepository
+        self.learnedCompounds = learnedCompounds
     }
 
     public func matchTiers() async -> [[FuzzyConversionMatch]] {
@@ -83,7 +86,21 @@ public struct FuzzySuggestionSource: Sendable {
                             for: query
                         ).isEmpty == false
                 }
-            return FuzzySuggestionTierBuilder.build(
+            let learnedMatches: [FuzzyConversionMatch] = learnedCompounds
+                .compactMap { prediction in
+                guard !visibleCandidates.contains(prediction.text) else {
+                    return nil
+                }
+                return FuzzyConversionMatch(
+                    reading: prediction.reading,
+                    candidates: [prediction.text],
+                    distance: 0,
+                    isLearnable: false,
+                    sourceTokens: prediction.sourceTokens,
+                    sourceReadings: prediction.sourceReadings
+                )
+            }
+            return [learnedMatches] + FuzzySuggestionTierBuilder.build(
                 directTypoMatches: filtered,
                 compounds: compounds
             )

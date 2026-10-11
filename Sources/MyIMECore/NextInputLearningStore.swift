@@ -30,6 +30,19 @@ public final class NextInputLearningStore {
         writer.schedule(model)
     }
 
+    public func record(
+        learningTokens: [NextInputLearningToken],
+        source: NextInputLearningSource,
+        cursor: inout NextInputSequenceCursor
+    ) {
+        model.record(
+            learningTokens: learningTokens,
+            source: source,
+            cursor: &cursor
+        )
+        writer.schedule(model)
+    }
+
     public func predictions(
         after cursor: NextInputSequenceCursor,
         limit: Int
@@ -40,6 +53,18 @@ public final class NextInputLearningStore {
     public func predictions(after value: String, limit: Int)
         -> [NextInputPrediction] {
         model.predictions(after: value, limit: limit)
+    }
+
+    public func learnedCompoundPredictions(
+        matchingPrefix input: String,
+        excluding visibleCandidates: Set<String>,
+        limit: Int
+    ) -> [LearnedCompoundPrediction] {
+        model.learnedCompoundPredictions(
+            matchingPrefix: input,
+            excluding: visibleCandidates,
+            limit: limit
+        )
     }
 
     public func isSuppressed(_ candidate: String, after context: String) -> Bool {

@@ -3,17 +3,23 @@ public struct FuzzySuggestion: Equatable, Sendable {
     public let reading: String
     public let distance: Int
     public let isLearnable: Bool
+    public let sourceTokens: [String]
+    public let sourceReadings: [String?]
 
     public init(
         candidate: String,
         reading: String,
         distance: Int,
-        isLearnable: Bool = true
+        isLearnable: Bool = true,
+        sourceTokens: [String] = [],
+        sourceReadings: [String?] = []
     ) {
         self.candidate = candidate
         self.reading = reading
         self.distance = distance
         self.isLearnable = isLearnable
+        self.sourceTokens = sourceTokens
+        self.sourceReadings = sourceReadings
     }
 }
 
@@ -65,7 +71,10 @@ public struct FuzzySuggestionCoordinator: Equatable, Sendable {
                     FuzzySuggestion(
                         candidate: $0,
                         reading: match.reading,
-                        distance: match.distance
+                        distance: match.distance,
+                        isLearnable: match.isLearnable,
+                        sourceTokens: match.sourceTokens,
+                        sourceReadings: match.sourceReadings
                     )
                 }
             }

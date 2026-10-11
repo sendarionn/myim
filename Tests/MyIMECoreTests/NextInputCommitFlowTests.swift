@@ -214,6 +214,115 @@ struct NextInputCommitFlowTests {
         #expect(flow.coordinator.candidates.contains("に進んで"))
     }
 
+    @Test(arguments: [
+        (["住所", "東京都", "中野区"], "住所", "東京都中野区"),
+        (["挨拶", "よろしく", "お願いします"], "挨拶", "よろしくお願いします"),
+        (["実装", "を", "確認する"], "実装", "を確認する"),
+        (["本日", "の", "会議", "資料"], "本日", "の会議資料"),
+        (["種類", "ABC", "123"], "種類", "ABC123")
+    ])
+    func repeatedDirectCommitsProduceCombinedContinuations(
+        sequence: [String],
+        context: String,
+        expected: String
+    ) {
+        let flow = CommitFlow()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            for token in sequence {
+                flow.commitInput(token)
+            }
+            flow.breakSequence()
+        }
+
+        flow.commitInput(context)
+
+        #expect(flow.coordinator.candidates.contains(expected))
+    }
+
+    @Test
+    func directSequenceBelowTheThresholdIsNotCombined() {
+        let flow = CommitFlow()
+        for _ in 0..<(NextInputPredictionModel.minimumDirectSequenceCount - 1) {
+            for token in ["実装", "を", "確認する"] {
+                flow.commitInput(token)
+            }
+            flow.breakSequence()
+        }
+
+        flow.commitInput("実装")
+
+        #expect(!flow.coordinator.candidates.contains("を確認する"))
+    }
+
+    @Test
+    func fiveUnitSequenceOffersAtMostFourFollowingUnits() {
+        let flow = CommitFlow()
+        let sequence = ["東京", "大阪", "名古屋", "京都", "神戸"]
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            for token in sequence {
+                flow.commitInput(token)
+            }
+            flow.breakSequence()
+        }
+
+        flow.commitInput("東京")
+
+        let combined = flow.coordinator.candidateModels.first {
+            $0.commitText == "大阪名古屋京都神戸"
+        }
+        #expect(combined.flatMap(NextInputCandidateMetadata.sourceTokens)
+            == ["大阪", "名古屋", "京都", "神戸"])
+        #expect(!flow.coordinator.candidates.contains(
+            "東京大阪名古屋京都神戸"
+        ))
+    }
+
+    @Test
+    func combinedContinuationDoesNotExceedTheMaximumLength() {
+        let flow = CommitFlow()
+        let first = String(repeating: "東", count: 41)
+        let second = String(repeating: "京", count: 40)
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            for token in ["住所", first, second] {
+                flow.commitInput(token)
+            }
+            flow.breakSequence()
+        }
+
+        flow.commitInput("住所")
+
+        #expect(!flow.coordinator.candidates.contains(first + second))
+        #expect(flow.coordinator.candidates.allSatisfy {
+            $0.count <= NextInputPredictionModel.maximumValueLength
+        })
+    }
+
+    @Test
+    func repeatedlySelectingACombinedFourUnitCandidateDoesNotGrowIt() {
+        let flow = CommitFlow()
+        let tokens = ["環境", "設定", "確認", "完了"]
+        for _ in 0..<NextInputPredictionModel.minimumEpisodePromotionCount {
+            flow.commitInput("開発")
+            for token in tokens {
+                flow.offerNextInput(token)
+                flow.selectAndCommit(token)
+            }
+            flow.breakSequence()
+        }
+        for _ in 0..<5 {
+            flow.commitInput("開発")
+            flow.selectAndCommit("環境設定確認完了")
+            flow.breakSequence()
+        }
+
+        flow.commitInput("開発")
+
+        #expect(flow.coordinator.candidates.contains("環境設定確認完了"))
+        #expect(flow.coordinator.candidates.allSatisfy {
+            !$0.contains("環境設定確認完了開発")
+        })
+    }
+
     @Test
     func repeatedSelectionsWithoutBreaksDoNotAppendTheNextRepetition() {
         let flow = CommitFlow()
@@ -361,6 +470,48 @@ struct NextInputCommitFlowTests {
 
         #expect(!flow.coordinator.candidates.contains("に進んで"))
     }
+
+    @Test
+    func committedReadingsExposeTheWholePhraseToFuzzyPrefixSearch() {
+        let flow = CommitFlow()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            flow.commitInput("東京都", reading: "toukyouto")
+            flow.commitInput("中野区", reading: "nakanoku")
+            flow.breakSequence()
+        }
+
+        let prediction = flow.coordinator.learnedCompoundPredictions(
+            matchingPrefix: "toukyoutonaka",
+            excluding: []
+        ).first
+
+        #expect(prediction?.text == "東京都中野区")
+        #expect(prediction?.sourceTokens == ["東京都", "中野区"])
+    }
+
+    @Test
+    func committingLearnedCompoundKeepsItsOriginalBoundaries() {
+        let flow = CommitFlow()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            flow.commitInput("開発", reading: "kaihatsu")
+            flow.commitInput("環境", reading: "kankyou")
+            flow.commitInput("設定", reading: "settei")
+            flow.breakSequence()
+        }
+        let prediction = flow.coordinator.learnedCompoundPredictions(
+            matchingPrefix: "kaihatsukankyou",
+            excluding: []
+        ).first
+        let textBeforeCommit = flow.text
+
+        flow.commitLearnedCompound(prediction)
+
+        #expect(flow.text == textBeforeCommit + "開発環境設定")
+        #expect(flow.coordinator.learnedCompoundPredictions(
+            matchingPrefix: "kaihatsu",
+            excluding: []
+        ).first?.sourceTokens == ["開発", "環境", "設定"])
+    }
 }
 
 /// Mirrors the order InputController uses when committing text so the
@@ -382,6 +533,8 @@ private final class CommitFlow {
     func commitInput(
         _ value: String,
         learningTokens: [String]? = nil,
+        learningReadings: [String?]? = nil,
+        reading: String? = nil,
         learningSource: NextInputLearningSource = .directInput,
         isGeneratedParticle: Bool = false,
         selectedCandidate: Candidate? = nil
@@ -397,6 +550,12 @@ private final class CommitFlow {
         guard policy.updatesSuggestions else { return }
         let structural = tracker.candidate.map { [$0] } ?? []
         let committedTokens = learningTokens ?? [value]
+        let committedReadings = learningReadings?.count == committedTokens.count
+            ? learningReadings ?? []
+            : [reading] + Array(
+                repeating: nil,
+                count: max(0, committedTokens.count - 1)
+            )
         coordinator.beginSuggestions(
             context: committedTokens.last ?? value,
             preferredCandidates: structural.map {
@@ -404,7 +563,12 @@ private final class CommitFlow {
             },
             learnedCandidates: coordinator.learnedCandidateModels(
                 after: value,
-                committedTokens: committedTokens,
+                committedTokens: zip(
+                    committedTokens,
+                    committedReadings
+                ).map {
+                    NextInputLearningToken(text: $0.0, reading: $0.1)
+                },
                 learningSource: learningSource,
                 predictionEnabled: true,
                 learningEnabled: policy.learnsInput,
@@ -441,10 +605,25 @@ private final class CommitFlow {
     func commitSelectedNextInput() {
         guard let value = coordinator.selectedCandidate else { return }
         let sourceTokens = coordinator.selectedSourceTokens
+        let sourceReadings = coordinator.selectedSourceReadings
         coordinator.resetSuggestions()
         commitInput(
             value,
             learningTokens: sourceTokens,
+            learningReadings: sourceReadings,
+            learningSource: .acceptedSuggestion
+        )
+    }
+
+    func commitLearnedCompound(_ prediction: LearnedCompoundPrediction?) {
+        guard let prediction else {
+            Issue.record("learned compound is missing")
+            return
+        }
+        commitInput(
+            prediction.text,
+            learningTokens: prediction.sourceTokens,
+            learningReadings: prediction.sourceReadings,
             learningSource: .acceptedSuggestion
         )
     }

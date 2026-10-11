@@ -53,6 +53,11 @@ public final class NextInputSuggestionCoordinator {
         return NextInputCandidateMetadata.sourceTokens(from: candidate)
     }
 
+    public var selectedSourceReadings: [String?]? {
+        guard let candidate = session.selectedCandidateModel else { return nil }
+        return NextInputCandidateMetadata.sourceReadings(from: candidate)
+    }
+
     public var context: String? {
         session.context
     }
@@ -104,6 +109,45 @@ public final class NextInputSuggestionCoordinator {
             predictions = store.predictions(after: value, limit: limit)
         }
         return predictions.map(NextInputCandidateMetadata.candidate)
+    }
+
+    public func learnedCandidateModels(
+        after value: String,
+        committedTokens: [NextInputLearningToken],
+        learningSource: NextInputLearningSource,
+        predictionEnabled: Bool,
+        learningEnabled: Bool,
+        breakPreviousSequence: Bool,
+        limit: Int
+    ) -> [Candidate] {
+        guard predictionEnabled else { return [] }
+        if breakPreviousSequence {
+            breakSequence()
+        }
+        let predictions: [NextInputPrediction]
+        if learningEnabled {
+            store.record(
+                learningTokens: committedTokens,
+                source: learningSource,
+                cursor: &cursor
+            )
+            predictions = store.predictions(after: cursor, limit: limit)
+        } else {
+            predictions = store.predictions(after: value, limit: limit)
+        }
+        return predictions.map(NextInputCandidateMetadata.candidate)
+    }
+
+    public func learnedCompoundPredictions(
+        matchingPrefix input: String,
+        excluding visibleCandidates: Set<String>,
+        limit: Int = NextInputPredictionModel.maximumLearnedCompoundCandidateCount
+    ) -> [LearnedCompoundPrediction] {
+        store.learnedCompoundPredictions(
+            matchingPrefix: input,
+            excluding: visibleCandidates,
+            limit: limit
+        )
     }
 
     @discardableResult
@@ -186,6 +230,10 @@ public final class NextInputSuggestionCoordinator {
               let context = session.context else { return }
         defer { _ = session.removeSelectedCandidate() }
         try store.suppress(candidate, after: context)
+    }
+
+    public func suppressLearnedCandidate(_ candidate: String) throws {
+        try store.suppress(candidate, after: "learnedCompound")
     }
 
     public func pageRange(pageSize: Int) -> Range<Int> {

@@ -157,6 +157,35 @@ struct NextInputSuggestionCoordinatorTests {
         #expect(coordinator.selectedSourceTokens == ["に", "進んで"])
     }
 
+    @Test
+    func learnedSequenceDeduplicatesDictionaryCandidateWithoutLosingTokens() {
+        let fixture = makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let learned = NextInputCandidateMetadata.candidate(
+            from: NextInputPrediction(
+                text: "東京都中野区",
+                sourceTokens: ["東京都", "中野区"],
+                sourceReadings: ["toukyouto", "nakanoku"]
+            )
+        )
+
+        fixture.coordinator.beginSuggestions(
+            context: "住所",
+            preferredCandidates: [],
+            learnedCandidates: [learned],
+            dictionaryCandidates: [Candidate(
+                storageText: "東京都中野区",
+                source: .userDictionary
+            )]
+        )
+        _ = fixture.coordinator.select(index: 0)
+
+        #expect(fixture.coordinator.candidates == ["東京都中野区"])
+        #expect(fixture.coordinator.selectedSourceTokens == ["東京都", "中野区"])
+        #expect(fixture.coordinator.selectedSourceReadings
+            == ["toukyouto", "nakanoku"])
+    }
+
     private func makeFixture() -> (
         coordinator: NextInputSuggestionCoordinator,
         directory: URL,

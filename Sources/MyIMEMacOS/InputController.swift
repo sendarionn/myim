@@ -3040,15 +3040,22 @@ final class InputController: IMKInputController {
             return
         }
         suggestionSearchCoordinator.cancel(.fuzzy)
+        let visibleCandidates = Set(currentCandidates)
+        let learnedCompounds = nextInputSuggestionCoordinator
+            .learnedCompoundPredictions(
+                matchingPrefix: query,
+                excluding: visibleCandidates
+            )
         let source = FuzzySuggestionSource(
             query: query,
-            visibleCandidates: Set(currentCandidates),
+            visibleCandidates: visibleCandidates,
             userDictionary: dictionaryRuntime.userDictionaryEngine,
             importedDictionary: dictionaryRuntime.importedEngine,
             basicDictionary: dictionaryRuntime.basicEngine,
             mozcDictionary: dictionaryRuntime.systemEngine,
             compoundGenerator: dictionaryRuntime.compoundGenerator,
-            fuzzyRepository: Self.fuzzyEngineRepository
+            fuzzyRepository: Self.fuzzyEngineRepository,
+            learnedCompounds: learnedCompounds
         )
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
@@ -3300,7 +3307,22 @@ final class InputController: IMKInputController {
             )
         }
         let value = suggestion.candidate + conversionSuffix
-        commit(value + suffix, to: sender)
+        let sourceTokens = suggestion.sourceTokens.isEmpty
+            ? nil
+            : suggestion.sourceTokens
+        commit(
+            value + suffix,
+            to: sender,
+            historyValue: suggestion.candidate,
+            historyTokens: sourceTokens,
+            historyReadings: sourceTokens == nil
+                ? nil
+                : suggestion.sourceReadings,
+            historyReading: suggestion.reading,
+            historyLearningSource: sourceTokens == nil
+                ? .directInput
+                : .acceptedSuggestion
+        )
         return true
     }
 
@@ -3310,6 +3332,26 @@ final class InputController: IMKInputController {
         guard let suggestion = fuzzySuggestionCoordinator.selectedSuggestion
         else {
             NSSound.beep()
+            return
+        }
+        if !suggestion.isLearnable, !suggestion.sourceTokens.isEmpty {
+            do {
+                try nextInputSuggestionCoordinator.suppressLearnedCandidate(
+                    suggestion.candidate
+                )
+                candidateSelectionHistoryStore.remove([suggestion.candidate])
+                suggestionSearchCoordinator.cancel(.fuzzy)
+                fuzzySuggestionCoordinator.reset()
+                selectedFuzzySuggestionIndex = nil
+                updateMarkedText(in: sender)
+                refreshCandidates(client: sender)
+            } catch {
+                NSLog(
+                    "学習済み連結候補の削除保存に失敗: %@",
+                    error.localizedDescription
+                )
+                NSSound.beep()
+            }
             return
         }
         guard userDictionaryStore.canRemove(
@@ -4358,6 +4400,8 @@ final class InputController: IMKInputController {
         to sender: Any
     ) {
         let sourceTokens = nextInputSuggestionCoordinator.selectedSourceTokens
+        let sourceReadings = nextInputSuggestionCoordinator
+            .selectedSourceReadings
         recordNextInputCandidateSelection(value)
         clearNextInputSuggestionState()
         commit(
@@ -4366,6 +4410,7 @@ final class InputController: IMKInputController {
             replacingMarkedText: replacingMarkedText,
             historyValue: value,
             historyTokens: sourceTokens,
+            historyReadings: sourceReadings,
             historyLearningSource: .acceptedSuggestion
         )
     }
@@ -4434,6 +4479,8 @@ final class InputController: IMKInputController {
         replacingMarkedText: Bool = false,
         historyValue: String? = nil,
         historyTokens: [String]? = nil,
+        historyReadings: [String?]? = nil,
+        historyReading: String? = nil,
         historyLearningSource: NextInputLearningSource = .directInput,
         preferredNextInputCandidates: [String] = []
     ) {
@@ -4443,6 +4490,9 @@ final class InputController: IMKInputController {
         trace("insertText.request", sender: sender, detail: "value=\(value)")
 
         let inputHistoryValue = historyValue ?? value
+        let inputHistoryReading = historyReading ?? (!inputBuffer.isEmpty
+            ? candidateSelectionReading
+            : nil)
         let isPendingClosingBracket = !closingBracketTracker
             .shouldRecordAsNextInput(inputHistoryValue)
         if isPendingClosingBracket {
@@ -4497,6 +4547,11 @@ final class InputController: IMKInputController {
             recordCommittedInput(
                 inputHistoryValue,
                 learningTokens: historyTokens,
+                learningReadings: historyReadings
+                    ?? historyTokens.map { tokens in
+                        tokens.count == 1 ? [inputHistoryReading] : []
+                    }
+                    ?? [inputHistoryReading],
                 learningSource: historyLearningSource,
                 learnsInput: nextInputPolicy.learnsInput,
                 preferredCandidates: structuralCandidates
@@ -4680,6 +4735,7 @@ final class InputController: IMKInputController {
     private func recordCommittedInput(
         _ value: String,
         learningTokens: [String]? = nil,
+        learningReadings: [String?]? = nil,
         learningSource: NextInputLearningSource = .directInput,
         learnsInput: Bool,
         preferredCandidates: [String] = [],
@@ -4692,11 +4748,19 @@ final class InputController: IMKInputController {
         }
         suggestionSearchCoordinator.cancel(.nextInputExtension)
         let committedTokens = learningTokens ?? [value]
+        let committedReadings = learningReadings?.count == committedTokens.count
+            ? learningReadings ?? []
+            : Array(repeating: nil, count: committedTokens.count)
         let predictionContext = committedTokens.last ?? value
         let learnedCandidates = nextInputSuggestionCoordinator
             .learnedCandidateModels(
                 after: value,
-                committedTokens: committedTokens,
+                committedTokens: zip(
+                    committedTokens,
+                    committedReadings
+                ).map {
+                    NextInputLearningToken(text: $0.0, reading: $0.1)
+                },
                 learningSource: learningSource,
                 predictionEnabled: Self.featureSettings.isNextInputPredictionEnabled,
                 learningEnabled: learnsInput
