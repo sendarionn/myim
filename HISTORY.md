@@ -2604,3 +2604,6 @@
 - 専用入力ウィンドウで基本変換を操作し、確定結果を検証する自動録画シナリオを追加
 - READMEのGIFはGyazoで管理し、自動録画結果は検証用成果物として分離
 - 古い翻訳モードのREADME説明を、選択中の日本語候補へ隣接パネルで翻訳候補を表示する現行仕様へ更新
+- 候補パネルの`show()`を画面へ出さない`layout(...)`と前面表示に分け、表示中かどうかに関係なく描画結果を取得する`renderedImage()`を追加
+- 同梱辞書だけで候補を生成し、実際の候補パネル描画を1枚のPNGへ書き出す開発用コマンド`myim --render-candidate-panel <入力> <出力.png> [選択位置]`を追加
+- 実IME操作を録画せず、同梱辞書による実際の候補とAppKitの入力欄、既存の候補パネル描画からREADMEデモGIFを生成する`myim --render-readme-demo <シナリオ> <出力.gif>`と`Scripts/render-readme-demo.sh`を追加し、`kouho`から`候補`を確定する`basic-conversion`を生成
