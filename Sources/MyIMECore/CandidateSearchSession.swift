@@ -1,9 +1,9 @@
 import Foundation
 
-public enum SuggestionSearchKind: Hashable, Sendable {
+public enum CandidateSearchKind: Hashable, Sendable {
     case calendarFormat
     case dictionaryDefinition
-    case official
+    case external
     case fuzzy
     case fuzzyIndexBuild
     case javaScriptExtensions
@@ -12,10 +12,10 @@ public enum SuggestionSearchKind: Hashable, Sendable {
     case translation
 }
 
-public final class SuggestionSearchSession: @unchecked Sendable {
+public final class CandidateSearchSession: @unchecked Sendable {
     public struct Token: Equatable, Sendable {
         fileprivate let id: UUID
-        public let kind: SuggestionSearchKind
+        public let kind: CandidateSearchKind
         public let query: String
     }
 
@@ -25,12 +25,12 @@ public final class SuggestionSearchSession: @unchecked Sendable {
     }
 
     private let lock = NSLock()
-    private var entries: [SuggestionSearchKind: Entry] = [:]
+    private var entries: [CandidateSearchKind: Entry] = [:]
 
     public init() {}
 
     public func begin(
-        _ kind: SuggestionSearchKind,
+        _ kind: CandidateSearchKind,
         query: String
     ) -> Token {
         let token = Token(id: UUID(), kind: kind, query: query)
@@ -75,13 +75,13 @@ public final class SuggestionSearchSession: @unchecked Sendable {
         lock.unlock()
     }
 
-    public func query(for kind: SuggestionSearchKind) -> String? {
+    public func query(for kind: CandidateSearchKind) -> String? {
         lock.lock()
         defer { lock.unlock() }
         return entries[kind]?.token.query
     }
 
-    public func cancel(_ kind: SuggestionSearchKind) {
+    public func cancel(_ kind: CandidateSearchKind) {
         lock.lock()
         let task = entries.removeValue(forKey: kind)?.task
         lock.unlock()

@@ -10,8 +10,8 @@ struct SharedLearningStoreTests {
     func nextInputLearningFromTwoControllersIsNotLost() throws {
         let fixture = Fixture()
         defer { fixture.remove() }
-        let vscode = NextInputSuggestionCoordinator(store: fixture.store)
-        let chrome = NextInputSuggestionCoordinator(store: fixture.store)
+        let vscode = NextInputCandidateCoordinator(store: fixture.store)
+        let chrome = NextInputCandidateCoordinator(store: fixture.store)
 
         learnRepetitions(1, in: vscode)
         vscode.flush()
@@ -29,8 +29,8 @@ struct SharedLearningStoreTests {
     func alternatingControllersPromoteTheContinuationTogether() {
         let fixture = Fixture()
         defer { fixture.remove() }
-        let vscode = NextInputSuggestionCoordinator(store: fixture.store)
-        let chrome = NextInputSuggestionCoordinator(store: fixture.store)
+        let vscode = NextInputCandidateCoordinator(store: fixture.store)
+        let chrome = NextInputCandidateCoordinator(store: fixture.store)
 
         for round in 0..<2 {
             learnRepetitions(1, in: round.isMultiple(of: 2) ? vscode : chrome)
@@ -44,8 +44,8 @@ struct SharedLearningStoreTests {
     func controllersKeepTheirOwnTypingContext() {
         let fixture = Fixture()
         defer { fixture.remove() }
-        let vscode = NextInputSuggestionCoordinator(store: fixture.store)
-        let chrome = NextInputSuggestionCoordinator(store: fixture.store)
+        let vscode = NextInputCandidateCoordinator(store: fixture.store)
+        let chrome = NextInputCandidateCoordinator(store: fixture.store)
 
         for _ in 0..<12 {
             _ = learn("実装", source: .directInput, in: vscode)
@@ -61,15 +61,15 @@ struct SharedLearningStoreTests {
     func controllersKeepTheirOwnCandidateSelection() {
         let fixture = Fixture()
         defer { fixture.remove() }
-        let vscode = NextInputSuggestionCoordinator(store: fixture.store)
-        let chrome = NextInputSuggestionCoordinator(store: fixture.store)
-        vscode.beginSuggestions(
+        let vscode = NextInputCandidateCoordinator(store: fixture.store)
+        let chrome = NextInputCandidateCoordinator(store: fixture.store)
+        vscode.beginCandidates(
             context: "実装",
             preferredCandidates: ["に", "を"],
             learnedCandidates: [String](),
             dictionaryCandidates: [String]()
         )
-        chrome.beginSuggestions(
+        chrome.beginCandidates(
             context: "確認",
             preferredCandidates: ["した"],
             learnedCandidates: [String](),
@@ -87,9 +87,9 @@ struct SharedLearningStoreTests {
     func suppressionFromOneControllerAppliesToTheOther() throws {
         let fixture = Fixture()
         defer { fixture.remove() }
-        let vscode = NextInputSuggestionCoordinator(store: fixture.store)
-        let chrome = NextInputSuggestionCoordinator(store: fixture.store)
-        vscode.beginSuggestions(
+        let vscode = NextInputCandidateCoordinator(store: fixture.store)
+        let chrome = NextInputCandidateCoordinator(store: fixture.store)
+        vscode.beginCandidates(
             context: "実装",
             preferredCandidates: ["に"],
             learnedCandidates: [String](),
@@ -125,7 +125,7 @@ struct SharedLearningStoreTests {
     func sharedStorePersistsSequencesCountsAndSuppression() throws {
         let fixture = Fixture()
         defer { fixture.remove() }
-        let coordinator = NextInputSuggestionCoordinator(store: fixture.store)
+        let coordinator = NextInputCandidateCoordinator(store: fixture.store)
         learnRepetitions(2, in: coordinator)
         try fixture.store.suppress("を", after: "実装")
         fixture.store.flush()
@@ -141,7 +141,7 @@ struct SharedLearningStoreTests {
 
     private func learnRepetitions(
         _ count: Int,
-        in coordinator: NextInputSuggestionCoordinator
+        in coordinator: NextInputCandidateCoordinator
     ) {
         for _ in 0..<count {
             _ = learn("実装", source: .directInput, in: coordinator)
@@ -153,7 +153,7 @@ struct SharedLearningStoreTests {
     private func learn(
         _ token: String,
         source: NextInputLearningSource,
-        in coordinator: NextInputSuggestionCoordinator
+        in coordinator: NextInputCandidateCoordinator
     ) -> [String] {
         coordinator.learnedCandidateModels(
             after: token,

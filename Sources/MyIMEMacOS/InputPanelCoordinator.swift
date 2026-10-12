@@ -2,15 +2,15 @@
 import MyIMECore
 
 final class InputPanelCoordinator {
-    let candidate = CandidateWindowController()
-    let candidateFilterDraft = CandidateWindowController()
-    private var candidateFilterConditions: [CandidateWindowController] = []
+    let primaryCandidatePanel = CandidatePanelController()
+    let candidateFilterDraft = CandidatePanelController()
+    private var candidateFilterConditions: [CandidatePanelController] = []
     let calendar = CalendarWindowController()
     let emoji = EmojiWindowController.shared
-    let fuzzySuggestion = FuzzySuggestionWindowController()
+    let secondaryCandidatePanel = SecondaryCandidatePanelController()
     /// One panel per target language with results, nearest to the source
     /// first; panels beyond the current count are kept hidden for reuse
-    private var translationCandidates: [CandidateWindowController] = []
+    private var translationCandidates: [CandidatePanelController] = []
     private var visibleTranslationCandidateCount = 0
     let externalInformation = ExternalInformationWindowController()
     let symbolTips = SymbolTipsWindowController()
@@ -22,11 +22,11 @@ final class InputPanelCoordinator {
 
     var visiblePanelKinds: Set<InputPanelKind> {
         var result = Set<InputPanelKind>()
-        if candidate.isVisible {
-            result.insert(.candidate)
+        if primaryCandidatePanel.isVisible {
+            result.insert(.primaryCandidatePanel)
         }
-        if fuzzySuggestion.isVisible {
-            result.insert(.fuzzySuggestion)
+        if secondaryCandidatePanel.isVisible {
+            result.insert(.secondaryCandidatePanel)
         }
         if translationCandidates.contains(where: \.isVisible) {
             result.insert(.translationCandidates)
@@ -118,7 +118,7 @@ final class InputPanelCoordinator {
     private func dismissNextInputIfClickedOutside(
         onDismiss: () -> Void
     ) {
-        guard !candidate.contains(screenPoint: NSEvent.mouseLocation) else {
+        guard !primaryCandidatePanel.contains(screenPoint: NSEvent.mouseLocation) else {
             return
         }
         onDismiss()
@@ -166,7 +166,7 @@ final class InputPanelCoordinator {
         near anchorFrame: NSRect
     ) {
         while candidateFilterConditions.count < labels.count {
-            candidateFilterConditions.append(CandidateWindowController())
+            candidateFilterConditions.append(CandidatePanelController())
         }
         while candidateFilterConditions.count > labels.count {
             candidateFilterConditions.removeLast().hide()
@@ -187,10 +187,10 @@ final class InputPanelCoordinator {
         let spacing: CGFloat = 8
         let requiredWidth = windows.reduce(0) { $0 + $1.frame.width }
             + spacing * CGFloat(windows.count)
-        candidate.makeRoomOnRight(width: requiredWidth, spacing: 0)
+        primaryCandidatePanel.makeRoomOnRight(width: requiredWidth, spacing: 0)
         var offset = spacing
         for window in windows {
-            window.placeBeside(candidate.frame, spacing: offset)
+            window.placeBeside(primaryCandidatePanel.frame, spacing: offset)
             offset += window.frame.width + spacing
         }
     }
@@ -200,23 +200,23 @@ final class InputPanelCoordinator {
         candidateFilterConditions.removeAll(keepingCapacity: true)
     }
 
-    func prepareCandidateAnchorForFuzzyPanel(
+    func prepareAnchorForSecondaryCandidatePanel(
         width: CGFloat,
         spacing: CGFloat
     ) -> NSRect {
-        candidate.makeRoomOnRight(width: width, spacing: spacing)
-        return candidate.frame
+        primaryCandidatePanel.makeRoomOnRight(width: width, spacing: spacing)
+        return primaryCandidatePanel.frame
     }
 
-    func alignFuzzySuggestionToCandidateRight() {
-        guard fuzzySuggestion.isVisible else { return }
-        candidate.makeRoomOnRight(
-            width: fuzzySuggestion.panelWidth,
-            spacing: fuzzySuggestion.spacingFromCandidatePanel
+    func alignSecondaryCandidatePanelToPrimary() {
+        guard secondaryCandidatePanel.isVisible else { return }
+        primaryCandidatePanel.makeRoomOnRight(
+            width: secondaryCandidatePanel.panelWidth,
+            spacing: secondaryCandidatePanel.spacingFromCandidatePanel
         )
-        fuzzySuggestion.reposition(
-            near: candidate.frame,
-            avoidingFrames: [candidate.frame] + candidate.auxiliaryFrames
+        secondaryCandidatePanel.reposition(
+            near: primaryCandidatePanel.frame,
+            avoidingFrames: [primaryCandidatePanel.frame] + primaryCandidatePanel.auxiliaryFrames
         )
     }
 
@@ -239,7 +239,7 @@ final class InputPanelCoordinator {
         }
         guard let groupFrame = conversionGroupFrame(),
               let visibleFrame = NSScreen.inputScreen(
-                containing: candidate.frame
+                containing: primaryCandidatePanel.frame
               )?.visibleFrame else { return }
         let reservedWidth = HorizontalPanelGroupPlacement.reservedWidth(
             panelCount: languageCount,
@@ -266,7 +266,7 @@ final class InputPanelCoordinator {
     ) -> Int {
         hideTranslationCandidates()
         while translationCandidates.count < panels.count {
-            translationCandidates.append(CandidateWindowController())
+            translationCandidates.append(CandidatePanelController())
         }
         var previousFrame = sourceFrame
         for (window, panel) in zip(translationCandidates, panels) {
@@ -293,7 +293,7 @@ final class InputPanelCoordinator {
         visibleTranslationCandidateCount = panels.count
         if let groupFrame = conversionGroupFrame(),
            let visibleFrame = NSScreen.inputScreen(
-            containing: candidate.frame
+            containing: primaryCandidatePanel.frame
            )?.visibleFrame {
             let fitting = HorizontalPanelGroupPlacement.fittingPanelCount(
                 panelWidths: translationCandidates.prefix(panels.count)
@@ -331,11 +331,11 @@ final class InputPanelCoordinator {
         visibleTranslationCandidateCount = 0
     }
 
-    /// Normal candidates and fuzzy suggestions, without translations
+    /// Primary and secondary candidate panels, without translations
     private func conversionGroupFrame() -> NSRect? {
         let frames = [
-            candidate.visibleFrame,
-            fuzzySuggestion.visibleFrame
+            primaryCandidatePanel.visibleFrame,
+            secondaryCandidatePanel.visibleFrame
         ].compactMap { $0 }
         guard let first = frames.first else { return nil }
         return frames.dropFirst().reduce(first) { $0.union($1) }
@@ -346,12 +346,12 @@ final class InputPanelCoordinator {
         reservedRightWidth: CGFloat = 0
     ) {
         let frames = [
-            candidate.visibleFrame,
-            fuzzySuggestion.visibleFrame
+            primaryCandidatePanel.visibleFrame,
+            secondaryCandidatePanel.visibleFrame
         ].compactMap { $0 } + visibleTranslationCandidateFrames
         guard let firstFrame = frames.first,
               let visibleFrame = NSScreen.inputScreen(
-                containing: candidate.frame
+                containing: primaryCandidatePanel.frame
               )?.visibleFrame else { return }
         let groupFrame = frames.dropFirst().reduce(firstFrame) {
             $0.union($1)
@@ -364,22 +364,22 @@ final class InputPanelCoordinator {
             reservedLeftWidth: reservedLeftWidth,
             reservedRightWidth: reservedRightWidth
         )
-        candidate.offsetHorizontally(by: offset)
-        fuzzySuggestion.offsetHorizontally(by: offset)
+        primaryCandidatePanel.offsetHorizontally(by: offset)
+        secondaryCandidatePanel.offsetHorizontally(by: offset)
         translationCandidates.prefix(visibleTranslationCandidateCount)
             .forEach { $0.offsetHorizontally(by: offset) }
     }
 
     func hideConversionPanels() {
-        candidate.hide()
-        fuzzySuggestion.hide()
+        primaryCandidatePanel.hide()
+        secondaryCandidatePanel.hide()
         hideTranslationCandidates()
         externalInformation.hide()
     }
 
     func dismissNextInputPresentation() {
         stopNextInputLifecycle()
-        candidate.hide()
+        primaryCandidatePanel.hide()
         externalInformation.hide()
     }
 
@@ -390,10 +390,10 @@ final class InputPanelCoordinator {
         stopNextInputLifecycle()
         for panel in policy.panelsToDismiss {
             switch panel {
-            case .candidate:
-                candidate.hide()
-            case .fuzzySuggestion:
-                fuzzySuggestion.hide()
+            case .primaryCandidatePanel:
+                primaryCandidatePanel.hide()
+            case .secondaryCandidatePanel:
+                secondaryCandidatePanel.hide()
             case .translationCandidates:
                 hideTranslationCandidates()
             case .emoji:

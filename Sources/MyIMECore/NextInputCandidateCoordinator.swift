@@ -4,7 +4,7 @@ import Foundation
 ///
 /// The candidate session and typing cursor belong to this client, while
 /// learned knowledge lives in the shared `NextInputLearningStore`
-public final class NextInputSuggestionCoordinator {
+public final class NextInputCandidateCoordinator {
     private let store: NextInputLearningStore
     private var cursor = NextInputSequenceCursor()
     private var session = NextInputCandidateSession()
@@ -151,14 +151,14 @@ public final class NextInputSuggestionCoordinator {
     }
 
     @discardableResult
-    public func beginSuggestions(
+    public func beginCandidates(
         context: String,
         preferredCandidates: [String],
         learnedCandidates: [String],
         dictionaryCandidates: [String],
         unsuppressibleCandidates: Set<String> = []
     ) -> Bool {
-        beginSuggestions(
+        beginCandidates(
             context: context,
             preferredCandidates: preferredCandidates.map {
                 Candidate(storageText: $0, source: .nextInput)
@@ -174,7 +174,7 @@ public final class NextInputSuggestionCoordinator {
     }
 
     @discardableResult
-    public func beginSuggestions(
+    public func beginCandidates(
         context: String,
         preferredCandidates: [Candidate],
         learnedCandidates: [Candidate],
@@ -261,7 +261,7 @@ public final class NextInputSuggestionCoordinator {
         session.clearCandidates()
     }
 
-    public func resetSuggestions() {
+    public func resetCandidates() {
         session.reset()
     }
 

@@ -4,7 +4,7 @@ public enum InputDiagnosticFeature: String, CaseIterable, Sendable {
     case dictionaryPanel
     case externalInformationPanel
     case translation
-    case fuzzySuggestion
+    case fuzzyCandidate = "fuzzySuggestion"
     case nextInput
     case jsExtensions
     case learning

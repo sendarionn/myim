@@ -3,21 +3,21 @@ import Testing
 
 @Suite
 @MainActor
-struct SuggestionSearchCoordinatorTests {
+struct CandidateSearchCoordinatorTests {
     @Test
     func appliesOnlyTheLatestResultForAQueryKind() async {
-        let coordinator = SuggestionSearchCoordinator()
+        let coordinator = CandidateSearchCoordinator()
         var applied: [String] = []
 
         coordinator.start(
-            .official,
+            .external,
             query: "old",
             operation: { "old" },
             validate: { true },
             apply: { applied.append($0) }
         )
         coordinator.start(
-            .official,
+            .external,
             query: "current",
             operation: { "current" },
             validate: { true },
@@ -26,12 +26,12 @@ struct SuggestionSearchCoordinatorTests {
         await waitForTasks()
 
         #expect(applied == ["current"])
-        #expect(coordinator.query(for: .official) == "current")
+        #expect(coordinator.query(for: .external) == "current")
     }
 
     @Test
     func rejectsAResultWhenCurrentInputValidationFails() async {
-        let coordinator = SuggestionSearchCoordinator()
+        let coordinator = CandidateSearchCoordinator()
         var applied = false
 
         coordinator.start(
@@ -48,7 +48,7 @@ struct SuggestionSearchCoordinatorTests {
 
     @Test
     func cancellationPreventsResultApplication() async {
-        let coordinator = SuggestionSearchCoordinator()
+        let coordinator = CandidateSearchCoordinator()
         var applied = false
         var cancelled = false
 
@@ -72,7 +72,7 @@ struct SuggestionSearchCoordinatorTests {
 
     @Test
     func canDiscardACompletedOneShotQuery() async {
-        let coordinator = SuggestionSearchCoordinator()
+        let coordinator = CandidateSearchCoordinator()
 
         coordinator.start(
             .translation,

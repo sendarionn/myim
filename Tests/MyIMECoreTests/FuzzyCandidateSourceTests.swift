@@ -3,7 +3,7 @@ import Testing
 @testable import MyIMECore
 
 @Suite
-struct FuzzySuggestionSourceTests {
+struct FuzzyCandidateSourceTests {
     @Test
     func generatesTypoCorrectedCompoundTiers() async {
         let entries = [
@@ -110,7 +110,7 @@ struct FuzzySuggestionSourceTests {
     }
 
     @Test
-    func placesLearnedCompoundInFuzzySuggestionsBesideNormalCandidates() async {
+    func placesLearnedCompoundInFuzzyCandidatesBesideStandardCandidates() async {
         let repository = FuzzyEngineRepository()
         repository.prepare(for: [])
         let learned = LearnedCompoundPrediction(
@@ -119,7 +119,7 @@ struct FuzzySuggestionSourceTests {
             sourceTokens: ["東京都", "中野区"],
             sourceReadings: ["toukyouto", "nakanoku"]
         )
-        let source = FuzzySuggestionSource(
+        let source = FuzzyCandidateSource(
             query: "toukyoutonaka",
             visibleCandidates: ["東京都"],
             userDictionary: LayeredConversionEngine(engines: []),
@@ -140,7 +140,7 @@ struct FuzzySuggestionSourceTests {
     }
 
     @Test
-    func excludesLearnedCompoundAlreadyVisibleAsANormalCandidate() async {
+    func excludesLearnedCompoundAlreadyVisibleAsAStandardCandidate() async {
         let repository = FuzzyEngineRepository()
         repository.prepare(for: [])
         let learned = LearnedCompoundPrediction(
@@ -149,7 +149,7 @@ struct FuzzySuggestionSourceTests {
             sourceTokens: ["東京都", "中野区"],
             sourceReadings: ["toukyouto", "nakanoku"]
         )
-        let source = FuzzySuggestionSource(
+        let source = FuzzyCandidateSource(
             query: "toukyouto",
             visibleCandidates: ["東京都中野区"],
             userDictionary: LayeredConversionEngine(engines: []),
@@ -174,8 +174,8 @@ struct FuzzySuggestionSourceTests {
         entries: [DictionaryEntry],
         repository: FuzzyEngineRepository,
         visibleCandidates: Set<String> = []
-    ) -> FuzzySuggestionSource {
-        FuzzySuggestionSource(
+    ) -> FuzzyCandidateSource {
+        FuzzyCandidateSource(
             query: query,
             visibleCandidates: visibleCandidates,
             userDictionary: LayeredConversionEngine(engines: []),

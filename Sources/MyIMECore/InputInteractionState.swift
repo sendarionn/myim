@@ -2,7 +2,7 @@ public enum InputInteractionState: Equatable, Sendable {
     case idle
     case composing
     case selectingCandidate
-    case selectingFuzzySuggestion
+    case selectingFuzzyCandidate
     case selectingNextInput
     case registeringDictionary
 
@@ -10,14 +10,14 @@ public enum InputInteractionState: Equatable, Sendable {
         hasInput: Bool,
         isRegisteringDictionary: Bool,
         hasSelectedCandidate: Bool,
-        hasSelectedFuzzySuggestion: Bool,
+        hasSelectedFuzzyCandidate: Bool,
         hasSelectedNextInput: Bool
     ) -> Self {
         if isRegisteringDictionary {
             return .registeringDictionary
         }
-        if hasSelectedFuzzySuggestion {
-            return .selectingFuzzySuggestion
+        if hasSelectedFuzzyCandidate {
+            return .selectingFuzzyCandidate
         }
         if hasInput, hasSelectedCandidate {
             return .selectingCandidate

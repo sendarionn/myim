@@ -1,10 +1,10 @@
 public struct NextInputCommitPolicy: Equatable, Sendable {
     public let learnsInput: Bool
-    public let updatesSuggestions: Bool
+    public let updatesCandidates: Bool
 
-    public init(learnsInput: Bool, updatesSuggestions: Bool) {
+    public init(learnsInput: Bool, updatesCandidates: Bool) {
         self.learnsInput = learnsInput
-        self.updatesSuggestions = updatesSuggestions
+        self.updatesCandidates = updatesCandidates
     }
 
     /// Resolve before the committed value is consumed by the tracker so
@@ -27,7 +27,7 @@ public struct NextInputCommitPolicy: Equatable, Sendable {
                 value,
                 requested: acceptsGeneratedParticle
             ),
-            updatesSuggestions: acceptsGeneratedParticle
+            updatesCandidates: acceptsGeneratedParticle
         )
     }
 }

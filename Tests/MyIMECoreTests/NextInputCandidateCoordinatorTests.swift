@@ -3,7 +3,7 @@ import Testing
 @testable import MyIMECore
 
 @Suite
-struct NextInputSuggestionCoordinatorTests {
+struct NextInputCandidateCoordinatorTests {
     @Test
     func ownsLearningCandidateStateAndPersistence() throws {
         let fixture = makeFixture()
@@ -45,7 +45,7 @@ struct NextInputSuggestionCoordinatorTests {
         let fixture = makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
         let coordinator = fixture.coordinator
-        coordinator.beginSuggestions(
+        coordinator.beginCandidates(
             context: "開く",
             preferredCandidates: ["」"],
             learnedCandidates: [],
@@ -54,7 +54,7 @@ struct NextInputSuggestionCoordinatorTests {
         _ = coordinator.select(index: 0)
         try coordinator.suppressSelectedCandidate()
 
-        coordinator.beginSuggestions(
+        coordinator.beginCandidates(
             context: "開く",
             preferredCandidates: ["」"],
             learnedCandidates: [],
@@ -62,7 +62,7 @@ struct NextInputSuggestionCoordinatorTests {
         )
         #expect(coordinator.candidates == ["閉じる"])
 
-        coordinator.beginSuggestions(
+        coordinator.beginCandidates(
             context: "開く",
             preferredCandidates: ["」"],
             learnedCandidates: [],
@@ -77,7 +77,7 @@ struct NextInputSuggestionCoordinatorTests {
         let fixture = makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
         let coordinator = fixture.coordinator
-        coordinator.beginSuggestions(
+        coordinator.beginCandidates(
             context: "候補",
             preferredCandidates: [],
             learnedCandidates: ["A", "B"],
@@ -101,7 +101,7 @@ struct NextInputSuggestionCoordinatorTests {
         let fixture = makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
 
-        let hasCandidates = fixture.coordinator.beginSuggestions(
+        let hasCandidates = fixture.coordinator.beginCandidates(
             context: "候補なし",
             preferredCandidates: [String](),
             learnedCandidates: [String](),
@@ -140,7 +140,7 @@ struct NextInputSuggestionCoordinatorTests {
             breakPreviousSequence: false,
             limit: 16
         )
-        coordinator.beginSuggestions(
+        coordinator.beginCandidates(
             context: "実装",
             preferredCandidates: [],
             learnedCandidates: learned,
@@ -169,7 +169,7 @@ struct NextInputSuggestionCoordinatorTests {
             )
         )
 
-        fixture.coordinator.beginSuggestions(
+        fixture.coordinator.beginCandidates(
             context: "住所",
             preferredCandidates: [],
             learnedCandidates: [learned],
@@ -187,7 +187,7 @@ struct NextInputSuggestionCoordinatorTests {
     }
 
     private func makeFixture() -> (
-        coordinator: NextInputSuggestionCoordinator,
+        coordinator: NextInputCandidateCoordinator,
         directory: URL,
         fileURL: URL
     ) {
@@ -195,7 +195,7 @@ struct NextInputSuggestionCoordinatorTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let fileURL = directory.appendingPathComponent("next-input.json")
         return (
-            NextInputSuggestionCoordinator(
+            NextInputCandidateCoordinator(
                 predictionModel: NextInputPredictionModel(),
                 writer: DeferredJSONFileWriter(
                     fileURL: fileURL,

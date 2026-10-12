@@ -1,7 +1,7 @@
 @preconcurrency import AppKit
 import MyIMECore
 
-final class FuzzySuggestionWindowController {
+final class SecondaryCandidatePanelController {
     private static let spacing: CGFloat = 6
     private static let guideSpacing: CGFloat = 4
     private static let itemHeight = CandidatePanelItemStyle.height
@@ -86,7 +86,7 @@ final class FuzzySuggestionWindowController {
     }
 
     func show(
-        suggestions: [FuzzySuggestion],
+        candidates: [FuzzyCandidate],
         selectedIndex: Int?,
         near anchorFrame: NSRect,
         avoidingFrames: [NSRect] = [],
@@ -99,11 +99,11 @@ final class FuzzySuggestionWindowController {
             : NSColor.clear.cgColor
         let screen = NSScreen.inputScreen(containing: anchorFrame)
         let visibleFrame = screen?.visibleFrame ?? anchorFrame
-        let visibleSuggestions = Array(
-            suggestions.prefix(CandidatePanelItemStyle.maximumVisibleCount)
+        let visibleCandidates = Array(
+            candidates.prefix(CandidatePanelItemStyle.maximumVisibleCount)
         )
 
-        let itemWidths = visibleSuggestions.map(itemWidth)
+        let itemWidths = visibleCandidates.map(itemWidth)
         let availableWidth = min(
             CandidatePanelItemStyle.maximumPanelWidth
                 - stackView.edgeInsets.left
@@ -117,8 +117,8 @@ final class FuzzySuggestionWindowController {
             ),
             availableWidth
         )
-        updateSuggestionRows(
-            visibleSuggestions,
+        updateCandidateRows(
+            visibleCandidates,
             width: targetWidth,
             selectedIndex: selectedIndex
         )
@@ -149,7 +149,7 @@ final class FuzzySuggestionWindowController {
         guidePanel.orderOut(nil)
     }
 
-    private func itemWidth(for suggestion: FuzzySuggestion) -> CGFloat {
+    private func itemWidth(for suggestion: FuzzyCandidate) -> CGFloat {
         let text = suggestion.candidate
         let textWidth = ceil((text as NSString).size(
             withAttributes: [.font: CandidatePanelItemStyle.font]
@@ -176,20 +176,20 @@ final class FuzzySuggestionWindowController {
         )
     }
 
-    private func updateSuggestionRows(
-        _ suggestions: [FuzzySuggestion],
+    private func updateCandidateRows(
+        _ candidates: [FuzzyCandidate],
         width: CGFloat,
         selectedIndex: Int?
     ) {
-        while stackView.arrangedSubviews.count > suggestions.count {
+        while stackView.arrangedSubviews.count > candidates.count {
             guard let last = stackView.arrangedSubviews.last else { break }
             stackView.removeArrangedSubview(last)
             last.removeFromSuperview()
         }
-        while stackView.arrangedSubviews.count < suggestions.count {
+        while stackView.arrangedSubviews.count < candidates.count {
             stackView.addArrangedSubview(CandidatePanelRowView(frame: .zero))
         }
-        for (index, suggestion) in suggestions.enumerated() {
+        for (index, suggestion) in candidates.enumerated() {
             guard let row = stackView.arrangedSubviews[index]
                 as? CandidatePanelRowView else { continue }
             row.setFixedSize(width: width, height: Self.itemHeight)

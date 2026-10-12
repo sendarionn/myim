@@ -16,7 +16,7 @@ struct InputFeatureSettingsTests {
         #expect(!settings.isWikipediaSuggestionsEnabled)
         #expect(!settings.isGoogleJapaneseInputEnabled)
         #expect(!settings.isWebSearchEnabled)
-        #expect(!settings.isFuzzySuggestionsEnabled)
+        #expect(!settings.isFuzzyCandidatesEnabled)
         #expect(!settings.isDateTimeCandidatesEnabled)
     }
 

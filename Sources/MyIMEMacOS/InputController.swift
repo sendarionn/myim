@@ -15,12 +15,12 @@ final class InputController: IMKInputController {
     private static weak var activeController: InputController?
     private static weak var emojiPanelController: InputController?
     private enum TranslationCandidateDestination {
-        case normal
+        case standard
         case fuzzy(reading: String)
 
         var channel: TranslationCandidateChannel {
             switch self {
-            case .normal: .normal
+            case .standard: .standard
             case .fuzzy: .fuzzy
             }
         }
@@ -28,10 +28,10 @@ final class InputController: IMKInputController {
 
     private static let featureSettings = InputFeatureSettings()
     private static let maximumCandidateCount = 4
-    private static let initialFuzzySuggestionCount = 4
+    private static let initialFuzzyCandidateCount = 4
     /// Gap between the input line and the candidate panel below it
     private static let candidatePanelAnchorSpacing: CGFloat = 8
-    private static let fuzzySuggestionDisplayDelay = Duration.milliseconds(120)
+    private static let fuzzyCandidateDisplayDelay = Duration.milliseconds(120)
     private static let maximumMozcDictionaryPrefixCandidates = 2048
     private static let nextInputDismissInterval: TimeInterval = 5
     private static let sharedBasicEntries = loadBasicEntries()
@@ -117,7 +117,7 @@ final class InputController: IMKInputController {
     private var candidateSession = CandidateSession()
     private var candidateFilterCoordinator = CandidateFilterCoordinator()
     private var calendarSelectionSession = CalendarFormatSelectionSession()
-    private var fuzzySuggestionCoordinator = FuzzySuggestionCoordinator()
+    private var fuzzyCandidateSession = FuzzyCandidateSession()
     private let userDictionaryStore: UserDictionaryStore
     private var dictionaryRuntime: ConversionDictionaryRuntime
     private let shortcutSettingsController = ShortcutSettingsController()
@@ -127,11 +127,11 @@ final class InputController: IMKInputController {
         )
     private let candidateSelectionHistoryStore: CandidateSelectionHistoryStore
     private var closingBracketTracker = ClosingBracketTracker()
-    private let nextInputSuggestionCoordinator: NextInputSuggestionCoordinator
-    private let suggestionSearchCoordinator = SuggestionSearchCoordinator()
+    private let nextInputCandidateCoordinator: NextInputCandidateCoordinator
+    private let candidateSearchCoordinator = CandidateSearchCoordinator()
     private let specialConversionCandidateSource =
         SpecialConversionCandidateSource()
-    private var officialCandidates: [Candidate] = []
+    private var externalCandidates: [Candidate] = []
     private var javaScriptExtensionCandidates: [String] = []
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
@@ -164,11 +164,11 @@ final class InputController: IMKInputController {
         slowThresholdMicroseconds: 50_000
     )
 
-    private var candidateWindow: CandidateWindowController {
-        panelCoordinator.candidate
+    private var primaryCandidatePanel: CandidatePanelController {
+        panelCoordinator.primaryCandidatePanel
     }
 
-    private var candidateFilterDraftWindow: CandidateWindowController {
+    private var candidateFilterDraftWindow: CandidatePanelController {
         panelCoordinator.candidateFilterDraft
     }
 
@@ -180,8 +180,8 @@ final class InputController: IMKInputController {
         panelCoordinator.emoji
     }
 
-    private var fuzzySuggestionWindow: FuzzySuggestionWindowController {
-        panelCoordinator.fuzzySuggestion
+    private var secondaryCandidatePanel: SecondaryCandidatePanelController {
+        panelCoordinator.secondaryCandidatePanel
     }
 
     private var previewWindow: ExternalInformationWindowController {
@@ -279,7 +279,7 @@ final class InputController: IMKInputController {
             systemEngine: indexedMozcEngine
         )
         candidateSelectionHistoryStore = Self.sharedCandidateSelectionHistoryStore
-        nextInputSuggestionCoordinator = NextInputSuggestionCoordinator(
+        nextInputCandidateCoordinator = NextInputCandidateCoordinator(
             store: Self.sharedNextInputLearningStore
         )
         JavaScriptExtensionClient.prepareUserExtensionDirectory()
@@ -419,8 +419,8 @@ final class InputController: IMKInputController {
             if !inputBuffer.isEmpty || dictionaryRegistrationSession != nil {
                 clearCompositionForSystemPaste(in: sender)
             }
-            if nextInputSuggestionCoordinator.hasCandidates {
-                dismissNextInputSuggestions(clearMarkedTextIn: sender)
+            if nextInputCandidateCoordinator.hasCandidates {
+                dismissNextInputCandidates(clearMarkedTextIn: sender)
             }
             return false
         }
@@ -471,7 +471,7 @@ final class InputController: IMKInputController {
 
         if isUserDictionaryDeletionShortcut(event),
            inputBuffer.isEmpty,
-           nextInputSuggestionCoordinator.selectedIndex != nil {
+           nextInputCandidateCoordinator.selectedIndex != nil {
             removeSelectedNextInputCandidate(client: sender)
             return true
         }
@@ -479,7 +479,7 @@ final class InputController: IMKInputController {
         if inputBuffer.isEmpty,
            event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
            let typedText = event.characters,
-           let selectedNextInput = nextInputSuggestionCoordinator
+           let selectedNextInput = nextInputCandidateCoordinator
             .selectedCandidate,
            closingBracketTracker.shouldConsumeTypedClosing(
                 typedText,
@@ -491,8 +491,8 @@ final class InputController: IMKInputController {
 
         commitSelectedNextInputBeforeNewInput(event, client: sender)
 
-        if shouldDismissNextInputSuggestions(for: event) {
-            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+        if shouldDismissNextInputCandidates(for: event) {
+            dismissNextInputCandidates(clearMarkedTextIn: sender)
         }
 
         if event.keyCode == 15,
@@ -502,8 +502,8 @@ final class InputController: IMKInputController {
 
         if isUserDictionaryDeletionShortcut(event),
            !inputBuffer.isEmpty {
-            if interactionState == .selectingFuzzySuggestion {
-                removeSelectedFuzzySuggestionFromUserDictionary(
+            if interactionState == .selectingFuzzyCandidate {
+                removeSelectedFuzzyCandidateFromUserDictionary(
                     client: sender
                 )
             } else {
@@ -541,16 +541,16 @@ final class InputController: IMKInputController {
             return handled
         }
 
-        if let handled = handleFuzzySuggestionSelection(
+        if let handled = handleFuzzyCandidateSelection(
             event,
             client: sender
         ) {
             return handled
         }
 
-        if isFuzzySuggestionEntryShortcut(event),
-           !fuzzySuggestionCoordinator.isEmpty {
-            return selectFuzzySuggestion(index: 0, client: sender)
+        if isFuzzyCandidateEntryShortcut(event),
+           !fuzzyCandidateSession.isEmpty {
+            return selectFuzzyCandidate(index: 0, client: sender)
         }
 
         if let handled = handleStandardKeyEvent(event, client: sender) {
@@ -636,9 +636,9 @@ final class InputController: IMKInputController {
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        if inputBuffer.isEmpty, nextInputSuggestionCoordinator.hasCandidates {
-            guard nextInputSuggestionCoordinator.selectedIndex != nil else {
-                dismissNextInputSuggestions(clearMarkedTextIn: nil)
+        if inputBuffer.isEmpty, nextInputCandidateCoordinator.hasCandidates {
+            guard nextInputCandidateCoordinator.selectedIndex != nil else {
+                dismissNextInputCandidates(clearMarkedTextIn: nil)
                 return false
             }
             return moveNextInputCandidate(direction, client: sender)
@@ -646,23 +646,23 @@ final class InputController: IMKInputController {
         if selectedCandidateIndex != nil,
            shouldEnterTranslationCandidates(
                 direction: direction,
-                from: candidateWindow.frame
+                from: primaryCandidatePanel.frame
            ) {
             return enterTranslationCandidates(client: sender)
         }
         let offset = direction == .left ? -1 : 1
         return selectedCandidateIndex == nil
             ? moveInputCursor(by: offset, client: sender)
-            : enterFuzzySuggestionsOrConsumeArrow(client: sender)
+            : enterFuzzyCandidatesOrConsumeArrow(client: sender)
     }
 
     private func handleVerticalArrow(
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        if inputBuffer.isEmpty, nextInputSuggestionCoordinator.hasCandidates {
-            guard nextInputSuggestionCoordinator.selectedIndex != nil else {
-                dismissNextInputSuggestions(clearMarkedTextIn: nil)
+        if inputBuffer.isEmpty, nextInputCandidateCoordinator.hasCandidates {
+            guard nextInputCandidateCoordinator.selectedIndex != nil else {
+                dismissNextInputCandidates(clearMarkedTextIn: nil)
                 return false
             }
             return moveNextInputCandidate(direction, client: sender)
@@ -673,17 +673,17 @@ final class InputController: IMKInputController {
     }
 
     private func handleReturnKey(client sender: Any) -> Bool {
-        if inputBuffer.isEmpty, nextInputSuggestionCoordinator.hasCandidates {
-            if let selectedNextInput = nextInputSuggestionCoordinator
+        if inputBuffer.isEmpty, nextInputCandidateCoordinator.hasCandidates {
+            if let selectedNextInput = nextInputCandidateCoordinator
                 .selectedCandidate {
                 commitNextInputCandidate(selectedNextInput, to: sender)
                 return true
             }
-            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+            dismissNextInputCandidates(clearMarkedTextIn: sender)
             return true
         }
         if inputBuffer.isEmpty {
-            nextInputSuggestionCoordinator.breakSequence()
+            nextInputCandidateCoordinator.breakSequence()
             recentCommittedContext = String(
                 (recentCommittedContext + "\n").suffix(256)
             )
@@ -813,7 +813,7 @@ final class InputController: IMKInputController {
             } ?? inputBuffer
             emojiWindow.updateSearchText(searchText)
             setMarkedText(searchText, in: sender)
-            showCandidateWindow(client: sender)
+            showPrimaryCandidatePanel(client: sender)
         case .closePanel:
             if let sender {
                 clearCompositionForSystemPaste(in: sender)
@@ -859,10 +859,10 @@ final class InputController: IMKInputController {
         }
         if let aSelector,
            inputBuffer.isEmpty,
-           !nextInputSuggestionCoordinator.hasCandidates,
+           !nextInputCandidateCoordinator.hasCandidates,
            ["insertNewline:", "insertNewlineIgnoringFieldEditor:"]
             .contains(NSStringFromSelector(aSelector)) {
-            nextInputSuggestionCoordinator.breakSequence()
+            nextInputCandidateCoordinator.breakSequence()
         }
         if let aSelector,
            candidateFilterCoordinator.draft != nil
@@ -953,7 +953,7 @@ final class InputController: IMKInputController {
             translationLanguageIdentifiers:
                 Set(Self.featureSettings.translationTargetLanguages.map(\.identifier)),
             nextInputPrediction: Self.featureSettings.isNextInputPredictionEnabled,
-            fuzzySuggestions: Self.featureSettings.isFuzzySuggestionsEnabled,
+            fuzzyCandidates: Self.featureSettings.isFuzzyCandidatesEnabled,
             dateTimeCandidates: Self.featureSettings.isDateTimeCandidatesEnabled,
             externalInformationPanel: Self.featureSettings.isExternalInformationPanelEnabled,
             systemDictionaryPreview: Self.featureSettings.isSystemDictionaryPreviewEnabled,
@@ -981,7 +981,7 @@ final class InputController: IMKInputController {
                 toggleTranslationLanguage(_:)
             ),
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
-            toggleFuzzySuggestions: #selector(toggleFuzzySuggestions(_:)),
+            toggleFuzzyCandidates: #selector(toggleFuzzyCandidates(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
             toggleExternalInformationPanel: #selector(toggleExternalInformationPanel(_:)),
@@ -1308,14 +1308,14 @@ final class InputController: IMKInputController {
         if inputBuffer.isEmpty {
             if closingBracketTracker
                 .shouldPreserveCandidatesDuringEmptySystemCommit(
-                    hasCandidates: nextInputSuggestionCoordinator.hasCandidates
+                    hasCandidates: nextInputCandidateCoordinator.hasCandidates
                 ) {
                 Self.lifecycleLogger.notice(
                     "preserved structural next-input candidate after empty system commit"
                 )
                 return
             }
-            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+            dismissNextInputCandidates(clearMarkedTextIn: sender)
             return
         }
 
@@ -1495,9 +1495,9 @@ final class InputController: IMKInputController {
             }
         }
         resetTransientInteractionState()
-        nextInputSuggestionCoordinator.breakSequence()
+        nextInputCandidateCoordinator.breakSequence()
         if closesController {
-            suggestionSearchCoordinator.cancel(.fuzzyIndexBuild)
+            candidateSearchCoordinator.cancel(.fuzzyIndexBuild)
         }
         flushPendingHistoryWrites()
     }
@@ -1514,18 +1514,18 @@ final class InputController: IMKInputController {
         let enabled = checkboxValue(sender, current: Self.featureSettings.isNextInputPredictionEnabled)
         Self.featureSettings.isNextInputPredictionEnabled = enabled
         if !enabled {
-            dismissNextInputSuggestions(clearMarkedTextIn: client())
-            nextInputSuggestionCoordinator.breakSequence()
+            dismissNextInputCandidates(clearMarkedTextIn: client())
+            nextInputCandidateCoordinator.breakSequence()
         }
     }
 
     @objc
-    private func toggleFuzzySuggestions(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: Self.featureSettings.isFuzzySuggestionsEnabled)
-        Self.featureSettings.isFuzzySuggestionsEnabled = enabled
-        cancelFuzzySuggestionSearch()
+    private func toggleFuzzyCandidates(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isFuzzyCandidatesEnabled)
+        Self.featureSettings.isFuzzyCandidatesEnabled = enabled
+        cancelFuzzyCandidateSearch()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
-            fuzzySuggestionWindow.hide()
+            secondaryCandidatePanel.hide()
             return
         }
         refreshCandidates(client: inputClient)
@@ -1603,7 +1603,7 @@ final class InputController: IMKInputController {
         item.menu?.items.first?.title = "翻訳先言語（\(identifiers.count)）"
         cancelCandidateTranslation()
         if let inputClient = client(), !inputBuffer.isEmpty {
-            showCandidateWindow(client: inputClient)
+            showPrimaryCandidatePanel(client: inputClient)
         }
     }
 
@@ -1613,8 +1613,8 @@ final class InputController: IMKInputController {
     }
 
     private func resetOfficialCandidates() {
-        suggestionSearchCoordinator.cancel(.official)
-        officialCandidates = []
+        candidateSearchCoordinator.cancel(.external)
+        externalCandidates = []
     }
 
     private func toggleCandidateSource(
@@ -1675,7 +1675,7 @@ final class InputController: IMKInputController {
             descriptions: definitionProvider.contentDescriptions()
         ) else { return }
         Self.featureSettings.setSystemDictionaryNames(names)
-        suggestionSearchCoordinator.cancel(.dictionaryDefinition)
+        candidateSearchCoordinator.cancel(.dictionaryDefinition)
         definitionProvider.clearCache()
         refreshExperimentalPreview()
     }
@@ -1695,9 +1695,9 @@ final class InputController: IMKInputController {
 
     @objc
     private func clearNextInputPredictionHistory(_ sender: Any?) {
-        dismissNextInputSuggestions(clearMarkedTextIn: client())
+        dismissNextInputCandidates(clearMarkedTextIn: client())
         do {
-            try nextInputSuggestionCoordinator.removeAllLearning()
+            try nextInputCandidateCoordinator.removeAllLearning()
         } catch {
             NSLog(
                 "次入力履歴の削除に失敗: %@",
@@ -1773,7 +1773,7 @@ final class InputController: IMKInputController {
 
     private func handleSpace(space: String, client sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            if let value = nextInputSuggestionCoordinator.selectedCandidate {
+            if let value = nextInputCandidateCoordinator.selectedCandidate {
                 commitNextInputCandidate(
                     value,
                     appending: space,
@@ -1871,9 +1871,9 @@ final class InputController: IMKInputController {
             index = 0
         }
         selectedCandidateIndex = index
-        cancelAuxiliarySuggestionSearches()
-        candidateWindow.hide()
-        fuzzySuggestionWindow.hide()
+        cancelAuxiliaryCandidateSearches()
+        primaryCandidatePanel.hide()
+        secondaryCandidatePanel.hide()
         if !preservesEmojiWindow {
             emojiWindow.hide()
         }
@@ -1885,10 +1885,10 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func shouldDismissNextInputSuggestions(
+    private func shouldDismissNextInputCandidates(
         for event: NSEvent
     ) -> Bool {
-        guard nextInputSuggestionCoordinator.hasCandidates else {
+        guard nextInputCandidateCoordinator.hasCandidates else {
             return false
         }
         let nextInputControlKeyCodes: Set<UInt16> = [
@@ -1902,8 +1902,8 @@ final class InputController: IMKInputController {
         client sender: Any
     ) {
         guard
-            shouldDismissNextInputSuggestions(for: event),
-            let selectedNextInput = nextInputSuggestionCoordinator
+            shouldDismissNextInputCandidates(for: event),
+            let selectedNextInput = nextInputCandidateCoordinator
                 .selectedCandidate,
             event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
             let characters = event.characters,
@@ -1922,7 +1922,7 @@ final class InputController: IMKInputController {
             return true
         }
         if inputBuffer.isEmpty {
-            if nextInputSuggestionCoordinator.selectedIndex != nil,
+            if nextInputCandidateCoordinator.selectedIndex != nil,
                flags.isEmpty {
                 return selectNextInputCandidate(offset: 1, client: sender)
             }
@@ -1930,7 +1930,7 @@ final class InputController: IMKInputController {
                beginReconversionIfPossible(client: sender) {
                 return true
             }
-            if flags.isEmpty, nextInputSuggestionCoordinator.hasCandidates {
+            if flags.isEmpty, nextInputCandidateCoordinator.hasCandidates {
                 return selectNextInputCandidate(offset: 1, client: sender)
             }
             return false
@@ -1938,9 +1938,9 @@ final class InputController: IMKInputController {
 
         guard flags.isEmpty else { return false }
         guard !currentCandidates.isEmpty else {
-            // Spelling suggestions are then the only candidates to choose
-            if !fuzzySuggestionCoordinator.isEmpty {
-                return selectFuzzySuggestion(index: 0, client: sender)
+            // Fuzzy candidates are then the only candidates to choose
+            if !fuzzyCandidateSession.isEmpty {
+                return selectFuzzyCandidate(index: 0, client: sender)
             }
             return true
         }
@@ -2253,7 +2253,7 @@ final class InputController: IMKInputController {
             $0.0 == registration.activeInputField
         }
         logPanelSnapshot(event: "candidatePanel.beforeShow", sender: sender)
-        candidateWindow.show(
+        primaryCandidatePanel.show(
             candidates: ["読み: \(registration.reading)"] + fields.map {
                 "\($0.1): \($0.2)"
             },
@@ -2325,8 +2325,8 @@ final class InputController: IMKInputController {
         }
         let candidate = currentCandidateModels[index]
         selectedCandidateIndex = index
-        selectedFuzzySuggestionIndex = nil
-        showCandidateWindow(client: sender)
+        selectedFuzzyCandidateIndex = nil
+        showPrimaryCandidatePanel(client: sender)
         let registrationPrefix = dictionaryRegistrationSession?
             .confirmedCandidate ?? compositionPrefix
         setMarkedText(
@@ -2340,26 +2340,26 @@ final class InputController: IMKInputController {
         showPreview(for: candidate.storageText)
         if !translationCandidateSession.contains(
             candidate.storageText,
-            in: .normal
+            in: .standard
         ) {
             updateTranslationCandidates(
                 for: candidate.commitText,
-                destination: .normal,
+                destination: .standard,
                 client: sender
             )
         }
         return true
     }
 
-    private func enterFuzzySuggestionsOrConsumeArrow(client sender: Any) -> Bool {
-        guard let index = fuzzySuggestionCoordinator
-            .indexAlignedWithNormalCandidate(
-                normalSelectedIndex: selectedCandidateIndex,
+    private func enterFuzzyCandidatesOrConsumeArrow(client sender: Any) -> Bool {
+        guard let index = fuzzyCandidateSession
+            .indexAlignedWithStandardCandidate(
+                standardSelectedIndex: selectedCandidateIndex,
                 maximumCount: Self.maximumCandidateCount
             ) else {
             return true
         }
-        return selectFuzzySuggestion(
+        return selectFuzzyCandidate(
             index: index,
             client: sender
         )
@@ -2394,8 +2394,8 @@ final class InputController: IMKInputController {
             return
         }
         EmojiDiagnostics.logger.notice("showing emoji panel")
-        dismissNextInputSuggestions(clearMarkedTextIn: sender)
-        candidateWindow.hide()
+        dismissNextInputCandidates(clearMarkedTextIn: sender)
+        primaryCandidatePanel.hide()
         previewWindow.hide()
         emojiWindow.show(near: inputLocation(for: sender))
         Self.emojiPanelController = self
@@ -2437,12 +2437,12 @@ final class InputController: IMKInputController {
               dictionaryRegistrationSession == nil else {
             return true
         }
-        dismissNextInputSuggestions(clearMarkedTextIn: sender)
-        candidateWindow.hide()
+        dismissNextInputCandidates(clearMarkedTextIn: sender)
+        primaryCandidatePanel.hide()
         emojiWindow.hide()
         previewWindow.hide()
         symbolTipsWindow.hide()
-        suggestionSearchCoordinator.cancel(.calendarFormat)
+        candidateSearchCoordinator.cancel(.calendarFormat)
         calendarSelectionSession.beginCalendarSelection()
         guard let date = panelCoordinator.beginCalendarSelection(
             near: anchorFrame,
@@ -2450,7 +2450,7 @@ final class InputController: IMKInputController {
         ) else {
             trace("calendar.dateCancelled", sender: sender)
             clearCalendarSelection()
-            candidateWindow.hide()
+            primaryCandidatePanel.hide()
             return true
         }
         loadCalendarFormats(for: date, client: sender)
@@ -2458,15 +2458,15 @@ final class InputController: IMKInputController {
     }
 
     private func loadCalendarFormats(for date: Date, client sender: Any) {
-        suggestionSearchCoordinator.cancel(.calendarFormat)
+        candidateSearchCoordinator.cancel(.calendarFormat)
         calendarSelectionSession.beginFormatLoading()
-        candidateWindow.hide()
+        primaryCandidatePanel.hide()
         trace(
             "calendar.formats.start",
             sender: sender,
             detail: "controller=\(ObjectIdentifier(self).hashValue)"
         )
-        suggestionSearchCoordinator.start(
+        candidateSearchCoordinator.start(
             .calendarFormat,
             query: String(date.timeIntervalSinceReferenceDate),
             operation: {
@@ -2519,7 +2519,7 @@ final class InputController: IMKInputController {
                     }
                 ), orderedCandidates.indices.contains(selectedIndex) else {
                     self.clearCalendarSelection()
-                    self.candidateWindow.hide()
+                    self.primaryCandidatePanel.hide()
                     return
                 }
                 let value = orderedCandidates[selectedIndex]
@@ -2569,7 +2569,7 @@ final class InputController: IMKInputController {
             commit(value, to: sender)
         case 53:
             clearCalendarSelection()
-            candidateWindow.hide()
+            primaryCandidatePanel.hide()
         default:
             break
         }
@@ -2587,7 +2587,7 @@ final class InputController: IMKInputController {
             / Self.maximumCandidateCount
             * Self.maximumCandidateCount
         let localIndex = selectedIndex - pageStart
-        if let localNextIndex = candidateWindow.adjacentIndex(
+        if let localNextIndex = primaryCandidatePanel.adjacentIndex(
             from: localIndex,
             direction: direction
         ) {
@@ -2609,13 +2609,13 @@ final class InputController: IMKInputController {
             return
         }
         guard !candidates.isEmpty else {
-            candidateWindow.hide()
+            primaryCandidatePanel.hide()
             return
         }
         let pageRange = calendarSelectionSession.pageRange(
             pageSize: Self.maximumCandidateCount
         )
-        candidateWindow.show(
+        primaryCandidatePanel.show(
             candidates: Array(candidates[pageRange]),
             selectedIndex: calendarSelectionSession.selectedIndex.map {
                 $0 - pageRange.lowerBound
@@ -2628,7 +2628,7 @@ final class InputController: IMKInputController {
         if calendarSelectionSession.isActive {
             trace("calendar.clear", sender: client(), detail: "caller=\(caller)")
         }
-        suggestionSearchCoordinator.cancel(.calendarFormat)
+        candidateSearchCoordinator.cancel(.calendarFormat)
         calendarSelectionSession.reset()
         panelCoordinator.clearCalendarPresentation()
     }
@@ -2647,11 +2647,11 @@ final class InputController: IMKInputController {
         }
         candidateSession.beginFiltering()
         Self.candidateFilterDatabaseCache.refreshIfChanged()
-        cancelPrimarySuggestionSearches()
-        fuzzySuggestionWindow.hide()
+        cancelInputCandidateSearches()
+        secondaryCandidatePanel.hide()
         previewWindow.hide()
         selectedCandidateIndex = nil
-        showCandidateWindow(client: sender)
+        showPrimaryCandidatePanel(client: sender)
         candidateFilterCoordinator.beginDraft()
         updateCandidateFilterChoices(client: sender)
         return true
@@ -2751,7 +2751,7 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = nil
         resetCandidateFilters()
         updateMarkedText(in: sender)
-        showCandidateWindow(client: sender)
+        showPrimaryCandidatePanel(client: sender)
     }
 
     private func updateCandidateFilterChoices(client sender: Any) {
@@ -2780,8 +2780,8 @@ final class InputController: IMKInputController {
               let page = candidateFilterCoordinator.visibleDraftPage(
                   maximumCount: Self.maximumCandidateCount
               ) else { return }
-        if !candidateWindow.isVisible {
-            showCandidateWindow(client: sender)
+        if !primaryCandidatePanel.isVisible {
+            showPrimaryCandidatePanel(client: sender)
         }
         candidateFilterDraftWindow.show(
             candidates: page.choices.map(\.label),
@@ -2838,11 +2838,11 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = nil
         updateMarkedText(in: sender)
         if currentCandidates.isEmpty {
-            candidateWindow.hide()
+            primaryCandidatePanel.hide()
             showCandidateFilterSummary(client: sender)
             return
         }
-        showCandidateWindow(client: sender)
+        showPrimaryCandidatePanel(client: sender)
         showCandidateFilterSummary(client: sender)
     }
 
@@ -2914,7 +2914,7 @@ final class InputController: IMKInputController {
             updatePostalAddressCandidatesIfNeeded(for: input)
         }
         let extensionInput = input
-        let scriptCandidates = suggestionSearchCoordinator.query(
+        let scriptCandidates = candidateSearchCoordinator.query(
             for: .javaScriptExtensions
         ) == extensionInput
             ? javaScriptExtensionCandidates
@@ -2931,7 +2931,7 @@ final class InputController: IMKInputController {
             javaScriptCandidates: scriptCandidates,
             calculationHistoryCandidates: candidateSelectionHistoryStore
                 .completions(for: input),
-            postalAddressCandidates: suggestionSearchCoordinator.query(
+            postalAddressCandidates: candidateSearchCoordinator.query(
                 for: .postalAddress
             ) == input ? postalAddressCandidates : []
         )
@@ -2943,7 +2943,7 @@ final class InputController: IMKInputController {
                     for: candidateSelectionReading
                 )
             ))
-            showCandidateWindow(client: sender)
+            showPrimaryCandidatePanel(client: sender)
             if result.showsSymbolTips {
                 showSymbolTipsForCurrentInput(client: sender)
             }
@@ -2952,7 +2952,7 @@ final class InputController: IMKInputController {
 
         let suggestionInput = conversionReading
         defer {
-            updateOfficialCandidatesIfNeeded(for: suggestionInput)
+            updateExternalCandidatesIfNeeded(for: suggestionInput)
         }
 
         let englishStart = performanceClock.now
@@ -2960,13 +2960,13 @@ final class InputController: IMKInputController {
             ? englishCompletions(for: conversionReading)
             : []
         englishDuration = performanceClock.now - englishStart
-        let remoteCandidates = suggestionSearchCoordinator.query(for: .official)
+        let remoteCandidates = candidateSearchCoordinator.query(for: .external)
             == conversionReading
-            ? officialCandidates
+            ? externalCandidates
             : []
         let contextualCandidates = Self.featureSettings.isNextInputPredictionEnabled
             && Self.diagnosticConfiguration.enables(.nextInput)
-            ? nextInputSuggestionCoordinator.candidatesAfterLastInput(
+            ? nextInputCandidateCoordinator.candidatesAfterLastInput(
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
             : []
@@ -2999,20 +2999,20 @@ final class InputController: IMKInputController {
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
-            candidateWindow.hide()
-            // A typo can leave no normal candidate, which is where
-            // spelling suggestions are needed most
-            if fuzzySuggestionWindow.isVisible {
-                showInitialFuzzySuggestionsIfCandidateVisible()
+            primaryCandidatePanel.hide()
+            // A typo can leave no standard candidate, which is where
+            // fuzzy candidates are needed most
+            if secondaryCandidatePanel.isVisible {
+                showInitialFuzzyCandidates()
             }
-            updateFuzzySuggestionsIfNeeded()
+            updateFuzzyCandidatesIfNeeded()
             showInputPreview(client: sender)
             presentationDuration = performanceClock.now - presentationStart
             return
         }
 
-        showCandidateWindow(client: sender)
-        updateFuzzySuggestionsIfNeeded()
+        showPrimaryCandidatePanel(client: sender)
+        updateFuzzyCandidatesIfNeeded()
         showInputPreview(client: sender)
         presentationDuration = performanceClock.now - presentationStart
     }
@@ -3039,28 +3039,28 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func updateFuzzySuggestionsIfNeeded() {
-        guard Self.diagnosticConfiguration.enables(.fuzzySuggestion),
-              Self.featureSettings.isFuzzySuggestionsEnabled,
+    private func updateFuzzyCandidatesIfNeeded() {
+        guard Self.diagnosticConfiguration.enables(.fuzzyCandidate),
+              Self.featureSettings.isFuzzyCandidatesEnabled,
               conversionReading.count >= 2 else {
-            suggestionSearchCoordinator.cancel(.fuzzy)
-            fuzzySuggestionWindow.hide()
-            fuzzySuggestionCoordinator.reset()
-            selectedFuzzySuggestionIndex = nil
+            candidateSearchCoordinator.cancel(.fuzzy)
+            secondaryCandidatePanel.hide()
+            fuzzyCandidateSession.reset()
+            selectedFuzzyCandidateIndex = nil
             return
         }
         let query = conversionReading
-        guard suggestionSearchCoordinator.query(for: .fuzzy) != query else {
+        guard candidateSearchCoordinator.query(for: .fuzzy) != query else {
             return
         }
-        suggestionSearchCoordinator.cancel(.fuzzy)
+        candidateSearchCoordinator.cancel(.fuzzy)
         let visibleCandidates = Set(currentCandidates)
-        let learnedCompounds = nextInputSuggestionCoordinator
+        let learnedCompounds = nextInputCandidateCoordinator
             .learnedCompoundPredictions(
                 matchingPrefix: query,
                 excluding: visibleCandidates
             )
-        let source = FuzzySuggestionSource(
+        let source = FuzzyCandidateSource(
             query: query,
             visibleCandidates: visibleCandidates,
             userDictionary: dictionaryRuntime.userDictionaryEngine,
@@ -3075,19 +3075,19 @@ final class InputController: IMKInputController {
             return
         }
         trace("candidateGeneration.start", sender: client(), detail: "source=fuzzy")
-        suggestionSearchCoordinator.start(
+        candidateSearchCoordinator.start(
             .fuzzy,
             query: query,
             operation: {
                 try await Task.sleep(for: .milliseconds(80))
                 let matchTiers = await source.matchTiers()
-                try await Task.sleep(for: Self.fuzzySuggestionDisplayDelay)
+                try await Task.sleep(for: Self.fuzzyCandidateDisplayDelay)
                 return matchTiers
             },
             validate: { [weak self] in
                 guard let self else { return false }
                 return self.conversionReading == query
-                    && Self.featureSettings.isFuzzySuggestionsEnabled
+                    && Self.featureSettings.isFuzzyCandidatesEnabled
                     && self.acceptsAsyncResult(
                         asyncSnapshot,
                         source: "fuzzy",
@@ -3101,7 +3101,7 @@ final class InputController: IMKInputController {
                     sender: self.client(),
                     detail: "source=fuzzy"
                 )
-                self.applySpellingSuggestions(matchTiers)
+                self.applyFuzzyCandidates(matchTiers)
             },
             onCancel: { [weak self] in
                 self?.trace(
@@ -3116,15 +3116,15 @@ final class InputController: IMKInputController {
         )
     }
 
-    private func applySpellingSuggestions(
+    private func applyFuzzyCandidates(
         _ matchTiers: [[FuzzyConversionMatch]]
     ) {
-        let changed = fuzzySuggestionCoordinator.replace(
+        let changed = fuzzyCandidateSession.replace(
             matchTiers: matchTiers,
             recencyRanks: candidateSelectionRanks(for: conversionReading),
-            preserveSelectionWhenUnchanged: fuzzySuggestionWindow.isVisible
+            preserveSelectionWhenUnchanged: secondaryCandidatePanel.isVisible
         )
-        if !changed, fuzzySuggestionWindow.isVisible {
+        if !changed, secondaryCandidatePanel.isVisible {
             return
         }
         trace(
@@ -3132,53 +3132,53 @@ final class InputController: IMKInputController {
             sender: client(),
             detail: "fuzzy=none"
         )
-        guard !fuzzySuggestionCoordinator.isEmpty else {
-            fuzzySuggestionWindow.hide()
+        guard !fuzzyCandidateSession.isEmpty else {
+            secondaryCandidatePanel.hide()
             return
         }
-        showInitialFuzzySuggestionsIfCandidateVisible()
+        showInitialFuzzyCandidates()
         if let inputClient = client() {
             showInputPreview(client: inputClient)
         }
     }
 
-    private func showInitialFuzzySuggestionsIfCandidateVisible() {
-        guard let page = fuzzySuggestionCoordinator.initialPage(
-                  maximumCount: Self.initialFuzzySuggestionCount
+    private func showInitialFuzzyCandidates() {
+        guard let page = fuzzyCandidateSession.initialPage(
+                  maximumCount: Self.initialFuzzyCandidateCount
               ) else {
-            fuzzySuggestionWindow.hide()
+            secondaryCandidatePanel.hide()
             return
         }
-        guard candidateWindow.visibleFrame != nil else {
-            showFuzzySuggestionsWithoutCandidates(page)
+        guard primaryCandidatePanel.visibleFrame != nil else {
+            showFuzzyCandidatesWithoutStandardCandidates(page)
             return
         }
-        fuzzySuggestionWindow.show(
-            suggestions: page.suggestions,
+        secondaryCandidatePanel.show(
+            candidates: page.candidates,
             selectedIndex: page.selectedIndex,
-            near: candidateWindow.frame,
-            avoidingFrames: [candidateWindow.frame]
-                + candidateWindow.auxiliaryFrames,
+            near: primaryCandidatePanel.frame,
+            avoidingFrames: [primaryCandidatePanel.frame]
+                + primaryCandidatePanel.auxiliaryFrames,
             isAccented: false,
-            prepareAnchor: prepareCandidateAnchorForFuzzyPanel
+            prepareAnchor: prepareAnchorForSecondaryCandidatePanel
         )
     }
 
-    /// Without normal candidates the suggestions take the candidate panel's
+    /// Without standard candidates the secondary panel takes the primary panel's
     /// place below the input instead of leaving nothing on screen
-    private func showFuzzySuggestionsWithoutCandidates(
-        _ page: FuzzySuggestionPage
+    private func showFuzzyCandidatesWithoutStandardCandidates(
+        _ page: FuzzyCandidatePage
     ) {
         guard let sender = client(),
               let inputFrame = locationCoordinator.candidateAnchor(
                 for: sender
               ).location else {
-            fuzzySuggestionWindow.hide()
+            secondaryCandidatePanel.hide()
             return
         }
-        let spacing = fuzzySuggestionWindow.spacingFromCandidatePanel
-        fuzzySuggestionWindow.show(
-            suggestions: page.suggestions,
+        let spacing = secondaryCandidatePanel.spacingFromCandidatePanel
+        secondaryCandidatePanel.show(
+            candidates: page.candidates,
             selectedIndex: page.selectedIndex,
             near: NSRect(
                 x: inputFrame.minX - spacing,
@@ -3191,57 +3191,57 @@ final class InputController: IMKInputController {
         )
     }
 
-    private func handleFuzzySuggestionSelection(
+    private func handleFuzzyCandidateSelection(
         _ event: NSEvent,
         client sender: Any
     ) -> Bool? {
-        guard interactionState == .selectingFuzzySuggestion,
-              let selectedSuggestion = fuzzySuggestionCoordinator
-                .selectedSuggestion else {
+        guard interactionState == .selectingFuzzyCandidate,
+              let selectedCandidate = fuzzyCandidateSession
+                .selectedCandidate else {
             return nil
         }
         switch event.keyCode {
         case 36, 76:
-            return acceptFuzzySuggestion(
-                selectedSuggestion,
+            return acceptFuzzyCandidate(
+                selectedCandidate,
                 suffix: "",
                 client: sender
             )
         case 48, 125:
-            guard let next = fuzzySuggestionCoordinator.index(after: 1)
+            guard let next = fuzzyCandidateSession.index(after: 1)
             else { return true }
-            return selectFuzzySuggestion(index: next, client: sender)
+            return selectFuzzyCandidate(index: next, client: sender)
         case 49:
-            return acceptFuzzySuggestion(
-                selectedSuggestion,
+            return acceptFuzzyCandidate(
+                selectedCandidate,
                 suffix: " ",
                 client: sender
             )
         case 126:
-            guard let next = fuzzySuggestionCoordinator.index(after: -1)
+            guard let next = fuzzyCandidateSession.index(after: -1)
             else { return true }
-            return selectFuzzySuggestion(index: next, client: sender)
+            return selectFuzzyCandidate(index: next, client: sender)
         case 123:
             if shouldEnterTranslationCandidates(
                 direction: .left,
-                from: fuzzySuggestionWindow.visibleFrame ?? candidateWindow.frame
+                from: secondaryCandidatePanel.visibleFrame ?? primaryCandidatePanel.frame
             ) {
                 return enterTranslationCandidates(client: sender)
             }
-            return returnToNormalCandidateSelection(client: sender)
+            return returnToStandardCandidateSelection(client: sender)
         case 124:
             if shouldEnterTranslationCandidates(
                 direction: .right,
-                from: fuzzySuggestionWindow.visibleFrame ?? candidateWindow.frame
+                from: secondaryCandidatePanel.visibleFrame ?? primaryCandidatePanel.frame
             ) {
                 return enterTranslationCandidates(client: sender)
             }
-            return returnToNormalCandidateSelection(client: sender)
+            return returnToStandardCandidateSelection(client: sender)
         case 53:
-            return returnToNormalCandidateSelection(client: sender)
+            return returnToStandardCandidateSelection(client: sender)
         case 51:
-            self.selectedFuzzySuggestionIndex = nil
-            fuzzySuggestionWindow.hide()
+            self.selectedFuzzyCandidateIndex = nil
+            secondaryCandidatePanel.hide()
             return nil
         default:
             let flags = event.modifierFlags.intersection([
@@ -3252,8 +3252,8 @@ final class InputController: IMKInputController {
                   !characters.isEmpty else {
                 return false
             }
-            _ = acceptFuzzySuggestion(
-                selectedSuggestion,
+            _ = acceptFuzzyCandidate(
+                selectedCandidate,
                 suffix: "",
                 client: sender
             )
@@ -3261,16 +3261,16 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func returnToNormalCandidateSelection(client sender: Any) -> Bool {
-        if let normalIndex = fuzzySuggestionCoordinator
-            .normalCandidateIndexAlignedWithSelection(
-                normalCandidateCount: currentCandidates.count,
+    private func returnToStandardCandidateSelection(client sender: Any) -> Bool {
+        if let normalIndex = fuzzyCandidateSession
+            .standardCandidateIndexAlignedWithSelection(
+                standardCandidateCount: currentCandidates.count,
                 currentNormalIndex: selectedCandidateIndex,
                 maximumCount: Self.maximumCandidateCount
             ) {
             selectedCandidateIndex = normalIndex
         }
-        selectedFuzzySuggestionIndex = nil
+        selectedFuzzyCandidateIndex = nil
         if let selectedCandidateIndex,
            currentCandidateModels.indices.contains(selectedCandidateIndex) {
             let candidate = currentCandidateModels[selectedCandidateIndex]
@@ -3285,19 +3285,19 @@ final class InputController: IMKInputController {
         } else {
             updateMarkedText(in: sender)
         }
-        showCandidateWindow(client: sender)
+        showPrimaryCandidatePanel(client: sender)
         return true
     }
 
-    private func isFuzzySuggestionEntryShortcut(_ event: NSEvent) -> Bool {
+    private func isFuzzyCandidateEntryShortcut(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(
             [.command, .control, .option, .shift]
         )
         return event.keyCode == 48 && flags == [.shift]
     }
 
-    private func acceptFuzzySuggestion(
-        _ suggestion: FuzzySuggestion,
+    private func acceptFuzzyCandidate(
+        _ suggestion: FuzzyCandidate,
         suffix: String,
         client sender: Any
     ) -> Bool {
@@ -3342,23 +3342,23 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func removeSelectedFuzzySuggestionFromUserDictionary(
+    private func removeSelectedFuzzyCandidateFromUserDictionary(
         client sender: Any
     ) {
-        guard let suggestion = fuzzySuggestionCoordinator.selectedSuggestion
+        guard let suggestion = fuzzyCandidateSession.selectedCandidate
         else {
             NSSound.beep()
             return
         }
         if !suggestion.isLearnable, !suggestion.sourceTokens.isEmpty {
             do {
-                try nextInputSuggestionCoordinator.suppressLearnedCandidate(
+                try nextInputCandidateCoordinator.suppressLearnedCandidate(
                     suggestion.candidate
                 )
                 candidateSelectionHistoryStore.remove([suggestion.candidate])
-                suggestionSearchCoordinator.cancel(.fuzzy)
-                fuzzySuggestionCoordinator.reset()
-                selectedFuzzySuggestionIndex = nil
+                candidateSearchCoordinator.cancel(.fuzzy)
+                fuzzyCandidateSession.reset()
+                selectedFuzzyCandidateIndex = nil
                 updateMarkedText(in: sender)
                 refreshCandidates(client: sender)
             } catch {
@@ -3384,7 +3384,7 @@ final class InputController: IMKInputController {
             )
             rebuildConversionEngine()
             candidateSelectionHistoryStore.remove([suggestion.candidate])
-            self.selectedFuzzySuggestionIndex = nil
+            self.selectedFuzzyCandidateIndex = nil
             updateMarkedText(in: sender)
             refreshCandidates(client: sender)
         } catch {
@@ -3398,23 +3398,23 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func selectFuzzySuggestion(index: Int, client sender: Any) -> Bool {
-        guard let suggestion = fuzzySuggestionCoordinator.select(index: index),
-              let resolvedIndex = fuzzySuggestionCoordinator.selectedIndex
+    private func selectFuzzyCandidate(index: Int, client sender: Any) -> Bool {
+        guard let suggestion = fuzzyCandidateSession.select(index: index),
+              let resolvedIndex = fuzzyCandidateSession.selectedIndex
         else { return true }
         trace(
             "candidateSelection.changed",
             sender: client(),
             detail: "fuzzy=\(resolvedIndex)"
         )
-        candidateWindow.clearSelection()
+        primaryCandidatePanel.clearSelection()
         let displayValue = suggestion.candidate + conversionSuffix
             + compositionSuffix
         setMarkedText(
             displayValue,
             in: sender
         )
-        showFuzzySuggestionPage(selectedIndex: resolvedIndex, client: sender)
+        showFuzzyCandidatePage(selectedIndex: resolvedIndex, client: sender)
         showPreview(for: suggestion.candidate)
         if !translationCandidateSession.contains(
             suggestion.candidate,
@@ -3429,41 +3429,41 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func showFuzzySuggestionPage(
+    private func showFuzzyCandidatePage(
         selectedIndex: Int,
         client sender: Any
     ) {
-        guard fuzzySuggestionCoordinator.selectedIndex == selectedIndex,
-              let page = fuzzySuggestionCoordinator.selectedPage(
+        guard fuzzyCandidateSession.selectedIndex == selectedIndex,
+              let page = fuzzyCandidateSession.selectedPage(
                   maximumCount: Self.maximumCandidateCount
               ) else { return }
-        guard candidateWindow.visibleFrame != nil else {
-            showFuzzySuggestionsWithoutCandidates(page)
+        guard primaryCandidatePanel.visibleFrame != nil else {
+            showFuzzyCandidatesWithoutStandardCandidates(page)
             return
         }
-        fuzzySuggestionWindow.show(
-            suggestions: page.suggestions,
+        secondaryCandidatePanel.show(
+            candidates: page.candidates,
             selectedIndex: page.selectedIndex,
-            near: candidateWindow.frame,
-            avoidingFrames: [candidateWindow.frame]
-                + candidateWindow.auxiliaryFrames,
+            near: primaryCandidatePanel.frame,
+            avoidingFrames: [primaryCandidatePanel.frame]
+                + primaryCandidatePanel.auxiliaryFrames,
             isAccented: false,
-            prepareAnchor: prepareCandidateAnchorForFuzzyPanel
+            prepareAnchor: prepareAnchorForSecondaryCandidatePanel
         )
     }
 
-    private func prepareCandidateAnchorForFuzzyPanel(
+    private func prepareAnchorForSecondaryCandidatePanel(
         width: CGFloat,
         spacing: CGFloat
     ) -> NSRect {
-        panelCoordinator.prepareCandidateAnchorForFuzzyPanel(
+        panelCoordinator.prepareAnchorForSecondaryCandidatePanel(
             width: width,
             spacing: spacing
         )
     }
 
-    private func alignFuzzySuggestionWindowToCandidateRight() {
-        panelCoordinator.alignFuzzySuggestionToCandidateRight()
+    private func alignSecondaryCandidatePanelToPrimary() {
+        panelCoordinator.alignSecondaryCandidatePanelToPrimary()
     }
 
     private func englishCompletions(for input: String) -> [String] {
@@ -3494,15 +3494,15 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func updateOfficialCandidatesIfNeeded(for input: String) {
+    private func updateExternalCandidatesIfNeeded(for input: String) {
         guard !Self.diagnosticConfiguration.minimalMode,
               Self.featureSettings.isWikipediaSuggestionsEnabled
                 || Self.featureSettings.isGoogleJapaneseInputEnabled,
               input.count >= 2,
-              suggestionSearchCoordinator.query(for: .official) != input else {
+              candidateSearchCoordinator.query(for: .external) != input else {
             return
         }
-        officialCandidates = []
+        externalCandidates = []
         let japaneseInput = romajiConverter.hiragana(from: input) ?? input
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
@@ -3520,8 +3520,8 @@ final class InputController: IMKInputController {
             conversionReading: input,
             japaneseReading: japaneseInput
         )
-        suggestionSearchCoordinator.start(
-            .official,
+        candidateSearchCoordinator.start(
+            .external,
             query: input,
             operation: {
                 try await Task.sleep(for: .milliseconds(250))
@@ -3537,19 +3537,19 @@ final class InputController: IMKInputController {
                     && self.conversionReading == input
                     && self.acceptsAsyncResult(
                         asyncSnapshot,
-                        source: "officialCandidates",
+                        source: "externalCandidates",
                         sender: self.client()
                     )
             },
             apply: { [weak self] suggestions in
                 guard let self else { return }
                 guard CandidateResultUpdatePolicy.changes(
-                    current: self.officialCandidates,
+                    current: self.externalCandidates,
                     updated: suggestions
                 ) else {
                     return
                 }
-                self.officialCandidates = suggestions
+                self.externalCandidates = suggestions
                 if let inputClient = self.client() {
                     self.refreshCandidates(client: inputClient)
                 }
@@ -3558,7 +3558,7 @@ final class InputController: IMKInputController {
                 self?.trace(
                     "candidateGeneration.cancel",
                     sender: self?.client(),
-                    detail: "source=officialCandidates"
+                    detail: "source=externalCandidates"
                 )
             },
             onError: { error in
@@ -3573,7 +3573,7 @@ final class InputController: IMKInputController {
     private func updateJavaScriptExtensionCandidatesIfNeeded(for input: String) {
         guard Self.diagnosticConfiguration.enables(.jsExtensions),
               !input.isEmpty,
-              suggestionSearchCoordinator.query(for: .javaScriptExtensions)
+              candidateSearchCoordinator.query(for: .javaScriptExtensions)
                 != input else {
             return
         }
@@ -3582,7 +3582,7 @@ final class InputController: IMKInputController {
         }
         javaScriptExtensionCandidates = []
         let dateTimeCandidatesEnabled = Self.featureSettings.isDateTimeCandidatesEnabled
-        suggestionSearchCoordinator.start(
+        candidateSearchCoordinator.start(
             .javaScriptExtensions,
             query: input,
             operation: {
@@ -3619,18 +3619,18 @@ final class InputController: IMKInputController {
     private func updatePostalAddressCandidatesIfNeeded(for input: String) {
         guard !Self.diagnosticConfiguration.minimalMode else { return }
         guard let postalCode = PostalCodeNormalizer.normalize(input) else {
-            suggestionSearchCoordinator.cancel(.postalAddress)
+            candidateSearchCoordinator.cancel(.postalAddress)
             postalAddressCandidates = []
             return
         }
-        guard suggestionSearchCoordinator.query(for: .postalAddress) != input else {
+        guard candidateSearchCoordinator.query(for: .postalAddress) != input else {
             return
         }
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
         if let cached = postalAddressCache[postalCode] {
-            suggestionSearchCoordinator.activate(
+            candidateSearchCoordinator.activate(
                 .postalAddress,
                 query: input
             )
@@ -3638,7 +3638,7 @@ final class InputController: IMKInputController {
             return
         }
         postalAddressCandidates = []
-        suggestionSearchCoordinator.start(
+        candidateSearchCoordinator.start(
             .postalAddress,
             query: input,
             operation: {
@@ -3677,10 +3677,10 @@ final class InputController: IMKInputController {
         client sender: Any
     ) {
         cancelCandidateTranslation()
-        suggestionSearchCoordinator.cancel(.official)
-        suggestionSearchCoordinator.cancel(.javaScriptExtensions)
+        candidateSearchCoordinator.cancel(.external)
+        candidateSearchCoordinator.cancel(.javaScriptExtensions)
         if case .fuzzy = destination {
-            suggestionSearchCoordinator.cancel(.fuzzy)
+            candidateSearchCoordinator.cancel(.fuzzy)
         }
         guard Self.diagnosticConfiguration.enables(.translation),
               Self.featureSettings.isAppleTranslationEnabled,
@@ -3699,7 +3699,7 @@ final class InputController: IMKInputController {
         let translationSource = AppleTranslationCandidateSource(
             targetIdentifiers: Self.featureSettings.translationTargetLanguages.map(\.identifier)
         )
-        suggestionSearchCoordinator.start(
+        candidateSearchCoordinator.start(
             .translation,
             query: source,
             operation: {
@@ -3710,13 +3710,13 @@ final class InputController: IMKInputController {
                 guard let self else { return false }
                 let sourceIsStillSelected: Bool
                 switch destination {
-                case .normal:
+                case .standard:
                     sourceIsStillSelected = self.selectedCandidateValue.map(
                         self.candidateValueForCommit
                     ) == source
                 case .fuzzy:
-                    sourceIsStillSelected = self.fuzzySuggestionCoordinator
-                        .selectedSuggestion?.candidate == source
+                    sourceIsStillSelected = self.fuzzyCandidateSession
+                        .selectedCandidate?.candidate == source
                 }
                 return sourceIsStillSelected
                     && self.acceptsAsyncResult(
@@ -3739,9 +3739,9 @@ final class InputController: IMKInputController {
                     channel: channel
                 )
                 switch destination {
-                case .normal:
-                    self.showCandidateWindow(client: sender)
-                    guard self.candidateWindow.visibleFrame != nil else {
+                case .standard:
+                    self.showPrimaryCandidatePanel(client: sender)
+                    guard self.primaryCandidatePanel.visibleFrame != nil else {
                         self.hideTranslationCandidatePanels()
                         return
                     }
@@ -3750,38 +3750,38 @@ final class InputController: IMKInputController {
                     } ?? 0
                     self.showTranslationCandidatePanels(
                         groups,
-                        beside: self.candidateWindow.rowFrame(at: sourceRow)
-                            ?? self.candidateWindow.frame,
+                        beside: self.primaryCandidatePanel.rowFrame(at: sourceRow)
+                            ?? self.primaryCandidatePanel.frame,
                         channel: channel,
                         client: sender
                     )
                 case .fuzzy:
-                    _ = self.fuzzySuggestionCoordinator.select(
+                    _ = self.fuzzyCandidateSession.select(
                         candidate: source
                     )
                     self.trace(
                         "candidateSelection.changed",
                         sender: self.client(),
-                        detail: "fuzzy=\(self.selectedFuzzySuggestionIndex.map(String.init) ?? "none")"
+                        detail: "fuzzy=\(self.selectedFuzzyCandidateIndex.map(String.init) ?? "none")"
                     )
-                    if let index = self.selectedFuzzySuggestionIndex {
-                        self.showFuzzySuggestionPage(
+                    if let index = self.selectedFuzzyCandidateIndex {
+                        self.showFuzzyCandidatePage(
                             selectedIndex: index,
                             client: sender
                         )
                     }
-                    guard self.fuzzySuggestionWindow.visibleFrame != nil else {
+                    guard self.secondaryCandidatePanel.visibleFrame != nil else {
                         self.hideTranslationCandidatePanels()
                         return
                     }
                     self.showTranslationCandidatePanels(
                         groups,
-                        beside: self.selectedFuzzySuggestionIndex.flatMap {
-                            self.fuzzySuggestionWindow.rowFrame(
+                        beside: self.selectedFuzzyCandidateIndex.flatMap {
+                            self.secondaryCandidatePanel.rowFrame(
                                 at: $0 % Self.maximumCandidateCount
                             )
-                        } ?? self.fuzzySuggestionWindow.visibleFrame
-                            ?? self.candidateWindow.frame,
+                        } ?? self.secondaryCandidatePanel.visibleFrame
+                            ?? self.primaryCandidatePanel.frame,
                         channel: channel,
                         client: sender
                     )
@@ -3792,14 +3792,14 @@ final class InputController: IMKInputController {
     }
 
     private func cancelCandidateTranslation() {
-        if suggestionSearchCoordinator.query(for: .translation) != nil {
+        if candidateSearchCoordinator.query(for: .translation) != nil {
             trace(
                 "candidateGeneration.cancel",
                 sender: client(),
                 detail: "source=translation"
             )
         }
-        suggestionSearchCoordinator.cancel(.translation)
+        candidateSearchCoordinator.cancel(.translation)
     }
 
     /// Shows one panel per language in setting order; a source without
@@ -3832,7 +3832,7 @@ final class InputController: IMKInputController {
     }
 
     private func hideTranslationCandidatePanels() {
-        translationCandidateSession.show([], channel: .normal)
+        translationCandidateSession.show([], channel: .standard)
         panelCoordinator.hideTranslationCandidates()
     }
 
@@ -3854,7 +3854,7 @@ final class InputController: IMKInputController {
     private func enterTranslationCandidates(client sender: Any) -> Bool {
         guard let candidate = translationCandidateSession.select(
             TranslationCandidateSelection(groupIndex: 0, candidateIndex: 0),
-            returningToFuzzy: selectedFuzzySuggestionIndex != nil
+            returningToFuzzy: selectedFuzzyCandidateIndex != nil
         ) else {
             return true
         }
@@ -3865,7 +3865,7 @@ final class InputController: IMKInputController {
         _ candidate: Candidate,
         client sender: Any
     ) -> Bool {
-        candidateWindow.clearSelection()
+        primaryCandidatePanel.clearSelection()
         if let selection = translationCandidateSession.selection {
             panelCoordinator.selectTranslationCandidate(selection)
         }
@@ -3921,9 +3921,9 @@ final class InputController: IMKInputController {
         translationCandidateSession.clearSelection()
         panelCoordinator.clearTranslationCandidateSelection()
         if translationCandidateSession.returnWasFuzzy,
-           let selectedFuzzySuggestionIndex {
-            return selectFuzzySuggestion(
-                index: selectedFuzzySuggestionIndex,
+           let selectedFuzzyCandidateIndex {
+            return selectFuzzyCandidate(
+                index: selectedFuzzyCandidateIndex,
                 client: sender
             )
         }
@@ -4043,7 +4043,7 @@ final class InputController: IMKInputController {
         reconversionOriginal = nil
         dictionaryRegistrationSession = nil
         clearCandidateState(includingFuzzy: true)
-        cancelPrimarySuggestionSearches()
+        cancelInputCandidateSearches()
         hideConversionPanels()
     }
 
@@ -4053,7 +4053,7 @@ final class InputController: IMKInputController {
         lifecycleCoordinator.clearActivationTime()
         NSLog("myim: Secure Event Inputを検知し、キー処理を停止")
         discardComposition(in: sender)
-        nextInputSuggestionCoordinator.breakSequence()
+        nextInputCandidateCoordinator.breakSequence()
     }
 
     private var secureInputStatusDescription: String {
@@ -4098,9 +4098,9 @@ final class InputController: IMKInputController {
             || event.charactersIgnoringModifiers?.lowercased() == "x"
     }
 
-    private func showCandidateWindow(client sender: Any) {
+    private func showPrimaryCandidatePanel(client sender: Any) {
         guard !currentCandidates.isEmpty else {
-            candidateWindow.hide()
+            primaryCandidatePanel.hide()
             return
         }
 
@@ -4111,7 +4111,7 @@ final class InputController: IMKInputController {
         // before it returns, so the page is read from the candidates after it
         let anchor = locationCoordinator.candidateAnchor(for: sender)
         guard let anchorFrame = anchor.location else {
-            candidateWindow.hide()
+            primaryCandidatePanel.hide()
             if anchor.shouldRetry {
                 scheduleCandidateLocationRetry(for: sender)
             }
@@ -4127,12 +4127,12 @@ final class InputController: IMKInputController {
             candidateCount: currentCandidateModels.count
         )
         guard !pageRange.isEmpty else {
-            candidateWindow.hide()
+            primaryCandidatePanel.hide()
             return
         }
         let pageStart = pageRange.lowerBound
         let pageCandidates = Array(currentCandidateModels[pageRange])
-        candidateWindow.show(
+        primaryCandidatePanel.show(
             candidates: pageCandidates.map(\.displayText),
             alternateCommitIndicators: pageCandidates.map(
                 \.hasDistinctCommitText
@@ -4140,23 +4140,23 @@ final class InputController: IMKInputController {
             selectedIndex: selectedCandidateIndex.map { $0 - pageStart },
             near: anchorFrame,
             isAccented: isAccentedInput,
-            reservedRightWidth: fuzzySuggestionWindow.isVisible
-                ? fuzzySuggestionWindow.panelWidth
-                    + fuzzySuggestionWindow.spacingFromCandidatePanel
+            reservedRightWidth: secondaryCandidatePanel.isVisible
+                ? secondaryCandidatePanel.panelWidth
+                    + secondaryCandidatePanel.spacingFromCandidatePanel
                 : 0
         )
         Self.lifecycleLogger.notice(
-            "candidate panel positioned anchor=\(String(describing: anchorFrame), privacy: .public) frame=\(String(describing: self.candidateWindow.frame), privacy: .public)"
+            "candidate panel positioned anchor=\(String(describing: anchorFrame), privacy: .public) frame=\(String(describing: self.primaryCandidatePanel.frame), privacy: .public)"
         )
         logPanelSnapshot(event: "candidatePanel.afterShow", sender: sender)
         schedulePanelSnapshots(afterCandidateShowFor: sender)
-        if fuzzySuggestionWindow.isVisible {
-            alignFuzzySuggestionWindowToCandidateRight()
-        } else if !fuzzySuggestionCoordinator.isEmpty {
-            showInitialFuzzySuggestionsIfCandidateVisible()
+        if secondaryCandidatePanel.isVisible {
+            alignSecondaryCandidatePanelToPrimary()
+        } else if !fuzzyCandidateSession.isEmpty {
+            showInitialFuzzyCandidates()
         }
         if emojiWindow.isVisible {
-            let frames = [candidateWindow.visibleFrame, fuzzySuggestionWindow.visibleFrame]
+            let frames = [primaryCandidatePanel.visibleFrame, secondaryCandidatePanel.visibleFrame]
                 .compactMap { $0 }
             emojiWindow.avoid(frames: frames)
         }
@@ -4184,7 +4184,7 @@ final class InputController: IMKInputController {
             },
             retry: { [weak self, weak senderObject] in
                 guard let self, let senderObject else { return }
-                self.showCandidateWindow(client: senderObject)
+                self.showPrimaryCandidatePanel(client: senderObject)
             }
         )
     }
@@ -4195,7 +4195,7 @@ final class InputController: IMKInputController {
 
     private func commitFirstCandidateOrInput(to sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            guard let selectedNextInput = nextInputSuggestionCoordinator
+            guard let selectedNextInput = nextInputCandidateCoordinator
                 .selectedCandidate else {
                 return false
             }
@@ -4274,7 +4274,7 @@ final class InputController: IMKInputController {
         guard !candidate.hasSource(.translation),
               !translationCandidateSession.contains(
                 candidate.storageText,
-                in: .normal
+                in: .standard
               )
         else {
             return
@@ -4385,10 +4385,10 @@ final class InputController: IMKInputController {
 
     private func cancelInput(in sender: Any) -> Bool {
         guard !inputBuffer.isEmpty else {
-            guard nextInputSuggestionCoordinator.hasCandidates else {
+            guard nextInputCandidateCoordinator.hasCandidates else {
                 return false
             }
-            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+            dismissNextInputCandidates(clearMarkedTextIn: sender)
             return true
         }
 
@@ -4402,9 +4402,9 @@ final class InputController: IMKInputController {
             return true
         }
         selectedCandidateIndex = nil
-        candidateWindow.clearSelection()
+        primaryCandidatePanel.clearSelection()
         updateMarkedText(in: sender)
-        showCandidateWindow(client: sender)
+        showPrimaryCandidatePanel(client: sender)
         return true
     }
 
@@ -4420,11 +4420,11 @@ final class InputController: IMKInputController {
         replacingMarkedText: Bool = true,
         to sender: Any
     ) {
-        let sourceTokens = nextInputSuggestionCoordinator.selectedSourceTokens
-        let sourceReadings = nextInputSuggestionCoordinator
+        let sourceTokens = nextInputCandidateCoordinator.selectedSourceTokens
+        let sourceReadings = nextInputCandidateCoordinator
             .selectedSourceReadings
         recordNextInputCandidateSelection(value)
-        clearNextInputSuggestionState()
+        clearNextInputCandidateState()
         commit(
             value + suffix,
             to: sender,
@@ -4461,7 +4461,7 @@ final class InputController: IMKInputController {
     }
 
     private func removeSelectedNextInputCandidate(client sender: Any) {
-        guard let candidate = nextInputSuggestionCoordinator.selectedCandidate
+        guard let candidate = nextInputCandidateCoordinator.selectedCandidate
         else {
             NSSound.beep()
             return
@@ -4473,7 +4473,7 @@ final class InputController: IMKInputController {
             return
         }
         do {
-            try nextInputSuggestionCoordinator.suppressSelectedCandidate()
+            try nextInputCandidateCoordinator.suppressSelectedCandidate()
         } catch {
             NSLog(
                 "次入力候補の削除保存に失敗: %@",
@@ -4486,11 +4486,11 @@ final class InputController: IMKInputController {
         pasteboard.setString(candidate, forType: .string)
         setMarkedText("", in: sender)
         previewWindow.hide()
-        guard nextInputSuggestionCoordinator.hasCandidates else {
-            dismissNextInputSuggestions(clearMarkedTextIn: nil)
+        guard nextInputCandidateCoordinator.hasCandidates else {
+            dismissNextInputCandidates(clearMarkedTextIn: nil)
             return
         }
-        showNextInputCandidateWindow(client: sender)
+        showNextInputCandidatePanel(client: sender)
         scheduleNextInputDismissal()
     }
 
@@ -4517,7 +4517,7 @@ final class InputController: IMKInputController {
         let isPendingClosingBracket = !closingBracketTracker
             .shouldRecordAsNextInput(inputHistoryValue)
         if isPendingClosingBracket {
-            nextInputSuggestionCoordinator.forgetLearnedCandidate(
+            nextInputCandidateCoordinator.forgetLearnedCandidate(
                 inputHistoryValue
             )
         }
@@ -4550,7 +4550,7 @@ final class InputController: IMKInputController {
         recentCommittedContext = String(
             (recentCommittedContext + value).suffix(256)
         )
-        cancelPrimarySuggestionSearches()
+        cancelInputCandidateSearches()
         cancelCandidateTranslation()
         clearInputBuffer()
         reconversionOriginal = nil
@@ -4561,7 +4561,7 @@ final class InputController: IMKInputController {
         symbolTipsWindow.hide()
         clearCalendarSelection()
         resetCandidateFilters()
-        if nextInputPolicy.updatesSuggestions {
+        if nextInputPolicy.updatesCandidates {
             let structuralCandidates = closingBracketTracker.candidate.map {
                 [$0]
             } ?? []
@@ -4612,7 +4612,7 @@ final class InputController: IMKInputController {
     private func resetTransientInteractionState() {
         trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
-        suggestionSearchCoordinator.cancel(.calendarFormat)
+        candidateSearchCoordinator.cancel(.calendarFormat)
         let hidesSharedEmoji = shouldDismissSharedEmojiPanel
         panelCoordinator.dismissAll(hidesSharedEmoji: hidesSharedEmoji)
         if hidesSharedEmoji {
@@ -4623,40 +4623,40 @@ final class InputController: IMKInputController {
             preserved: [],
             ignoresSharedEmoji: !hidesSharedEmoji
         )
-        fuzzySuggestionCoordinator.reset()
-        selectedFuzzySuggestionIndex = nil
-        clearNextInputSuggestionState()
-        cancelPrimarySuggestionSearches()
-        suggestionSearchCoordinator.cancel(.dictionaryDefinition)
+        fuzzyCandidateSession.reset()
+        selectedFuzzyCandidateIndex = nil
+        clearNextInputCandidateState()
+        cancelInputCandidateSearches()
+        candidateSearchCoordinator.cancel(.dictionaryDefinition)
         clearCalendarSelection()
         resetCandidateFilters()
     }
 
-    private func cancelFuzzySuggestionSearch() {
-        suggestionSearchCoordinator.cancel(.fuzzy)
+    private func cancelFuzzyCandidateSearch() {
+        candidateSearchCoordinator.cancel(.fuzzy)
     }
 
-    private func dismissFuzzySuggestions() {
-        suggestionSearchCoordinator.cancel(.fuzzy)
+    private func dismissFuzzyCandidates() {
+        candidateSearchCoordinator.cancel(.fuzzy)
         cancelCandidateTranslation()
-        fuzzySuggestionCoordinator.reset()
-        selectedFuzzySuggestionIndex = nil
-        fuzzySuggestionWindow.hide()
+        fuzzyCandidateSession.reset()
+        selectedFuzzyCandidateIndex = nil
+        secondaryCandidatePanel.hide()
     }
 
     private func dismissInputSessionPanels(
         using policy: InputPanelDismissalPolicy
     ) {
         trace("candidateGeneration.cancel", sender: client(), detail: "source=panels")
-        cancelPrimarySuggestionSearches()
-        suggestionSearchCoordinator.cancel(.dictionaryDefinition)
+        cancelInputCandidateSearches()
+        candidateSearchCoordinator.cancel(.dictionaryDefinition)
         cancelCandidateTranslation()
         if policy.cancelsCalendarWork {
-            suggestionSearchCoordinator.cancel(.calendarFormat)
+            candidateSearchCoordinator.cancel(.calendarFormat)
         }
-        suggestionSearchCoordinator.cancel(.fuzzy)
-        fuzzySuggestionCoordinator.reset()
-        selectedFuzzySuggestionIndex = nil
+        candidateSearchCoordinator.cancel(.fuzzy)
+        fuzzyCandidateSession.reset()
+        selectedFuzzyCandidateIndex = nil
         let hidesSharedEmoji = shouldDismissSharedEmojiPanel
         panelCoordinator.dismiss(
             using: policy,
@@ -4675,37 +4675,37 @@ final class InputController: IMKInputController {
         if !policy.preservesCalendar {
             clearCalendarSelection()
         }
-        clearNextInputSuggestionState()
+        clearNextInputCandidateState()
     }
 
-    private func cancelAuxiliarySuggestionSearches() {
-        suggestionSearchCoordinator.cancel(.fuzzy)
+    private func cancelAuxiliaryCandidateSearches() {
+        candidateSearchCoordinator.cancel(.fuzzy)
     }
 
-    private func cancelPrimarySuggestionSearches() {
-        suggestionSearchCoordinator.cancel(.official)
-        suggestionSearchCoordinator.cancel(.fuzzy)
-        suggestionSearchCoordinator.cancel(.javaScriptExtensions)
-        suggestionSearchCoordinator.cancel(.postalAddress)
+    private func cancelInputCandidateSearches() {
+        candidateSearchCoordinator.cancel(.external)
+        candidateSearchCoordinator.cancel(.fuzzy)
+        candidateSearchCoordinator.cancel(.javaScriptExtensions)
+        candidateSearchCoordinator.cancel(.postalAddress)
     }
 
     private func flushPendingHistoryWrites() {
         candidateSelectionHistoryStore.flush()
-        nextInputSuggestionCoordinator.flush()
+        nextInputCandidateCoordinator.flush()
     }
 
     private func moveNextInputCandidate(
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        guard nextInputSuggestionCoordinator.hasCandidates else {
+        guard nextInputCandidateCoordinator.hasCandidates else {
             return false
         }
         let offset = switch direction {
         case .left, .up: -1
         case .right, .down: 1
         }
-        guard let nextIndex = nextInputSuggestionCoordinator
+        guard let nextIndex = nextInputCandidateCoordinator
             .linearSelectionIndex(
             offset: offset
         ) else { return true }
@@ -4716,7 +4716,7 @@ final class InputController: IMKInputController {
         offset: Int,
         client sender: Any
     ) -> Bool {
-        guard let nextIndex = nextInputSuggestionCoordinator
+        guard let nextIndex = nextInputCandidateCoordinator
             .wrappedSelectionIndex(
             offset: offset
         ) else { return true }
@@ -4727,25 +4727,25 @@ final class InputController: IMKInputController {
         index: Int,
         client sender: Any
     ) -> Bool {
-        guard nextInputSuggestionCoordinator.candidates.indices.contains(index)
+        guard nextInputCandidateCoordinator.candidates.indices.contains(index)
         else {
             return true
         }
-        let previousPage = nextInputSuggestionCoordinator.pageRange(
+        let previousPage = nextInputCandidateCoordinator.pageRange(
             pageSize: Self.maximumCandidateCount
         )
-        guard let candidate = nextInputSuggestionCoordinator.select(
+        guard let candidate = nextInputCandidateCoordinator.select(
             index: index
         ) else {
             return true
         }
-        let currentPage = nextInputSuggestionCoordinator.pageRange(
+        let currentPage = nextInputCandidateCoordinator.pageRange(
             pageSize: Self.maximumCandidateCount
         )
         if currentPage == previousPage {
-            candidateWindow.select(index: index - currentPage.lowerBound)
+            primaryCandidatePanel.select(index: index - currentPage.lowerBound)
         } else {
-            showNextInputCandidateWindow(client: sender)
+            showNextInputCandidatePanel(client: sender)
         }
         setMarkedText(candidate, in: sender)
         showPreview(for: candidate)
@@ -4764,16 +4764,16 @@ final class InputController: IMKInputController {
         client sender: Any
     ) {
         guard Self.diagnosticConfiguration.enables(.nextInput) else {
-            nextInputSuggestionCoordinator.breakSequence()
+            nextInputCandidateCoordinator.breakSequence()
             return
         }
-        suggestionSearchCoordinator.cancel(.nextInputExtension)
+        candidateSearchCoordinator.cancel(.nextInputExtension)
         let committedTokens = learningTokens ?? [value]
         let committedReadings = learningReadings?.count == committedTokens.count
             ? learningReadings ?? []
             : Array(repeating: nil, count: committedTokens.count)
         let predictionContext = committedTokens.last ?? value
-        let learnedCandidates = nextInputSuggestionCoordinator
+        let learnedCandidates = nextInputCandidateCoordinator
             .learnedCandidateModels(
                 after: value,
                 committedTokens: zip(
@@ -4794,7 +4794,7 @@ final class InputController: IMKInputController {
             after: predictionContext,
             limit: 16
         ).map { Candidate(storageText: $0, source: .nextInput) }
-        let hasCandidates = nextInputSuggestionCoordinator.beginSuggestions(
+        let hasCandidates = nextInputCandidateCoordinator.beginCandidates(
             context: predictionContext,
             preferredCandidates: preferredCandidates.map {
                 Candidate(storageText: $0, source: .nextInput)
@@ -4813,7 +4813,7 @@ final class InputController: IMKInputController {
                 detail: "kind=nextInput reason=noCandidates"
             )
         } else {
-            showNextInputCandidateWindow(client: sender)
+            showNextInputCandidatePanel(client: sender)
             startNextInputOutsideClickMonitoring()
             if closingBracketTracker.candidate == nil {
                 scheduleNextInputDismissal()
@@ -4825,7 +4825,7 @@ final class InputController: IMKInputController {
               let asyncSnapshot = currentInputSessionSnapshot() else {
             return
         }
-        suggestionSearchCoordinator.start(
+        candidateSearchCoordinator.start(
             .nextInputExtension,
             query: predictionContext,
             operation: {
@@ -4843,14 +4843,14 @@ final class InputController: IMKInputController {
             },
             apply: { [weak self] generated in
                 guard let self, !generated.isEmpty else { return }
-                guard self.nextInputSuggestionCoordinator
+                guard self.nextInputCandidateCoordinator
                     .appendGeneratedCandidates(
                         generated,
                         after: predictionContext
                     ) else {
                     return
                 }
-                self.showNextInputCandidateWindow(client: sender)
+                self.showNextInputCandidatePanel(client: sender)
                 self.startNextInputOutsideClickMonitoring()
                 self.scheduleNextInputDismissal()
             },
@@ -4858,19 +4858,19 @@ final class InputController: IMKInputController {
         )
     }
 
-    private func showNextInputCandidateWindow(client sender: Any) {
-        let pageRange = nextInputSuggestionCoordinator.pageRange(
+    private func showNextInputCandidatePanel(client sender: Any) {
+        let pageRange = nextInputCandidateCoordinator.pageRange(
             pageSize: Self.maximumCandidateCount
         )
         guard !pageRange.isEmpty else {
             panelCoordinator.dismissNextInputPresentation()
             return
         }
-        candidateWindow.show(
+        primaryCandidatePanel.show(
             candidates: Array(
-                nextInputSuggestionCoordinator.candidates[pageRange]
+                nextInputCandidateCoordinator.candidates[pageRange]
             ),
-            selectedIndex: nextInputSuggestionCoordinator.selectedIndex.map {
+            selectedIndex: nextInputCandidateCoordinator.selectedIndex.map {
                 $0 - pageRange.lowerBound
             },
             near: inputLocation(for: sender),
@@ -4888,24 +4888,24 @@ final class InputController: IMKInputController {
                 sender: client(),
                 detail: "kind=nextInput reason=timeout"
             )
-            dismissNextInputSuggestions(clearMarkedTextIn: client())
+            dismissNextInputCandidates(clearMarkedTextIn: client())
         }
     }
 
-    private func dismissNextInputSuggestions(
+    private func dismissNextInputCandidates(
         clearMarkedTextIn sender: Any?
     ) {
-        if nextInputSuggestionCoordinator.selectedIndex != nil, let sender {
+        if nextInputCandidateCoordinator.selectedIndex != nil, let sender {
             setMarkedText("", in: sender)
         }
-        clearNextInputSuggestionState()
+        clearNextInputCandidateState()
         panelCoordinator.dismissNextInputPresentation()
     }
 
-    private func clearNextInputSuggestionState() {
-        suggestionSearchCoordinator.cancel(.nextInputExtension)
+    private func clearNextInputCandidateState() {
+        candidateSearchCoordinator.cancel(.nextInputExtension)
         panelCoordinator.stopNextInputLifecycle()
-        nextInputSuggestionCoordinator.resetSuggestions()
+        nextInputCandidateCoordinator.resetCandidates()
     }
 
     private func startNextInputOutsideClickMonitoring() {
@@ -4917,7 +4917,7 @@ final class InputController: IMKInputController {
                 sender: client(),
                 detail: "kind=nextInput reason=outsideClick"
             )
-            dismissNextInputSuggestions(clearMarkedTextIn: client())
+            dismissNextInputCandidates(clearMarkedTextIn: client())
         }
     }
 
@@ -5011,7 +5011,7 @@ final class InputController: IMKInputController {
         client sender: Any
     ) {
         guard !punctuation.isEmpty else { return }
-        dismissNextInputSuggestions(clearMarkedTextIn: nil)
+        dismissNextInputCandidates(clearMarkedTextIn: nil)
         inputSession.carryTrailingPunctuation(punctuation)
         selectedCandidateIndex = nil
         updateMarkedText(in: sender)
@@ -5186,7 +5186,7 @@ final class InputController: IMKInputController {
         candidateSession.reset()
         guard includingFuzzy else { return }
         clearSessionTranslationCandidates()
-        fuzzySuggestionCoordinator.reset()
+        fuzzyCandidateSession.reset()
     }
 
     private func hideConversionPanels() {
@@ -5235,8 +5235,8 @@ final class InputController: IMKInputController {
 
     private func dismissPanelsForCursorMovement(client sender: Any) {
         symbolTipsWindow.hide()
-        if nextInputSuggestionCoordinator.hasCandidates {
-            dismissNextInputSuggestions(clearMarkedTextIn: sender)
+        if nextInputCandidateCoordinator.hasCandidates {
+            dismissNextInputCandidates(clearMarkedTextIn: sender)
         }
     }
 
@@ -5250,7 +5250,7 @@ final class InputController: IMKInputController {
         var baseAnchorFrame = currentCandidates.isEmpty
             ? inputFrame
             : inputFrame.union(
-                candidateWindow.visibleFrame ?? candidateWindow.frame
+                primaryCandidatePanel.visibleFrame ?? primaryCandidatePanel.frame
             )
         let tipsText = selectedCandidate ?? inputBuffer
         if let tips = SymbolTips.make(for: tipsText) {
@@ -5265,7 +5265,7 @@ final class InputController: IMKInputController {
             input: conversionReading,
             selectedCandidate: selectedCandidate
         ) else {
-            suggestionSearchCoordinator.cancel(.dictionaryDefinition)
+            candidateSearchCoordinator.cancel(.dictionaryDefinition)
             previewWindow.hide()
             return
         }
@@ -5282,15 +5282,15 @@ final class InputController: IMKInputController {
             return
         }
         let inputFrame = inputLocation(for: sender)
-        let anchorFrame = candidateWindow.visibleFrame.map {
+        let anchorFrame = primaryCandidatePanel.visibleFrame.map {
             inputFrame.union($0)
         } ?? inputFrame
         symbolTipsWindow.show(tips, beside: anchorFrame)
     }
 
     private func showPreview(for candidate: String) {
-        var anchorFrame = candidateWindow.visibleFrame
-            ?? candidateWindow.frame
+        var anchorFrame = primaryCandidatePanel.visibleFrame
+            ?? primaryCandidatePanel.frame
         if let inputClient = client() {
             anchorFrame = anchorFrame.union(
                 inputLocation(for: inputClient)
@@ -5313,7 +5313,7 @@ final class InputController: IMKInputController {
 
     private func previewAnchorFrame(base anchorFrame: NSRect) -> NSRect {
         var result = anchorFrame
-        if let fuzzyFrame = fuzzySuggestionWindow.visibleFrame {
+        if let fuzzyFrame = secondaryCandidatePanel.visibleFrame {
             result = result.union(fuzzyFrame)
         }
         for translationFrame in panelCoordinator
@@ -5342,7 +5342,7 @@ final class InputController: IMKInputController {
             && Self.diagnosticConfiguration.enables(.dictionaryPanel)
         guard externalLookupEnabled || dictionaryLookupEnabled
         else {
-            suggestionSearchCoordinator.cancel(.dictionaryDefinition)
+            candidateSearchCoordinator.cancel(.dictionaryDefinition)
             previewWindow.hide()
             return
         }
@@ -5351,7 +5351,7 @@ final class InputController: IMKInputController {
                 .url(for: candidate)
             : nil
 
-        suggestionSearchCoordinator.cancel(.dictionaryDefinition)
+        candidateSearchCoordinator.cancel(.dictionaryDefinition)
         let presentsDictionary = Self.diagnosticConfiguration
             .presentsPanel(.dictionaryPanel)
         let presentsExternal = Self.diagnosticConfiguration
@@ -5380,7 +5380,7 @@ final class InputController: IMKInputController {
         trace("dictionaryLookup.start", sender: client(), detail: "candidate=\(candidate)")
         let provider = definitionProvider
         let dictionaryNames = systemDictionaryNames
-        suggestionSearchCoordinator.start(
+        candidateSearchCoordinator.start(
             .dictionaryDefinition,
             query: candidate,
             operation: {
@@ -5442,11 +5442,11 @@ final class InputController: IMKInputController {
     }
 
     private func rebuildFuzzyConversionEngine() {
-        cancelFuzzySuggestionSearch()
-        suggestionSearchCoordinator.cancel(.fuzzyIndexBuild)
+        cancelFuzzyCandidateSearch()
+        candidateSearchCoordinator.cancel(.fuzzyIndexBuild)
         let userEntries = userDictionaryStore.entries
         let refreshSnapshot = currentInputSessionSnapshot()
-        suggestionSearchCoordinator.start(
+        candidateSearchCoordinator.start(
             .fuzzyIndexBuild,
             query: "\(Self.sharedBasicFuzzyKey):\(userEntries.count)",
             operation: {
@@ -5485,9 +5485,9 @@ final class InputController: IMKInputController {
             hasInput: !inputBuffer.isEmpty,
             isRegisteringDictionary: dictionaryRegistrationSession != nil,
             hasSelectedCandidate: selectedCandidateIndex != nil,
-            hasSelectedFuzzySuggestion: selectedFuzzySuggestionIndex != nil,
+            hasSelectedFuzzyCandidate: selectedFuzzyCandidateIndex != nil,
             hasSelectedNextInput:
-                nextInputSuggestionCoordinator.selectedIndex != nil
+                nextInputCandidateCoordinator.selectedIndex != nil
         )
     }
 
@@ -5520,7 +5520,7 @@ final class InputController: IMKInputController {
 
     private var cachedJavaScriptCalculationCandidates: [String] {
         guard isCalculationExpressionDraft,
-              suggestionSearchCoordinator.query(for: .javaScriptExtensions)
+              candidateSearchCoordinator.query(for: .javaScriptExtensions)
                 == inputBuffer else {
             return []
         }
@@ -5563,14 +5563,14 @@ final class InputController: IMKInputController {
         }
     }
 
-    private var selectedFuzzySuggestionIndex: Int? {
-        get { fuzzySuggestionCoordinator.selectedIndex }
+    private var selectedFuzzyCandidateIndex: Int? {
+        get { fuzzyCandidateSession.selectedIndex }
         set {
-            _ = fuzzySuggestionCoordinator.select(index: newValue)
+            _ = fuzzyCandidateSession.select(index: newValue)
             trace(
                 "candidateSelection.changed",
                 sender: client(),
-                detail: "fuzzy=\(selectedFuzzySuggestionIndex.map(String.init) ?? "none")"
+                detail: "fuzzy=\(selectedFuzzyCandidateIndex.map(String.init) ?? "none")"
             )
         }
     }

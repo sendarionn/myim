@@ -1,6 +1,6 @@
 public enum InputPanelKind: String, CaseIterable, Hashable, Sendable {
-    case candidate
-    case fuzzySuggestion
+    case primaryCandidatePanel
+    case secondaryCandidatePanel
     case translationCandidates
     case emoji
     case externalInformation
@@ -29,7 +29,7 @@ public struct InputPanelDismissalPolicy: Equatable, Sendable {
             panels.remove(.externalInformation)
         }
         if preservesCalendar {
-            panels.remove(.candidate)
+            panels.remove(.primaryCandidatePanel)
             panels.remove(.calendar)
         }
         return panels

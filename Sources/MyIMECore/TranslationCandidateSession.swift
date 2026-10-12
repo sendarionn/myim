@@ -1,11 +1,11 @@
 public enum TranslationCandidateChannel: Hashable, Sendable {
-    case normal
+    case standard
     case fuzzy
 
-    /// Translation panels extend away from their source: left of normal
-    /// candidates and right of fuzzy suggestions
+    /// Translation panels extend away from their source: left of standard
+    /// candidates and right of fuzzy candidates
     public var extendsLeft: Bool {
-        self == .normal
+        self == .standard
     }
 }
 

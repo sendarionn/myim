@@ -10,26 +10,26 @@ struct TranslationCandidateSessionTests {
         session.store(
             [group("en", ["love"]), group("zh-Hans", ["爱"])],
             for: "愛",
-            channel: .normal
+            channel: .standard
         )
 
-        #expect(session.groups(for: "愛", channel: .normal)
+        #expect(session.groups(for: "愛", channel: .standard)
             .map(\.targetIdentifier) == ["en", "zh-Hans"])
-        #expect(session.contains("love", in: .normal))
-        #expect(session.contains("爱", in: .normal))
+        #expect(session.contains("love", in: .standard))
+        #expect(session.contains("爱", in: .standard))
     }
 
     @Test
-    func keepsNormalAndFuzzyResultsIndependent() {
+    func keepsStandardAndFuzzyResultsIndependent() {
         var session = TranslationCandidateSession()
-        session.store([group("en", ["candidate"])], for: "候補", channel: .normal)
+        session.store([group("en", ["candidate"])], for: "候補", channel: .standard)
         session.store(
             [group("en", ["public offer"])],
             for: "公募",
             channel: .fuzzy
         )
 
-        #expect(session.contains("candidate", in: .normal))
+        #expect(session.contains("candidate", in: .standard))
         #expect(!session.contains("candidate", in: .fuzzy))
         #expect(session.groups(for: "公募", channel: .fuzzy)
             .flatMap(\.candidates).map(\.storageText) == ["public offer"])
@@ -38,17 +38,17 @@ struct TranslationCandidateSessionTests {
     @Test
     func replacesARepeatedSourceWithoutChangingItsOrder() {
         var session = TranslationCandidateSession()
-        session.store([group("en", ["candidate"])], for: "候補", channel: .normal)
-        session.store([group("en", ["option"])], for: "候補", channel: .normal)
+        session.store([group("en", ["candidate"])], for: "候補", channel: .standard)
+        session.store([group("en", ["option"])], for: "候補", channel: .standard)
 
-        #expect(session.sources(in: .normal) == ["候補"])
-        #expect(session.groups(for: "候補", channel: .normal)
+        #expect(session.sources(in: .standard) == ["候補"])
+        #expect(session.groups(for: "候補", channel: .standard)
             .flatMap(\.candidates).map(\.storageText) == ["option"])
     }
 
     @Test
     func tracksTheSelectedLanguageAndRow() {
-        var session = shownSession(channel: .normal)
+        var session = shownSession(channel: .standard)
 
         let selected = session.select(
             TranslationCandidateSelection(groupIndex: 1, candidateIndex: 1),
@@ -61,8 +61,8 @@ struct TranslationCandidateSessionTests {
     }
 
     @Test
-    func leftMovesAwayFromNormalCandidatesAndRightComesBack() {
-        var session = shownSession(channel: .normal)
+    func leftMovesAwayFromStandardCandidatesAndRightComesBack() {
+        var session = shownSession(channel: .standard)
         enter(&session)
 
         #expect(session.moveHorizontally(movingLeft: true)
@@ -79,7 +79,7 @@ struct TranslationCandidateSessionTests {
     }
 
     @Test
-    func rightMovesAwayFromFuzzySuggestions() {
+    func rightMovesAwayFromFuzzyCandidates() {
         var session = shownSession(channel: .fuzzy)
         enter(&session)
 
@@ -96,7 +96,7 @@ struct TranslationCandidateSessionTests {
 
     @Test
     func verticalMovesStayInsideTheLanguageAndWrap() {
-        var session = shownSession(channel: .normal)
+        var session = shownSession(channel: .standard)
         enter(&session)
 
         #expect(session.moveVertically(by: 1)?.storageText == "affection")
@@ -109,7 +109,7 @@ struct TranslationCandidateSessionTests {
 
     @Test
     func horizontalMovesKeepTheRowOrClampIt() {
-        var session = shownSession(channel: .normal)
+        var session = shownSession(channel: .standard)
         session.select(
             TranslationCandidateSelection(groupIndex: 0, candidateIndex: 3),
             returningToFuzzy: false
@@ -127,10 +127,10 @@ struct TranslationCandidateSessionTests {
 
     @Test
     func showingNewPanelsDropsTheSelection() {
-        var session = shownSession(channel: .normal)
+        var session = shownSession(channel: .standard)
         enter(&session)
 
-        session.show([group("en", ["passion"])], channel: .normal)
+        session.show([group("en", ["passion"])], channel: .standard)
 
         #expect(session.selection == nil)
         #expect(session.visibleGroups.count == 1)
@@ -157,7 +157,7 @@ struct TranslationCandidateSessionTests {
     @Test
     func singleLanguagePanelKeepsItsSelectionFlow() {
         var session = TranslationCandidateSession()
-        session.show([group("en", ["candidate", "option"])], channel: .normal)
+        session.show([group("en", ["candidate", "option"])], channel: .standard)
         enter(&session)
 
         #expect(session.moveVertically(by: 1)?.storageText == "option")

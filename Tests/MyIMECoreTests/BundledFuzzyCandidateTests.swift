@@ -5,7 +5,7 @@ import Testing
 /// Runs the "もしかして" pipeline with the bundled dictionaries and an
 /// imported SKK layer that contains abbrev headwords such as `hs` and `tom`
 @Suite(.serialized)
-struct BundledSpellingSuggestionTests {
+struct BundledFuzzyCandidateTests {
     private struct Fixture: Sendable {
         let entries: [DictionaryEntry]
         let basic: ConversionEngine
@@ -111,9 +111,9 @@ struct BundledSpellingSuggestionTests {
     }
 
     /// InputController searches with the resolved reading and excludes the
-    /// normal candidates, which the typo leaves empty
+    /// standard candidates, which the typo leaves empty
     @Test(arguments: ["de=tab0su", "de-tsb-su"])
-    func suggestsDatabaseWhenTheTypoLeavesNoNormalCandidate(
+    func suggestsDatabaseWhenTheTypoLeavesNoStandardCandidate(
         input: String
     ) async throws {
         let fixture = try #require(Self.fixture)
@@ -174,7 +174,7 @@ struct BundledSpellingSuggestionTests {
                 entries: []
             )
         ).candidates(for: .init(input: input, conversionReading: input))
-        let source = FuzzySuggestionSource(
+        let source = FuzzyCandidateSource(
             query: input,
             visibleCandidates: Set(normal.map(\.storageText)),
             userDictionary: userDictionary,
@@ -211,7 +211,7 @@ struct BundledSpellingSuggestionTests {
         visibleCandidates: Set<String> = []
     ) async throws -> [String] {
         let fixture = try #require(Self.fixture)
-        let source = FuzzySuggestionSource(
+        let source = FuzzyCandidateSource(
             query: query,
             visibleCandidates: visibleCandidates,
             userDictionary: LayeredConversionEngine(engines: []),
@@ -221,11 +221,11 @@ struct BundledSpellingSuggestionTests {
             compoundGenerator: fixture.compound,
             fuzzyRepository: fixture.repository
         )
-        var coordinator = FuzzySuggestionCoordinator()
+        var coordinator = FuzzyCandidateSession()
         coordinator.replace(
             matchTiers: await source.matchTiers(),
             recencyRanks: [:]
         )
-        return coordinator.suggestions.map(\.candidate)
+        return coordinator.candidates.map(\.candidate)
     }
 }

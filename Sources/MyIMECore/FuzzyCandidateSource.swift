@@ -1,4 +1,4 @@
-public struct FuzzySuggestionSource: Sendable {
+public struct FuzzyCandidateSource: Sendable {
     private let query: String
     private let visibleCandidates: Set<String>
     private let userDictionary: LayeredConversionEngine
@@ -100,7 +100,7 @@ public struct FuzzySuggestionSource: Sendable {
                     sourceReadings: prediction.sourceReadings
                 )
             }
-            return [learnedMatches] + FuzzySuggestionTierBuilder.build(
+            return [learnedMatches] + FuzzyCandidateTierBuilder.build(
                 directTypoMatches: filtered,
                 compounds: compounds
             )

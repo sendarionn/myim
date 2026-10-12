@@ -80,7 +80,7 @@ enum SettingsWindowBuilder {
         let appleTranslation: Bool
         let translationLanguageIdentifiers: Set<String>
         let nextInputPrediction: Bool
-        let fuzzySuggestions: Bool
+        let fuzzyCandidates: Bool
         let dateTimeCandidates: Bool
         let externalInformationPanel: Bool
         let systemDictionaryPreview: Bool
@@ -95,7 +95,7 @@ enum SettingsWindowBuilder {
         let toggleAppleTranslation: Selector
         let toggleTranslationLanguage: Selector
         let toggleNextInputPrediction: Selector
-        let toggleFuzzySuggestions: Selector
+        let toggleFuzzyCandidates: Selector
         let toggleDateTimeCandidates: Selector
         let clearNextInputHistory: Selector
         let toggleExternalInformationPanel: Selector
@@ -145,7 +145,7 @@ enum SettingsWindowBuilder {
             ("Wikipediaを辞書として利用", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
             ("Google CGI APIの変換候補を使用", actions.toggleGoogleJapaneseInput, states.googleJapaneseInput),
             ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
-            ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzySuggestions, states.fuzzySuggestions),
+            ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzyCandidates, states.fuzzyCandidates),
             ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)
         addSection("翻訳候補", to: stack)

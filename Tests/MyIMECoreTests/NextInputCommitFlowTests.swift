@@ -17,7 +17,7 @@ struct NextInputCommitFlowTests {
 
         #expect(policy == NextInputCommitPolicy(
             learnsInput: false,
-            updatesSuggestions: true
+            updatesCandidates: true
         ))
     }
 
@@ -31,7 +31,7 @@ struct NextInputCommitFlowTests {
 
         #expect(policy == NextInputCommitPolicy(
             learnsInput: true,
-            updatesSuggestions: true
+            updatesCandidates: true
         ))
     }
 
@@ -45,7 +45,7 @@ struct NextInputCommitFlowTests {
 
         #expect(policy == NextInputCommitPolicy(
             learnsInput: false,
-            updatesSuggestions: false
+            updatesCandidates: false
         ))
     }
 
@@ -64,7 +64,7 @@ struct NextInputCommitFlowTests {
 
         #expect(policy == NextInputCommitPolicy(
             learnsInput: true,
-            updatesSuggestions: true
+            updatesCandidates: true
         ))
     }
 
@@ -82,7 +82,7 @@ struct NextInputCommitFlowTests {
 
         #expect(policy == NextInputCommitPolicy(
             learnsInput: false,
-            updatesSuggestions: false
+            updatesCandidates: false
         ))
     }
 
@@ -577,7 +577,7 @@ struct NextInputCommitFlowTests {
 private final class CommitFlow {
     private(set) var text = ""
     private(set) var tracker = ClosingBracketTracker()
-    let coordinator = NextInputSuggestionCoordinator(
+    let coordinator = NextInputCandidateCoordinator(
         predictionModel: NextInputPredictionModel(),
         writer: DeferredJSONFileWriter(
             fileURL: FileManager.default.temporaryDirectory
@@ -605,7 +605,7 @@ private final class CommitFlow {
         )
         text += value
         tracker.consume(value)
-        guard policy.updatesSuggestions else { return }
+        guard policy.updatesCandidates else { return }
         let structural = tracker.candidate.map { [$0] } ?? []
         let committedTokens = learningTokens ?? [value]
         let committedReadings = learningReadings?.count == committedTokens.count
@@ -614,7 +614,7 @@ private final class CommitFlow {
                 repeating: nil,
                 count: max(0, committedTokens.count - 1)
             )
-        coordinator.beginSuggestions(
+        coordinator.beginCandidates(
             context: committedTokens.last ?? value,
             preferredCandidates: structural.map {
                 Candidate(storageText: $0, source: .nextInput)
@@ -650,7 +650,7 @@ private final class CommitFlow {
     }
 
     func offerNextInput(_ value: String) {
-        coordinator.beginSuggestions(
+        coordinator.beginCandidates(
             context: coordinator.context ?? "",
             preferredCandidates: [],
             learnedCandidates: [NextInputCandidateMetadata.candidate(
@@ -664,7 +664,7 @@ private final class CommitFlow {
         guard let value = coordinator.selectedCandidate else { return }
         let sourceTokens = coordinator.selectedSourceTokens
         let sourceReadings = coordinator.selectedSourceReadings
-        coordinator.resetSuggestions()
+        coordinator.resetCandidates()
         commitInput(
             value,
             learningTokens: sourceTokens,
@@ -714,7 +714,7 @@ private final class CommitFlow {
 
     func type(_ characters: String) {
         commitSelectedNextInput()
-        coordinator.resetSuggestions()
+        coordinator.resetCandidates()
         text += characters
     }
 

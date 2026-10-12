@@ -18,7 +18,7 @@ public enum CandidateSourceKind: String, CaseIterable, Sendable {
     case googleJapaneseInput
     case uppercase
     case translation
-    case fuzzySuggestion
+    case fuzzyCandidate
     case nextInput
     case specialConversion
 }

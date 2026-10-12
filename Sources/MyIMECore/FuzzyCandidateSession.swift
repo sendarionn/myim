@@ -1,4 +1,4 @@
-public struct FuzzySuggestion: Equatable, Sendable {
+public struct FuzzyCandidate: Equatable, Sendable {
     public let candidate: String
     public let reading: String
     public let distance: Int
@@ -33,8 +33,8 @@ public struct UserDictionaryRegistration: Equatable, Sendable {
     }
 }
 
-extension FuzzySuggestion {
-    /// Entry saved when the user commits this suggestion; a learned phrase
+extension FuzzyCandidate {
+    /// Entry saved when the user commits this candidate; a learned phrase
     /// is saved with the whole reading of its units, never the partial
     /// input it was found from, and not at all while a reading is missing
     public var userDictionaryEntry: UserDictionaryRegistration? {
@@ -59,27 +59,27 @@ extension FuzzySuggestion {
     }
 }
 
-public struct FuzzySuggestionPage: Equatable, Sendable {
-    public let suggestions: [FuzzySuggestion]
+public struct FuzzyCandidatePage: Equatable, Sendable {
+    public let candidates: [FuzzyCandidate]
     public let selectedIndex: Int?
 
     public init(
-        suggestions: [FuzzySuggestion],
+        candidates: [FuzzyCandidate],
         selectedIndex: Int?
     ) {
-        self.suggestions = suggestions
+        self.candidates = candidates
         self.selectedIndex = selectedIndex
     }
 }
 
-public struct FuzzySuggestionCoordinator: Equatable, Sendable {
-    private var selection: CandidateSelectionState<FuzzySuggestion>
+public struct FuzzyCandidateSession: Equatable, Sendable {
+    private var selection: CandidateSelectionState<FuzzyCandidate>
 
-    public init(suggestions: [FuzzySuggestion] = []) {
-        selection = CandidateSelectionState(values: suggestions)
+    public init(candidates: [FuzzyCandidate] = []) {
+        selection = CandidateSelectionState(values: candidates)
     }
 
-    public var suggestions: [FuzzySuggestion] {
+    public var candidates: [FuzzyCandidate] {
         selection.values
     }
 
@@ -87,7 +87,7 @@ public struct FuzzySuggestionCoordinator: Equatable, Sendable {
         selection.selectedIndex
     }
 
-    public var selectedSuggestion: FuzzySuggestion? {
+    public var selectedCandidate: FuzzyCandidate? {
         selection.selectedValue
     }
 
@@ -104,7 +104,7 @@ public struct FuzzySuggestionCoordinator: Equatable, Sendable {
         let suggestionTiers = matchTiers.map { matches in
             matches.compactMap { match in
                 match.candidates.first.map {
-                    FuzzySuggestion(
+                    FuzzyCandidate(
                         candidate: $0,
                         reading: match.reading,
                         distance: match.distance,
@@ -120,28 +120,28 @@ public struct FuzzySuggestionCoordinator: Equatable, Sendable {
             ranks: recencyRanks
         )
         var seenCandidates = Set<String>()
-        let updatedSuggestions = zip(
+        let updatedCandidates = zip(
             suggestionTiers,
             orderedTierIndices
-        ).flatMap { suggestions, indices in
+        ).flatMap { candidates, indices in
             indices.compactMap { index in
-                let suggestion = suggestions[index]
+                let suggestion = candidates[index]
                 return seenCandidates.insert(suggestion.candidate).inserted
                     ? suggestion
                     : nil
             }
         }
-        let changed = selection.values != updatedSuggestions
+        let changed = selection.values != updatedCandidates
         if !changed, preserveSelectionWhenUnchanged {
             return false
         }
-        selection.values = updatedSuggestions
+        selection.values = updatedCandidates
         selection.selectedIndex = nil
         return changed
     }
 
     @discardableResult
-    public mutating func select(index: Int?) -> FuzzySuggestion? {
+    public mutating func select(index: Int?) -> FuzzyCandidate? {
         guard let index else {
             selection.selectedIndex = nil
             return nil
@@ -156,35 +156,35 @@ public struct FuzzySuggestionCoordinator: Equatable, Sendable {
     }
 
     @discardableResult
-    public mutating func select(candidate: String) -> FuzzySuggestion? {
+    public mutating func select(candidate: String) -> FuzzyCandidate? {
         guard let index = selection.values.firstIndex(where: {
             $0.candidate == candidate
         }) else { return nil }
         return select(index: index)
     }
 
-    public func indexAlignedWithNormalCandidate(
-        normalSelectedIndex: Int?,
+    public func indexAlignedWithStandardCandidate(
+        standardSelectedIndex: Int?,
         maximumCount: Int
     ) -> Int? {
         guard !selection.values.isEmpty, maximumCount > 0 else { return nil }
-        let normalRow = normalSelectedIndex.map { $0 % maximumCount } ?? 0
+        let normalRow = standardSelectedIndex.map { $0 % maximumCount } ?? 0
         return min(normalRow, selection.values.count - 1)
     }
 
-    public func normalCandidateIndexAlignedWithSelection(
-        normalCandidateCount: Int,
+    public func standardCandidateIndexAlignedWithSelection(
+        standardCandidateCount: Int,
         currentNormalIndex: Int?,
         maximumCount: Int
     ) -> Int? {
         guard let selectedIndex = selection.selectedIndex,
-              normalCandidateCount > 0,
+              standardCandidateCount > 0,
               maximumCount > 0 else { return nil }
         let fuzzyRow = selectedIndex % maximumCount
         let pageStart = (currentNormalIndex ?? 0)
             / maximumCount
             * maximumCount
-        let pageEnd = min(pageStart + maximumCount, normalCandidateCount)
+        let pageEnd = min(pageStart + maximumCount, standardCandidateCount)
         return min(pageStart + fuzzyRow, pageEnd - 1)
     }
 
@@ -196,15 +196,15 @@ public struct FuzzySuggestionCoordinator: Equatable, Sendable {
         )
     }
 
-    public func initialPage(maximumCount: Int) -> FuzzySuggestionPage? {
+    public func initialPage(maximumCount: Int) -> FuzzyCandidatePage? {
         guard !selection.values.isEmpty, maximumCount > 0 else { return nil }
-        return FuzzySuggestionPage(
-            suggestions: Array(selection.values.prefix(maximumCount)),
+        return FuzzyCandidatePage(
+            candidates: Array(selection.values.prefix(maximumCount)),
             selectedIndex: nil
         )
     }
 
-    public func selectedPage(maximumCount: Int) -> FuzzySuggestionPage? {
+    public func selectedPage(maximumCount: Int) -> FuzzyCandidatePage? {
         guard let selectedIndex = selection.selectedIndex,
               selection.values.indices.contains(selectedIndex),
               maximumCount > 0 else { return nil }
@@ -213,8 +213,8 @@ public struct FuzzySuggestionCoordinator: Equatable, Sendable {
             pageStart + maximumCount,
             selection.values.count
         )
-        return FuzzySuggestionPage(
-            suggestions: Array(selection.values[pageStart..<pageEnd]),
+        return FuzzyCandidatePage(
+            candidates: Array(selection.values[pageStart..<pageEnd]),
             selectedIndex: selectedIndex - pageStart
         )
     }

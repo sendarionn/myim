@@ -8,6 +8,104 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 
 過去の変更経緯は`HISTORY.md`を参照する
 
+## 候補体系
+
+候補に関する概念は次の5つを区別する
+
+| 概念 | 意味 | 例 |
+| --- | --- | --- |
+| 候補 | 個々の変換・提案結果のデータ | `Candidate`、`FuzzyCandidate` |
+| 候補群 | 生成の契機と目的による候補の分類 | 標準候補、曖昧候補、次入力候補 |
+| 候補生成処理 | 候補群の中で候補を作る個々の処理 | 辞書完全一致、助詞合成、誤入力補正 |
+| 表示パネル | 候補を表示するUI上の場所 | 第一パネル、第二パネル、翻訳パネル |
+| 選択・操作状態 | 選択位置、移動、確定、絞り込みの状態 | `CandidateSession`、`FuzzyCandidateSession` |
+
+候補群と表示パネルは対応するが同一ではない
+第一パネルには標準候補のほか、特殊変換候補、次入力候補、カレンダー書式候補も表示する
+
+用語は次の意味で使い分ける
+
+- 候補（Candidate）：表示・確定できる個々の結果
+- 補完（Completion）：入力途中の文字列から続きを補う処理（英語補完、履歴補完）
+- 予測（Prediction）：学習結果から次の入力を推定した結果（`NextInputPrediction`、`LearnedCompoundPrediction`）
+- 補正（Correction）：誤入力を推定して正しい読みへ寄せる処理と、その一致結果（`FuzzyConversionMatch`）
+- 「直接候補」は標準候補の中で完全一致を中心とする優先グループを指し、候補群の名前には使わない
+- 設定画面では曖昧候補を「もしかして？」と表示する
+
+### 候補群と実装
+
+| 候補群 | 生成の契機と役割 | 主な型・関数 | 選択・操作状態 | 表示先 |
+| --- | --- | --- | --- | --- |
+| 標準候補 | 入力を補正せずに変換・補完する | `StandardConversionCandidateSource.candidates(for:)`、`InputController.refreshCandidates(client:)` | `CandidateSession` | 第一パネル |
+| 特殊変換候補 | 計算、単位、数字、記号など入力全体を別表記へ変換できる場合に標準候補の代わりに使う | `SpecialConversionCandidateSource.result(for:)` | `CandidateSession` | 第一パネル |
+| 曖昧候補 | 誤入力や読みの揺れを許容して補正した候補と、学習した連結語句 | `FuzzyCandidateSource.matchTiers()`、`InputController.updateFuzzyCandidatesIfNeeded()` | `FuzzyCandidateSession` | 第二パネル |
+| 次入力候補 | 未確定文字列がない状態で、確定済みの文脈から続きを提案する | `NextInputCandidateCoordinator`、`NextInputPredictionModel`、`InputController.recordCommittedInput(...)` | `NextInputCandidateSession` | 第一パネル |
+| 翻訳候補 | 選択中の標準候補または曖昧候補を翻訳先言語ごとに翻訳する | `TranslationCandidateSource.groups(for:translate:)`、`AppleTranslationCandidateSource`、`InputController.updateTranslationCandidates(...)` | `TranslationCandidateSession` | 翻訳パネル |
+| カレンダー書式候補 | カレンダーで選んだ日付を書式へ展開する | `InputController.loadCalendarFormats(for:client:)`、`JavaScriptExtensionClient.calendarCandidates(for:)` | `CalendarFormatSelectionSession` | 第一パネル |
+
+非同期に取得する候補は`CandidateSearchCoordinator`と`CandidateSearchKind`で検索の種類ごとに管理し、古い結果を破棄する
+
+### 候補生成処理と実装
+
+生成処理は、辞書の種類（データ）、検索方式、生成アルゴリズム、順位付けを区別する
+
+辞書データは`ConversionEngine`、`LayeredConversionEngine`、`IndexedDictionaryEngine`が保持し、ユーザー辞書、インポート辞書、基本辞書、記号辞書、Mozc辞書の層として標準候補と曖昧候補の両方が参照する
+
+| 生成処理 | 入力と出力の関係 | 主な実装 | 所属候補群 |
+| --- | --- | --- | --- |
+| 辞書完全一致 | 読みに一致する語を取得する | `ConversionEngine.candidates(for:)`、`StandardConversionCandidateSource` | 標準候補 |
+| 辞書前方一致 | 入力途中の読みから続く語を取得する | `ConversionEngine.candidateGroups(matching:limit:)`、`DeferredSystemCandidates` | 標準候補 |
+| かな変換 | ローマ字をひらがな・カタカナへ変換する | `RomajiConverter` | 標準候補 |
+| 英語補完 | 英字入力から英単語を補う | `InputController.englishCompletions(for:)`、`EnglishCandidateCaseRestorer` | 標準候補 |
+| 履歴補完 | 過去に選んだ候補を入力途中から補う | `CandidateSelectionHistory` | 標準候補 |
+| 数字接頭辞 | 数字と語の組み合わせを生成する | `NumericPrefixCandidateComposer` | 標準候補 |
+| 動詞活用 | 活用形の入力から活用語を生成する | `VerbInflectionCandidateGenerator`、`VerbConjugationCandidateGenerator`、`VerbConjugationDictionary` | 標準候補 |
+| 助詞合成 | 名詞相当語と助詞を合成する | `JapaneseParticleCandidateGenerator` | 標準候補 |
+| 外部API候補 | Wikipedia、Google日本語入力から非同期取得する | `WikipediaCandidateSource`、`GoogleJapaneseInputCandidateSource`、`InputController.updateExternalCandidatesIfNeeded(for:)` | 標準候補 |
+| JavaScript拡張 | 入力から拡張機能の候補を非同期取得する | `JavaScriptExtensionClient`、`InputController.updateJavaScriptExtensionCandidatesIfNeeded(for:)` | 標準候補、特殊変換候補 |
+| 住所変換 | 郵便番号から住所を取得する | `PostalCodeNormalizer`、`PostalAddressCandidateClient` | 特殊変換候補 |
+| 計算 | 式と計算履歴から結果を生成する | `CalculationCandidateSet`、`CalculationInputHistory` | 特殊変換候補 |
+| 単位変換 | 数値と単位を別の単位へ変換する | `UnitConversionCandidateGenerator` | 特殊変換候補 |
+| 数字表記 | 桁区切り、漢数字、数値単位へ変換する | `NumberGroupingCandidateGenerator`、`JapaneseNumericUnitCandidateGenerator`、`JapaneseNumberConverter` | 特殊変換候補 |
+| 記号変換 | ASCII記号を全角記号や関連記号へ変換する | `JapaneseSymbolConverter` | 特殊変換候補 |
+| 誤入力補正 | 入力の誤りを推定して近い読みの語を取得する | `FuzzyEngineRepository`、`FuzzyConversionEngine`、`RomajiTypoScorer`、`RomajiConsonantIndex`、`FuzzyConversionMatchFilter` | 曖昧候補 |
+| 辞書合成 | 複数の辞書エントリで入力全体を覆う語を合成する | `CompoundDictionaryCandidateGenerator` | 曖昧候補 |
+| 学習した連結語句 | 確定時の読みの前方一致で連結語句を取得する | `NextInputCandidateCoordinator.learnedCompoundPredictions(matchingPrefix:excluding:limit:)` | 曖昧候補 |
+| 次入力予測 | 確定済みの文脈から学習した続きを取得する | `NextInputPredictionModel`、`NextInputLearningStore` | 次入力候補 |
+| 辞書の続き | 確定した語の後に続く辞書上の語を取得する | `DictionaryContinuationCandidateGenerator` | 次入力候補 |
+| 閉じ括弧 | 開いた括弧に対応する閉じ括弧を提案する | `ClosingBracketTracker` | 次入力候補 |
+| 翻訳 | Apple Translationで翻訳先言語ごとの語句を生成する | `TranslationCandidateSource`、`AppleTranslationCandidateSource` | 翻訳候補 |
+
+### 横断的な処理と実装
+
+候補群をまたぐ処理は生成処理とは別に扱う
+
+| 処理 | 責務 | 主な実装 |
+| --- | --- | --- |
+| 重複排除と統合 | 同じ候補の生成元情報を統合する | `CandidateAssembly`、`Candidate` |
+| 優先順位 | 候補グループと生成元の優先段階で並べる | `CandidatePriorityOrderer`、`TieredCandidateOrderer`、`FuzzyCandidateTierBuilder` |
+| 選択履歴による順位 | 最近選んだ候補を段階の中で前へ移す | `CandidateRecencyOrderer`、`CandidateSelectionHistoryStore` |
+| 文脈による順位 | 直前の確定から続く候補を前へ移す | `NextInputCandidateCoordinator.candidatesAfterLastInput(limit:)`、`StandardConversionCandidateSource` |
+| ユーザー辞書学習 | 未選択確定や曖昧候補の確定を登録する | `UserDictionaryStore`、`UnselectedInputLearningPolicy`、`FuzzyCandidate.userDictionaryEntry` |
+| 次入力学習 | 確定系列と連続選択を学習する | `NextInputLearningStore`、`NextInputPredictionModel` |
+| 候補フィルター | 表示中の候補を条件で絞り込む | `CandidateFilterCoordinator`、`CandidateFilter` |
+
+### 表示パネルと選択状態
+
+| 概念 | 責務 | 主な実装 |
+| --- | --- | --- |
+| 候補パネル | 候補一覧を表示する汎用パネル | `CandidatePanelController` |
+| 第一パネル | 入力位置の下に置く主な候補表示領域 | `InputPanelCoordinator.primaryCandidatePanel`（`CandidatePanelController`） |
+| 第二パネル | 第一パネルの右、または第一パネルがないときは入力位置の下に置く補助の候補表示領域 | `InputPanelCoordinator.secondaryCandidatePanel`（`SecondaryCandidatePanelController`） |
+| 翻訳パネル | 選択中の候補の隣に翻訳先言語ごとに並べる表示領域 | `InputPanelCoordinator.showTranslationCandidates(...)`（`CandidatePanelController`） |
+| フィルターパネル | 絞り込み条件と入力中の条件を表示する | `InputPanelCoordinator`の`candidateFilterDraft`と条件パネル（`CandidatePanelController`） |
+| パネル群の配置 | 複数のパネルを一群として画面内へ収める | `InputPanelCoordinator`、`HorizontalPanelGroupPlacement` |
+| 候補選択状態 | 選択位置、ページ、非同期更新後の選択維持 | `CandidateSession`、`CandidateSelectionState`、`LinearCandidateNavigator` |
+| パネル間の移動 | 第一パネルと第二パネルの対応行を行き来する | `FuzzyCandidateSession.indexAlignedWithStandardCandidate(...)`、`FuzzyCandidateSession.standardCandidateIndexAlignedWithSelection(...)` |
+
+候補パネルの実装名は表示する候補群ではなく、パネルの汎用性と位置で付ける
+`CandidatePanelController`は第一パネル、翻訳パネル、フィルターパネルで共通に使うため、クラス名には第一パネルを含めない
+
 ## 入力と読みの生成
 
 ### ローマ字かな変換
@@ -139,11 +237,11 @@ SKK辞書は送りなしエントリをmyim形式の独立TSVへ変換して保�
 
 同じファイル名を再度インポートした場合は、その独立辞書を置き換える
 
-## 通常候補の生成と順位
+## 標準候補の生成と順位
 
 ### 候補グループ
 
-通常候補は大きく次のグループへ分ける
+標準候補は大きく次のグループへ分ける
 
 1. 完全一致を中心とする直接候補
 2. 助詞合成と一部の後回しにするMozc完全一致候補
@@ -221,7 +319,7 @@ SKK辞書は送りなしエントリをmyim形式の独立TSVへ変換して保�
 
 2文字以上の入力では、直前の確定語に続いて使われた候補を前方一致などのグループ内で優先する
 
-文脈履歴だけを根拠に、辞書や現在の候補元にない通常候補を追加しない
+文脈履歴だけを根拠に、辞書や現在の候補元にない標準候補を追加しない
 
 1文字入力では、ひらがなとカタカナを先頭に固定した後、現在の直接候補と前方一致候補に文脈を適用する
 
@@ -275,7 +373,7 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 - `watashiha,`では`watashiha`の候補を表示し、`,`は未確定のまま候補の後ろに表示する
 - 変換対象と後ろに残る句読点は入力メソッド標準の文節として表示を分け、境界で下線を区切る
-- 通常候補または「もしかして」候補を`Return`、`Space`、クリックで確定すると、確定するのは候補だけで、句読点を次の入力として残し記号候補を表示する
+- 標準候補または曖昧候補を`Return`、`Space`、クリックで確定すると、確定するのは候補だけで、句読点を次の入力として残し記号候補を表示する
 - `Space`で確定した場合も、句読点が続くため空白は挿入しない
 - 句読点の記号候補を確定すると`私は、`のように入力順に挿入する
 - `!?`のように続く句読点は、まとめた記号候補がなければ1文字ずつ順に変換する
@@ -324,7 +422,7 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 - `1byou` → `1秒`
 - `60byou` → `60秒`
 
-この数字接頭辞候補は通常候補の直接候補として扱い、純粋な数字入力の特殊変換とは区別する
+この数字接頭辞候補は標準候補の直接候補として扱い、純粋な数字入力の特殊変換とは区別する
 
 ### 単位と計算
 
@@ -439,12 +537,12 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 ## 誤入力補完と合成候補
 
-「もしかして」候補は通常候補とは別の候補集合として生成する
+曖昧候補は標準候補とは別の候補集合として生成する
 
-通常候補にすでにある候補は除外する
+標準候補にすでにある候補は除外する
 
-誤入力で通常候補が1件もない場合も検索し、通常候補パネルの位置に「もしかして」パネルだけを表示する
-この場合は`Tab`でも「もしかして」候補の選択を開始する
+誤入力で標準候補が1件もない場合も検索し、第一パネルの位置に第二パネルだけを表示する
+この場合は`Tab`でも曖昧候補の選択を開始する
 
 ### 検索
 
@@ -498,9 +596,9 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 数字・記号を含む入力はJIS・US配列の物理キー距離も評価し、単なる記号削除より明確な近接キーまたは母音構造の根拠がある場合だけ補正する
 
-入力の読みがユーザー辞書へ完全一致しても探索自体は継続し、完全一致候補は通常候補で優先しながら、別の補正候補を「もしかして」へ表示する
+入力の読みがユーザー辞書へ完全一致しても探索自体は継続し、完全一致候補は標準候補で優先しながら、別の補正候補を曖昧候補として表示する
 
-通常候補に表示済みの候補は「もしかして」から除外する
+標準候補に表示済みの候補は曖昧候補から除外する
 
 例
 
@@ -529,7 +627,7 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 この制限は辞書エントリを機械的に連結する合成候補だけに適用し、学習した連結語句と通常の誤入力補完には適用しない
 
-「もしかして」内の大きな優先段階は次の順とする
+曖昧候補内の大きな優先段階は次の順とする
 
 1. 4文字以上の部分語だけで構成したタイポなしの合成候補
 2. 読み全体の編集距離1以内の補正候補
@@ -539,27 +637,27 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 選択履歴は各段階の中だけで最終選択順を変更し、段階をまたいで誤入力候補を押し上げない
 
-選択した「もしかして」候補は、補正後の読みと候補をユーザー辞書へ保存でき、以後は通常候補として検索できる
+選択した曖昧候補は、補正後の読みと候補をユーザー辞書へ保存でき、以後は標準候補として検索できる
 
 ## 候補の表示と操作
 
-通常候補ともしかして候補は内部では全候補を保持する
+標準候補と曖昧候補は内部では全候補を保持する
 
 パネルへ同時に渡して表示するのは最大4件で、選択位置を含む4件単位のページへ切り替える
 
 スクロールバーは表示しない
 
-- `Tab`で通常候補の選択を開始し、以後は1候補ずつ進む
+- `Tab`で標準候補の選択を開始し、以後は1候補ずつ進む
 - 候補選択後は上下矢印で同じパネル内を1候補ずつ移動する
-- 左右矢印で通常候補ともしかして候補の同じ表示行を行き来する
-- `Shift + Tab`でも「もしかして」候補へ直接入る
+- 左右矢印で標準候補と曖昧候補の同じ表示行を行き来する
+- `Shift + Tab`でも曖昧候補へ直接入る
 - 候補未選択時の左右矢印は未確定文字列内のカーソルを移動する
 
 候補の選択中に非同期候補が追加または並べ替えられた場合は、選択中の候補文字列を基準に選択を維持する
 
 ## 候補フィルター
 
-候補フィルターは、現在の通常候補集合を保持したまま条件を後処理として適用する
+候補フィルターは、現在の標準候補集合を保持したまま条件を後処理として適用する
 
 フィルター入力も通常変換と同様に、入力、変換候補、選択の順で処理する
 
@@ -591,11 +689,11 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 ## 翻訳候補
 
-翻訳候補を有効にして日本語を含む通常候補または「もしかして」候補を選択すると、Apple Translationで設定言語への単語・語句候補を非同期生成する
+翻訳候補を有効にして日本語を含む標準候補または曖昧候補を選択すると、Apple Translationで設定言語への単語・語句候補を非同期生成する
 
 翻訳結果は前後の空白、先頭の英語冠詞、文末の単独ピリオドを除き、小文字へ統一する
 
-複数の翻訳先言語は言語ごとの独立した候補集合として保持し、通常候補の順位へ混在させない
+複数の翻訳先言語は言語ごとの独立した候補集合として保持し、標準候補の順位へ混在させない
 
 入力セッション中に一度生成した結果は候補元ごとに保持し、次の入力セッションへは引き継がない
 
@@ -609,7 +707,7 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 主な対象
 
-- 「もしかして」候補
+- 曖昧候補
 - 辞書に存在しない助詞合成候補
 - Google CGI APIやWikipedia等から得た外部候補
 
@@ -705,7 +803,7 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 ### 学習した連結語句の前方一致
 
-確定時に取得できた読みを確定文字列と単位境界に対応付け、学習条件を満たした2〜4単位の連結語句を「もしかして」候補から検索する
+確定時に取得できた読みを確定文字列と単位境界に対応付け、学習条件を満たした2〜4単位の連結語句を曖昧候補から検索する
 
 読み全体の先頭3文字以上を入力すると、単位境界を越えた前方一致で連結全文を最大4件表示する
 
@@ -722,13 +820,13 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 - `東京都`を入力して次入力候補の`中野区`を選ぶ操作を2回行うと、`toukyouto`から`東京都中野区`を表示
 
-通常候補は変更せず、通常候補と確定文字列が同じ場合だけ「もしかして」側から重複を除く
+標準候補は変更せず、標準候補と確定文字列が同じ場合だけ曖昧候補側から重複を除く
 
 連結語句の選択では元の単位境界と読みを維持し、連結全文を単一の新しい単位として再学習しない
 
-学習や「もしかして」への表示だけではユーザー辞書へ登録しない
+学習や曖昧候補としての表示だけではユーザー辞書へ登録しない
 
-「もしかして」で連結語句を選択・確定した場合だけ、各単位の読みをつなげた完全な読みと連結全文をユーザー辞書へ登録し、次回から通常候補として変換できるようにする
+曖昧候補で連結語句を選択・確定した場合だけ、各単位の読みをつなげた完全な読みと連結全文をユーザー辞書へ登録し、次回から標準候補として変換できるようにする
 
 例
 
@@ -738,7 +836,7 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 同じ読みと候補がすでにあれば重複登録しない
 
-ユーザー辞書から削除しても学習した連結語句は残り、「もしかして」へ再び表示され、再度確定すると登録する
+ユーザー辞書から削除しても学習した連結語句は残り、曖昧候補として再び表示され、再度確定すると登録する
 
 `Command + X`で削除した連結語句は抑制し、直接入力3回または連続選択2回の学習条件を再び満たすまで表示しない
 

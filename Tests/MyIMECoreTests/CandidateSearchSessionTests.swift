@@ -2,10 +2,10 @@ import Testing
 @testable import MyIMECore
 
 @Suite
-struct SuggestionSearchSessionTests {
+struct CandidateSearchSessionTests {
     @Test
     func replacingSearchInvalidatesOldToken() {
-        let session = SuggestionSearchSession()
+        let session = CandidateSearchSession()
         let old = session.begin(.fuzzy, query: "old")
         let current = session.begin(.fuzzy, query: "current")
 
@@ -16,20 +16,20 @@ struct SuggestionSearchSessionTests {
 
     @Test
     func kindsAreManagedIndependently() {
-        let session = SuggestionSearchSession()
+        let session = CandidateSearchSession()
         let fuzzy = session.begin(.fuzzy, query: "fuzzy")
-        let official = session.begin(.official, query: "official")
+        let official = session.begin(.external, query: "official")
 
         session.cancel(.fuzzy)
 
         #expect(!session.isCurrent(fuzzy))
         #expect(session.isCurrent(official))
-        #expect(session.query(for: .official) == "official")
+        #expect(session.query(for: .external) == "official")
     }
 
     @Test
     func cancellingFuzzySearchPreventsDelayedResultFromBecomingCurrent() {
-        let session = SuggestionSearchSession()
+        let session = CandidateSearchSession()
         let fuzzy = session.begin(.fuzzy, query: "remaining-panel")
 
         session.cancel(.fuzzy)
@@ -40,8 +40,8 @@ struct SuggestionSearchSessionTests {
 
     @Test
     func cancelAllInvalidatesEveryToken() {
-        let session = SuggestionSearchSession()
-        let official = session.begin(.official, query: "official")
+        let session = CandidateSearchSession()
+        let official = session.begin(.external, query: "official")
         let fuzzy = session.begin(.fuzzy, query: "fuzzy")
 
         session.cancelAll()
@@ -52,9 +52,9 @@ struct SuggestionSearchSessionTests {
 
     @Test
     func completingCurrentSearchRemovesOnlyItsToken() {
-        let session = SuggestionSearchSession()
+        let session = CandidateSearchSession()
         let translation = session.begin(.translation, query: "候補")
-        let official = session.begin(.official, query: "kouho")
+        let official = session.begin(.external, query: "kouho")
 
         session.complete(translation)
 
@@ -65,7 +65,7 @@ struct SuggestionSearchSessionTests {
 
     @Test
     func completingStaleSearchDoesNotRemoveItsReplacement() {
-        let session = SuggestionSearchSession()
+        let session = CandidateSearchSession()
         let stale = session.begin(.translation, query: "候補")
         let current = session.begin(.translation, query: "公募")
 
@@ -77,12 +77,12 @@ struct SuggestionSearchSessionTests {
 
     @Test
     func finishingTaskKeepsItsQueryCurrent() {
-        let session = SuggestionSearchSession()
-        let token = session.begin(.official, query: "kouho")
+        let session = CandidateSearchSession()
+        let token = session.begin(.external, query: "kouho")
 
         session.finishTask(token)
 
         #expect(session.isCurrent(token))
-        #expect(session.query(for: .official) == "kouho")
+        #expect(session.query(for: .external) == "kouho")
     }
 }

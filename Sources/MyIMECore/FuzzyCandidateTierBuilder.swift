@@ -1,4 +1,4 @@
-public enum FuzzySuggestionTierBuilder {
+public enum FuzzyCandidateTierBuilder {
     /// Segments shorter than this are fragments such as `ma` or `gyo`,
     /// which split almost any input into some dictionary entries
     public static let wordSegmentLength = 4

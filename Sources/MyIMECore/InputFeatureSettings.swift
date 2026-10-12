@@ -13,7 +13,7 @@ public struct InputFeatureSettings {
         static let externalInformationPanel = "ExternalInformationPanelEnabled"
         static let systemDictionaryPreview = "SystemDictionaryPreviewEnabled"
         static let systemDictionaryNames = "SystemDictionaryNames"
-        static let fuzzySuggestions = "FuzzySuggestionsEnabled"
+        static let fuzzyCandidates = "FuzzySuggestionsEnabled"
         static let dateTimeCandidates = "DateTimeCandidatesEnabled"
         static let disabledImportedDictionaries = "DisabledImportedDictionaries"
     }
@@ -64,9 +64,9 @@ public struct InputFeatureSettings {
         nonmutating set { setFlag(Key.systemDictionaryPreview, newValue) }
     }
 
-    public var isFuzzySuggestionsEnabled: Bool {
-        get { flag(Key.fuzzySuggestions, default: false) }
-        nonmutating set { setFlag(Key.fuzzySuggestions, newValue) }
+    public var isFuzzyCandidatesEnabled: Bool {
+        get { flag(Key.fuzzyCandidates, default: false) }
+        nonmutating set { setFlag(Key.fuzzyCandidates, newValue) }
     }
 
     public var isDateTimeCandidatesEnabled: Bool {

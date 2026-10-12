@@ -102,8 +102,8 @@ struct NextInputEpisodePromotionTests {
     @Test
     func episodesFromTwoControllersCombineInTheSharedStore() {
         let store = Self.store()
-        let vscode = NextInputSuggestionCoordinator(store: store)
-        let chrome = NextInputSuggestionCoordinator(store: store)
+        let vscode = NextInputCandidateCoordinator(store: store)
+        let chrome = NextInputCandidateCoordinator(store: store)
 
         selectEpisode(in: vscode)
         #expect(!learn("実装", source: .directInput, in: chrome)
@@ -118,8 +118,8 @@ struct NextInputEpisodePromotionTests {
     @Test
     func controllersDoNotJoinTheirSelectionsIntoOneEpisode() {
         let store = Self.store()
-        let vscode = NextInputSuggestionCoordinator(store: store)
-        let chrome = NextInputSuggestionCoordinator(store: store)
+        let vscode = NextInputCandidateCoordinator(store: store)
+        let chrome = NextInputCandidateCoordinator(store: store)
 
         for _ in 0..<2 {
             _ = learn("実装", source: .directInput, in: vscode)
@@ -161,7 +161,7 @@ struct NextInputEpisodePromotionTests {
         model.breakSequence()
     }
 
-    private func selectEpisode(in coordinator: NextInputSuggestionCoordinator) {
+    private func selectEpisode(in coordinator: NextInputCandidateCoordinator) {
         _ = learn("実装", source: .directInput, in: coordinator)
         _ = learn("に", source: .acceptedSuggestion, in: coordinator)
         _ = learn("進んで", source: .acceptedSuggestion, in: coordinator)
@@ -170,7 +170,7 @@ struct NextInputEpisodePromotionTests {
     private func learn(
         _ token: String,
         source: NextInputLearningSource,
-        in coordinator: NextInputSuggestionCoordinator
+        in coordinator: NextInputCandidateCoordinator
     ) -> [String] {
         coordinator.learnedCandidateModels(
             after: token,

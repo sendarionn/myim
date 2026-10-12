@@ -3,7 +3,7 @@ import Testing
 @testable import MyIMECore
 
 /// A learned phrase is only recommended until the user commits it from
-/// the spelling suggestions, which saves its full reading
+/// the fuzzy candidates, which saves its full reading
 @Suite
 struct LearnedCompoundRegistrationTests {
     @Test(arguments: ["toukyouto", "toukyoutonaka"])
@@ -35,7 +35,7 @@ struct LearnedCompoundRegistrationTests {
     }
 
     @Test
-    func registeredPhraseBecomesANormalCandidateOnce() async throws {
+    func registeredPhraseBecomesAStandardCandidateOnce() async throws {
         let store = UserDictionaryStore(entries: []) { _ in }
         let learning = learnedTokyoNakano()
         let entry = try #require(
@@ -81,7 +81,7 @@ struct LearnedCompoundRegistrationTests {
 
     @Test
     func phraseWithAMissingReadingIsNotRegistered() {
-        let suggestion = FuzzySuggestion(
+        let suggestion = FuzzyCandidate(
             candidate: "東京都中野区",
             reading: "toukyouto",
             distance: 0,
@@ -95,7 +95,7 @@ struct LearnedCompoundRegistrationTests {
 
     @Test
     func phraseWhoseTokensDoNotFormTheTextIsNotRegistered() {
-        let suggestion = FuzzySuggestion(
+        let suggestion = FuzzyCandidate(
             candidate: "東京都中野区",
             reading: "toukyoutonakanoku",
             distance: 0,
@@ -109,12 +109,12 @@ struct LearnedCompoundRegistrationTests {
 
     @Test
     func ordinarySpellingSuggestionsKeepTheirRegistration() {
-        let correction = FuzzySuggestion(
+        let correction = FuzzyCandidate(
             candidate: "最新",
             reading: "saishin",
             distance: 1
         )
-        let notLearnable = FuzzySuggestion(
+        let notLearnable = FuzzyCandidate(
             candidate: "際ハッシウム品",
             reading: "saihshin",
             distance: 1,
@@ -130,8 +130,8 @@ struct LearnedCompoundRegistrationTests {
 
     /// 東京都 typed and 中野区 picked from the next-input suggestions
     /// often enough for the pair to be learned
-    private func learnedTokyoNakano() -> NextInputSuggestionCoordinator {
-        let coordinator = NextInputSuggestionCoordinator(
+    private func learnedTokyoNakano() -> NextInputCandidateCoordinator {
+        let coordinator = NextInputCandidateCoordinator(
             predictionModel: NextInputPredictionModel(),
             writer: DeferredJSONFileWriter(
                 fileURL: FileManager.default.temporaryDirectory
@@ -165,12 +165,12 @@ struct LearnedCompoundRegistrationTests {
 
     private func suggestions(
         for query: String,
-        learning: NextInputSuggestionCoordinator
-    ) async -> [FuzzySuggestion] {
+        learning: NextInputCandidateCoordinator
+    ) async -> [FuzzyCandidate] {
         let visible: Set<String> = ["東京都"]
         let repository = FuzzyEngineRepository()
         repository.prepare(for: [])
-        let source = FuzzySuggestionSource(
+        let source = FuzzyCandidateSource(
             query: query,
             visibleCandidates: visible,
             userDictionary: LayeredConversionEngine(engines: []),
@@ -185,12 +185,12 @@ struct LearnedCompoundRegistrationTests {
                 excluding: visible
             )
         )
-        var coordinator = FuzzySuggestionCoordinator()
+        var coordinator = FuzzyCandidateSession()
         coordinator.replace(
             matchTiers: await source.matchTiers(),
             recencyRanks: [:]
         )
-        return coordinator.suggestions
+        return coordinator.candidates
     }
 
     private func normalCandidates(

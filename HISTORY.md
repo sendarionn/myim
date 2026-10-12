@@ -2610,3 +2610,7 @@
 - READMEデモは実機の操作を手動で録画する方針へ変更し、合成キーイベントによる自動録画、変換エンジンと候補パネル描画によるGIF生成、関連する開発用コマンド・スクリプト・テストを削除
 - 候補パネルの`show()`を画像生成用に分割した変更を元に戻し、READMEの機能一覧と関連実装の対応付け、更新が必要なデモの判定は維持
 - READMEのGIF撮影・掲載・更新を手動管理へ移行し、`docs/readme-demos.json`、`docs/README_DEMOS.md`、`Scripts/readme_demos.py`、`Scripts/update-readme-demos.sh`と専用テストを削除
+- 候補・候補群・候補生成処理・表示パネル・選択状態を区別する候補体系を定義し、`MISCELLANEOUS.md`へ概念と実装の対応表を追加
+- 表示パネルを位置で命名し、`CandidateWindowController`を`CandidatePanelController`、`FuzzySuggestionWindowController`を`SecondaryCandidatePanelController`へ変更
+- 曖昧候補の`FuzzySuggestion*`を`FuzzyCandidate*`、次入力の`NextInputSuggestionCoordinator`を`NextInputCandidateCoordinator`、非同期検索の`SuggestionSearch*`を`CandidateSearch*`、外部API候補の`official`を`external`へ変更し、文書の「通常候補」「もしかして」を「標準候補」「曖昧候補」へ統一
+- 設定の保存キーと診断用環境変数の値は互換性のため変更せず維持

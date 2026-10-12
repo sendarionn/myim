@@ -1,22 +1,22 @@
-public final class SuggestionSearchCoordinator {
-    private let session: SuggestionSearchSession
+public final class CandidateSearchCoordinator {
+    private let session: CandidateSearchSession
 
-    public init(session: SuggestionSearchSession = SuggestionSearchSession()) {
+    public init(session: CandidateSearchSession = CandidateSearchSession()) {
         self.session = session
     }
 
-    public func query(for kind: SuggestionSearchKind) -> String? {
+    public func query(for kind: CandidateSearchKind) -> String? {
         session.query(for: kind)
     }
 
     public func activate(
-        _ kind: SuggestionSearchKind,
+        _ kind: CandidateSearchKind,
         query: String
     ) {
         _ = session.begin(kind, query: query)
     }
 
-    public func cancel(_ kind: SuggestionSearchKind) {
+    public func cancel(_ kind: CandidateSearchKind) {
         session.cancel(kind)
     }
 
@@ -25,7 +25,7 @@ public final class SuggestionSearchCoordinator {
     }
 
     public func start<Value: Sendable>(
-        _ kind: SuggestionSearchKind,
+        _ kind: CandidateSearchKind,
         query: String,
         operation: @escaping @MainActor () async throws -> Value,
         validate: @escaping @MainActor () -> Bool,

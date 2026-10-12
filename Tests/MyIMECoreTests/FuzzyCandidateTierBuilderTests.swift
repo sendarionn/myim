@@ -1,7 +1,7 @@
 import Testing
 @testable import MyIMECore
 
-struct FuzzySuggestionTierBuilderTests {
+struct FuzzyCandidateTierBuilderTests {
     @Test func placesExactCompoundBeforeDirectAndCompoundTypos() {
         let directTypo = FuzzyConversionMatch(
             reading: "tuuyoukouho",
@@ -21,7 +21,7 @@ struct FuzzySuggestionTierBuilderTests {
             minimumSegmentLength: 5
         )
 
-        let tiers = FuzzySuggestionTierBuilder.build(
+        let tiers = FuzzyCandidateTierBuilder.build(
             directTypoMatches: [directTypo],
             compounds: [typoCompound, exactCompound]
         )
@@ -49,7 +49,7 @@ struct FuzzySuggestionTierBuilderTests {
             minimumSegmentLength: 3
         )
 
-        let tiers = FuzzySuggestionTierBuilder.build(
+        let tiers = FuzzyCandidateTierBuilder.build(
             directTypoMatches: [close, distant],
             compounds: [fragmentSplit]
         )

@@ -306,7 +306,7 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
     }
 }
 
-final class CandidateWindowController: NSObject {
+final class CandidatePanelController: NSObject {
     private static let itemIdentifier = NSUserInterfaceItemIdentifier(
         "candidateItem"
     )
@@ -922,7 +922,7 @@ final class CandidateWindowController: NSObject {
     }
 }
 
-extension CandidateWindowController: NSCollectionViewDataSource {
+extension CandidatePanelController: NSCollectionViewDataSource {
     func collectionView(
         _ collectionView: NSCollectionView,
         numberOfItemsInSection section: Int
@@ -952,7 +952,7 @@ extension CandidateWindowController: NSCollectionViewDataSource {
     }
 }
 
-extension CandidateWindowController: NSCollectionViewDelegateFlowLayout {
+extension CandidatePanelController: NSCollectionViewDelegateFlowLayout {
     func collectionView(
         _ collectionView: NSCollectionView,
         layout collectionViewLayout: NSCollectionViewLayout,

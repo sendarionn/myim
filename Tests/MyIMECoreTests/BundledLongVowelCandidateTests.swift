@@ -69,7 +69,7 @@ struct BundledLongVowelCandidateTests {
         let entries = try #require(Self.basicEntries)
         let repository = FuzzyEngineRepository()
         repository.prepare(for: entries)
-        let source = FuzzySuggestionSource(
+        let source = FuzzyCandidateSource(
             query: "yu-za-jisho",
             visibleCandidates: [],
             userDictionary: LayeredConversionEngine(engines: []),

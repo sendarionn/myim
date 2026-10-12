@@ -9,14 +9,14 @@ struct InputInteractionStateTests {
             hasInput: Bool = false,
             isRegistering: Bool = false,
             hasCandidate: Bool = false,
-            hasFuzzySuggestion: Bool = false,
+            hasFuzzyCandidate: Bool = false,
             hasNextInput: Bool = false
         ) -> InputInteractionState {
             InputInteractionState.resolve(
                 hasInput: hasInput,
                 isRegisteringDictionary: isRegistering,
                 hasSelectedCandidate: hasCandidate,
-                hasSelectedFuzzySuggestion: hasFuzzySuggestion,
+                hasSelectedFuzzyCandidate: hasFuzzyCandidate,
                 hasSelectedNextInput: hasNextInput
             )
         }
@@ -28,8 +28,8 @@ struct InputInteractionStateTests {
                 == .selectingCandidate
         )
         #expect(
-            resolve(hasInput: true, hasFuzzySuggestion: true)
-                == .selectingFuzzySuggestion
+            resolve(hasInput: true, hasFuzzyCandidate: true)
+                == .selectingFuzzyCandidate
         )
         #expect(
             resolve(hasNextInput: true) == .selectingNextInput
@@ -39,7 +39,7 @@ struct InputInteractionStateTests {
                 hasInput: true,
                 isRegistering: true,
                 hasCandidate: true,
-                hasFuzzySuggestion: true,
+                hasFuzzyCandidate: true,
                 hasNextInput: true
             ) == .registeringDictionary
         )
