@@ -20,6 +20,17 @@ public struct TranslationCandidateSelection: Equatable, Sendable {
     }
 }
 
+/// What the visible translation panels do when another candidate becomes
+/// the translation source
+public enum TranslationPanelTransition: Equatable, Sendable {
+    /// They stay until the new translation replaces them, as when moving
+    /// within one candidate panel
+    case keepUntilReplaced
+    /// They close now, because the new source is not translated or its
+    /// translations open on the other side
+    case close
+}
+
 public enum TranslationPanelMove: Equatable, Sendable {
     case selected(Candidate)
     case returnedToSource
@@ -76,6 +87,17 @@ public struct TranslationCandidateSession: Equatable, Sendable {
         in channel: TranslationCandidateChannel
     ) -> Bool {
         generatedTextsByChannel[channel]?.contains(text) ?? false
+    }
+
+    public func transition(
+        toSourceIn channel: TranslationCandidateChannel,
+        translates: Bool
+    ) -> TranslationPanelTransition {
+        guard translates,
+              visibleChannel == nil || visibleChannel == channel else {
+            return .close
+        }
+        return .keepUntilReplaced
     }
 
     public var hasVisibleCandidates: Bool {

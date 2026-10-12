@@ -3321,21 +3321,21 @@ final class InputController: IMKInputController {
             selectedCandidateIndex = standardIndex
         }
         selectedFuzzyCandidateIndex = nil
+        // Translations of the fuzzy candidate open on the other side and no
+        // longer have a source, even when the candidate is not translated
+        if translationCandidateSession.visibleChannel == .fuzzy {
+            cancelCandidateTranslation()
+            hideTranslationCandidatePanels()
+        }
         if let selectedCandidateIndex,
            currentCandidateModels.indices.contains(selectedCandidateIndex) {
-            let candidate = currentCandidateModels[selectedCandidateIndex]
-            setMarkedText(
-                CandidateSelectionProjection.markedText(
-                    for: candidate,
-                    prefix: compositionPrefix,
-                    suffix: conversionSuffix + compositionSuffix
-                ),
-                in: sender
-            )
+            // Selected as in the primary panel, which also makes it the
+            // translation source and the preview
+            _ = selectCandidate(index: selectedCandidateIndex, client: sender)
         } else {
             updateMarkedText(in: sender)
+            showPrimaryCandidatePanel(client: sender)
         }
-        showPrimaryCandidatePanel(client: sender)
         // The secondary panel keeps its rows until it is shown again, so it
         // is redrawn without the highlight; it is placed only beside a
         // primary panel already on screen and otherwise waits for the
@@ -3744,10 +3744,17 @@ final class InputController: IMKInputController {
         if case .fuzzy = destination {
             candidateSearchCoordinator.cancel(.fuzzy)
         }
-        guard Self.diagnosticConfiguration.enables(.translation),
-              Self.featureSettings.isAppleTranslationEnabled,
-              source.containsJapaneseText,
-              !Self.featureSettings.translationTargetLanguages.isEmpty else {
+        let translates = Self.diagnosticConfiguration.enables(.translation)
+            && Self.featureSettings.isAppleTranslationEnabled
+            && source.containsJapaneseText
+            && !Self.featureSettings.translationTargetLanguages.isEmpty
+        if translationCandidateSession.transition(
+            toSourceIn: destination.channel,
+            translates: translates
+        ) == .close {
+            hideTranslationCandidatePanels()
+        }
+        guard translates else {
             return
         }
         panelCoordinator.reserveTranslationCandidateSpace(
@@ -3927,7 +3934,9 @@ final class InputController: IMKInputController {
         _ candidate: Candidate,
         client sender: Any
     ) -> Bool {
+        // The source stays selected internally so returning restores it
         primaryCandidatePanel.clearSelection()
+        secondaryCandidatePanel.clearSelection()
         if let selection = translationCandidateSession.selection {
             panelCoordinator.selectTranslationCandidate(selection)
         }

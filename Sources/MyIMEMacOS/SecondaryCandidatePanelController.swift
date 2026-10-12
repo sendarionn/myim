@@ -200,6 +200,13 @@ final class SecondaryCandidatePanelController {
         }
     }
 
+    /// Removes the highlight without moving or redrawing the panel
+    func clearSelection() {
+        stackView.arrangedSubviews
+            .compactMap { $0 as? CandidatePanelRowView }
+            .forEach { $0.updateSelection(false) }
+    }
+
     func hide() {
         panel.orderOut(nil)
         guidePanel.orderOut(nil)
