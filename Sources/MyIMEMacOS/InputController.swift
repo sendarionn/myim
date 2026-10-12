@@ -329,7 +329,11 @@ final class InputController: IMKInputController {
     override func handle(_ event: NSEvent!, client sender: Any!) -> Bool {
         let clock = ContinuousClock()
         let start = clock.now
+        let tracesNavigation = beginNavigationTrace(for: event)
         let handled = handleUnmeasured(event, client: sender)
+        if tracesNavigation {
+            endNavigationTrace(handled: handled)
+        }
         let elapsed = clock.now - start
         if let event, event.type == .keyDown {
             let microseconds = Self.microseconds(elapsed)
@@ -349,6 +353,43 @@ final class InputController: IMKInputController {
             )
         }
         return handled
+    }
+
+    /// Temporary diagnostics for left and right arrows, enabled with
+    /// `defaults write io.github.sendarionn.inputmethod.myime NavigationDiagnosticsEnabled -bool true`;
+    /// records the handling path and cursor positions, never the text
+    private static let navigationDiagnosticsKey = "NavigationDiagnosticsEnabled"
+    private var navigationTraceSteps: [String]?
+
+    private func beginNavigationTrace(for event: NSEvent?) -> Bool {
+        guard let event, event.type == .keyDown,
+              event.keyCode == 123 || event.keyCode == 124,
+              UserDefaults.standard.bool(forKey: Self.navigationDiagnosticsKey)
+        else {
+            return false
+        }
+        navigationTraceSteps = []
+        Self.lifecycleLogger.notice(
+            "NAVTRACE begin key=\(event.keyCode == 123 ? "left" : "right", privacy: .public) state=\(String(describing: self.interactionState), privacy: .public) \(self.navigationSnapshot, privacy: .public)"
+        )
+        return true
+    }
+
+    private func endNavigationTrace(handled: Bool) {
+        let steps = navigationTraceSteps ?? []
+        navigationTraceSteps = nil
+        Self.lifecycleLogger.notice(
+            "NAVTRACE end consumed=\(handled, privacy: .public) state=\(String(describing: self.interactionState), privacy: .public) \(self.navigationSnapshot, privacy: .public) steps=\(steps.isEmpty ? "none" : steps.joined(separator: " > "), privacy: .public)"
+        )
+    }
+
+    private var navigationSnapshot: String {
+        "standard=\(selectedCandidateIndex.map(String.init) ?? "none") fuzzy=\(selectedFuzzyCandidateIndex.map(String.init) ?? "none") cursor=\(inputCursor) inputLength=\(inputBuffer.count) primaryVisible=\(primaryCandidatePanel.isVisible) secondaryVisible=\(secondaryCandidatePanel.isVisible)"
+    }
+
+    private func noteNavigation(_ step: @autoclosure () -> String) {
+        guard navigationTraceSteps != nil else { return }
+        navigationTraceSteps?.append(step())
     }
 
     private func handleUnmeasured(
@@ -637,6 +678,7 @@ final class InputController: IMKInputController {
         client sender: Any
     ) -> Bool {
         if inputBuffer.isEmpty, nextInputCandidateCoordinator.hasCandidates {
+            noteNavigation("horizontalArrow.nextInput")
             guard nextInputCandidateCoordinator.selectedIndex != nil else {
                 dismissNextInputCandidates(clearMarkedTextIn: nil)
                 return false
@@ -648,9 +690,13 @@ final class InputController: IMKInputController {
                 direction: direction,
                 from: primaryCandidatePanel.frame
            ) {
+            noteNavigation("horizontalArrow.enterTranslation")
             return enterTranslationCandidates(client: sender)
         }
         let offset = direction == .left ? -1 : 1
+        noteNavigation(selectedCandidateIndex == nil
+            ? "horizontalArrow.moveInputCursor"
+            : "horizontalArrow.enterFuzzy")
         return selectedCandidateIndex == nil
             ? moveInputCursor(by: offset, client: sender)
             : enterFuzzyCandidatesOrConsumeArrow(client: sender)
@@ -2357,8 +2403,10 @@ final class InputController: IMKInputController {
                 standardSelectedIndex: selectedCandidateIndex,
                 maximumCount: Self.maximumCandidateCount
             ) else {
+            noteNavigation("enterFuzzy.consumedWithoutFuzzyCandidates")
             return true
         }
+        noteNavigation("enterFuzzy index=\(index)")
         return selectFuzzyCandidate(
             index: index,
             client: sender
@@ -3222,6 +3270,7 @@ final class InputController: IMKInputController {
             else { return true }
             return selectFuzzyCandidate(index: next, client: sender)
         case 123:
+            noteNavigation("fuzzySelection.left")
             if shouldEnterTranslationCandidates(
                 direction: .left,
                 from: secondaryCandidatePanel.visibleFrame ?? primaryCandidatePanel.frame
@@ -3230,6 +3279,7 @@ final class InputController: IMKInputController {
             }
             return returnToStandardCandidateSelection(client: sender)
         case 124:
+            noteNavigation("fuzzySelection.right")
             if shouldEnterTranslationCandidates(
                 direction: .right,
                 from: secondaryCandidatePanel.visibleFrame ?? primaryCandidatePanel.frame
@@ -3286,6 +3336,18 @@ final class InputController: IMKInputController {
             updateMarkedText(in: sender)
         }
         showPrimaryCandidatePanel(client: sender)
+        // The secondary panel keeps its rows until it is shown again, so it
+        // is redrawn without the highlight; it is placed only beside a
+        // primary panel already on screen and otherwise waits for the
+        // primary panel, which shows it again once the input location is known
+        if primaryCandidatePanel.visibleFrame != nil {
+            showInitialFuzzyCandidates()
+        } else {
+            secondaryCandidatePanel.hide()
+        }
+        noteNavigation(
+            "returnToStandard standard=\(selectedCandidateIndex.map(String.init) ?? "none") secondaryVisible=\(secondaryCandidatePanel.isVisible)"
+        )
         return true
     }
 
@@ -3894,6 +3956,7 @@ final class InputController: IMKInputController {
                 showTranslationCandidateSelection($0, client: sender)
             } ?? true
         case let key where key == .leftArrow || key == .rightArrow:
+            noteNavigation("translationSelection.horizontal")
             switch translationCandidateSession.moveHorizontally(
                 movingLeft: key == .leftArrow
             ) {
@@ -5026,6 +5089,9 @@ final class InputController: IMKInputController {
         guard let textClient = sender as? IMKTextInput else {
             return
         }
+        noteNavigation(
+            "setMarkedText length=\(value.utf16.count) selection=\(selectionOffset ?? value.utf16.count)"
+        )
         trace("setMarkedText.request", sender: sender, detail: "value=\(value)")
 
         let markedRange = textClient.markedRange()
@@ -5212,6 +5278,12 @@ final class InputController: IMKInputController {
     }
 
     private func moveInputCursor(by offset: Int, client sender: Any) -> Bool {
+        let cursorBefore = inputCursor
+        defer {
+            noteNavigation(
+                "moveInputCursor offset=\(offset) before=\(cursorBefore) after=\(inputCursor)"
+            )
+        }
         guard !inputBuffer.isEmpty else {
             dismissPanelsForCursorMovement(client: sender)
             return false
