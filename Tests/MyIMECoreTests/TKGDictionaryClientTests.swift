@@ -16,16 +16,19 @@ struct TKGDictionaryClientTests {
             {
               "id": "00003_miru",
               "headword": "観る",
+              "reading": "みる",
               "vocabulary_tier": "general"
             },
             {
               "id": "00001_miru",
               "headword": "見る",
+              "reading": "みる",
               "vocabulary_tier": "basic"
             },
             {
               "id": "00002_iku",
               "headword": "行く",
+              "reading": "いく",
               "vocabulary_tier": "core"
             }
           ]
@@ -43,6 +46,36 @@ struct TKGDictionaryClientTests {
                 DictionaryEntry(reading: "iku", candidates: ["行く"])
             ]
         )
+    }
+
+    @Test
+    func usesKanaReadingForLongVowelDictionaryKey() throws {
+        let source = """
+        {
+          "metadata": {"generated": "2026-10-12", "total_entries": 2},
+          "entries": [
+            {
+              "id": "05393_yuuzaa",
+              "headword": "ユーザー",
+              "reading": "ゆーざー",
+              "vocabulary_tier": "general"
+            },
+            {
+              "id": "example_kii",
+              "headword": "奇異",
+              "reading": "きい",
+              "vocabulary_tier": "general"
+            }
+          ]
+        }
+        """
+
+        let snapshot = try TKGDictionaryClient().convert(Data(source.utf8))
+
+        #expect(snapshot.entries == [
+            DictionaryEntry(reading: "yu-za-", candidates: ["ユーザー"]),
+            DictionaryEntry(reading: "kii", candidates: ["奇異"])
+        ])
     }
 
     @Test

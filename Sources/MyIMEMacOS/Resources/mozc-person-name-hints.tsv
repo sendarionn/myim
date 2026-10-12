@@ -255,7 +255,6 @@ arichika	有近
 aride	有出
 ariga	在我
 ariga	有我
-ariito	アリーと
 arika	アリカ
 arika	亜里香
 arika	有加
@@ -476,7 +475,7 @@ azumaya	東冶
 azumaya	東夜
 azumaya	東家
 azumaya	東谷
-baagaaya	バーガー屋
+ba-ga-ya	バーガー屋
 babaato	馬場跡
 bakuya	莫邪
 bakuya	麦谷
@@ -492,7 +491,7 @@ banno	板野
 banno	番野
 banno	阪野
 barato	茨戸
-barentaindeeto	バレンタインデート
+barentainde-to	バレンタインデート
 barutokaito	把瑠都凱斗
 beate	ベアテ
 beika	米花
@@ -502,7 +501,7 @@ benno	辨野
 berukuto	ベルクと
 binto	ビント
 biruto	ビルト
-boniito	ボニーと
+boni-to	ボニーと
 bouno	坊野
 bouno	房野
 boute	棒手
@@ -615,7 +614,6 @@ chouno	蝶野
 chouno	長野
 choushunka	張春華
 chuuka	中和
-chuuto	チュート
 chuuya	中也
 chuuya	中夜
 chuuya	宙也
@@ -631,7 +629,6 @@ daini	大弐
 dairokuno	大六野
 daito	大都
 daiya	大矢
-daniide	谷出
 danno	団野
 danno	團野
 danno	檀野
@@ -911,7 +908,7 @@ gakuto	岳登
 gakuto	楽人
 ganni	元女
 gaya	賀谷
-geete	ゲーテ
+ge-te	ゲーテ
 gekkouka	月光花
 genka	幻花
 genno	元野
@@ -931,7 +928,7 @@ gouya	合谷
 gouya	郷家
 gurento	グレンと
 guya	呉屋
-haatoreeto	ハートレート
+ha-tore-to	ハートレート
 habuka	羽深
 hachiga	八賀
 hachino	八野
@@ -1543,6 +1540,7 @@ hiyane	比屋根
 hiyo	ヒヨ
 hiyoshiya	日吉屋
 hizaka	日坂
+ho-suto	ホースト
 hodaka	ホダカ
 hodaka	帆高
 hodaka	穂高
@@ -1554,7 +1552,6 @@ honne	本根
 honno	本野
 hontani	本谷
 honto	本渡
-hoosuto	ホースト
 horide	堀出
 horino	堀埜
 horioka	堀岡
@@ -1601,8 +1598,7 @@ hoyano	保屋野
 hozaka	穂坂
 hozuka	穂塚
 hyouya	氷谷
-hyuuga	ヒュウガ
-hyuuga	ヒューが
+hyu-ga	ヒューが
 ibano	伊庭野
 ibuka	井深
 ichiha	イチハ
@@ -1644,8 +1640,6 @@ igamono	伊賀者
 igaya	猪谷
 iide	井出
 iide	飯出
-iikuni	飯國
-iino	イーノ
 iino	伊井野
 iino	入野
 iino	猪野
@@ -1868,7 +1862,7 @@ jankara	ジャンカラ
 janni	ジャンに
 jenga	ジェンが
 jento	ジェンと
-jiinyo	ジーニョ
+ji-nyo	ジーニョ
 jikuya	軸屋
 jinaka	地中
 jinde	神出
@@ -1903,7 +1897,7 @@ junka	純香
 junka	絢香
 junka	順和
 junsuka	ジュンスカ
-juriini	ジュリーに
+juri-ni	ジュリーに
 juuni	従二
 juuno	重野
 kabaya	カバヤ
@@ -2210,7 +2204,7 @@ katsuyo	克代
 katsuyo	勝代
 katsuyo	香津代
 katsuyori	勝頼
-kattaaha	カッター刃
+katta-ha	カッター刃
 kawachiya	河内家
 kawade	川出
 kawade	川手
@@ -3128,10 +3122,10 @@ manto	万戸
 maoka	真岡
 maoto	真音
 mareni	希
+mari-ni	マリーに
+mari-no	マリーの
+mari-no	マリーノ
 marianne	マリアンネ
-mariini	マリーに
-mariino	マリーの
-mariino	マリーノ
 marika	万里香
 marika	毬花
 marika	真梨香
@@ -3612,7 +3606,7 @@ mioka	味岡
 mioka	美丘
 mioni	三鬼
 miono	澪乃
-miraano	ミラーノ
+mira-no	ミラーノ
 miriya	ミリヤ
 miruno	見ル野
 miruno	見野
@@ -3800,6 +3794,7 @@ mizuto	水登
 mizuya	水谷
 mizuyo	水代
 mizuyo	瑞代
+mo-ga	モーガ
 mochino	望野
 mochiyo	持世
 moeka	モエカ
@@ -3867,7 +3862,6 @@ monno	夢野
 monno	門野
 mononobeno	物部
 monto	文人
-mooga	モーガ
 moreno	モレノ
 moridono	守殿
 morieto	森絵都
@@ -4495,7 +4489,6 @@ oomika	大美賀
 oomiya	大光明
 oomiya	近江屋
 oomo	大雲
-oomune	大棟
 oonaga	大永
 oonaga	大長
 oonaka	大仲
@@ -4531,7 +4524,6 @@ ootate	大楯
 ooto	大図
 ooto	大都
 ootomo	オオトモ
-ootomo	大伴
 ootomo	大巴
 ootomo	大知
 ootsuka	オオツカ
@@ -4624,7 +4616,7 @@ oyano	小谷野
 ozono	尾園
 ozono	御園
 peruka	ペルカ
-piito	ピート
+pi-to	ピート
 porupotoha	ポル・ポト派
 poto	ポト
 raino	来野
@@ -4668,9 +4660,9 @@ reiya	礼弥
 reiya	麗也
 renga	蓮花
 renka	連科
+ri-beruto	リーベルト
+ri-de	リーデ
 riga	李賀
-riiberuto	リーベルト
-riide	リーデ
 rika	利佳
 rika	利加
 rika	利花
@@ -4725,7 +4717,7 @@ rinka	凛花
 rinka	凛華
 rinka	凛香
 rinka	梨花
-rinkaato	リンカート
+rinka-to	リンカート
 rinne	凛音
 rinne	林音
 rinno	凛乃
@@ -4744,12 +4736,12 @@ riyo	理代
 roka	蘆花
 roka	路可
 rokutani	鹿谷
+ru-ga	ルーガ
+ru-ruka	ルー・ルカ
+ru-suto	ルースト
 ruito	塁斗
 ruiya	類家
 rurika	ルリカ
-ruuga	ルーガ
-ruuruka	ルー・ルカ
-ruusuto	ルースト
 ryouga	リョウガ
 ryouga	涼雅
 ryouga	遼河
@@ -4801,7 +4793,6 @@ saaya	サアヤ
 saaya	佐彩
 saaya	沙彩
 saaya	沙綾
-saaya	紗彩
 saaya	紗綾
 sabuto	佐太
 sachika	さち花
@@ -5245,7 +5236,6 @@ shigeyori	重頼
 shiiha	椎葉
 shiino	椎野
 shiinoha	椎葉
-shiitani	椎谷
 shiiya	椎屋
 shika	史香
 shika	志華
@@ -5356,7 +5346,6 @@ shioya	シオヤ
 shioya	塩野
 shioya	汐谷
 shioya	潮谷
-shiraaya	白綾
 shirade	白出
 shiraga	白神
 shiraga	白鹿
@@ -5378,6 +5367,7 @@ shirato	白土
 shirato	白都
 shiraya	白矢
 shiraya	白谷
+shiro-to	シローと
 shirode	白出
 shirode	白手
 shiroha	白羽
@@ -5389,7 +5379,6 @@ shirone	白根
 shirono	城之
 shirono	城野
 shirono	白野
-shirooto	シローと
 shirosaka	白坂
 shirotani	城谷
 shirotani	白谷
@@ -6088,6 +6077,7 @@ tetsuya	鉄屋
 tetsuya	鉄弥
 tetsuya	鉄矢
 tetsuyo	哲代
+to-nya	トーニャ
 tobino	飛野
 tobioka	飛岡
 tobitaka	飛鷹
@@ -6257,14 +6247,12 @@ toomine	遠峯
 toomine	遠嶺
 toomiya	遠宮
 toono	東尾
-toonya	トーニャ
 tooruha	透派
 tooya	遠矢
 toraya	寅屋
 toraya	虎谷
 toride	鳥出
 toriha	鳥羽
-toriizuka	鳥居塚
 torino	鳥野
 toriya	鳥谷
 tosaka	トサカ

@@ -6,6 +6,9 @@ import sys
 from collections import OrderedDict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from dictionary_key import kana_to_dictionary_key
+
 
 TIER_ORDER = {
     "basic": 0,
@@ -76,7 +79,12 @@ def convert(source: Path, output: Path, tiers: set[str]) -> tuple[int, int]:
         if not isinstance(entry_id, str) or not isinstance(headword, str):
             continue
 
-        reading = romaji_from_entry_id(entry_id)
+        kana_reading = entry.get("reading")
+        reading = (
+            kana_to_dictionary_key(kana_reading)
+            if isinstance(kana_reading, str) and kana_reading
+            else romaji_from_entry_id(entry_id)
+        )
         candidates = candidates_by_reading.setdefault(reading, [])
         if not headword or "\n" in headword:
             continue

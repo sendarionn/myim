@@ -3,7 +3,7 @@
   "sourceRevision": "3f235b4eb6fcff7d14ef5f0fb8ee56de7ee4c732",
   "maximumCandidatesPerReading": 32,
   "maximumCost": 7000,
-  "readingCount": 279262,
-  "candidateCount": 382193,
-  "inputFormat": "canonical-romaji"
+  "readingCount": 279666,
+  "candidateCount": 382203,
+  "inputFormat": "typed-romaji-with-long-vowel-hyphen"
 }

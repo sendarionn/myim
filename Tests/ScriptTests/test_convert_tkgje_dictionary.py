@@ -18,11 +18,13 @@ class ConvertTKGJEDictionaryTests(unittest.TestCase):
                 {
                     "id": "basic_hayai",
                     "headword": "速い／早い",
+                    "reading": "はやい",
                     "vocabulary_tier": "basic",
                 },
                 {
                     "id": "basic_nado",
                     "headword": "〜など",
+                    "reading": "など",
                     "vocabulary_tier": "basic",
                 },
             ]
@@ -41,6 +43,33 @@ class ConvertTKGJEDictionaryTests(unittest.TestCase):
             self.assertEqual(
                 output.read_text(encoding="utf-8"),
                 "hayai\n 速い\n 早い\n\nnado\n など\n",
+            )
+
+    def test_uses_kana_reading_to_preserve_long_vowels(self):
+        document = {
+            "entries": [
+                {
+                    "id": "05393_yuuzaa",
+                    "headword": "ユーザー",
+                    "reading": "ゆーざー",
+                    "vocabulary_tier": "general",
+                },
+                {
+                    "id": "example_kii",
+                    "headword": "奇異",
+                    "reading": "きい",
+                    "vocabulary_tier": "general",
+                },
+            ]
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "entries_index.json"
+            output = Path(directory) / "dictionary.tsv"
+            source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+            MODULE.convert(source, output, set(MODULE.TIER_ORDER))
+            self.assertEqual(
+                output.read_text(encoding="utf-8"),
+                "yu-za-\n ユーザー\n\nkii\n 奇異\n",
             )
 
 

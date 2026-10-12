@@ -193,7 +193,7 @@ public struct FuzzyConversionEngine: Sendable {
                     guard element.value.4 <= ordinaryMaximumCost,
                           Self.hasKeyboardLayoutEvidenceIfNeeded(
                             from: reading,
-                            to: element.value.0.reading
+                            toAnyVariantOf: element.value.0.reading
                           ) else {
                         return nil
                     }
@@ -216,7 +216,7 @@ public struct FuzzyConversionEngine: Sendable {
             return $0.4 <= maximumCost
                 && Self.hasKeyboardLayoutEvidenceIfNeeded(
                     from: reading,
-                    to: $0.0.reading
+                    toAnyVariantOf: $0.0.reading
                 )
         }
         matches.sort {
@@ -289,18 +289,29 @@ public struct FuzzyConversionEngine: Sendable {
             guard entry.reading != reading else {
                 continue
             }
-            let typoCost = RomajiTypoScorer.aggressiveCost(
-                from: reading,
-                to: entry.reading
-            )
+            let scoredTargets = Self.fuzzyReadingVariants(
+                from: entry.reading
+            ).map({ target in
+                (
+                    target,
+                    RomajiTypoScorer.aggressiveCost(
+                        from: reading,
+                        to: target
+                    )
+                )
+            })
+            guard let scoredTarget = scoredTargets.filter({
+                Self.hasKeyboardLayoutEvidenceIfNeeded(
+                    from: reading,
+                    to: $0.0
+                )
+            }).min(by: { $0.1 < $1.1 }) else { continue }
+            let target = scoredTarget.0
+            let typoCost = scoredTarget.1
             guard typoCost <= maximumCost else { continue }
-            guard Self.hasKeyboardLayoutEvidenceIfNeeded(
-                from: reading,
-                to: entry.reading
-            ) else { continue }
             let prefixLength = Self.commonPrefixLength(
                 source,
-                entry.characters
+                Array(target)
             )
             matches.append((
                 entry,
@@ -360,6 +371,15 @@ public struct FuzzyConversionEngine: Sendable {
             < RomajiTypoScorer.cost(from: source, to: target)
     }
 
+    private static func hasKeyboardLayoutEvidenceIfNeeded(
+        from source: String,
+        toAnyVariantOf target: String
+    ) -> Bool {
+        fuzzyReadingVariants(from: target).contains {
+            hasKeyboardLayoutEvidenceIfNeeded(from: source, to: $0)
+        }
+    }
+
     private static func fuzzyReadingVariants(from reading: String) -> [String] {
         var variants: [String] = []
         var seen = Set<String>()
@@ -374,16 +394,32 @@ public struct FuzzyConversionEngine: Sendable {
         let apostrophe = reading.replacingOccurrences(of: "n'", with: "n")
         let nasal = normalizedLabialNasal(in: reading)
         let longVowels = normalizedLongVowels(in: reading)
+        let expandedLongVowels = expandedLongVowels(in: reading)
         append(reading)
         append(moraicN)
         append(apostrophe)
         append(nasal)
         append(longVowels)
+        append(expandedLongVowels)
         append(normalizedLongVowels(in: moraicN))
         append(normalizedLongVowels(in: apostrophe))
         append(normalizedLongVowels(in: nasal))
         append(normalizedLabialNasal(in: moraicN))
         return variants
+    }
+
+    private static func expandedLongVowels(in reading: String) -> String {
+        var result = ""
+        for character in reading {
+            guard character == "-",
+                  let previous = result.last,
+                  "aeiou".contains(previous) else {
+                result.append(character)
+                continue
+            }
+            result.append(previous)
+        }
+        return result
     }
 
     private static func collapsedMoraicN(in reading: String) -> String {

@@ -4,9 +4,9 @@ import Testing
 @Suite
 struct ArtificialKeyboardTypoEvaluationTests {
     private let cases: [(reading: String, typo: String)] = [
-        ("deetabeesu", "de=tab0su"),
-        ("deetabeesu", "de_tab0su"),
-        ("deetabeesu", "de^tab0su"),
+        ("de-tabe-su", "de=tab0su"),
+        ("de-tabe-su", "de_tab0su"),
+        ("de-tabe-su", "de^tab0su"),
         ("konnichiha", "jonnichiga"),
         ("konnichiha", "konncihia"),
         ("hitsuyou", "htsuyuo"),

@@ -277,10 +277,10 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
-    func expandedLongVowelLookupDoesNotPreserveUnrelatedSystemCandidate() {
+    func directLongVowelLookupDoesNotFetchUnrelatedSystemCandidate() {
         let source = makeSource(systemText: """
         beppu\t別府
-        byuu\tビュー
+        byu-\tビュー
         byuu\t別府
         """)
 
@@ -294,9 +294,7 @@ struct StandardConversionCandidateSourceTests {
             reading: "byu-"
         )
 
-        #expect(generated.contains {
-            $0.storageText == "別府" && $0.hasSource(.systemDictionary)
-        })
+        #expect(!generated.contains { $0.storageText == "別府" })
         #expect(visible.contains("ビュー"))
         #expect(!visible.contains("別府"))
         #expect(texts(source, "beppu").contains("別府"))
@@ -385,6 +383,17 @@ struct StandardConversionCandidateSourceTests {
         )
 
         #expect(visible.contains(expected))
+    }
+
+    @Test
+    func legacyUserLongVowelKeyRemainsSearchable() {
+        let source = makeSource(userEntries: [DictionaryEntry(
+            reading: "yuuzaa",
+            candidates: ["ユーザー"]
+        )])
+
+        #expect(texts(source, "yu-za-").contains("ユーザー"))
+        #expect(texts(source, "yu-za-no").contains("ユーザーの"))
     }
 
     private let madeBasic = [DictionaryEntry(reading: "made", candidates: ["まで"])]

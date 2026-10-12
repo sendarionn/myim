@@ -61,7 +61,10 @@ public struct TKGDictionaryClient: Sendable {
                 continue
             }
 
-            let reading = String(entry.id[entry.id.index(after: separator)...])
+            let fallbackReading = String(entry.id[entry.id.index(after: separator)...])
+            let reading = entry.reading.flatMap(
+                KanaReadingDictionaryKey.value(from:)
+            ) ?? fallbackReading
             guard !reading.isEmpty, !entry.headword.contains("\n") else {
                 continue
             }
@@ -119,11 +122,13 @@ private struct TKGDictionaryIndex: Decodable {
     struct Entry: Decodable {
         let id: String
         let headword: String
+        let reading: String?
         let vocabularyTier: String
 
         enum CodingKeys: String, CodingKey {
             case id
             case headword
+            case reading
             case vocabularyTier = "vocabulary_tier"
         }
     }

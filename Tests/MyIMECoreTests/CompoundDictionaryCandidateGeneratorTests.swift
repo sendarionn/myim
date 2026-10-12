@@ -230,20 +230,20 @@ struct CompoundDictionaryCandidateGeneratorTests {
 
     @Test func combinesKatakanaAndKanjiSegments() {
         let generator = makeGenerator([
-            ("yuuzaa", "ユーザー"),
+            ("yu-za-", "ユーザー"),
             ("jisho", "辞書")
         ])
 
-        #expect(generator.candidates(for: "yuuzaajisho") == ["ユーザー辞書"])
+        #expect(generator.candidates(for: "yu-za-jisho") == ["ユーザー辞書"])
     }
 
     @Test func combinesKatakanaSegmentsIncludingLongVowelMarks() {
         let generator = makeGenerator([
-            ("deeta", "データ"),
-            ("beesu", "ベース")
+            ("de-ta", "データ"),
+            ("be-su", "ベース")
         ])
 
-        #expect(generator.candidates(for: "deetabeesu") == ["データベース"])
+        #expect(generator.candidates(for: "de-tabe-su") == ["データベース"])
     }
 
     @Test func combinesThreeEligibleSegments() {
@@ -314,9 +314,9 @@ struct CompoundDictionaryCandidateGeneratorTests {
         )
     }
 
-    @Test func expandsTypedLongVowelsWhenSearchingCompoundSegments() {
+    @Test func searchesTypedLongVowelsWithoutExpandingThem() {
         let generator = makeGenerator([
-            ("yuuzaa", "ユーザー"),
+            ("yu-za-", "ユーザー"),
             ("jisho", "辞書")
         ])
 

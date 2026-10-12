@@ -49,7 +49,8 @@ struct FuzzySuggestionSourceTests {
     @Test
     func typedLongVowelDoesNotSuggestUnrelatedExpandedReadingCandidate() async {
         let entries = [
-            DictionaryEntry(input: "byuu", candidates: ["ビュー", "別府"])
+            DictionaryEntry(input: "byu-", candidates: ["ビュー"]),
+            DictionaryEntry(input: "byuu", candidates: ["別府"])
         ]
         let repository = FuzzyEngineRepository()
         repository.prepare(for: entries)
@@ -90,7 +91,7 @@ struct FuzzySuggestionSourceTests {
     @Test
     func combinesLongVowelSegmentsThroughTheFuzzySource() async {
         let entries = [
-            DictionaryEntry(input: "yuuzaa", candidates: ["ユーザー"]),
+            DictionaryEntry(input: "yu-za-", candidates: ["ユーザー"]),
             DictionaryEntry(input: "jisho", candidates: ["辞書"])
         ]
         let repository = FuzzyEngineRepository()

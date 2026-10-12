@@ -144,6 +144,83 @@ public struct RomajiConverter: Sendable {
     ]
 }
 
+enum KanaReadingDictionaryKey {
+    static func value(from reading: String) -> String? {
+        guard !reading.isEmpty else { return nil }
+        let source = Array(reading)
+        var result = ""
+        var index = 0
+        var geminate = false
+
+        while index < source.count {
+            let character = source[index]
+            if character == "っ" {
+                geminate = true
+                index += 1
+                continue
+            }
+            if character == "ー" {
+                result.append("-")
+                index += 1
+                continue
+            }
+            if character == "ん" {
+                let following = index + 1 < source.count
+                    ? String(source[index + 1])
+                    : ""
+                let followingRomaji = reverseMapping[following] ?? ""
+                result += followingRomaji.first.map {
+                    "aeiouy".contains($0) ? "n'" : "n"
+                } ?? "n"
+                index += 1
+                continue
+            }
+
+            let pair = index + 1 < source.count
+                ? String(source[index...index + 1])
+                : ""
+            let romaji: String
+            if let pairRomaji = reverseMapping[pair] {
+                romaji = pairRomaji
+                index += 2
+            } else {
+                guard let singleRomaji = reverseMapping[String(character)] else {
+                    return nil
+                }
+                romaji = singleRomaji
+                index += 1
+            }
+            if geminate {
+                result.append(romaji.hasPrefix("ch") ? "t" : romaji.first!)
+                geminate = false
+            }
+            result += romaji
+        }
+
+        if geminate {
+            result += "xtsu"
+        }
+        return result
+    }
+
+    private static let reverseMapping: [String: String] = {
+        var result: [String: String] = [:]
+        for (romaji, kana) in RomajiConverter.mapping
+        where kana != "っ" && !kana.hasPrefix("っ") {
+            let canonical = RomajiCanonicalizer.canonicalInput(from: romaji)
+            if let current = result[kana] {
+                if canonical.count < current.count
+                    || (canonical.count == current.count && canonical < current) {
+                    result[kana] = canonical
+                }
+            } else {
+                result[kana] = canonical
+            }
+        }
+        return result
+    }()
+}
+
 public enum JapaneseSymbolConverter {
     public static func candidates(for input: String) -> [String] {
         (mapping[input] ?? []).filter { $0 != input }
@@ -199,10 +276,13 @@ public enum RomajiCanonicalizer {
     }
 
     public static func exactLookupInputs(from input: String) -> [String] {
-        var inputs = longVowelNotationPreservingLookupInputs(from: input)
-        if inputs.isEmpty {
-            inputs = unexpandedLookupInputs(from: input)
-        }
+        unexpandedLookupInputs(from: input)
+    }
+
+    public static func legacyLongVowelLookupInputs(
+        from input: String
+    ) -> [String] {
+        var inputs = unexpandedLookupInputs(from: input)
         for value in inputs {
             let expanded = longVowelInput(from: value)
             if expanded != value, !inputs.contains(expanded) {

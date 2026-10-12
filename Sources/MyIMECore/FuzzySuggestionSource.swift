@@ -110,7 +110,8 @@ public struct FuzzySuggestionSource: Sendable {
     /// Imported dictionaries contribute only entries whose kana reading
     /// matches, so SKK abbrev headwords such as `hs` are not used as words
     private func userCandidates(for reading: String) -> [String] {
-        userDictionary.candidates(for: reading)
+        RomajiCanonicalizer.legacyLongVowelLookupInputs(from: reading)
+            .flatMap(userDictionary.candidates)
             + (RomajiConverter().hiragana(from: reading).map {
                 importedDictionary.candidates(for: $0)
             } ?? [])

@@ -16,7 +16,7 @@ struct FuzzyConversionEngineTests {
         DictionaryEntry(reading: "shinbun", candidates: ["新聞"]),
         DictionaryEntry(reading: "toukyou", candidates: ["東京"]),
         DictionaryEntry(reading: "gakkou", candidates: ["学校"]),
-        DictionaryEntry(reading: "deetabeesu", candidates: ["データベース"])
+        DictionaryEntry(reading: "de-tabe-su", candidates: ["データベース"])
     ])
 
     @Test
@@ -161,17 +161,17 @@ struct FuzzyConversionEngineTests {
     }
 
     @Test
-    func findsMultipleErrorsOnlyInTheAggressiveSecondStage() {
+    func findsMultipleErrorsAgainstTheTypedLongVowelKey() {
         let match = engine.matches(for: "de-tsb-su").first {
-            $0.reading == "deetabeesu"
+            $0.reading == "de-tabe-su"
         }
 
         #expect(match?.candidates == ["データベース"])
-        #expect(match?.distance == 3)
+        #expect(match?.distance == 2)
         #expect(engine.matches(
             for: "de-tsb-su",
             maximumDistance: 2
-        ).allSatisfy { $0.reading != "deetabeesu" })
+        ).contains { $0.reading == "de-tabe-su" })
     }
 
     @Test(arguments: ["de-tsb-su", "de=tab0su"])
@@ -179,7 +179,7 @@ struct FuzzyConversionEngineTests {
         let learnedEngine = FuzzyConversionEngine(entries: [
             DictionaryEntry(reading: input, candidates: [input]),
             DictionaryEntry(
-                reading: "deetabeesu",
+                reading: "de-tabe-su",
                 candidates: ["データベース"]
             )
         ])
@@ -187,7 +187,7 @@ struct FuzzyConversionEngineTests {
         let matches = learnedEngine.matches(for: input)
 
         #expect(matches.contains {
-            $0.reading == "deetabeesu"
+            $0.reading == "de-tabe-su"
                 && $0.candidates.contains("データベース")
         })
         #expect(matches.allSatisfy { $0.reading != input })
@@ -195,11 +195,11 @@ struct FuzzyConversionEngineTests {
 
     @Test(arguments: [
         "dtbeesu",       // multiple missing vowels
-        "de-tabe-su"     // multiple long-vowel notation differences
+        "deetabeesu"     // repeated-vowel spelling for a hyphen dictionary key
     ])
     func findsDatabaseAcrossPhoneticallyPlausibleErrors(_ input: String) {
         #expect(engine.matches(for: input).contains {
-            $0.reading == "deetabeesu"
+            $0.reading == "de-tabe-su"
         })
     }
 
@@ -223,14 +223,14 @@ struct FuzzyConversionEngineTests {
     }
 
     @Test
-    func closeCorrectionPreventsTheAggressiveFallback() {
+    func closeCorrectionStillRanksFirst() {
         let rankedEngine = FuzzyConversionEngine(entries: [
             DictionaryEntry(
                 reading: "de-tsb-sa",
                 candidates: ["近い候補"]
             ),
             DictionaryEntry(
-                reading: "deetabeesu",
+                reading: "de-tabe-su",
                 candidates: ["データベース"]
             )
         ])
@@ -238,7 +238,7 @@ struct FuzzyConversionEngineTests {
         let matches = rankedEngine.matches(for: "de-tsb-su")
 
         #expect(matches.first?.candidates == ["近い候補"])
-        #expect(matches.allSatisfy { $0.candidates != ["データベース"] })
+        #expect(matches.contains { $0.candidates == ["データベース"] })
     }
 
     @Test

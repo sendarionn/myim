@@ -78,7 +78,7 @@ public struct StandardConversionCandidateSource: Sendable {
         let lookupReadings = RomajiCanonicalizer.dictionaryLookupInputs(
             from: context.conversionReading
         )
-        let userLookupReadings = RomajiCanonicalizer.dictionaryLookupInputs(
+        let userLookupReadings = RomajiCanonicalizer.legacyLongVowelLookupInputs(
             from: UserDictionaryLookupReading.resolve(
                 conversionReading: context.conversionReading,
                 originalInput: context.input
@@ -244,8 +244,11 @@ public struct StandardConversionCandidateSource: Sendable {
         let readings = RomajiCanonicalizer.dictionaryLookupInputs(
             from: parts.reading
         )
+        let userReadings = RomajiCanonicalizer.legacyLongVowelLookupInputs(
+            from: parts.reading
+        )
         let user = mergedGroups(
-            readings: readings,
+            readings: userReadings,
             lookup: { userEngine.candidateGroups(matching: $0) }
         ).exact
         let system = mergedGroups(readings: readings) {
@@ -281,8 +284,10 @@ public struct StandardConversionCandidateSource: Sendable {
             let readings = RomajiCanonicalizer.dictionaryLookupInputs(
                 from: reading
             )
+            let userReadings = RomajiCanonicalizer
+                .legacyLongVowelLookupInputs(from: reading)
             return mergedCandidates(
-                readings: readings,
+                readings: userReadings,
                 lookup: userEngine.candidates
             ) + mergedCandidates(
                 readings: readings,

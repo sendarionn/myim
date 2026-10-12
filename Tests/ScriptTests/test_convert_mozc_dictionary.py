@@ -28,8 +28,24 @@ class ConvertMozcDictionaryTests(unittest.TestCase):
         self.assertEqual(MODULE.kana_to_romaji("しる"), "shiru")
         self.assertEqual(MODULE.kana_to_romaji("しゅうせい"), "shuusei")
         self.assertEqual(MODULE.kana_to_romaji("まっちゃ"), "matcha")
-        self.assertEqual(MODULE.kana_to_romaji("ちゃーと"), "chaato")
+        self.assertEqual(MODULE.kana_to_romaji("ちゃーと"), "cha-to")
         self.assertEqual(MODULE.kana_to_romaji("かんい"), "kan'i")
+
+    def test_preserves_long_vowel_notation_as_dictionary_key(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)
+            (source / "dictionary00.txt").write_text(
+                "きー\t1\t1\t1000\tキー\n"
+                "きい\t1\t1\t1000\t奇異\n"
+                "びゅー\t1\t1\t1000\tビュー\n"
+                "びゅう\t1\t1\t1000\t別府\n",
+                encoding="utf-8",
+            )
+            result = MODULE.convert(source, maximum_candidates=2)
+            self.assertEqual(result["ki-"], ["キー"])
+            self.assertEqual(result["kii"], ["奇異"])
+            self.assertEqual(result["byu-"], ["ビュー"])
+            self.assertEqual(result["byuu"], ["別府"])
 
     def test_rejects_invalid_candidate_limit(self):
         with self.assertRaises(ValueError):

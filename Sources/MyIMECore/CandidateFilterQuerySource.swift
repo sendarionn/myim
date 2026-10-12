@@ -24,10 +24,14 @@ public struct CandidateFilterQuerySource: Sendable {
             romajiConverter.katakana(from: input)
         ].compactMap { $0 }
         var direct: [String] = []
-        for reading in RomajiCanonicalizer.dictionaryLookupInputs(
+        for reading in RomajiCanonicalizer.legacyLongVowelLookupInputs(
             from: input
         ) {
             direct.append(contentsOf: userEngine.candidates(for: reading))
+        }
+        for reading in RomajiCanonicalizer.dictionaryLookupInputs(
+            from: input
+        ) {
             direct.append(contentsOf: basicEngine.candidates(for: reading))
             direct.append(contentsOf: systemEngine.candidates(for: reading))
         }

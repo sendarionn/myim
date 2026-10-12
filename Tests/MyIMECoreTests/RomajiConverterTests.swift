@@ -169,14 +169,14 @@ struct RomajiConverterTests {
     }
 
     @Test
-    func expandsTypedLongVowelsForDictionaryLookup() {
+    func preservesTypedLongVowelsForDictionaryLookup() {
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "re-beru")
-                == ["re-beru", "reeberu"]
+                == ["re-beru"]
         )
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "ki-")
-                == ["ki-", "kii"]
+                == ["ki-"]
         )
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "n-")
@@ -184,11 +184,11 @@ struct RomajiConverterTests {
         )
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "huru-re")
-                == ["huru-re", "furu-re", "huruure", "furuure"]
+                == ["huru-re", "furu-re"]
         )
         #expect(
             RomajiCanonicalizer.dictionaryLookupInputs(from: "byu-")
-                == ["byu-", "byuu"]
+                == ["byu-"]
         )
         #expect(
             RomajiCanonicalizer
@@ -203,9 +203,21 @@ struct RomajiConverterTests {
     }
 
     @Test
+    func retainsLegacyLongVowelInputsForUserDictionaryCompatibility() {
+        #expect(
+            RomajiCanonicalizer.legacyLongVowelLookupInputs(from: "ki-")
+                == ["ki-", "kii"]
+        )
+        #expect(
+            RomajiCanonicalizer.legacyLongVowelLookupInputs(from: "huru-re")
+                == ["huru-re", "furu-re", "huruure", "furuure"]
+        )
+    }
+
+    @Test
     func findsKatakanaDictionaryCandidateFromTypedLongVowel() {
         let engine = ConversionEngine(entries: [
-            DictionaryEntry(reading: "reeberu", candidates: ["レーベル"]),
+            DictionaryEntry(reading: "re-beru", candidates: ["レーベル"]),
             DictionaryEntry(reading: "reberu", candidates: ["レベル"])
         ])
         let found = RomajiCanonicalizer.dictionaryLookupInputs(
@@ -232,7 +244,7 @@ struct RomajiConverterTests {
     @Test
     func findsKatakanaDictionaryCandidateAfterCanonicalizingLongVowelInput() {
         let engine = ConversionEngine(entries: [
-            DictionaryEntry(reading: "furuure", candidates: ["フルーレ"])
+            DictionaryEntry(reading: "furu-re", candidates: ["フルーレ"])
         ])
         let found = RomajiCanonicalizer.dictionaryLookupInputs(
             from: "huru-re"
