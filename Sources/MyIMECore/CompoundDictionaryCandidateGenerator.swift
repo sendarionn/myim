@@ -95,19 +95,47 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
         additionalCandidates: @Sendable (String) -> [String] = { _ in [] },
         typoMatches: @Sendable (String) -> [FuzzyConversionMatch] = { _ in [] }
     ) -> [CompoundDictionaryCandidate] {
-        let input = RomajiCanonicalizer.canonicalInput(from: input)
-        let directCandidates = Set(mergedCandidates(
-            for: input,
-            additionalCandidates: additionalCandidates
-        ))
-        guard input.count >= 4,
-              limit > 0,
-              let path = bestPath(
-                for: input,
+        guard limit > 0 else {
+            return []
+        }
+
+        let lookupInputs = RomajiCanonicalizer.exactLookupInputs(from: input)
+            .map { RomajiCanonicalizer.canonicalInput(from: $0) }
+            .removingDuplicateStrings()
+        let directCandidates = Set(lookupInputs.flatMap {
+            allCandidates(
+                for: $0,
+                additionalCandidates: additionalCandidates
+            )
+        })
+        var matches: [CompoundDictionaryCandidate] = []
+
+        for lookupInput in lookupInputs where lookupInput.count >= 4 {
+            matches.append(contentsOf: compoundMatches(
+                for: lookupInput,
+                limit: limit,
+                directCandidates: directCandidates,
                 additionalCandidates: additionalCandidates,
                 typoMatches: typoMatches
-              ),
-              path.readings.count >= 2 else {
+            ))
+        }
+
+        var seen = Set<String>()
+        return Array(matches.filter { seen.insert($0.text).inserted }.prefix(limit))
+    }
+
+    private func compoundMatches(
+        for input: String,
+        limit: Int,
+        directCandidates: Set<String>,
+        additionalCandidates: @Sendable (String) -> [String],
+        typoMatches: @Sendable (String) -> [FuzzyConversionMatch]
+    ) -> [CompoundDictionaryCandidate] {
+        guard let path = bestPath(
+            for: input,
+            additionalCandidates: additionalCandidates,
+            typoMatches: typoMatches
+        ), path.readings.count >= 2 else {
             return []
         }
 
@@ -230,8 +258,43 @@ public struct CompoundDictionaryCandidateGenerator: Sendable {
         for reading: String,
         additionalCandidates: @Sendable (String) -> [String]
     ) -> [String] {
+        allCandidates(
+            for: reading,
+            additionalCandidates: additionalCandidates
+        ).filter(Self.isEligibleSegmentCandidate)
+    }
+
+    private func allCandidates(
+        for reading: String,
+        additionalCandidates: @Sendable (String) -> [String]
+    ) -> [String] {
         ((candidatesByReading[reading] ?? []) + additionalCandidates(reading))
             .removingDuplicateStrings()
+    }
+
+    private static func isEligibleSegmentCandidate(_ candidate: String) -> Bool {
+        guard !candidate.isEmpty else { return false }
+        return candidate.allSatisfy(isKanjiCharacter)
+            || candidate.allSatisfy(isKatakanaCharacter)
+    }
+
+    private static func isKanjiCharacter(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy {
+            (0x3400...0x4dbf).contains($0.value)
+                || (0x4e00...0x9fff).contains($0.value)
+                || (0xf900...0xfaff).contains($0.value)
+                || (0x20000...0x2fa1f).contains($0.value)
+        }
+    }
+
+    private static func isKatakanaCharacter(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy {
+            (0x30a1...0x30fa).contains($0.value)
+                || (0x30fd...0x30ff).contains($0.value)
+                || (0x31f0...0x31ff).contains($0.value)
+                || (0xff66...0xff9d).contains($0.value)
+                || $0.value == 0x30fc
+        }
     }
 
     private func isBetter(_ lhs: Path, than rhs: Path) -> Bool {

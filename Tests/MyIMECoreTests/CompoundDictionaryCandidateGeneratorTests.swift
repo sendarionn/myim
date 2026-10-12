@@ -219,6 +219,113 @@ struct CompoundDictionaryCandidateGeneratorTests {
         #expect(candidates.isEmpty)
     }
 
+    @Test func combinesKanjiAndKatakanaSegments() {
+        let generator = makeGenerator([
+            ("gazou", "画像"),
+            ("fairu", "ファイル")
+        ])
+
+        #expect(generator.candidates(for: "gazoufairu") == ["画像ファイル"])
+    }
+
+    @Test func combinesKatakanaAndKanjiSegments() {
+        let generator = makeGenerator([
+            ("yuuzaa", "ユーザー"),
+            ("jisho", "辞書")
+        ])
+
+        #expect(generator.candidates(for: "yuuzaajisho") == ["ユーザー辞書"])
+    }
+
+    @Test func combinesKatakanaSegmentsIncludingLongVowelMarks() {
+        let generator = makeGenerator([
+            ("deeta", "データ"),
+            ("beesu", "ベース")
+        ])
+
+        #expect(generator.candidates(for: "deetabeesu") == ["データベース"])
+    }
+
+    @Test func combinesThreeEligibleSegments() {
+        let generator = makeGenerator([
+            ("toriatsukai", "取扱"),
+            ("setsumei", "説明"),
+            ("sho", "書")
+        ])
+
+        #expect(
+            generator.candidates(for: "toriatsukaisetsumeisho")
+                == ["取扱説明書"]
+        )
+    }
+
+    @Test func rejectsHiraganaSegments() {
+        let generator = makeGenerator([
+            ("tokyo", "東京"),
+            ("to", "と")
+        ])
+
+        #expect(generator.candidates(for: "tokyoto").isEmpty)
+    }
+
+    @Test func rejectsSegmentsContainingHiragana() {
+        let generator = makeGenerator([
+            ("chuu", "中"),
+            ("shirizoku", "退く")
+        ])
+
+        #expect(generator.candidates(for: "chuushirizoku").isEmpty)
+    }
+
+    @Test func rejectsLatinAndSymbolSegments() {
+        let generator = makeGenerator([
+            ("gazou", "画像"),
+            ("abc", "ABC"),
+            ("123", "123"),
+            ("nakaguro", "データ・ベース")
+        ])
+
+        #expect(generator.candidates(for: "gazouabc").isEmpty)
+        #expect(generator.candidates(for: "gazou123").isEmpty)
+        #expect(generator.candidates(for: "gazounakaguro").isEmpty)
+    }
+
+    @Test func rejectsAThreeSegmentPathContainingAnIneligibleSegment() {
+        let generator = makeGenerator([
+            ("gazou", "画像"),
+            ("to", "と"),
+            ("fairu", "ファイル")
+        ])
+
+        #expect(generator.candidates(for: "gazoutofairu").isEmpty)
+    }
+
+    @Test func searchesForAnotherPathWhenThePreferredPathIsIneligible() {
+        let generator = makeGenerator([
+            ("abcd", "問う"),
+            ("ab", "東京"),
+            ("cd", "京都"),
+            ("wxyz", "辞書")
+        ])
+
+        #expect(
+            generator.candidates(for: "abcdwxyz")
+                == ["東京京都辞書"]
+        )
+    }
+
+    @Test func expandsTypedLongVowelsWhenSearchingCompoundSegments() {
+        let generator = makeGenerator([
+            ("yuuzaa", "ユーザー"),
+            ("jisho", "辞書")
+        ])
+
+        #expect(
+            generator.candidates(for: "yu-za-jisho")
+                == ["ユーザー辞書"]
+        )
+    }
+
     private func makeGenerator(
         _ pairs: [(String, String)]
     ) -> CompoundDictionaryCandidateGenerator {

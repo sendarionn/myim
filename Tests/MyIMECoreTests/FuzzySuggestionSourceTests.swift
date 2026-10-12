@@ -67,6 +67,48 @@ struct FuzzySuggestionSourceTests {
     }
 
     @Test
+    func excludesCompoundContainingAHiraganaSegment() async {
+        let entries = [
+            DictionaryEntry(input: "tokyo", candidates: ["東京"]),
+            DictionaryEntry(input: "to", candidates: ["と"])
+        ]
+        let repository = FuzzyEngineRepository()
+        repository.prepare(for: entries)
+        let source = makeSource(
+            query: "tokyoto",
+            entries: entries,
+            repository: repository
+        )
+
+        let candidates = await source.matchTiers()
+            .flatMap { $0 }
+            .flatMap(\.candidates)
+
+        #expect(!candidates.contains("東京と"))
+    }
+
+    @Test
+    func combinesLongVowelSegmentsThroughTheFuzzySource() async {
+        let entries = [
+            DictionaryEntry(input: "yuuzaa", candidates: ["ユーザー"]),
+            DictionaryEntry(input: "jisho", candidates: ["辞書"])
+        ]
+        let repository = FuzzyEngineRepository()
+        repository.prepare(for: entries)
+        let source = makeSource(
+            query: "yu-za-jisho",
+            entries: entries,
+            repository: repository
+        )
+
+        let candidates = await source.matchTiers()
+            .flatMap { $0 }
+            .flatMap(\.candidates)
+
+        #expect(candidates.contains("ユーザー辞書"))
+    }
+
+    @Test
     func placesLearnedCompoundInFuzzySuggestionsBesideNormalCandidates() async {
         let repository = FuzzyEngineRepository()
         repository.prepare(for: [])
