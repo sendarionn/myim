@@ -97,6 +97,22 @@ struct BundledVerbConjugationTests {
         #expect(try candidates(for: "ninjite").contains("任じて"))
     }
 
+    @Test(arguments: [
+        ("yobu", "呼ぶ"),
+        ("yonde", "呼んで"),
+        ("yobaretemo", "呼ばれても"),
+        ("yobarenakatta", "呼ばれなかった"),
+        ("yobaserareru", "呼ばせられる"),
+        ("yobaseraretemo", "呼ばせられても"),
+        ("wakatteitemo", "分かっていても")
+    ])
+    func generatesCompoundFormsFromBundledVerbData(
+        input: String,
+        expected: String
+    ) throws {
+        #expect(try candidates(for: input).contains(expected))
+    }
+
     @Test
     func keepsNounsAndExactWordsAhead() throws {
         #expect(try candidates(for: "kitai").first == "期待")

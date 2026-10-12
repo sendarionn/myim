@@ -109,6 +109,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     private static let otherFollowings: [FollowingExpression] = [
         FollowingExpression("", "", requiring: .te),
         FollowingExpression("", "", requiring: .past),
+        FollowingExpression("itemo", "いても", requiring: .te),
         FollowingExpression("masu", "ます", requiring: .continuative),
         FollowingExpression("mashita", "ました", requiring: .continuative),
         FollowingExpression("masen", "ません", requiring: .continuative),
@@ -116,12 +117,89 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         FollowingExpression("ita", "いた", requiring: .te),
         FollowingExpression("inai", "いない", requiring: .te),
         FollowingExpression("imasu", "います", requiring: .te),
+        FollowingExpression("mo", "も", requiring: .te),
+        FollowingExpression("ra", "ら", requiring: .past),
+        FollowingExpression("ri", "り", requiring: .past),
         FollowingExpression("nai", "ない", requiring: .negative),
-        FollowingExpression("nakatta", "なかった", requiring: .negative)
+        FollowingExpression("nakatta", "なかった", requiring: .negative),
+        FollowingExpression("nakereba", "なければ", requiring: .negative)
     ]
 
     private static let followingExpressions =
         desireChanges + desireInflections + otherFollowings
+
+    /// Endings applied after a passive, causative, or causative-passive verb
+    /// has been derived as an ichidan verb
+    private static let derivedExpressions: [DerivedExpression] = [
+        DerivedExpression("teitemo", "ていても"),
+        DerivedExpression("teinai", "ていない"),
+        DerivedExpression("teiru", "ている"),
+        DerivedExpression("teita", "ていた"),
+        DerivedExpression("nakereba", "なければ"),
+        DerivedExpression("nakatta", "なかった"),
+        DerivedExpression("temo", "ても"),
+        DerivedExpression("tara", "たら"),
+        DerivedExpression("tari", "たり"),
+        DerivedExpression("nai", "ない"),
+        DerivedExpression("te", "て"),
+        DerivedExpression("ta", "た"),
+        DerivedExpression("ru", "る")
+    ]
+
+    private static let voiceReverseRules: [VoiceReverseRule] = {
+        var rules: [VoiceReverseRule] = []
+        func appendRules(
+            conjugationClass: VerbConjugationClass,
+            derivedStem: String,
+            baseEnding: String
+        ) {
+            rules.append(VoiceReverseRule(
+                .causativePassive,
+                derivedStem + "serareru",
+                baseEnding,
+                conjugationClass
+            ))
+            rules.append(VoiceReverseRule(
+                .causative,
+                derivedStem + "seru",
+                baseEnding,
+                conjugationClass
+            ))
+            rules.append(VoiceReverseRule(
+                .passive,
+                derivedStem + "reru",
+                baseEnding,
+                conjugationClass
+            ))
+        }
+        for row in GodanRow.rows {
+            appendRules(
+                conjugationClass: .godan,
+                derivedStem: row.negative.0,
+                baseEnding: row.reading
+            )
+        }
+        appendRules(
+            conjugationClass: .godanIku,
+            derivedStem: GodanRow.iku.negative.0,
+            baseEnding: GodanRow.iku.reading
+        )
+        rules.append(contentsOf: [
+            VoiceReverseRule(.causativePassive, "saserareru", "ru", .ichidan),
+            VoiceReverseRule(.causative, "saseru", "ru", .ichidan),
+            VoiceReverseRule(.passive, "rareru", "ru", .ichidan),
+            VoiceReverseRule(.causativePassive, "saserareru", "suru", .suru),
+            VoiceReverseRule(.causative, "saseru", "suru", .suru),
+            VoiceReverseRule(.passive, "sareru", "suru", .suru),
+            VoiceReverseRule(.causativePassive, "jisaserareru", "zuru", .zuru),
+            VoiceReverseRule(.causative, "jisaseru", "zuru", .zuru),
+            VoiceReverseRule(.passive, "jirareru", "zuru", .zuru),
+            VoiceReverseRule(.causativePassive, "kosaserareru", "kuru", .kuru),
+            VoiceReverseRule(.causative, "kosaseru", "kuru", .kuru),
+            VoiceReverseRule(.passive, "korareru", "kuru", .kuru)
+        ])
+        return rules
+    }()
 
     private let dictionary: VerbConjugationDictionary
 
@@ -132,6 +210,13 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     public func candidates(for input: String) -> [String] {
         let reading = RomajiCanonicalizer.canonicalInput(from: input)
         var costs: [String: (cost: Int, order: Int)] = [:]
+        func record(_ candidate: String, cost: Int) {
+            let order = costs[candidate]?.order ?? costs.count
+            costs[candidate] = (
+                min(cost, costs[candidate]?.cost ?? .max),
+                order
+            )
+        }
         for following in Self.followingExpressions
         where reading.hasSuffix(following.readingSuffix) {
             let formReading = String(
@@ -149,12 +234,38 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                         entry,
                         to: following.requiredVerbForm
                     ), conjugated.reading == formReading else { continue }
-                    let candidate = conjugated.surface
-                        + following.surfaceSuffix
-                    let order = costs[candidate]?.order ?? costs.count
-                    costs[candidate] = (
-                        min(entry.cost, costs[candidate]?.cost ?? .max),
-                        order
+                    record(
+                        conjugated.surface + following.surfaceSuffix,
+                        cost: entry.cost
+                    )
+                }
+            }
+        }
+        for expression in Self.derivedExpressions
+        where reading.hasSuffix(expression.readingEnding) {
+            let derivedStem = String(
+                reading.dropLast(expression.readingEnding.count)
+            )
+            let derivedReading = derivedStem + "ru"
+            for rule in Self.voiceReverseRules
+            where derivedReading.hasSuffix(rule.derivedEnding) {
+                let baseReading = String(
+                    derivedReading.dropLast(rule.derivedEnding.count)
+                ) + rule.baseEnding
+                for entry in dictionary.entries(for: baseReading)
+                where entry.conjugationClass == rule.conjugationClass {
+                    guard let derived = Self.derive(entry, as: rule.voice),
+                          derived.reading == derivedReading,
+                          derived.reading.hasSuffix("ru"),
+                          derived.surface.hasSuffix("る") else { continue }
+                    let candidateReading = String(
+                        derived.reading.dropLast(2)
+                    ) + expression.readingEnding
+                    guard candidateReading == reading else { continue }
+                    record(
+                        String(derived.surface.dropLast())
+                            + expression.surfaceEnding,
+                        cost: entry.cost
                     )
                 }
             }
@@ -162,6 +273,53 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         return costs.sorted {
             ($0.value.cost, $0.value.order) < ($1.value.cost, $1.value.order)
         }.map(\.key)
+    }
+
+    private static func derive(
+        _ entry: VerbConjugationDictionary.Entry,
+        as voice: DerivedVoice
+    ) -> (reading: String, surface: String)? {
+        let stem: (reading: String, surface: String)
+        let suffix: (reading: String, surface: String)
+        switch entry.conjugationClass {
+        case .godan, .godanIku:
+            guard let value = conjugate(entry, to: .negative) else {
+                return nil
+            }
+            stem = value
+            suffix = voice.godanSuffix
+        case .ichidan:
+            guard let value = conjugate(entry, to: .continuative) else {
+                return nil
+            }
+            stem = value
+            suffix = voice.nonGodanSuffix
+        case .suru:
+            guard let value = replacingEnding(
+                of: entry,
+                reading: "suru",
+                kana: "する",
+                with: ("sa", "さ")
+            ) else { return nil }
+            stem = value
+            suffix = voice.suruSuffix
+        case .zuru:
+            guard let value = conjugate(entry, to: .continuative) else {
+                return nil
+            }
+            stem = value
+            suffix = voice.nonGodanSuffix
+        case .kuru:
+            guard let value = conjugate(entry, to: .negative) else {
+                return nil
+            }
+            stem = value
+            suffix = voice.nonGodanSuffix
+        }
+        return (
+            stem.reading + suffix.reading,
+            stem.surface + suffix.surface
+        )
     }
 
     static func conjugate(
@@ -252,6 +410,65 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             String(entry.reading.dropLast(reading.count)) + ending.reading,
             String(entry.surface.dropLast(kana.count)) + ending.kana
         )
+    }
+
+    private struct DerivedExpression: Sendable {
+        let readingEnding: String
+        let surfaceEnding: String
+
+        init(_ readingEnding: String, _ surfaceEnding: String) {
+            self.readingEnding = readingEnding
+            self.surfaceEnding = surfaceEnding
+        }
+    }
+
+    private enum DerivedVoice: Sendable {
+        case passive
+        case causative
+        case causativePassive
+
+        var godanSuffix: (reading: String, surface: String) {
+            switch self {
+            case .passive: ("reru", "れる")
+            case .causative: ("seru", "せる")
+            case .causativePassive: ("serareru", "せられる")
+            }
+        }
+
+        var nonGodanSuffix: (reading: String, surface: String) {
+            switch self {
+            case .passive: ("rareru", "られる")
+            case .causative: ("saseru", "させる")
+            case .causativePassive: ("saserareru", "させられる")
+            }
+        }
+
+        var suruSuffix: (reading: String, surface: String) {
+            switch self {
+            case .passive: ("reru", "れる")
+            case .causative: ("seru", "せる")
+            case .causativePassive: ("serareru", "せられる")
+            }
+        }
+    }
+
+    private struct VoiceReverseRule: Sendable {
+        let voice: DerivedVoice
+        let derivedEnding: String
+        let baseEnding: String
+        let conjugationClass: VerbConjugationClass
+
+        init(
+            _ voice: DerivedVoice,
+            _ derivedEnding: String,
+            _ baseEnding: String,
+            _ conjugationClass: VerbConjugationClass
+        ) {
+            self.voice = voice
+            self.derivedEnding = derivedEnding
+            self.baseEnding = baseEnding
+            self.conjugationClass = conjugationClass
+        }
     }
 
     /// Base readings that may produce `formReading`; the dictionary lookup

@@ -100,6 +100,70 @@ struct VerbConjugationCandidateGeneratorTests {
         #expect(generator.candidates(for: input).contains(expected))
     }
 
+    @Test(arguments: [
+        ("yobarete", "呼ばれて"),
+        ("yobaretemo", "呼ばれても"),
+        ("yobarenai", "呼ばれない"),
+        ("yobarenakatta", "呼ばれなかった"),
+        ("yobaretara", "呼ばれたら"),
+        ("yobareteiru", "呼ばれている"),
+        ("yobareteinai", "呼ばれていない"),
+        ("yobaseru", "呼ばせる"),
+        ("yobasete", "呼ばせて"),
+        ("yobasenai", "呼ばせない"),
+        ("yobaseteiru", "呼ばせている"),
+        ("yobaserareru", "呼ばせられる"),
+        ("yobaserarete", "呼ばせられて"),
+        ("yobaseraretemo", "呼ばせられても")
+    ])
+    func composesVoiceAndFollowingExpressions(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("yondemo", "呼んでも"),
+        ("yondara", "呼んだら"),
+        ("yondari", "呼んだり"),
+        ("yobanakereba", "呼ばなければ"),
+        ("wakatteinai", "分かっていない"),
+        ("wakatteita", "分かっていた"),
+        ("wakatteitemo", "分かっていても")
+    ])
+    func composesBasicFormsAndFollowingExpressions(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("miraretemo", "見られても"),
+        ("misaseraretemo", "見させられても"),
+        ("benkyousaseteiru", "勉強させている"),
+        ("ninjirarete", "任じられて"),
+        ("koraretemo", "来られても")
+    ])
+    func composesVoicesAcrossRegisteredVerbClasses(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test
+    func compoundGenerationDoesNotDuplicateOrGuessUnknownVerbs() {
+        let candidates = generator.candidates(for: "yobaseraretemo")
+
+        #expect(candidates.count { $0 == "呼ばせられても" } == 1)
+        #expect(generator.candidates(for: "dammyseraretemo").isEmpty)
+        #expect(generator.candidates(
+            for: String(repeating: "dammy", count: 40) + "seraretemo"
+        ).isEmpty)
+    }
+
     @Test
     func usesTheDictionaryClassToChooseBetweenSameReadings() {
         #expect(!generator.candidates(for: "kiteiru").contains("切ている"))
