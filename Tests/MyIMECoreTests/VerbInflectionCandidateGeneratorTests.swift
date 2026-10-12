@@ -5,13 +5,18 @@ import Testing
 struct VerbInflectionCandidateGeneratorTests {
     @Test
     func createsTypoSearchEntryForTeForm() {
+        let conjugations = VerbConjugationDictionary(text: """
+        susumeru\t進める\tichidan\t3000
+        susumeru\t勧める\tichidan\t3000
+        """)
         let entries = VerbInflectionCandidateGenerator.typoSearchEntries(
             from: [
                 DictionaryEntry(
                     reading: "susumeru",
                     candidates: ["進める", "勧める"]
                 )
-            ]
+            ],
+            conjugations: conjugations
         )
 
         #expect(entries.contains {
@@ -38,51 +43,98 @@ struct VerbInflectionCandidateGeneratorTests {
         DictionaryEntry(reading: "kau", candidates: ["買う"])
     ])
 
+    private let conjugations = VerbConjugationDictionary(text: """
+    utsuru\t移る\tgodan\t3000
+    utsuru\t写る\tgodan\t3000
+    yomu\t読む\tgodan\t3000
+    kaku\t書く\tgodan\t3000
+    iku\t行く\tgodan-iku\t3000
+    kangaeru\t考える\tichidan\t3000
+    taberu\t食べる\tichidan\t3000
+    hanasu\t話す\tgodan\t3000
+    benkyousuru\t勉強する\tsuru\t3000
+    kuru\t来る\tkuru\t3000
+    miru\t見る\tichidan\t3000
+    kau\t買う\tgodan\t3000
+    """)
+
+    private func candidates(_ reading: String) -> [String] {
+        generator.candidates(for: reading, conjugations: conjugations)
+    }
+
     @Test
     func createsTeFormCandidates() {
-        #expect(generator.candidates(for: "utsutte") == ["移って", "写って"])
-        #expect(generator.candidates(for: "yonde") == ["読んで"])
-        #expect(generator.candidates(for: "kaite") == ["書いて"])
-        #expect(generator.candidates(for: "itte") == ["行って"])
+        #expect(candidates("utsutte") == ["移って", "写って"])
+        #expect(candidates("yonde") == ["読んで"])
+        #expect(candidates("kaite") == ["書いて"])
+        #expect(candidates("itte") == ["行って"])
     }
 
     @Test
     func createsPastFormCandidates() {
-        #expect(generator.candidates(for: "utsutta") == ["移った", "写った"])
-        #expect(generator.candidates(for: "yonda") == ["読んだ"])
+        #expect(candidates("utsutta") == ["移った", "写った"])
+        #expect(candidates("yonda") == ["読んだ"])
     }
 
     @Test
     func createsIchidanInflectionCandidates() {
-        #expect(generator.candidates(for: "kangaete") == ["考えて"])
-        #expect(generator.candidates(for: "kangaeta") == ["考えた"])
-        #expect(generator.candidates(for: "tabenai") == ["食べない"])
-        #expect(generator.candidates(for: "tabemasu") == ["食べます"])
+        #expect(candidates("kangaete") == ["考えて"])
+        #expect(candidates("kangaeta") == ["考えた"])
+        #expect(candidates("tabenai") == ["食べない"])
+        #expect(candidates("tabemasu") == ["食べます"])
     }
 
     @Test
     func createsGodanNegativeAndPoliteCandidates() {
-        #expect(generator.candidates(for: "kakanai") == ["書かない"])
-        #expect(generator.candidates(for: "kakimasu") == ["書きます"])
-        #expect(generator.candidates(for: "hanasanai") == ["話さない"])
-        #expect(generator.candidates(for: "hanashimasu") == ["話します"])
+        #expect(candidates("kakanai") == ["書かない"])
+        #expect(candidates("kakimasu") == ["書きます"])
+        #expect(candidates("hanasanai") == ["話さない"])
+        #expect(candidates("hanashimasu") == ["話します"])
     }
 
     @Test
     func createsIrregularInflectionCandidates() {
-        #expect(generator.candidates(for: "benkyoushite") == ["勉強して"])
-        #expect(generator.candidates(for: "benkyoushinai") == ["勉強しない"])
-        #expect(generator.candidates(for: "kite").contains("来て"))
-        #expect(generator.candidates(for: "konai") == ["来ない"])
+        #expect(candidates("benkyoushite") == ["勉強して"])
+        #expect(candidates("benkyoushinai") == ["勉強しない"])
+        #expect(candidates("kite").contains("来て"))
+        #expect(candidates("konai") == ["来ない"])
     }
 
     @Test
     func createsPotentialPassiveAndCausativeCandidates() {
-        #expect(generator.candidates(for: "mirareru").contains("見られる"))
-        #expect(generator.candidates(for: "kakeru").contains("書ける"))
-        #expect(generator.candidates(for: "yomeru").contains("読める"))
-        #expect(generator.candidates(for: "hanaseru").contains("話せる"))
-        #expect(generator.candidates(for: "kawareru").contains("買われる"))
-        #expect(generator.candidates(for: "kakaseru").contains("書かせる"))
+        #expect(candidates("mirareru").contains("見られる"))
+        #expect(candidates("kakeru").contains("書ける"))
+        #expect(candidates("yomeru").contains("読める"))
+        #expect(candidates("hanaseru").contains("話せる"))
+        #expect(candidates("kawareru").contains("買われる"))
+        #expect(candidates("kakaseru").contains("書かせる"))
+    }
+
+    @Test
+    func rejectsUnregisteredBaseForms() {
+        let generator = VerbInflectionCandidateGenerator(entries: [
+            DictionaryEntry(reading: "neru", candidates: ["寝る"])
+        ])
+
+        #expect(generator.candidates(
+            for: "netai",
+            conjugations: conjugations
+        ).isEmpty)
+        #expect(generator.candidates(
+            for: "nerareru",
+            conjugations: conjugations
+        ).isEmpty)
+    }
+
+    @Test
+    func excludesUnregisteredBaseFormsFromTypoSearch() {
+        let entries = VerbInflectionCandidateGenerator.typoSearchEntries(
+            from: [
+                DictionaryEntry(reading: "neru", candidates: ["寝る"])
+            ],
+            conjugations: conjugations
+        )
+
+        #expect(entries.isEmpty)
     }
 }

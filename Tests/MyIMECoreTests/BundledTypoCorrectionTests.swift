@@ -40,9 +40,16 @@ struct BundledTypoCorrectionTests {
         #expect(baseDictionary.candidates(for: "en").contains("¥"))
         #expect(baseDictionary.candidates(for: "nakaguro").contains("・"))
         #expect(baseDictionary.candidates(for: "nakaguro").contains("･"))
+        let conjugationText = try String(
+            contentsOf: dictionaryURL.deletingLastPathComponent()
+                .appendingPathComponent("mozc-verb-classes.tsv"),
+            encoding: .utf8
+        )
+        let conjugations = VerbConjugationDictionary(text: conjugationText)
         let entries = baseEntries
             + VerbInflectionCandidateGenerator.typoSearchEntries(
-                from: baseEntries
+                from: baseEntries,
+                conjugations: conjugations
             )
         let engine = FuzzyConversionEngine(entries: entries)
 

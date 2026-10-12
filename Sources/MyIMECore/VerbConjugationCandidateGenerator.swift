@@ -54,16 +54,16 @@ public struct VerbConjugationDictionary: Sendable {
         entriesByReading[reading] ?? []
     }
 
-    /// Whether a dictionary verb with this reading and surface allows the
-    /// class; unknown verbs are not rejected
+    /// Whether the Mozc verb table contains this reading, surface, and class
     public func allows(
         reading: String,
         surface: String,
         classes: Set<VerbConjugationClass>
     ) -> Bool {
-        let known = entries(for: reading).filter { $0.surface == surface }
-        return known.isEmpty
-            || known.contains { classes.contains($0.conjugationClass) }
+        entries(for: reading).contains {
+            $0.surface == surface
+                && classes.contains($0.conjugationClass)
+        }
     }
 }
 

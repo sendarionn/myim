@@ -16,7 +16,7 @@ public struct VerbInflectionCandidateGenerator: Sendable {
 
     public func candidates(
         for reading: String,
-        conjugations: VerbConjugationDictionary = VerbConjugationDictionary()
+        conjugations: VerbConjugationDictionary
     ) -> [String] {
         Self.candidates(for: reading, conjugations: conjugations) {
             baseReading in
@@ -25,55 +25,51 @@ public struct VerbInflectionCandidateGenerator: Sendable {
     }
 
     public static func typoSearchEntries(
-        from entries: [DictionaryEntry]
+        from entries: [DictionaryEntry],
+        conjugations: VerbConjugationDictionary
     ) -> [DictionaryEntry] {
-        let teFormRules: [(String, String, String, String)] = [
-            ("suru", "する", "shite", "して"),
-            ("tsu", "つ", "tte", "って"),
-            ("mu", "む", "nde", "んで"),
-            ("bu", "ぶ", "nde", "んで"),
-            ("nu", "ぬ", "nde", "んで"),
-            ("ku", "く", "ite", "いて"),
-            ("gu", "ぐ", "ide", "いで"),
-            ("su", "す", "shite", "して"),
-            ("u", "う", "tte", "って"),
-            ("ru", "る", "te", "て")
-        ]
         var generated: [DictionaryEntry] = []
         for entry in entries {
             let reading = RomajiCanonicalizer.canonicalInput(
                 from: entry.input
             )
-            for rule in teFormRules
-            where reading.hasSuffix(rule.0) {
-                let candidates: [String] = entry.candidates.compactMap {
-                    candidate -> String? in
-                    guard candidate.hasSuffix(rule.1) else {
-                        return nil
+            var candidatesByReading: [String: [String]] = [:]
+            var readingOrder: [String] = []
+            for candidate in entry.candidates {
+                for verb in conjugations.entries(for: reading)
+                where verb.surface == candidate {
+                    guard let inflected = VerbConjugationCandidateGenerator
+                        .conjugate(verb, to: .te) else { continue }
+                    if candidatesByReading[inflected.reading] == nil {
+                        readingOrder.append(inflected.reading)
                     }
-                    return String(candidate.dropLast(rule.1.count)) + rule.3
+                    if candidatesByReading[inflected.reading]?.contains(
+                        inflected.surface
+                    ) != true {
+                        candidatesByReading[
+                            inflected.reading,
+                            default: []
+                        ].append(inflected.surface)
+                    }
                 }
-                guard !candidates.isEmpty else {
-                    continue
-                }
+            }
+            for inflectedReading in readingOrder {
                 generated.append(
                     DictionaryEntry(
-                        reading: String(reading.dropLast(rule.0.count))
-                            + rule.2,
-                        candidates: candidates
+                        reading: inflectedReading,
+                        candidates: candidatesByReading[inflectedReading] ?? []
                     )
                 )
-                break
             }
         }
         return generated
     }
 
-    /// Rules assume a verb class from the reading alone, so base forms whose
-    /// class is known from `conjugations` must match that assumption
+    /// Every generated form must match a base form and class in the Mozc verb
+    /// table
     public static func candidates(
         for reading: String,
-        conjugations: VerbConjugationDictionary = VerbConjugationDictionary(),
+        conjugations: VerbConjugationDictionary,
         lookup: (String) -> [String]
     ) -> [String] {
         let normalized = RomajiCanonicalizer.canonicalInput(
@@ -86,13 +82,11 @@ public struct VerbInflectionCandidateGenerator: Sendable {
                 + (kanaReading.map(lookup) ?? [])
             for candidate in baseCandidates {
                 guard candidate.hasSuffix(rule.baseEnding),
-                      rule.classes.map({
-                          conjugations.allows(
-                              reading: rule.baseReading,
-                              surface: candidate,
-                              classes: $0
-                          )
-                      }) ?? true else {
+                      conjugations.allows(
+                          reading: rule.baseReading,
+                          surface: candidate,
+                          classes: rule.classes
+                      ) else {
                     continue
                 }
                 let inflected = String(
@@ -195,13 +189,13 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         for group in suffixGroups where reading.hasSuffix(group.suffix) {
             let stem = String(reading.dropLast(group.suffix.count))
             for base in group.bases {
-                let classes: Set<VerbConjugationClass>?
+                let classes: Set<VerbConjugationClass>
                 if base.reading == "suru" {
                     classes = [.suru]
                 } else if ichidanSuffixes.contains(group.suffix) {
                     classes = [.ichidan]
                 } else if eitherClassSuffixes.contains(group.suffix) {
-                    classes = nil
+                    classes = [.godan, .godanIku, .ichidan]
                 } else {
                     classes = [.godan, .godanIku]
                 }
@@ -260,6 +254,6 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         let baseReading: String
         let baseEnding: String
         let inflectedEnding: String
-        let classes: Set<VerbConjugationClass>?
+        let classes: Set<VerbConjugationClass>
     }
 }

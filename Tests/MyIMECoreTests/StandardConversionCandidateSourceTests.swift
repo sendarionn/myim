@@ -396,6 +396,46 @@ struct StandardConversionCandidateSourceTests {
         #expect(texts(source, "yu-za-no").contains("ユーザーの"))
     }
 
+    @Test
+    func basicDictionaryInflectionRequiresMozcVerbRegistration() {
+        let source = makeSource(
+            basicEntries: [DictionaryEntry(
+                reading: "neru",
+                candidates: ["寝る"]
+            )]
+        )
+
+        #expect(texts(source, "neru").contains("寝る"))
+        #expect(!texts(source, "netai").contains("寝たい"))
+        #expect(!texts(source, "nerareru").contains("寝られる"))
+    }
+
+    @Test
+    func systemDictionaryInflectionRequiresMozcVerbRegistration() {
+        let source = makeSource(systemText: "neru\t寝る\n")
+
+        #expect(texts(source, "neru").contains("寝る"))
+        #expect(!texts(source, "netai").contains("寝たい"))
+        #expect(!texts(source, "nerareru").contains("寝られる"))
+    }
+
+    @Test
+    func registeredVerbStillInflectsFromBothDictionaryLayers() {
+        let verbText = "kaku\t書く\tgodan\t3000\n"
+
+        #expect(texts(makeSource(
+            basicEntries: [DictionaryEntry(
+                reading: "kaku",
+                candidates: ["書く"]
+            )],
+            verbText: verbText
+        ), "kaite").contains("書いて"))
+        #expect(texts(makeSource(
+            systemText: "kaku\t書く\n",
+            verbText: verbText
+        ), "kaite").contains("書いて"))
+    }
+
     private let madeBasic = [DictionaryEntry(reading: "made", candidates: ["まで"])]
     private let madeImported = [
         DictionaryEntry(reading: "made", candidates: ["メイド", "メード"]),
@@ -428,7 +468,8 @@ struct StandardConversionCandidateSourceTests {
         basicEntries: [DictionaryEntry] = [],
         symbolEntries: [DictionaryEntry] = [],
         systemText: String = "",
-        deferred: String = ""
+        deferred: String = "",
+        verbText: String = ""
     ) -> StandardConversionCandidateSource {
         StandardConversionCandidateSource(
             userEngine: LayeredConversionEngine(engines: [
@@ -443,7 +484,8 @@ struct StandardConversionCandidateSourceTests {
             verbInflectionGenerator: VerbInflectionCandidateGenerator(
                 entries: basicEntries
             ),
-            deferredSystemCandidates: DeferredSystemCandidates(text: deferred)
+            deferredSystemCandidates: DeferredSystemCandidates(text: deferred),
+            verbConjugations: VerbConjugationDictionary(text: verbText)
         )
     }
 }

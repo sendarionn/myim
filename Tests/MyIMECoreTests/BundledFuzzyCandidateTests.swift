@@ -11,6 +11,7 @@ struct BundledFuzzyCandidateTests {
         let basic: ConversionEngine
         let system: IndexedDictionaryEngine
         let compound: CompoundDictionaryCandidateGenerator
+        let conjugations: VerbConjugationDictionary
         let repository: FuzzyEngineRepository
     }
 
@@ -25,15 +26,23 @@ struct BundledFuzzyCandidateTests {
                 encoding: .utf8
               ),
               let entries = try? DictionaryParser().parse(text),
+              let verbText = try? String(
+                contentsOf: resources.appendingPathComponent(
+                    "mozc-verb-classes.tsv"
+                ),
+                encoding: .utf8
+              ),
               let system = try? IndexedDictionaryEngine(
                 contentsOf: resources.appendingPathComponent("mozc-dictionary.tsv")
               ) else {
             return nil
         }
+        let conjugations = VerbConjugationDictionary(text: verbText)
         let repository = FuzzyEngineRepository()
         repository.prepare(
             for: entries + VerbInflectionCandidateGenerator.typoSearchEntries(
-                from: entries
+                from: entries,
+                conjugations: conjugations
             )
         )
         return Fixture(
@@ -41,6 +50,7 @@ struct BundledFuzzyCandidateTests {
             basic: ConversionEngine(entries: entries),
             system: system,
             compound: CompoundDictionaryCandidateGenerator(entries: entries),
+            conjugations: conjugations,
             repository: repository
         )
     }()
@@ -159,7 +169,8 @@ struct BundledFuzzyCandidateTests {
         repository.prepare(
             baseEntries: fixture.entries
                 + VerbInflectionCandidateGenerator.typoSearchEntries(
-                    from: fixture.entries
+                    from: fixture.entries,
+                    conjugations: fixture.conjugations
                 ),
             baseKey: "learned-exact-input-test",
             userEntries: [learnedEntry]

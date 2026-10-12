@@ -126,7 +126,7 @@ struct VerbConjugationCandidateGeneratorTests {
     }
 
     @Test
-    func legacyRulesFollowKnownVerbClasses() {
+    func legacyRulesRequireRegisteredVerbClasses() {
         let conjugations = VerbConjugationDictionary(text: """
         kiru\t着る\tichidan\t3000
         kiru\t切る\tgodan\t3500
@@ -157,6 +157,30 @@ struct VerbConjugationCandidateGeneratorTests {
             for: "netai",
             conjugations: conjugations,
             lookup: lookup
-        ) == ["寝たい"])
+        ).isEmpty)
+
+        #expect(VerbInflectionCandidateGenerator.candidates(
+            for: "nerareru",
+            conjugations: conjugations,
+            lookup: lookup
+        ).isEmpty)
+    }
+
+    @Test
+    func dictionaryRejectsUnregisteredVerbs() {
+        let conjugations = VerbConjugationDictionary(text: """
+        kiru\t着る\tichidan\t3000
+        """)
+
+        #expect(conjugations.allows(
+            reading: "kiru",
+            surface: "着る",
+            classes: [.ichidan]
+        ))
+        #expect(!conjugations.allows(
+            reading: "neru",
+            surface: "寝る",
+            classes: [.ichidan]
+        ))
     }
 }

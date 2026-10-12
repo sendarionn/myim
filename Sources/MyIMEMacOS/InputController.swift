@@ -83,7 +83,8 @@ final class InputController: IMKInputController {
         CompoundDictionaryCandidateGenerator(entries: sharedBasicEntries)
     private static let sharedBasicFuzzyEntries = sharedBasicEntries
         + VerbInflectionCandidateGenerator.typoSearchEntries(
-            from: sharedBasicEntries
+            from: sharedBasicEntries,
+            conjugations: sharedVerbConjugations
         )
     private static let sharedBasicFuzzyKey = "bundled-\(sharedBasicEntries.count)-\(sharedBasicFuzzyEntries.count)"
     private nonisolated(unsafe) static var sharedImportedDictionaryRuntime =
