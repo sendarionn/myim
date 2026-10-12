@@ -369,6 +369,9 @@ final class InputController: IMKInputController {
         guard event.type == .keyDown else {
             return false
         }
+        if inputBuffer.isEmpty {
+            logInputFieldProbe(event: "keyDown", sender: sender)
+        }
         trace(
             "keyDown",
             sender: sender,
@@ -1337,7 +1340,27 @@ final class InputController: IMKInputController {
         super.cancelComposition()
     }
 
+    /// Temporary probe: what the client tells an input method about the
+    /// focused field, without reading any of its text
+    private func logInputFieldProbe(event: String, sender: Any?) {
+        guard let client = sender as? (IMKTextInput & NSObjectProtocol) else {
+            return
+        }
+        var rect = NSRect.zero
+        let attributeKeys = (client.attributes(
+            forCharacterIndex: 0,
+            lineHeightRectangle: &rect
+        ) as? [AnyHashable: Any])?.keys.map { "\($0)" }.sorted() ?? []
+        let valid = (client.validAttributesForMarkedText() as? [Any])?
+            .map { "\($0)" }.sorted() ?? []
+        let selected = client.selectedRange()
+        Self.lifecycleLogger.notice(
+            "FIELDPROBE event=\(event, privacy: .public) app=\(client.bundleIdentifier() ?? "nil", privacy: .public) clientID=\(client.uniqueClientIdentifierString() ?? "nil", privacy: .public) class=\(String(describing: type(of: client)), privacy: .public) windowLevel=\(client.windowLevel(), privacy: .public) unicode=\(client.supportsUnicode(), privacy: .public) secure=\(SecureInputDetector.isEnabled, privacy: .public) selectedLocation=\(selected.location, privacy: .public) attributeKeys=\(attributeKeys.joined(separator: ","), privacy: .public) validMarked=\(valid.joined(separator: ","), privacy: .public)"
+        )
+    }
+
     override func activateServer(_ sender: Any!) {
+        logInputFieldProbe(event: "activate", sender: sender)
         let activatingBundleIdentifier = (sender as? IMKTextInput)?
             .bundleIdentifier()
         let activatingRole = lifecycleCoordinator.updateClient(
@@ -4951,7 +4974,10 @@ final class InputController: IMKInputController {
 
     private func updateMarkedText(in sender: Any) {
         setMarkedText(
-            compositionPrefix + inputBuffer + compositionSuffix,
+            CandidateSelectionProjection.unconvertedMarkedText(
+                input: inputBuffer,
+                prefix: compositionPrefix
+            ),
             in: sender,
             selectionOffset: compositionPrefix.utf16.count + inputCursor
         )
@@ -5184,7 +5210,10 @@ final class InputController: IMKInputController {
         guard inputSession.moveCursor(by: offset) else { return true }
         if !compositionPrefix.isEmpty {
             setMarkedText(
-                compositionPrefix + inputBuffer + compositionSuffix,
+                CandidateSelectionProjection.unconvertedMarkedText(
+                input: inputBuffer,
+                prefix: compositionPrefix
+            ),
                 in: sender,
                 selectionOffset: compositionPrefix.utf16.count + inputCursor
             )

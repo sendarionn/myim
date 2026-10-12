@@ -84,6 +84,53 @@ struct TrailingPunctuationSplitTests {
         #expect(session.input.isEmpty)
     }
 
+    /// The input already holds the punctuation, so only a selected
+    /// candidate gets it appended for display
+    @Test(arguments: [
+        ("watashiha,", "私は", "私は,", ","),
+        ("tokyo.", "東京", "東京.", "."),
+        ("watashiha!?", "私は", "私は!?", "!?")
+    ])
+    func showsTrailingPunctuationOnceAtEveryStep(
+        input: String,
+        converted: String,
+        selectedText: String,
+        carriedText: String
+    ) throws {
+        let split = try #require(TrailingPunctuationSplit.split(input))
+
+        #expect(CandidateSelectionProjection.unconvertedMarkedText(
+            input: input
+        ) == input)
+        #expect(CandidateSelectionProjection.markedText(
+            for: Candidate(storageText: converted),
+            suffix: split.punctuation
+        ) == selectedText)
+
+        var session = InputSession()
+        session.carryTrailingPunctuation(split.punctuation)
+
+        #expect(CandidateSelectionProjection.unconvertedMarkedText(
+            input: session.input
+        ) == carriedText)
+    }
+
+    @Test
+    func carriedGroupShowsTheRestOnceAfterTheSelectedSymbol() throws {
+        let carried = try #require(TrailingPunctuationSplit.splitCarried(
+            "!?",
+            convertsAsGroup: false
+        ))
+
+        #expect(CandidateSelectionProjection.unconvertedMarkedText(
+            input: "!?"
+        ) == "!?")
+        #expect(CandidateSelectionProjection.markedText(
+            for: Candidate(storageText: "！"),
+            suffix: carried.punctuation
+        ) == "！?")
+    }
+
     @Test
     func carriedPunctuationLastsUntilTheInputIsEdited() {
         var session = InputSession()

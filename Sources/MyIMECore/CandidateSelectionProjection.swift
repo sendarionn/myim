@@ -26,6 +26,15 @@ public enum CandidateSelectionProjection {
         return displayMatches.count == 1 ? displayMatches[0] : nil
     }
 
+    /// Text shown while no candidate is selected; the input already holds
+    /// any trailing punctuation waiting to be converted
+    public static func unconvertedMarkedText(
+        input: String,
+        prefix: String = ""
+    ) -> String {
+        prefix + input
+    }
+
     public static func markedText(
         for candidate: Candidate,
         prefix: String = "",
