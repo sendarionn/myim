@@ -39,6 +39,9 @@ public struct InputSession: Equatable, Sendable {
     public private(set) var inputRevision: UInt = 0
     public private(set) var input = ""
     public private(set) var cursorPosition = 0
+    /// The input is punctuation left after the text before it was
+    /// committed; any edit makes it ordinary input again
+    public private(set) var carriesTrailingPunctuation = false
 
     public init() {}
 
@@ -54,6 +57,7 @@ public struct InputSession: Equatable, Sendable {
         let inputChanged = self.input != input
         if inputChanged {
             inputRevision &+= 1
+            carriesTrailingPunctuation = false
         }
         self.input = input
         self.cursorPosition = cursorPosition
@@ -119,7 +123,18 @@ public struct InputSession: Equatable, Sendable {
 
     @discardableResult
     public mutating func clear() -> Bool {
-        synchronize(input: "", cursorPosition: 0)
+        carriesTrailingPunctuation = false
+        return synchronize(input: "", cursorPosition: 0)
+    }
+
+    @discardableResult
+    public mutating func carryTrailingPunctuation(_ punctuation: String) -> Bool {
+        let changed = synchronize(
+            input: punctuation,
+            cursorPosition: punctuation.count
+        )
+        carriesTrailingPunctuation = !punctuation.isEmpty
+        return changed
     }
 
     public func snapshot(controllerID: String) -> InputSessionSnapshot? {

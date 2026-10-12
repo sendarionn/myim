@@ -570,7 +570,7 @@ final class InputController: IMKInputController {
 
         if let selectedValue = selectedCandidateValue {
             recordSelectedCandidate()
-            commit(selectedValue, to: sender)
+            commit(selectedValue + compositionSuffix, to: sender)
         }
 
         let isASCIIInput = characters.unicodeScalars.allSatisfy {
@@ -1260,11 +1260,15 @@ final class InputController: IMKInputController {
             selectedCandidate: storedCandidate.storageText,
             generatedCandidates: cachedJavaScriptCalculationCandidates
         )
+        let punctuation = compositionSuffix
         commit(
             storedCandidate.commitText + conversionSuffix,
             to: client() as Any,
             historyValue: historyValue
         )
+        if let sender = client() {
+            continueWithTrailingPunctuation(punctuation, client: sender)
+        }
     }
 
     override func commitComposition(_ sender: Any!) {
@@ -1793,9 +1797,18 @@ final class InputController: IMKInputController {
             hasSelectedCandidate: selectedCandidateValue != nil
         )
         let value = selectedCandidateValue ?? inputBuffer
+        let punctuation = selectedCandidateValue == nil
+            ? ""
+            : compositionSuffix
         recordSelectedCandidate()
-        commit(value + space, to: sender, historyValue: value)
+        // Punctuation after the text takes the place of the space
+        commit(
+            value + (punctuation.isEmpty ? space : ""),
+            to: sender,
+            historyValue: value
+        )
         learnUnselectedInput(unselectedInputLearningEntry)
+        continueWithTrailingPunctuation(punctuation, client: sender)
         return true
     }
 
@@ -1830,11 +1843,11 @@ final class InputController: IMKInputController {
             suffix = conversionSuffix
         case 101:
             form = .fullWidthAlphanumeric
-            source = inputBuffer
+            source = conversionInput
             suffix = ""
         case 109:
             form = .halfWidthUppercaseAlphanumeric
-            source = inputBuffer
+            source = conversionInput
             suffix = ""
         default:
             return false
@@ -2896,10 +2909,11 @@ final class InputController: IMKInputController {
         let reloadStart = performanceClock.now
         reloadUserDictionaryFromDiskIfNeeded()
         reloadDuration = performanceClock.now - reloadStart
+        let input = conversionInput
         if !Self.diagnosticConfiguration.minimalMode {
-            updatePostalAddressCandidatesIfNeeded(for: inputBuffer)
+            updatePostalAddressCandidatesIfNeeded(for: input)
         }
-        let extensionInput = inputBuffer
+        let extensionInput = input
         let scriptCandidates = suggestionSearchCoordinator.query(
             for: .javaScriptExtensions
         ) == extensionInput
@@ -2913,13 +2927,13 @@ final class InputController: IMKInputController {
             }
         }
         let specialContext = SpecialConversionCandidateContext(
-            input: inputBuffer,
+            input: input,
             javaScriptCandidates: scriptCandidates,
             calculationHistoryCandidates: candidateSelectionHistoryStore
-                .completions(for: inputBuffer),
+                .completions(for: input),
             postalAddressCandidates: suggestionSearchCoordinator.query(
                 for: .postalAddress
-            ) == inputBuffer ? postalAddressCandidates : []
+            ) == input ? postalAddressCandidates : []
         )
         if let result = specialConversionCandidateSource.result(
             for: specialContext
@@ -2970,7 +2984,7 @@ final class InputController: IMKInputController {
         )
         let sourceStart = performanceClock.now
         let orderedCandidates = standardSource.candidates(for: .init(
-            input: inputBuffer,
+            input: input,
             conversionReading: conversionReading,
             javaScriptCandidates: scriptCandidates,
             externalCandidates: remoteCandidates,
@@ -3013,7 +3027,7 @@ final class InputController: IMKInputController {
         let hadSelection = selectedCandidateIndex != nil
         candidateSession.replace(
             with: candidates,
-            input: inputBuffer,
+            input: conversionInput,
             reading: conversionReading
         )
         if hadSelection {
@@ -3307,6 +3321,7 @@ final class InputController: IMKInputController {
             )
         }
         let value = suggestion.candidate + conversionSuffix
+        let punctuation = compositionSuffix
         let sourceTokens = suggestion.sourceTokens.isEmpty
             ? nil
             : suggestion.sourceTokens
@@ -3323,6 +3338,7 @@ final class InputController: IMKInputController {
                 ? .directInput
                 : .acceptedSuggestion
         )
+        continueWithTrailingPunctuation(punctuation, client: sender)
         return true
     }
 
@@ -3393,6 +3409,7 @@ final class InputController: IMKInputController {
         )
         candidateWindow.clearSelection()
         let displayValue = suggestion.candidate + conversionSuffix
+            + compositionSuffix
         setMarkedText(
             displayValue,
             in: sender
@@ -4204,6 +4221,9 @@ final class InputController: IMKInputController {
             originalInput: inputBuffer,
             hasSelectedCandidate: selectedCandidateValue != nil
         )
+        let punctuation = selectedCandidateValue == nil
+            ? ""
+            : compositionSuffix
         recordSelectedCandidate()
         commit(
             value,
@@ -4212,6 +4232,7 @@ final class InputController: IMKInputController {
             preferredNextInputCandidates: calculatorNextInputCandidates
         )
         learnUnselectedInput(unselectedInputLearningEntry)
+        continueWithTrailingPunctuation(punctuation, client: sender)
         return true
     }
 
@@ -4312,7 +4333,7 @@ final class InputController: IMKInputController {
     private var candidateSelectionReading: String {
         CandidateSelectionReading.resolve(
             conversionReading: conversionReading,
-            originalInput: inputBuffer
+            originalInput: conversionInput
         )
     }
 
@@ -4944,8 +4965,54 @@ final class InputController: IMKInputController {
         return ""
     }
 
+    /// Trailing punctuation shown after the converted text and converted
+    /// once the text is committed
     private var compositionSuffix: String {
-        ""
+        trailingPunctuationSplit?.punctuation ?? ""
+    }
+
+    /// Input converted now; trailing punctuation waits for the next step
+    private var conversionInput: String {
+        trailingPunctuationSplit?.body ?? inputBuffer
+    }
+
+    private var trailingPunctuationSplit: TrailingPunctuationSplit? {
+        guard dictionaryRegistrationSession == nil else { return nil }
+        if inputSession.carriesTrailingPunctuation {
+            return TrailingPunctuationSplit.splitCarried(
+                inputBuffer,
+                convertsAsGroup: !JapaneseSymbolConverter.candidates(
+                    for: inputBuffer
+                ).isEmpty
+                    || !Self.sharedSymbolConversionEngine.candidates(
+                        for: inputBuffer
+                    ).isEmpty
+            )
+        }
+        // A registered word that includes the punctuation stays whole
+        guard dictionaryRuntime.userDictionaryEngine.candidates(
+                for: inputBuffer
+              ).isEmpty,
+              dictionaryRuntime.importedEngine.candidates(
+                for: inputBuffer
+              ).isEmpty else {
+            return nil
+        }
+        return TrailingPunctuationSplit.split(inputBuffer)
+    }
+
+    /// After the text before trailing punctuation is committed, the
+    /// punctuation becomes the next input with its symbol candidates
+    private func continueWithTrailingPunctuation(
+        _ punctuation: String,
+        client sender: Any
+    ) {
+        guard !punctuation.isEmpty else { return }
+        dismissNextInputSuggestions(clearMarkedTextIn: nil)
+        inputSession.carryTrailingPunctuation(punctuation)
+        selectedCandidateIndex = nil
+        updateMarkedText(in: sender)
+        refreshCandidates(client: sender)
     }
 
     private func setMarkedText(
@@ -5371,7 +5438,7 @@ final class InputController: IMKInputController {
     }
 
     private var conversionReading: String {
-        ConversionReadingResolver.resolve(inputBuffer)
+        ConversionReadingResolver.resolve(conversionInput)
     }
 
     private var interactionState: InputInteractionState {
@@ -5386,24 +5453,25 @@ final class InputController: IMKInputController {
     }
 
     private var conversionSuffix: String {
+        let input = conversionInput
         if isCalculationExpressionDraft
             || !UnitConversionCandidateGenerator.candidates(
-                for: inputBuffer
+                for: input
             ).isEmpty
             || !NumberGroupingCandidateGenerator.candidates(
-                for: inputBuffer
+                for: input
             ).isEmpty
             || !JapaneseNumericUnitCandidateGenerator.candidates(
-                for: inputBuffer
+                for: input
             ).isEmpty
-            || PostalCodeNormalizer.normalize(inputBuffer) != nil
-            || !JapaneseNumberConverter.candidates(for: inputBuffer).isEmpty
-            || !JapaneseSymbolConverter.candidates(for: inputBuffer).isEmpty {
+            || PostalCodeNormalizer.normalize(input) != nil
+            || !JapaneseNumberConverter.candidates(for: input).isEmpty
+            || !JapaneseSymbolConverter.candidates(for: input).isEmpty {
             return ""
         }
         return ConversionReadingSuffix.resolve(
             conversionReading: conversionReading,
-            originalInput: inputBuffer
+            originalInput: input
         )
     }
 
