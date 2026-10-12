@@ -149,8 +149,8 @@ final class SecondaryCandidatePanelController {
         guidePanel.orderOut(nil)
     }
 
-    private func itemWidth(for suggestion: FuzzyCandidate) -> CGFloat {
-        let text = suggestion.candidate
+    private func itemWidth(for fuzzyCandidate: FuzzyCandidate) -> CGFloat {
+        let text = fuzzyCandidate.storageText
         let textWidth = ceil((text as NSString).size(
             withAttributes: [.font: CandidatePanelItemStyle.font]
         ).width)
@@ -189,12 +189,12 @@ final class SecondaryCandidatePanelController {
         while stackView.arrangedSubviews.count < candidates.count {
             stackView.addArrangedSubview(CandidatePanelRowView(frame: .zero))
         }
-        for (index, suggestion) in candidates.enumerated() {
+        for (index, fuzzyCandidate) in candidates.enumerated() {
             guard let row = stackView.arrangedSubviews[index]
                 as? CandidatePanelRowView else { continue }
             row.setFixedSize(width: width, height: Self.itemHeight)
             row.configure(
-                text: suggestion.candidate,
+                text: fuzzyCandidate.storageText,
                 isSelected: index == selectedIndex
             )
         }

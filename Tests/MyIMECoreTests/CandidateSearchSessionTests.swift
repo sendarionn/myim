@@ -18,13 +18,13 @@ struct CandidateSearchSessionTests {
     func kindsAreManagedIndependently() {
         let session = CandidateSearchSession()
         let fuzzy = session.begin(.fuzzy, query: "fuzzy")
-        let official = session.begin(.external, query: "official")
+        let external = session.begin(.external, query: "external")
 
         session.cancel(.fuzzy)
 
         #expect(!session.isCurrent(fuzzy))
-        #expect(session.isCurrent(official))
-        #expect(session.query(for: .external) == "official")
+        #expect(session.isCurrent(external))
+        #expect(session.query(for: .external) == "external")
     }
 
     @Test
@@ -41,12 +41,12 @@ struct CandidateSearchSessionTests {
     @Test
     func cancelAllInvalidatesEveryToken() {
         let session = CandidateSearchSession()
-        let official = session.begin(.external, query: "official")
+        let external = session.begin(.external, query: "external")
         let fuzzy = session.begin(.fuzzy, query: "fuzzy")
 
         session.cancelAll()
 
-        #expect(!session.isCurrent(official))
+        #expect(!session.isCurrent(external))
         #expect(!session.isCurrent(fuzzy))
     }
 
@@ -54,13 +54,13 @@ struct CandidateSearchSessionTests {
     func completingCurrentSearchRemovesOnlyItsToken() {
         let session = CandidateSearchSession()
         let translation = session.begin(.translation, query: "候補")
-        let official = session.begin(.external, query: "kouho")
+        let external = session.begin(.external, query: "kouho")
 
         session.complete(translation)
 
         #expect(!session.isCurrent(translation))
         #expect(session.query(for: .translation) == nil)
-        #expect(session.isCurrent(official))
+        #expect(session.isCurrent(external))
     }
 
     @Test

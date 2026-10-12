@@ -97,7 +97,7 @@ struct NextInputCandidateCoordinatorTests {
     }
 
     @Test
-    func beginningAnEmptySuggestionSetReportsNoVisibleCandidates() {
+    func beginningAnEmptyCandidateSetReportsNoVisibleCandidates() {
         let fixture = makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
 

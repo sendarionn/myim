@@ -11,13 +11,13 @@ struct LearnedCompoundRegistrationTests {
         query: String
     ) async throws {
         let learning = learnedTokyoNakano()
-        let suggestion = try #require(
-            await suggestions(for: query, learning: learning).first {
-                $0.candidate == "東京都中野区"
+        let fuzzyCandidate = try #require(
+            await fuzzyCandidates(for: query, learning: learning).first {
+                $0.storageText == "東京都中野区"
             }
         )
 
-        #expect(suggestion.userDictionaryEntry == UserDictionaryRegistration(
+        #expect(fuzzyCandidate.userDictionaryEntry == UserDictionaryRegistration(
             reading: "toukyoutonakanoku",
             candidate: "東京都中野区"
         ))
@@ -28,9 +28,9 @@ struct LearnedCompoundRegistrationTests {
         let store = UserDictionaryStore(entries: []) { _ in }
         let learning = learnedTokyoNakano()
 
-        let shown = await suggestions(for: "toukyouto", learning: learning)
+        let shown = await fuzzyCandidates(for: "toukyouto", learning: learning)
 
-        #expect(shown.contains { $0.candidate == "東京都中野区" })
+        #expect(shown.contains { $0.storageText == "東京都中野区" })
         #expect(store.entries.isEmpty)
     }
 
@@ -39,8 +39,8 @@ struct LearnedCompoundRegistrationTests {
         let store = UserDictionaryStore(entries: []) { _ in }
         let learning = learnedTokyoNakano()
         let entry = try #require(
-            await suggestions(for: "toukyoutonaka", learning: learning).first {
-                $0.candidate == "東京都中野区"
+            await fuzzyCandidates(for: "toukyoutonaka", learning: learning).first {
+                $0.storageText == "東京都中野区"
             }?.userDictionaryEntry
         )
 
@@ -50,7 +50,7 @@ struct LearnedCompoundRegistrationTests {
 
         #expect(store.entries.count == 1)
         #expect(store.entries.first?.candidates == ["東京都中野区"])
-        #expect(normalCandidates(
+        #expect(standardCandidates(
             for: "toukyoutonakanoku",
             userEntries: store.entries
         ).contains("東京都中野区"))
@@ -62,8 +62,8 @@ struct LearnedCompoundRegistrationTests {
         let store = UserDictionaryStore(entries: []) { _ in }
         let learning = learnedTokyoNakano()
         let entry = try #require(
-            await suggestions(for: "toukyouto", learning: learning).first {
-                $0.candidate == "東京都中野区"
+            await fuzzyCandidates(for: "toukyouto", learning: learning).first {
+                $0.storageText == "東京都中野区"
             }?.userDictionaryEntry
         )
         try store.add(reading: entry.reading, candidate: entry.candidate)
@@ -72,8 +72,8 @@ struct LearnedCompoundRegistrationTests {
             candidate: entry.candidate,
             matchingReadings: [entry.reading]
         )
-        let again = await suggestions(for: "toukyouto", learning: learning)
-            .first { $0.candidate == "東京都中野区" }
+        let again = await fuzzyCandidates(for: "toukyouto", learning: learning)
+            .first { $0.storageText == "東京都中野区" }
 
         #expect(store.entries.isEmpty)
         #expect(again?.userDictionaryEntry == entry)
@@ -81,8 +81,8 @@ struct LearnedCompoundRegistrationTests {
 
     @Test
     func phraseWithAMissingReadingIsNotRegistered() {
-        let suggestion = FuzzyCandidate(
-            candidate: "東京都中野区",
+        let fuzzyCandidate = FuzzyCandidate(
+            storageText: "東京都中野区",
             reading: "toukyouto",
             distance: 0,
             isLearnable: false,
@@ -90,13 +90,13 @@ struct LearnedCompoundRegistrationTests {
             sourceReadings: ["toukyouto", nil]
         )
 
-        #expect(suggestion.userDictionaryEntry == nil)
+        #expect(fuzzyCandidate.userDictionaryEntry == nil)
     }
 
     @Test
     func phraseWhoseTokensDoNotFormTheTextIsNotRegistered() {
-        let suggestion = FuzzyCandidate(
-            candidate: "東京都中野区",
+        let fuzzyCandidate = FuzzyCandidate(
+            storageText: "東京都中野区",
             reading: "toukyoutonakanoku",
             distance: 0,
             isLearnable: false,
@@ -104,18 +104,18 @@ struct LearnedCompoundRegistrationTests {
             sourceReadings: ["toukyouto", "nakano"]
         )
 
-        #expect(suggestion.userDictionaryEntry == nil)
+        #expect(fuzzyCandidate.userDictionaryEntry == nil)
     }
 
     @Test
-    func ordinarySpellingSuggestionsKeepTheirRegistration() {
+    func ordinaryFuzzyCandidatesKeepTheirRegistration() {
         let correction = FuzzyCandidate(
-            candidate: "最新",
+            storageText: "最新",
             reading: "saishin",
             distance: 1
         )
         let notLearnable = FuzzyCandidate(
-            candidate: "際ハッシウム品",
+            storageText: "際ハッシウム品",
             reading: "saihshin",
             distance: 1,
             isLearnable: false
@@ -128,7 +128,7 @@ struct LearnedCompoundRegistrationTests {
         #expect(notLearnable.userDictionaryEntry == nil)
     }
 
-    /// 東京都 typed and 中野区 picked from the next-input suggestions
+    /// 東京都 typed and 中野区 picked from the next-input fuzzyCandidates
     /// often enough for the pair to be learned
     private func learnedTokyoNakano() -> NextInputCandidateCoordinator {
         let coordinator = NextInputCandidateCoordinator(
@@ -163,7 +163,7 @@ struct LearnedCompoundRegistrationTests {
         return coordinator
     }
 
-    private func suggestions(
+    private func fuzzyCandidates(
         for query: String,
         learning: NextInputCandidateCoordinator
     ) async -> [FuzzyCandidate] {
@@ -185,15 +185,15 @@ struct LearnedCompoundRegistrationTests {
                 excluding: visible
             )
         )
-        var coordinator = FuzzyCandidateSession()
-        coordinator.replace(
+        var session = FuzzyCandidateSession()
+        session.replace(
             matchTiers: await source.matchTiers(),
             recencyRanks: [:]
         )
-        return coordinator.candidates
+        return session.candidates
     }
 
-    private func normalCandidates(
+    private func standardCandidates(
         for input: String,
         userEntries: [DictionaryEntry]
     ) -> [String] {

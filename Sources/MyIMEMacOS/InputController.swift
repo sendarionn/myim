@@ -1556,7 +1556,7 @@ final class InputController: IMKInputController {
     private func toggleWikipediaSuggestions(_ sender: Any?) {
         let enabled = checkboxValue(sender, current: Self.featureSettings.isWikipediaSuggestionsEnabled)
         Self.featureSettings.isWikipediaSuggestionsEnabled = enabled
-        resetOfficialCandidates()
+        resetExternalCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
         }
@@ -1569,7 +1569,7 @@ final class InputController: IMKInputController {
     private func toggleGoogleJapaneseInput(_ sender: Any?) {
         let enabled = checkboxValue(sender, current: Self.featureSettings.isGoogleJapaneseInputEnabled)
         Self.featureSettings.isGoogleJapaneseInputEnabled = enabled
-        resetOfficialCandidates()
+        resetExternalCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
     }
@@ -1578,7 +1578,7 @@ final class InputController: IMKInputController {
     private func toggleAppleTranslation(_ sender: Any?) {
         let enabled = checkboxValue(sender, current: Self.featureSettings.isAppleTranslationEnabled)
         Self.featureSettings.isAppleTranslationEnabled = enabled
-        resetOfficialCandidates()
+        resetExternalCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
     }
@@ -1612,7 +1612,7 @@ final class InputController: IMKInputController {
         Self.featureSettings.isWebSearchEnabled = checkboxValue(sender, current: Self.featureSettings.isWebSearchEnabled)
     }
 
-    private func resetOfficialCandidates() {
+    private func resetExternalCandidates() {
         candidateSearchCoordinator.cancel(.external)
         externalCandidates = []
     }
@@ -2950,9 +2950,9 @@ final class InputController: IMKInputController {
             return
         }
 
-        let suggestionInput = conversionReading
+        let externalSearchReading = conversionReading
         defer {
-            updateExternalCandidatesIfNeeded(for: suggestionInput)
+            updateExternalCandidatesIfNeeded(for: externalSearchReading)
         }
 
         let englishStart = performanceClock.now
@@ -3034,7 +3034,7 @@ final class InputController: IMKInputController {
             trace(
                 "candidateSelection.changed",
                 sender: client(),
-                detail: "normal=\(selectedCandidateIndex.map(String.init) ?? "none")"
+                detail: "standard=\(selectedCandidateIndex.map(String.init) ?? "none")"
             )
         }
     }
@@ -3262,13 +3262,13 @@ final class InputController: IMKInputController {
     }
 
     private func returnToStandardCandidateSelection(client sender: Any) -> Bool {
-        if let normalIndex = fuzzyCandidateSession
+        if let standardIndex = fuzzyCandidateSession
             .standardCandidateIndexAlignedWithSelection(
                 standardCandidateCount: currentCandidates.count,
                 currentNormalIndex: selectedCandidateIndex,
                 maximumCount: Self.maximumCandidateCount
             ) {
-            selectedCandidateIndex = normalIndex
+            selectedCandidateIndex = standardIndex
         }
         selectedFuzzyCandidateIndex = nil
         if let selectedCandidateIndex,
@@ -3297,11 +3297,11 @@ final class InputController: IMKInputController {
     }
 
     private func acceptFuzzyCandidate(
-        _ suggestion: FuzzyCandidate,
+        _ fuzzyCandidate: FuzzyCandidate,
         suffix: String,
         client sender: Any
     ) -> Bool {
-        if let entry = suggestion.userDictionaryEntry {
+        if let entry = fuzzyCandidate.userDictionaryEntry {
             do {
                 try saveUserDictionaryEntry(
                     reading: entry.reading,
@@ -3309,34 +3309,34 @@ final class InputController: IMKInputController {
                 )
             } catch {
                 NSLog(
-                    "もしかして候補のユーザー辞書登録に失敗: %@",
+                    "曖昧候補のユーザー辞書登録に失敗: %@",
                     error.localizedDescription
                 )
             }
         }
-        if suggestion.isLearnable {
+        if fuzzyCandidate.isLearnable {
             candidateSelectionHistoryStore.record(
-                suggestion.candidate,
-                readings: [conversionReading, suggestion.reading]
+                fuzzyCandidate.storageText,
+                readings: [conversionReading, fuzzyCandidate.reading]
             )
         }
-        let value = suggestion.candidate + conversionSuffix
+        let value = fuzzyCandidate.storageText + conversionSuffix
         let punctuation = compositionSuffix
-        let sourceTokens = suggestion.sourceTokens.isEmpty
+        let sourceTokens = fuzzyCandidate.sourceTokens.isEmpty
             ? nil
-            : suggestion.sourceTokens
+            : fuzzyCandidate.sourceTokens
         commit(
             value + suffix,
             to: sender,
-            historyValue: suggestion.candidate,
+            historyValue: fuzzyCandidate.storageText,
             historyTokens: sourceTokens,
             historyReadings: sourceTokens == nil
                 ? nil
-                : suggestion.sourceReadings,
-            historyReading: suggestion.reading,
+                : fuzzyCandidate.sourceReadings,
+            historyReading: fuzzyCandidate.reading,
             historyLearningSource: sourceTokens == nil
                 ? .directInput
-                : .acceptedSuggestion
+                : .acceptedCandidate
         )
         continueWithTrailingPunctuation(punctuation, client: sender)
         return true
@@ -3345,17 +3345,17 @@ final class InputController: IMKInputController {
     private func removeSelectedFuzzyCandidateFromUserDictionary(
         client sender: Any
     ) {
-        guard let suggestion = fuzzyCandidateSession.selectedCandidate
+        guard let fuzzyCandidate = fuzzyCandidateSession.selectedCandidate
         else {
             NSSound.beep()
             return
         }
-        if !suggestion.isLearnable, !suggestion.sourceTokens.isEmpty {
+        if !fuzzyCandidate.isLearnable, !fuzzyCandidate.sourceTokens.isEmpty {
             do {
                 try nextInputCandidateCoordinator.suppressLearnedCandidate(
-                    suggestion.candidate
+                    fuzzyCandidate.storageText
                 )
-                candidateSelectionHistoryStore.remove([suggestion.candidate])
+                candidateSelectionHistoryStore.remove([fuzzyCandidate.storageText])
                 candidateSearchCoordinator.cancel(.fuzzy)
                 fuzzyCandidateSession.reset()
                 selectedFuzzyCandidateIndex = nil
@@ -3371,25 +3371,25 @@ final class InputController: IMKInputController {
             return
         }
         guard userDictionaryStore.canRemove(
-            candidate: suggestion.candidate,
-            matchingReadings: [suggestion.reading]
+            candidate: fuzzyCandidate.storageText,
+            matchingReadings: [fuzzyCandidate.reading]
         ) else {
             NSSound.beep()
             return
         }
         do {
             try userDictionaryStore.remove(
-                candidate: suggestion.candidate,
-                matchingReadings: [suggestion.reading]
+                candidate: fuzzyCandidate.storageText,
+                matchingReadings: [fuzzyCandidate.reading]
             )
             rebuildConversionEngine()
-            candidateSelectionHistoryStore.remove([suggestion.candidate])
+            candidateSelectionHistoryStore.remove([fuzzyCandidate.storageText])
             self.selectedFuzzyCandidateIndex = nil
             updateMarkedText(in: sender)
             refreshCandidates(client: sender)
         } catch {
             NSLog(
-                "もしかして候補のユーザー辞書削除に失敗: %@",
+                "曖昧候補のユーザー辞書削除に失敗: %@",
                 error.localizedDescription
             )
             userDictionaryStore.restore(Self.loadUserEntries())
@@ -3399,7 +3399,7 @@ final class InputController: IMKInputController {
     }
 
     private func selectFuzzyCandidate(index: Int, client sender: Any) -> Bool {
-        guard let suggestion = fuzzyCandidateSession.select(index: index),
+        guard let fuzzyCandidate = fuzzyCandidateSession.select(index: index),
               let resolvedIndex = fuzzyCandidateSession.selectedIndex
         else { return true }
         trace(
@@ -3408,21 +3408,21 @@ final class InputController: IMKInputController {
             detail: "fuzzy=\(resolvedIndex)"
         )
         primaryCandidatePanel.clearSelection()
-        let displayValue = suggestion.candidate + conversionSuffix
+        let displayValue = fuzzyCandidate.storageText + conversionSuffix
             + compositionSuffix
         setMarkedText(
             displayValue,
             in: sender
         )
         showFuzzyCandidatePage(selectedIndex: resolvedIndex, client: sender)
-        showPreview(for: suggestion.candidate)
+        showPreview(for: fuzzyCandidate.storageText)
         if !translationCandidateSession.contains(
-            suggestion.candidate,
+            fuzzyCandidate.storageText,
             in: .fuzzy
         ) {
             updateTranslationCandidates(
-                for: suggestion.candidate,
-                destination: .fuzzy(reading: suggestion.reading),
+                for: fuzzyCandidate.storageText,
+                destination: .fuzzy(reading: fuzzyCandidate.reading),
                 client: sender
             )
         }
@@ -3541,15 +3541,15 @@ final class InputController: IMKInputController {
                         sender: self.client()
                     )
             },
-            apply: { [weak self] suggestions in
+            apply: { [weak self] candidates in
                 guard let self else { return }
                 guard CandidateResultUpdatePolicy.changes(
                     current: self.externalCandidates,
-                    updated: suggestions
+                    updated: candidates
                 ) else {
                     return
                 }
-                self.externalCandidates = suggestions
+                self.externalCandidates = candidates
                 if let inputClient = self.client() {
                     self.refreshCandidates(client: inputClient)
                 }
@@ -3716,7 +3716,7 @@ final class InputController: IMKInputController {
                     ) == source
                 case .fuzzy:
                     sourceIsStillSelected = self.fuzzyCandidateSession
-                        .selectedCandidate?.candidate == source
+                        .selectedCandidate?.storageText == source
                 }
                 return sourceIsStillSelected
                     && self.acceptsAsyncResult(
@@ -4432,7 +4432,7 @@ final class InputController: IMKInputController {
             historyValue: value,
             historyTokens: sourceTokens,
             historyReadings: sourceReadings,
-            historyLearningSource: .acceptedSuggestion
+            historyLearningSource: .acceptedCandidate
         )
     }
 
@@ -5558,7 +5558,7 @@ final class InputController: IMKInputController {
             trace(
                 "candidateSelection.changed",
                 sender: client(),
-                detail: "normal=\(newValue.map(String.init) ?? "none")"
+                detail: "standard=\(newValue.map(String.init) ?? "none")"
             )
         }
     }

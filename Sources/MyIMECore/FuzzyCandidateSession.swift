@@ -1,5 +1,6 @@
 public struct FuzzyCandidate: Equatable, Sendable {
-    public let candidate: String
+    /// The dictionary form of the candidate, shown, committed and saved as is
+    public let storageText: String
     public let reading: String
     public let distance: Int
     public let isLearnable: Bool
@@ -7,14 +8,14 @@ public struct FuzzyCandidate: Equatable, Sendable {
     public let sourceReadings: [String?]
 
     public init(
-        candidate: String,
+        storageText: String,
         reading: String,
         distance: Int,
         isLearnable: Bool = true,
         sourceTokens: [String] = [],
         sourceReadings: [String?] = []
     ) {
-        self.candidate = candidate
+        self.storageText = storageText
         self.reading = reading
         self.distance = distance
         self.isLearnable = isLearnable
@@ -42,19 +43,19 @@ extension FuzzyCandidate {
             return isLearnable
                 ? UserDictionaryRegistration(
                     reading: reading,
-                    candidate: candidate
+                    candidate: storageText
                 )
                 : nil
         }
         let readings = sourceReadings.compactMap { $0 }
         guard readings.count == sourceTokens.count,
               readings.allSatisfy({ !$0.isEmpty }),
-              sourceTokens.joined() == candidate else {
+              sourceTokens.joined() == storageText else {
             return nil
         }
         return UserDictionaryRegistration(
             reading: readings.joined(),
-            candidate: candidate
+            candidate: storageText
         )
     }
 }
@@ -101,11 +102,11 @@ public struct FuzzyCandidateSession: Equatable, Sendable {
         recencyRanks: [String: Int],
         preserveSelectionWhenUnchanged: Bool = false
     ) -> Bool {
-        let suggestionTiers = matchTiers.map { matches in
+        let candidateTiers = matchTiers.map { matches in
             matches.compactMap { match in
                 match.candidates.first.map {
                     FuzzyCandidate(
-                        candidate: $0,
+                        storageText: $0,
                         reading: match.reading,
                         distance: match.distance,
                         isLearnable: match.isLearnable,
@@ -116,18 +117,18 @@ public struct FuzzyCandidateSession: Equatable, Sendable {
             }
         }
         let orderedTierIndices = TieredCandidateOrderer.orderedIndices(
-            for: suggestionTiers.map { $0.map(\.candidate) },
+            for: candidateTiers.map { $0.map(\.storageText) },
             ranks: recencyRanks
         )
         var seenCandidates = Set<String>()
         let updatedCandidates = zip(
-            suggestionTiers,
+            candidateTiers,
             orderedTierIndices
         ).flatMap { candidates, indices in
             indices.compactMap { index in
-                let suggestion = candidates[index]
-                return seenCandidates.insert(suggestion.candidate).inserted
-                    ? suggestion
+                let fuzzyCandidate = candidates[index]
+                return seenCandidates.insert(fuzzyCandidate.storageText).inserted
+                    ? fuzzyCandidate
                     : nil
             }
         }
@@ -147,9 +148,9 @@ public struct FuzzyCandidateSession: Equatable, Sendable {
             return nil
         }
         guard selection.values.indices.contains(index) else { return nil }
-        let candidate = selection.values[index].candidate
+        let candidate = selection.values[index].storageText
         guard let resolvedIndex = selection.values.firstIndex(where: {
-            $0.candidate == candidate
+            $0.storageText == candidate
         }) else { return nil }
         selection.selectedIndex = resolvedIndex
         return selection.values[resolvedIndex]
@@ -158,7 +159,7 @@ public struct FuzzyCandidateSession: Equatable, Sendable {
     @discardableResult
     public mutating func select(candidate: String) -> FuzzyCandidate? {
         guard let index = selection.values.firstIndex(where: {
-            $0.candidate == candidate
+            $0.storageText == candidate
         }) else { return nil }
         return select(index: index)
     }
@@ -168,8 +169,8 @@ public struct FuzzyCandidateSession: Equatable, Sendable {
         maximumCount: Int
     ) -> Int? {
         guard !selection.values.isEmpty, maximumCount > 0 else { return nil }
-        let normalRow = standardSelectedIndex.map { $0 % maximumCount } ?? 0
-        return min(normalRow, selection.values.count - 1)
+        let standardRow = standardSelectedIndex.map { $0 % maximumCount } ?? 0
+        return min(standardRow, selection.values.count - 1)
     }
 
     public func standardCandidateIndexAlignedWithSelection(

@@ -52,7 +52,7 @@ struct ClosingBracketTrackerTests {
         ))
     }
 
-    @Test func consumesTheSameClosingTypedOverASelectedSuggestion() {
+    @Test func consumesTheSameClosingTypedOverASelectedCandidate() {
         var tracker = ClosingBracketTracker()
         tracker.consume("[")
 

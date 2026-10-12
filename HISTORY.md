@@ -2614,3 +2614,7 @@
 - 表示パネルを位置で命名し、`CandidateWindowController`を`CandidatePanelController`、`FuzzySuggestionWindowController`を`SecondaryCandidatePanelController`へ変更
 - 曖昧候補の`FuzzySuggestion*`を`FuzzyCandidate*`、次入力の`NextInputSuggestionCoordinator`を`NextInputCandidateCoordinator`、非同期検索の`SuggestionSearch*`を`CandidateSearch*`、外部API候補の`official`を`external`へ変更し、文書の「通常候補」「もしかして」を「標準候補」「曖昧候補」へ統一
 - 設定の保存キーと診断用環境変数の値は互換性のため変更せず維持
+- 候補体系の命名整理の続きとして、曖昧候補を指す`suggestion`・`suggestions`、標準候補を指す`normal`、外部API候補を指す`official`の残りを`fuzzyCandidate`、`standard`、`external`へ変更
+- `FuzzyCandidate.candidate`を、`Candidate.storageText`と同じく辞書に保存された形の文字列であることが分かる`storageText`へ変更
+- 次入力学習の入力元`acceptedSuggestion`をコード上は`acceptedCandidate`とし、保存値`acceptedSuggestion`と保存データの`acceptedSuggestionCount`は互換性のため維持
+- 互換性のため維持する保存キー・環境変数・保存値を`MISCELLANEOUS.md`へ記載し、保存形式と設定キーの互換性テストを追加

@@ -18,7 +18,7 @@ struct CandidatePipelineTests {
                     ),
                     Candidate(
                         storageText: "候補",
-                        source: .externalSuggestion,
+                        source: .externalCandidate,
                         isLearnable: true
                     )
                 ],
@@ -31,7 +31,7 @@ struct CandidatePipelineTests {
         #expect(candidates.map(\.storageText) == ["候補", "こうほ"])
         #expect(candidates[0].sources == [
             .basicDictionary,
-            .externalSuggestion
+            .externalCandidate
         ])
         #expect(candidates[0].isLearnable)
     }

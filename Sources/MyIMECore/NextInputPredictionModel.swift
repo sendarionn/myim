@@ -2,7 +2,8 @@ import Foundation
 
 public enum NextInputLearningSource: String, Codable, Sendable {
     case directInput
-    case acceptedSuggestion
+    /// Stored as `acceptedSuggestion` in saved learning data
+    case acceptedCandidate = "acceptedSuggestion"
 }
 
 public struct NextInputLearningToken: Equatable, Sendable {
@@ -53,7 +54,7 @@ public struct LearnedCompoundPrediction: Equatable, Sendable {
 public enum NextInputCandidateMetadata {
     public static let sourceTokensKey = "nextInput.sourceTokens"
     public static let sourceReadingsKey = "nextInput.sourceReadings"
-    public static let acceptedSuggestionKey = "nextInput.acceptedSuggestion"
+    public static let acceptedCandidateKey = "nextInput.acceptedCandidate"
 
     public static func candidate(from prediction: NextInputPrediction) -> Candidate {
         Candidate(
@@ -62,7 +63,7 @@ public enum NextInputCandidateMetadata {
             contextualMetadata: [
                 sourceTokensKey: encodedTokens(prediction.sourceTokens),
                 sourceReadingsKey: encodedReadings(prediction.sourceReadings),
-                acceptedSuggestionKey: "true"
+                acceptedCandidateKey: "true"
             ]
         )
     }
@@ -94,8 +95,8 @@ public enum NextInputCandidateMetadata {
         return readings
     }
 
-    public static func isAcceptedSuggestion(_ candidate: Candidate) -> Bool {
-        candidate.contextualMetadata[acceptedSuggestionKey] == "true"
+    public static func isAcceptedCandidate(_ candidate: Candidate) -> Bool {
+        candidate.contextualMetadata[acceptedCandidateKey] == "true"
     }
 
     private static func encodedTokens(_ tokens: [String]) -> String {
@@ -109,7 +110,7 @@ public enum NextInputCandidateMetadata {
 }
 
 /// Typing context of one input client: the recent commits and the current
-/// run of accepted suggestions
+/// run of accepted candidates
 ///
 /// Learned statistics are shared by every client, while each client keeps
 /// its own cursor so commits in different apps are not joined into one
@@ -118,7 +119,7 @@ public struct NextInputSequenceCursor: Sendable {
     fileprivate var recentInputs: [String] = []
     fileprivate var recentReadings: [String?] = []
     fileprivate var recentSources: [NextInputLearningSource] = []
-    fileprivate var episode: NextInputPredictionModel.SuggestionEpisode?
+    fileprivate var episode: NextInputPredictionModel.AcceptedCandidateEpisode?
     public fileprivate(set) var lastInput: String?
 
     public init() {}
@@ -134,7 +135,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
     public static let minimumDirectSequenceCount = 3
     public static let minimumLearnedCompoundPrefixLength = 3
     public static let maximumLearnedCompoundCandidateCount = 4
-    /// Selecting the same run of suggestions this many times combines it
+    /// Selecting the same run of candidates this many times combines it
     public static let minimumEpisodePromotionCount = 2
 
     private struct CandidateStat: Codable, Sendable {
@@ -171,12 +172,12 @@ public struct NextInputPredictionModel: Codable, Sendable {
         var lastUsed: Int
     }
 
-    /// Consecutively accepted suggestions after `context`
+    /// Consecutively accepted candidates after `context`
     ///
     /// Sentence history keeps every committed token, while an episode keeps
-    /// only what the user accepted from suggestions in one run, so the next
+    /// only what the user accepted from candidates in one run, so the next
     /// direct input is never appended to it
-    fileprivate struct SuggestionEpisode: Sendable {
+    fileprivate struct AcceptedCandidateEpisode: Sendable {
         let context: [String]
         let contextReadings: [String?]
         var tokens: [String]
@@ -199,7 +200,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
     private var recentInputs: [String] = []
     private var recentReadings: [String?] = []
     private var recentSources: [NextInputLearningSource] = []
-    private var episode: SuggestionEpisode?
+    private var episode: AcceptedCandidateEpisode?
     /// Multi-token statistics before version 2 counted windows across
     /// repetitions with the source of the last token only
     private static let sequenceSchemaVersion = 2
@@ -215,7 +216,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
         record(tokens: [value], source: source)
     }
 
-    /// `tokens` are one commit; accepted suggestions passed together count
+    /// `tokens` are one commit; accepted candidates passed together count
     /// as one selection
     public mutating func record(
         tokens: [String],
@@ -235,10 +236,10 @@ public struct NextInputPredictionModel: Codable, Sendable {
             guard let text = Self.normalizedValue(token.text) else {
                 return nil
             }
-            // A suggestion is picked without typing it, so it takes the
+            // A candidate is picked without typing it, so it takes the
             // reading the user typed for the same text before
             let reading = Self.normalizedReading(token.reading)
-                ?? (source == .acceptedSuggestion
+                ?? (source == .acceptedCandidate
                     ? typedReading(for: text)
                     : nil)
             return NextInputLearningToken(text: text, reading: reading)
@@ -251,11 +252,11 @@ public struct NextInputPredictionModel: Codable, Sendable {
         switch source {
         case .directInput:
             episode = nil
-        case .acceptedSuggestion:
+        case .acceptedCandidate:
             extendEpisode(with: normalized)
         }
         for (index, token) in normalized.enumerated() {
-            // A combined suggestion is used as a whole, so its first token
+            // A combined candidate is used as a whole, so its first token
             // alone was not chosen after the preceding context
             recordSentenceToken(
                 token.text,
@@ -264,7 +265,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
                 refreshesRecency: index > 0 || normalized.count == 1
             )
         }
-        if source == .acceptedSuggestion {
+        if source == .acceptedCandidate {
             recordEpisodeEvidence()
         }
     }
@@ -358,7 +359,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
         episode = context.isEmpty || tokens.count
             > Self.maximumPredictionTokenCount
             ? nil
-            : SuggestionEpisode(
+            : AcceptedCandidateEpisode(
                 context: context,
                 contextReadings: contextReadings,
                 tokens: tokens,
@@ -368,7 +369,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
     }
 
     /// Counts an episode the user built from several selections; picking an
-    /// already combined suggestion only refreshes its recency
+    /// already combined candidate only refreshes its recency
     private mutating func recordEpisodeEvidence() {
         guard let episode else { return }
         recordAcceptedPhraseEvidence(for: episode)
@@ -765,7 +766,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
                 switch source {
                 case .directInput:
                     stat.directCount = min(stat.directCount + 1, Int.max - 1)
-                case .acceptedSuggestion:
+                case .acceptedCandidate:
                     stat.acceptedSuggestionCount = min(
                         stat.acceptedSuggestionCount + 1,
                         Int.max - 1
@@ -821,7 +822,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
     }
 
     private mutating func recordAcceptedPhraseEvidence(
-        for episode: SuggestionEpisode
+        for episode: AcceptedCandidateEpisode
     ) {
         let selectionWasAlreadyCombined = episode.selectionCount == 1
             && episode.tokens.count >= 2
@@ -925,7 +926,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
     }
 
     /// A multi-token candidate is offered once it was typed as a sentence
-    /// often enough or selected as the same run of suggestions twice
+    /// often enough or selected as the same run of candidates twice
     private static func isEligible(_ stat: SequenceCandidateStat) -> Bool {
         stat.tokens.count == 1
             || stat.directCount >= minimumDirectSequenceCount

@@ -63,9 +63,9 @@ struct BundledFuzzyCandidateTests {
         ("matomte", "まとめて")
     ])
     func ranksTheCorrectedReadingFirst(query: String, expected: String) async throws {
-        let suggestions = try await suggestions(for: query)
+        let fuzzyCandidates = try await fuzzyCandidates(for: query)
 
-        #expect(suggestions.first == expected)
+        #expect(fuzzyCandidates.first == expected)
     }
 
     @Test(arguments: [
@@ -77,8 +77,8 @@ struct BundledFuzzyCandidateTests {
         query: String,
         fragments: [String]
     ) async throws {
-        let suggestions = try await suggestions(for: query)
-        let page = suggestions.prefix(4)
+        let fuzzyCandidates = try await fuzzyCandidates(for: query)
+        let page = fuzzyCandidates.prefix(4)
 
         #expect(fragments.allSatisfy { !page.contains($0) })
     }
@@ -91,23 +91,23 @@ struct BundledFuzzyCandidateTests {
         ("tegmai", "手紙")
     ])
     func handlesOtherSingleCharacterTypos(query: String, expected: String) async throws {
-        let suggestions = try await suggestions(for: query)
+        let fuzzyCandidates = try await fuzzyCandidates(for: query)
 
-        #expect(suggestions.prefix(4).contains(expected))
+        #expect(fuzzyCandidates.prefix(4).contains(expected))
     }
 
     @Test
     func findsDatabaseFromMultipleRomajiErrors() async throws {
-        let suggestions = try await suggestions(for: "de-tsb-su")
+        let fuzzyCandidates = try await fuzzyCandidates(for: "de-tsb-su")
 
-        #expect(suggestions.prefix(4).contains("データベース"))
+        #expect(fuzzyCandidates.prefix(4).contains("データベース"))
     }
 
     @Test
     func findsDatabaseFromNearbyNumberAndSymbolKeys() async throws {
-        let suggestions = try await suggestions(for: "de=tab0su")
+        let fuzzyCandidates = try await fuzzyCandidates(for: "de=tab0su")
 
-        #expect(suggestions.prefix(3).contains("データベース"))
+        #expect(fuzzyCandidates.prefix(3).contains("データベース"))
     }
 
     /// InputController searches with the resolved reading and excludes the
@@ -118,7 +118,7 @@ struct BundledFuzzyCandidateTests {
     ) async throws {
         let fixture = try #require(Self.fixture)
         let reading = ConversionReadingResolver.resolve(input)
-        let normal = StandardConversionCandidateSource(
+        let standard = StandardConversionCandidateSource(
             userEngine: LayeredConversionEngine(engines: []),
             importedEngine: Self.importedSKK,
             basicEngine: fixture.basic,
@@ -129,18 +129,18 @@ struct BundledFuzzyCandidateTests {
             )
         ).candidates(for: .init(input: input, conversionReading: reading))
 
-        let suggestions = try await suggestions(
+        let fuzzyCandidates = try await fuzzyCandidates(
             for: reading,
-            visibleCandidates: Set(normal.map(\.storageText))
+            visibleCandidates: Set(standard.map(\.storageText))
         )
 
         #expect(reading == input)
-        #expect(normal.isEmpty)
-        #expect(suggestions.prefix(4).contains("データベース"))
+        #expect(standard.isEmpty)
+        #expect(fuzzyCandidates.prefix(4).contains("データベース"))
     }
 
     @Test(arguments: ["de=tab0su", "de-tsb-su"])
-    func learnedExactInputKeepsDatabaseSuggestionWithoutDuplicatingIt(
+    func learnedExactInputKeepsDatabaseFuzzyCandidateWithoutDuplicatingIt(
         input: String
     ) async throws {
         let fixture = try #require(Self.fixture)
@@ -164,7 +164,7 @@ struct BundledFuzzyCandidateTests {
             baseKey: "learned-exact-input-test",
             userEntries: [learnedEntry]
         )
-        let normal = StandardConversionCandidateSource(
+        let standard = StandardConversionCandidateSource(
             userEngine: userDictionary,
             importedEngine: Self.importedSKK,
             basicEngine: fixture.basic,
@@ -176,7 +176,7 @@ struct BundledFuzzyCandidateTests {
         ).candidates(for: .init(input: input, conversionReading: input))
         let source = FuzzyCandidateSource(
             query: input,
-            visibleCandidates: Set(normal.map(\.storageText)),
+            visibleCandidates: Set(standard.map(\.storageText)),
             userDictionary: userDictionary,
             importedDictionary: Self.importedSKK,
             basicDictionary: fixture.basic,
@@ -184,13 +184,13 @@ struct BundledFuzzyCandidateTests {
             compoundGenerator: fixture.compound,
             fuzzyRepository: repository
         )
-        let suggestions = await source.matchTiers()
+        let fuzzyCandidates = await source.matchTiers()
             .flatMap { $0 }
             .flatMap(\.candidates)
 
-        #expect(normal.map(\.storageText).contains(input))
-        #expect(suggestions.contains("データベース"))
-        #expect(!suggestions.contains(input))
+        #expect(standard.map(\.storageText).contains(input))
+        #expect(fuzzyCandidates.contains("データベース"))
+        #expect(!fuzzyCandidates.contains(input))
     }
 
     @Test(arguments: [
@@ -206,7 +206,7 @@ struct BundledFuzzyCandidateTests {
         #expect(ConversionReadingResolver.resolve(input) == reading)
     }
 
-    private func suggestions(
+    private func fuzzyCandidates(
         for query: String,
         visibleCandidates: Set<String> = []
     ) async throws -> [String] {
@@ -221,11 +221,11 @@ struct BundledFuzzyCandidateTests {
             compoundGenerator: fixture.compound,
             fuzzyRepository: fixture.repository
         )
-        var coordinator = FuzzyCandidateSession()
-        coordinator.replace(
+        var session = FuzzyCandidateSession()
+        session.replace(
             matchTiers: await source.matchTiers(),
             recencyRanks: [:]
         )
-        return coordinator.candidates.map(\.candidate)
+        return session.candidates.map(\.storageText)
     }
 }

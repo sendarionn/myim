@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import MyIMECore
 
-struct OfficialCandidateServiceTests {
+struct ExternalCandidateSourceTests {
     @Test
     func buildsGoogleJapaneseInputRequest() throws {
         let url = try GoogleJapaneseInputClient.url(for: "へんかん")

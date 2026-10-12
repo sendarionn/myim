@@ -49,8 +49,8 @@ struct SharedLearningStoreTests {
 
         for _ in 0..<12 {
             _ = learn("実装", source: .directInput, in: vscode)
-            _ = learn("に", source: .acceptedSuggestion, in: chrome)
-            _ = learn("進んで", source: .acceptedSuggestion, in: chrome)
+            _ = learn("に", source: .acceptedCandidate, in: chrome)
+            _ = learn("進んで", source: .acceptedCandidate, in: chrome)
         }
 
         #expect(!fixture.store.snapshot.candidates(after: "実装", limit: 16)
@@ -145,8 +145,8 @@ struct SharedLearningStoreTests {
     ) {
         for _ in 0..<count {
             _ = learn("実装", source: .directInput, in: coordinator)
-            _ = learn("に", source: .acceptedSuggestion, in: coordinator)
-            _ = learn("進んで", source: .acceptedSuggestion, in: coordinator)
+            _ = learn("に", source: .acceptedCandidate, in: coordinator)
+            _ = learn("進んで", source: .acceptedCandidate, in: coordinator)
         }
     }
 

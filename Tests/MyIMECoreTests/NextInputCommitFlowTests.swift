@@ -5,7 +5,7 @@ import Testing
 @Suite
 struct NextInputCommitFlowTests {
     @Test
-    func structuralClosingUpdatesSuggestionsWithoutLearning() {
+    func structuralClosingUpdatesCandidatesWithoutLearning() {
         var tracker = ClosingBracketTracker()
         tracker.consume("（")
 
@@ -22,7 +22,7 @@ struct NextInputCommitFlowTests {
     }
 
     @Test
-    func ordinaryInputLearnsAndUpdatesSuggestions() {
+    func ordinaryInputLearnsAndUpdatesCandidates() {
         let policy = NextInputCommitPolicy.resolve(
             committing: "候補",
             closingBracketTracker: ClosingBracketTracker(),
@@ -36,7 +36,7 @@ struct NextInputCommitFlowTests {
     }
 
     @Test
-    func generatedParticleNeitherLearnsNorUpdatesSuggestions() {
+    func generatedParticleNeitherLearnsNorUpdatesCandidates() {
         let policy = NextInputCommitPolicy.resolve(
             committing: "を",
             closingBracketTracker: ClosingBracketTracker(),
@@ -50,7 +50,7 @@ struct NextInputCommitFlowTests {
     }
 
     @Test
-    func explicitlySelectedGeneratedParticleLearnsAndUpdatesSuggestions() {
+    func explicitlySelectedGeneratedParticleLearnsAndUpdatesCandidates() {
         let policy = NextInputCommitPolicy.resolve(
             committing: "に",
             closingBracketTracker: ClosingBracketTracker(),
@@ -490,7 +490,7 @@ struct NextInputCommitFlowTests {
     }
 
     /// The usual repetition: 東京都 is converted, then 中野区 is picked from
-    /// the next-input suggestions learned from one typed occurrence
+    /// the next-input candidates learned from one typed occurrence
     @Test
     func selectingTheSuggestedFollowerLearnsThePhraseForPrefixSearch() {
         let flow = CommitFlow.seededWithTypedTokyoNakano()
@@ -669,7 +669,7 @@ private final class CommitFlow {
             value,
             learningTokens: sourceTokens,
             learningReadings: sourceReadings,
-            learningSource: .acceptedSuggestion
+            learningSource: .acceptedCandidate
         )
     }
 
@@ -682,7 +682,7 @@ private final class CommitFlow {
             prediction.text,
             learningTokens: prediction.sourceTokens,
             learningReadings: prediction.sourceReadings,
-            learningSource: .acceptedSuggestion
+            learningSource: .acceptedCandidate
         )
     }
 

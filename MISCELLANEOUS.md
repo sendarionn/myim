@@ -32,6 +32,18 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 - 「直接候補」は標準候補の中で完全一致を中心とする優先グループを指し、候補群の名前には使わない
 - 設定画面では曖昧候補を「もしかして？」と表示する
 
+互換性のため、保存値と外部から参照される値は旧名称のまま維持する
+
+| 値 | 用途 | 対応するコード上の名前 |
+| --- | --- | --- |
+| `FuzzySuggestionsEnabled` | 曖昧候補の設定の保存キー | `InputFeatureSettings.isFuzzyCandidatesEnabled` |
+| `fuzzySuggestion` | 診断用環境変数`MYIM_DIAGNOSTIC_DISABLE`等の値 | `InputDiagnosticFeature.fuzzyCandidate` |
+| `acceptedSuggestion` | 次入力学習の保存データに残る入力元 | `NextInputLearningSource.acceptedCandidate` |
+| `acceptedSuggestionCount` | 次入力学習の保存データの選択回数 | 同名のプロパティ |
+| `WikipediaSuggestionsEnabled` | Wikipedia検索候補の設定の保存キー | `InputFeatureSettings.isWikipediaSuggestionsEnabled` |
+
+曖昧候補の文字列`FuzzyCandidate.storageText`は、`Candidate.storageText`と同じく辞書に保存された形の文字列で、表示、確定、ユーザー辞書登録、選択履歴にそのまま使う
+
 ### 候補群と実装
 
 | 候補群 | 生成の契機と役割 | 主な型・関数 | 選択・操作状態 | 表示先 |

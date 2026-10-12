@@ -86,7 +86,7 @@ struct FuzzyConversionEngineTests {
     }
 
     @Test
-    func avoidsShortNoisySuggestionsByDefault() {
+    func avoidsShortNoisyCorrectionsByDefault() {
         #expect(engine.matches(for: "hid").isEmpty)
     }
 

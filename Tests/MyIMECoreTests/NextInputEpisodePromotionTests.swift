@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import MyIMECore
 
-/// Selecting the same run of suggestions twice combines it into one
+/// Selecting the same run of candidates twice combines it into one
 /// candidate, and every eligible candidate is ordered by its last use
 @Suite
 struct NextInputEpisodePromotionTests {
@@ -38,7 +38,7 @@ struct NextInputEpisodePromotionTests {
         model.breakSequence()
         for _ in 0..<5 {
             model.record("実装")
-            model.record(tokens: ["に", "進んで"], source: .acceptedSuggestion)
+            model.record(tokens: ["に", "進んで"], source: .acceptedCandidate)
             model.breakSequence()
         }
 
@@ -108,8 +108,8 @@ struct NextInputEpisodePromotionTests {
         selectEpisode(in: vscode)
         #expect(!learn("実装", source: .directInput, in: chrome)
             .contains("に進んで"))
-        _ = learn("に", source: .acceptedSuggestion, in: chrome)
-        _ = learn("進んで", source: .acceptedSuggestion, in: chrome)
+        _ = learn("に", source: .acceptedCandidate, in: chrome)
+        _ = learn("進んで", source: .acceptedCandidate, in: chrome)
 
         #expect(learn("実装", source: .directInput, in: vscode)
             .contains("に進んで"))
@@ -123,8 +123,8 @@ struct NextInputEpisodePromotionTests {
 
         for _ in 0..<2 {
             _ = learn("実装", source: .directInput, in: vscode)
-            _ = learn("に", source: .acceptedSuggestion, in: chrome)
-            _ = learn("進んで", source: .acceptedSuggestion, in: chrome)
+            _ = learn("に", source: .acceptedCandidate, in: chrome)
+            _ = learn("進んで", source: .acceptedCandidate, in: chrome)
         }
 
         #expect(!store.snapshot.candidates(after: "実装", limit: 16)
@@ -143,8 +143,8 @@ struct NextInputEpisodePromotionTests {
 
     private func selectEpisode(in model: inout NextInputPredictionModel) {
         model.record("実装")
-        model.record("に", source: .acceptedSuggestion)
-        model.record("進んで", source: .acceptedSuggestion)
+        model.record("に", source: .acceptedCandidate)
+        model.record("進んで", source: .acceptedCandidate)
         model.breakSequence()
     }
 
@@ -157,14 +157,14 @@ struct NextInputEpisodePromotionTests {
         in model: inout NextInputPredictionModel
     ) {
         model.record("実装")
-        model.record(tokens: tokens, source: .acceptedSuggestion)
+        model.record(tokens: tokens, source: .acceptedCandidate)
         model.breakSequence()
     }
 
     private func selectEpisode(in coordinator: NextInputCandidateCoordinator) {
         _ = learn("実装", source: .directInput, in: coordinator)
-        _ = learn("に", source: .acceptedSuggestion, in: coordinator)
-        _ = learn("進んで", source: .acceptedSuggestion, in: coordinator)
+        _ = learn("に", source: .acceptedCandidate, in: coordinator)
+        _ = learn("進んで", source: .acceptedCandidate, in: coordinator)
     }
 
     private func learn(

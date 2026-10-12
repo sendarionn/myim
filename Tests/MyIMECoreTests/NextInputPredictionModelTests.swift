@@ -189,7 +189,7 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func forgetsAClosingBracketWithoutSuppressingStructuralSuggestion() {
+    func forgetsAClosingBracketWithoutSuppressingStructuralCandidate() {
         var model = NextInputPredictionModel()
         model.record("本文")
         model.record("）")
@@ -422,7 +422,7 @@ struct NextInputPredictionModelTests {
                 learningTokens: [
                     NextInputLearningToken(text: "中野区", reading: "nakanoku")
                 ],
-                source: .acceptedSuggestion
+                source: .acceptedCandidate
             )
             model.breakSequence()
         }
@@ -470,7 +470,7 @@ struct NextInputPredictionModelTests {
             ])
             model.record(
                 learningTokens: tokens,
-                source: .acceptedSuggestion
+                source: .acceptedCandidate
             )
             model.breakSequence()
         }
@@ -521,8 +521,8 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<2 {
             model.record("実装")
-            model.record("に", source: .acceptedSuggestion)
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
+            model.record("進んで", source: .acceptedCandidate)
         }
 
         let prediction = model.predictions(after: "実装").first {
@@ -537,8 +537,8 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<1 {
             model.record("実装")
-            model.record("に", source: .acceptedSuggestion)
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
+            model.record("進んで", source: .acceptedCandidate)
         }
 
         #expect(!model.candidates(after: "実装").contains("に進んで"))
@@ -550,8 +550,8 @@ struct NextInputPredictionModelTests {
         record(["実装", "を", "行う"], repetitions: 6, in: &model)
         for _ in 0..<2 {
             model.record("実装")
-            model.record("に", source: .acceptedSuggestion)
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
+            model.record("進んで", source: .acceptedCandidate)
         }
 
         let candidates = model.candidates(after: "実装", limit: 16)
@@ -618,11 +618,11 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func reselectingACombinedSuggestionAloneDoesNotPromoteIt() {
+    func reselectingACombinedCandidateAloneDoesNotPromoteIt() {
         var model = NextInputPredictionModel()
         for _ in 0..<20 {
             model.record("実装")
-            model.record(tokens: ["に", "進んで"], source: .acceptedSuggestion)
+            model.record(tokens: ["に", "進んで"], source: .acceptedCandidate)
         }
 
         #expect(!model.candidates(after: "実装", limit: 16).contains("に進んで"))
@@ -633,9 +633,9 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<12 {
             model.record("実装")
-            model.record("に", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
             model.breakSequence()
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("進んで", source: .acceptedCandidate)
         }
 
         #expect(!model.candidates(after: "実装", limit: 16).contains("に進んで"))
@@ -666,8 +666,8 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<12 {
             model.record("実装")
-            model.record("に", source: .acceptedSuggestion)
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
+            model.record("進んで", source: .acceptedCandidate)
         }
 
         let texts = model.predictions(after: "実装", limit: 16).map(\.text)
@@ -685,15 +685,15 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<1 {
             model.record("実装")
-            model.record("に", source: .acceptedSuggestion)
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
+            model.record("進んで", source: .acceptedCandidate)
         }
         model.record("実装")
 
         #expect(!model.candidates(after: "実装", limit: 16).contains("に進んで"))
 
-        model.record("に", source: .acceptedSuggestion)
-        model.record("進んで", source: .acceptedSuggestion)
+        model.record("に", source: .acceptedCandidate)
+        model.record("進んで", source: .acceptedCandidate)
         model.record("実装")
 
         #expect(model.candidates(after: "実装", limit: 16).contains("に進んで"))
@@ -704,8 +704,8 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<12 {
             model.record("実装")
-            model.record("に", source: .acceptedSuggestion)
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
+            model.record("進んで", source: .acceptedCandidate)
         }
 
         #expect(model.candidates(after: "進んで", limit: 16).contains("実装"))
@@ -717,8 +717,8 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<12 {
             model.record("確認")
-            model.record("に", source: .acceptedSuggestion)
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
+            model.record("進んで", source: .acceptedCandidate)
             model.record("実装")
         }
 
@@ -731,12 +731,12 @@ struct NextInputPredictionModelTests {
         var model = NextInputPredictionModel()
         for _ in 0..<2 {
             model.record("実装")
-            model.record("に", source: .acceptedSuggestion)
-            model.record("進んで", source: .acceptedSuggestion)
+            model.record("に", source: .acceptedCandidate)
+            model.record("進んで", source: .acceptedCandidate)
         }
         for _ in 0..<3 {
             model.record("実装")
-            model.record(tokens: ["に", "進んで"], source: .acceptedSuggestion)
+            model.record(tokens: ["に", "進んで"], source: .acceptedCandidate)
         }
         model.record("実装")
 
