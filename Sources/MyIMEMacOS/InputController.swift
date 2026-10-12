@@ -384,7 +384,27 @@ final class InputController: IMKInputController {
     }
 
     private var navigationSnapshot: String {
-        "standard=\(selectedCandidateIndex.map(String.init) ?? "none") fuzzy=\(selectedFuzzyCandidateIndex.map(String.init) ?? "none") cursor=\(inputCursor) inputLength=\(inputBuffer.count) primaryVisible=\(primaryCandidatePanel.isVisible) secondaryVisible=\(secondaryCandidatePanel.isVisible)"
+        "standard=\(selectedCandidateIndex.map(String.init) ?? "none") fuzzy=\(selectedFuzzyCandidateIndex.map(String.init) ?? "none") cursor=\(inputCursor) inputLength=\(inputBuffer.count) primaryVisible=\(primaryCandidatePanel.isVisible) secondaryVisible=\(secondaryCandidatePanel.isVisible) \(translationSnapshot)"
+    }
+
+    /// Translation requests outlive the key that started them, so they are
+    /// logged on their own while navigation diagnostics are enabled
+    private func logTranslationDiagnostics(
+        _ message: @autoclosure () -> String
+    ) {
+        guard UserDefaults.standard.bool(
+            forKey: Self.navigationDiagnosticsKey
+        ) else { return }
+        let text = message()
+        Self.lifecycleLogger.notice(
+            "NAVTRACE translation \(text, privacy: .public) \(self.translationSnapshot, privacy: .public)"
+        )
+    }
+
+    private var translationSnapshot: String {
+        let shown = translationCandidateSession.visibleSource
+        let current = currentTranslationSource
+        return "shownChannel=\(shown.map { "\($0.channel)" } ?? "none") currentChannel=\(current.map { "\($0.channel)" } ?? "none") showsCurrent=\(current.map(translationCandidateSession.isShowingTranslations(of:)) ?? false) panels=\(panelCoordinator.visibleTranslationCandidateFrames.count)"
     }
 
     private func noteNavigation(_ step: @autoclosure () -> String) {
@@ -3336,6 +3356,17 @@ final class InputController: IMKInputController {
             updateMarkedText(in: sender)
             showPrimaryCandidatePanel(client: sender)
         }
+        // Whatever is still shown must translate the candidate selected now
+        // or be on its way to it; otherwise it belongs to another candidate
+        if translationCandidateSession.hasVisibleCandidates,
+           !(currentTranslationSource.map(
+                translationCandidateSession.isShowingTranslations(of:)
+           ) ?? false),
+           candidateSearchCoordinator.query(for: .translation)
+                != currentTranslationSource?.text {
+            noteNavigation("returnToStandard.closeStaleTranslations")
+            hideTranslationCandidatePanels()
+        }
         // The secondary panel keeps its rows until it is shown again, so it
         // is redrawn without the highlight; it is placed only beside a
         // primary panel already on screen and otherwise waits for the
@@ -3752,11 +3783,18 @@ final class InputController: IMKInputController {
             toSourceIn: destination.channel,
             translates: translates
         ) == .close {
+            logTranslationDiagnostics(
+                "close previous=\(translationCandidateSession.visibleChannel.map { "\($0)" } ?? "none") next=\(destination.channel)"
+            )
             hideTranslationCandidatePanels()
         }
         guard translates else {
+            logTranslationDiagnostics(
+                "skip untranslated channel=\(destination.channel)"
+            )
             return
         }
+        logTranslationDiagnostics("start channel=\(destination.channel)")
         panelCoordinator.reserveTranslationCandidateSpace(
             languageCount: Self.featureSettings.translationTargetLanguages.count,
             onLeft: destination.channel.extendsLeft
@@ -3777,16 +3815,16 @@ final class InputController: IMKInputController {
             },
             validate: { [weak self] in
                 guard let self else { return false }
-                let sourceIsStillSelected: Bool
-                switch destination {
-                case .standard:
-                    sourceIsStillSelected = self.selectedCandidateValue.map(
-                        self.candidateValueForCommit
-                    ) == source
-                case .fuzzy:
-                    sourceIsStillSelected = self.fuzzyCandidateSession
-                        .selectedCandidate?.storageText == source
-                }
+                // The result belongs to the candidate selected now, in the
+                // same candidate group
+                let sourceIsStillSelected = self.currentTranslationSource
+                    == TranslationSource(
+                        text: source,
+                        channel: destination.channel
+                    )
+                self.logTranslationDiagnostics(
+                    "result \(sourceIsStillSelected ? "accepted" : "rejected") channel=\(destination.channel)"
+                )
                 return sourceIsStillSelected
                     && self.acceptsAsyncResult(
                         asyncSnapshot,
@@ -3819,6 +3857,7 @@ final class InputController: IMKInputController {
                     } ?? 0
                     self.showTranslationCandidatePanels(
                         groups,
+                        for: source,
                         beside: self.primaryCandidatePanel.rowFrame(at: sourceRow)
                             ?? self.primaryCandidatePanel.frame,
                         channel: channel,
@@ -3845,6 +3884,7 @@ final class InputController: IMKInputController {
                     }
                     self.showTranslationCandidatePanels(
                         groups,
+                        for: source,
                         beside: self.selectedFuzzyCandidateIndex.flatMap {
                             self.secondaryCandidatePanel.rowFrame(
                                 at: $0 % Self.maximumCandidateCount
@@ -3875,6 +3915,7 @@ final class InputController: IMKInputController {
     /// translations closes the previous source's panels
     private func showTranslationCandidatePanels(
         _ groups: [TranslationCandidateGroup],
+        for source: String,
         beside sourceFrame: NSRect,
         channel: TranslationCandidateChannel,
         client sender: Any
@@ -3896,7 +3937,8 @@ final class InputController: IMKInputController {
         )
         translationCandidateSession.show(
             Array(visibleGroups.prefix(shownCount)),
-            channel: channel
+            channel: channel,
+            source: source
         )
     }
 
@@ -3909,14 +3951,37 @@ final class InputController: IMKInputController {
         direction: CandidateNavigationDirection,
         from sourceFrame: NSRect
     ) -> Bool {
-        guard translationCandidateSession.hasVisibleCandidates,
+        // Only translations of the candidate selected now are entered;
+        // panels left from another candidate are never a destination
+        guard let source = currentTranslationSource,
+              translationCandidateSession.isShowingTranslations(of: source),
               let nearestFrame = panelCoordinator
                 .visibleTranslationCandidateFrames.first else {
+            noteNavigation(
+                "shouldEnterTranslation=false showsCurrentSource=\(currentTranslationSource.map(translationCandidateSession.isShowingTranslations(of:)) ?? false)"
+            )
             return false
         }
         return nearestFrame.midX < sourceFrame.midX
             ? direction == .left
             : direction == .right
+    }
+
+    /// The candidate selected now: the fuzzy candidate while the secondary
+    /// panel is selected, otherwise the standard candidate
+    private var currentTranslationSource: TranslationSource? {
+        if let fuzzy = fuzzyCandidateSession.selectedCandidate {
+            return TranslationSource(text: fuzzy.storageText, channel: .fuzzy)
+        }
+        guard let selectedCandidateIndex,
+              currentCandidateModels.indices.contains(selectedCandidateIndex)
+        else {
+            return nil
+        }
+        return TranslationSource(
+            text: currentCandidateModels[selectedCandidateIndex].commitText,
+            channel: .standard
+        )
     }
 
     /// Entering from the source starts at the top of the nearest panel

@@ -9,6 +9,17 @@ public enum TranslationCandidateChannel: Hashable, Sendable {
     }
 }
 
+/// The candidate translated and the candidate group it was selected in
+public struct TranslationSource: Equatable, Sendable {
+    public let text: String
+    public let channel: TranslationCandidateChannel
+
+    public init(text: String, channel: TranslationCandidateChannel) {
+        self.text = text
+        self.channel = channel
+    }
+}
+
 /// A candidate in one language panel; panel 0 is next to the source
 public struct TranslationCandidateSelection: Equatable, Sendable {
     public let groupIndex: Int
@@ -48,6 +59,7 @@ public struct TranslationCandidateSession: Equatable, Sendable {
 
     public private(set) var visibleGroups: [TranslationCandidateGroup] = []
     public private(set) var visibleChannel: TranslationCandidateChannel?
+    public private(set) var visibleSource: TranslationSource?
     public private(set) var selection: TranslationCandidateSelection?
     public private(set) var returnWasFuzzy = false
 
@@ -117,11 +129,20 @@ public struct TranslationCandidateSession: Equatable, Sendable {
     /// Replaces the panels; the previous selection does not carry over
     public mutating func show(
         _ groups: [TranslationCandidateGroup],
-        channel: TranslationCandidateChannel
+        channel: TranslationCandidateChannel,
+        source: String? = nil
     ) {
         visibleGroups = groups.filter { !$0.candidates.isEmpty }
         visibleChannel = visibleGroups.isEmpty ? nil : channel
+        visibleSource = visibleGroups.isEmpty
+            ? nil
+            : source.map { TranslationSource(text: $0, channel: channel) }
         selection = nil
+    }
+
+    /// The panels on screen translate `source`, so the arrows may enter them
+    public func isShowingTranslations(of source: TranslationSource) -> Bool {
+        hasVisibleCandidates && visibleSource == source
     }
 
     @discardableResult
@@ -191,6 +212,7 @@ public struct TranslationCandidateSession: Equatable, Sendable {
         generatedTextsByChannel = [:]
         visibleGroups = []
         visibleChannel = nil
+        visibleSource = nil
         selection = nil
         returnWasFuzzy = false
     }
