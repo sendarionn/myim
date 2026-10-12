@@ -369,9 +369,6 @@ final class InputController: IMKInputController {
         guard event.type == .keyDown else {
             return false
         }
-        if inputBuffer.isEmpty {
-            logInputFieldProbe(event: "keyDown", sender: sender)
-        }
         trace(
             "keyDown",
             sender: sender,
@@ -1340,27 +1337,7 @@ final class InputController: IMKInputController {
         super.cancelComposition()
     }
 
-    /// Temporary probe: what the client tells an input method about the
-    /// focused field, without reading any of its text
-    private func logInputFieldProbe(event: String, sender: Any?) {
-        guard let client = sender as? (IMKTextInput & NSObjectProtocol) else {
-            return
-        }
-        var rect = NSRect.zero
-        let attributeKeys = (client.attributes(
-            forCharacterIndex: 0,
-            lineHeightRectangle: &rect
-        ) as? [AnyHashable: Any])?.keys.map { "\($0)" }.sorted() ?? []
-        let valid = (client.validAttributesForMarkedText() as? [Any])?
-            .map { "\($0)" }.sorted() ?? []
-        let selected = client.selectedRange()
-        Self.lifecycleLogger.notice(
-            "FIELDPROBE event=\(event, privacy: .public) app=\(client.bundleIdentifier() ?? "nil", privacy: .public) clientID=\(client.uniqueClientIdentifierString() ?? "nil", privacy: .public) class=\(String(describing: type(of: client)), privacy: .public) windowLevel=\(client.windowLevel(), privacy: .public) unicode=\(client.supportsUnicode(), privacy: .public) secure=\(SecureInputDetector.isEnabled, privacy: .public) selectedLocation=\(selected.location, privacy: .public) attributeKeys=\(attributeKeys.joined(separator: ","), privacy: .public) validMarked=\(valid.joined(separator: ","), privacy: .public)"
-        )
-    }
-
     override func activateServer(_ sender: Any!) {
-        logInputFieldProbe(event: "activate", sender: sender)
         let activatingBundleIdentifier = (sender as? IMKTextInput)?
             .bundleIdentifier()
         let activatingRole = lifecycleCoordinator.updateClient(
@@ -5057,7 +5034,7 @@ final class InputController: IMKInputController {
             ? markedRange
             : NSRange(location: NSNotFound, length: NSNotFound)
         textClient.setMarkedText(
-            value,
+            markedTextValue(value),
             selectionRange: NSRange(
                 location: selectionOffset ?? value.utf16.count,
                 length: 0
@@ -5065,6 +5042,39 @@ final class InputController: IMKInputController {
             replacementRange: replacementRange
         )
         trace("setMarkedText.complete", sender: sender, detail: "value=\(value)")
+    }
+
+    /// The text being converted and the trailing punctuation waiting
+    /// for the next conversion are marked as separate clauses with the
+    /// standard input method styles, so their underlines are drawn apart
+    private func markedTextValue(_ value: String) -> Any {
+        guard let segments = MarkedTextSegments(
+            text: value,
+            pendingSuffix: compositionSuffix
+        ) else {
+            return value
+        }
+        let text = NSMutableAttributedString(string: value)
+        for (style, segment) in [
+            (kTSMHiliteSelectedConvertedText, segments.target),
+            (kTSMHiliteRawText, segments.pending)
+        ] {
+            let range = NSRange(
+                location: segment.lowerBound,
+                length: segment.count
+            )
+            let attributes = mark(forStyle: Int(style), at: range) ?? [:]
+            text.setAttributes(
+                Dictionary(uniqueKeysWithValues: attributes.compactMap {
+                    key, value in
+                    (key as? String).map {
+                        (NSAttributedString.Key($0), value)
+                    }
+                }),
+                range: range
+            )
+        }
+        return text
     }
 
     private var inputRevision: UInt {
