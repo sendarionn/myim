@@ -2,7 +2,6 @@ import importlib.util
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 
 MODULE_PATH = Path(__file__).parents[2] / "Scripts" / "readme_demos.py"
@@ -94,47 +93,6 @@ class ReadmeDemoTests(unittest.TestCase):
             self.assertEqual(
                 [], readme_demos.validate_local_images(root, manifest)
             )
-
-    def test_recording_without_output_does_not_replace_verified_image(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            scripts = root / "Scripts"
-            scripts.mkdir()
-            (scripts / "record-readme-demo.swift").write_text(
-                "// recorder", encoding="utf-8"
-            )
-            (scripts / "ReadmeDemoRecorder-Info.plist").write_text(
-                "<plist/>", encoding="utf-8"
-            )
-            demo = self.demo(
-                image={"alt": "入力", "path": "https://example.com/input.gif"},
-                recording={
-                    "scenario": "input",
-                    "output": "docs/demos/input.gif",
-                    "expectedText": "入力",
-                },
-            )
-            with mock.patch.object(readme_demos.subprocess, "run"):
-                with self.assertRaises(readme_demos.DemoConfigurationError):
-                    readme_demos.record_demo(root, demo)
-            self.assertEqual(
-                "https://example.com/input.gif", demo["image"]["path"]
-            )
-            self.assertEqual("", demo["verifiedSourceHash"])
-            self.assertFalse((root / "docs/demos/.input.gif.recording").exists())
-
-    def test_successful_recording_verification_keeps_gyazo_image(self):
-        demo = self.demo(
-            image={
-                "alt": "入力",
-                "path": "https://gyazo.com/example.gif",
-            }
-        )
-        readme_demos.mark_recording_verified(demo, "verified-hash")
-        self.assertEqual(
-            "https://gyazo.com/example.gif", demo["image"]["path"]
-        )
-        self.assertEqual("verified-hash", demo["verifiedSourceHash"])
 
     def test_unmatched_watch_pattern_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -6,8 +6,6 @@ import argparse
 import difflib
 import hashlib
 import json
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -116,108 +114,10 @@ def unmatched_watch_patterns(repository: Path, manifest: dict) -> list[str]:
     return unmatched
 
 
-def write_manifest(path: Path, manifest: dict) -> None:
-    atomic_write_text(
-        path, json.dumps(manifest, ensure_ascii=False, indent=2) + "\n"
-    )
-
-
-def mark_recording_verified(demo: dict, verified_hash: str) -> None:
-    demo["verifiedSourceHash"] = verified_hash
-
-
 def atomic_write_text(path: Path, content: str) -> None:
     temporary = path.with_name(f".{path.name}.tmp")
     temporary.write_text(content, encoding="utf-8")
     temporary.replace(path)
-
-
-def record_demo(repository: Path, demo: dict) -> tuple[Path, Path, str]:
-    recording = demo.get("recording")
-    if not recording:
-        raise DemoConfigurationError(f"{demo['id']}には自動録画シナリオがありません")
-
-    output = repository / recording["output"]
-    output.parent.mkdir(parents=True, exist_ok=True)
-    staging = output.with_name(f".{output.name}.recording")
-    error_report = Path(str(staging) + ".error.txt")
-    staging.unlink(missing_ok=True)
-    error_report.unlink(missing_ok=True)
-    tools_directory = repository / ".build/readme-demo-tools"
-    tools_directory.mkdir(parents=True, exist_ok=True)
-    recorder_source = repository / "Scripts/record-readme-demo.swift"
-    recorder_plist = repository / "Scripts/ReadmeDemoRecorder-Info.plist"
-    recorder_bundle = tools_directory / "myim README demo recorder.app"
-    recorder_contents = recorder_bundle / "Contents"
-    recorder_macos = recorder_contents / "MacOS"
-    recorder = recorder_macos / "myim-readme-demo-recorder"
-    compile_command = [
-        "/usr/bin/xcrun",
-        "swiftc",
-        "-O",
-        str(recorder_source),
-        "-o",
-        str(recorder),
-    ]
-    newest_source = max(
-        recorder_source.stat().st_mtime_ns,
-        recorder_plist.stat().st_mtime_ns,
-    )
-    if not recorder.is_file() or recorder.stat().st_mtime_ns < newest_source:
-        legacy_bundle = tools_directory / "readme-demo-recorder.app"
-        if legacy_bundle.exists():
-            shutil.rmtree(legacy_bundle)
-        if recorder_bundle.exists():
-            shutil.rmtree(recorder_bundle)
-        recorder_macos.mkdir(parents=True)
-        subprocess.run(compile_command, cwd=repository, check=True)
-        shutil.copy2(recorder_plist, recorder_contents / "Info.plist")
-        subprocess.run(
-            [
-                "/usr/bin/codesign",
-                "--force",
-                "--sign",
-                "-",
-                str(recorder_bundle),
-            ],
-            cwd=repository,
-            check=True,
-        )
-    command = [
-        "/usr/bin/open",
-        "-W",
-        "-n",
-        str(recorder_bundle),
-        "--args",
-        recording["scenario"],
-        str(staging),
-        recording["expectedText"],
-    ]
-    try:
-        try:
-            subprocess.run(command, cwd=repository, check=True)
-        except subprocess.CalledProcessError as error:
-            detail = (
-                error_report.read_text(encoding="utf-8").strip()
-                if error_report.is_file()
-                else str(error)
-            )
-            raise DemoConfigurationError(detail) from error
-        if not staging.is_file() or staging.stat().st_size == 0:
-            detail = (
-                error_report.read_text(encoding="utf-8").strip()
-                if error_report.is_file()
-                else "録画アプリが結果を返しませんでした"
-            )
-            raise DemoConfigurationError(
-                f"録画処理がGIFを生成しませんでした: {detail}"
-            )
-    except Exception:
-        staging.unlink(missing_ok=True)
-        raise
-    finally:
-        error_report.unlink(missing_ok=True)
-    return staging, output, source_hash(repository, demo)
 
 
 def unified_diff(before: str, after: str, path: str) -> str:
@@ -235,10 +135,7 @@ def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="READMEの機能紹介と動作GIFを同期します"
     )
-    parser.add_argument("demo_ids", nargs="*")
-    parser.add_argument("--all", action="store_true", dest="record_all")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--readme-only", action="store_true")
     return parser.parse_args()
 
 
@@ -248,43 +145,16 @@ def main() -> int:
     manifest_path = repository / "docs/readme-demos.json"
     readme_path = repository / "README.md"
     manifest = load_manifest(manifest_path)
-    by_identifier = {demo["id"]: demo for demo in manifest["demos"]}
 
-    unknown = sorted(set(arguments.demo_ids) - set(by_identifier))
-    if unknown:
-        raise DemoConfigurationError(
-            "未定義の機能IDです: " + ", ".join(unknown)
-        )
-
-    changed: list[dict] = []
-    manual_review: list[dict] = []
-    for demo in published_demos(manifest):
-        current_hash = source_hash(repository, demo)
-        if current_hash == demo.get("verifiedSourceHash", ""):
-            continue
-        if demo.get("recording"):
-            changed.append(demo)
-        else:
-            manual_review.append(demo)
-
-    if arguments.demo_ids:
-        requested = [by_identifier[identifier] for identifier in arguments.demo_ids]
-    elif arguments.record_all:
-        requested = [demo for demo in published_demos(manifest) if demo.get("recording")]
-    else:
-        requested = changed
-
-    print("自動録画対象:")
-    if requested:
-        for demo in requested:
-            print(f"  {demo['id']}: {demo['title']}")
-    else:
-        print("  なし")
-
+    manual_review = [
+        demo
+        for demo in published_demos(manifest)
+        if source_hash(repository, demo) != demo.get("verifiedSourceHash", "")
+    ]
     print("手動確認対象:")
     if manual_review:
         for demo in manual_review:
-            print(f"  {demo['id']}: 自動録画シナリオ未実装")
+            print(f"  {demo['id']}: {demo['title']}")
     else:
         print("  なし")
 
@@ -307,25 +177,6 @@ def main() -> int:
             return 1
         return 0
 
-    if not arguments.readme_only:
-        staged_recordings: list[tuple[dict, Path, Path, str]] = []
-        try:
-            for demo in requested:
-                staging, output, verified_hash = record_demo(repository, demo)
-                staged_recordings.append(
-                    (demo, staging, output, verified_hash)
-                )
-        except Exception:
-            for _, staging, _, _ in staged_recordings:
-                staging.unlink(missing_ok=True)
-            raise
-        for demo, staging, output, verified_hash in staged_recordings:
-            staging.replace(output)
-            mark_recording_verified(demo, verified_hash)
-        if requested:
-            write_manifest(manifest_path, manifest)
-
-    after = replace_managed_section(before, render_demo_section(manifest))
     missing = validate_local_images(repository, manifest)
     unmatched = unmatched_watch_patterns(repository, manifest)
     if missing:
@@ -348,6 +199,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (DemoConfigurationError, subprocess.CalledProcessError) as error:
+    except DemoConfigurationError as error:
         print(f"エラー: {error}", file=sys.stderr)
         raise SystemExit(1)

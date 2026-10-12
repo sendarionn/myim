@@ -19,11 +19,6 @@
         "Sources/MyIMECore/StandardConversionCandidateSource.swift",
         "Sources/MyIMEMacOS/CandidateWindowController.swift"
       ],
-      "recording": {
-        "scenario": "basic-conversion",
-        "output": ".build/readme-demo-artifacts/modeless-input.gif",
-        "expectedText": "候補"
-      },
       "verifiedSourceHash": ""
     },
     {

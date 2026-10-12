@@ -135,5 +135,4 @@ Swift 6以降が必要です。
 - `THIRD_PARTY_NOTICES.md` 同梱する第三者データとライセンスの一覧
 - `docs/JAPANESE_PARTICLE_SOURCES.md` 助詞付き候補の参考資料
 - `docs/MACOS_DICTIONARY.md` macOS標準辞書の利用方針
-- `docs/README_DEMOS.md` READMEの機能紹介と動作GIFの更新方法
 

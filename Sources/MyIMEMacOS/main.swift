@@ -22,40 +22,6 @@ if let command = CommandLine.arguments.dropFirst().first {
             try InputSourceRegistrationManager.selectMyIM()
         case "--select-fallback-input-source":
             try InputSourceRegistrationManager.selectFallback()
-        case "--render-candidate-panel":
-            let arguments = Array(CommandLine.arguments.dropFirst(2))
-            guard arguments.count == 2 || arguments.count == 3,
-                  let selectedIndex = Int(arguments.count == 3
-                    ? arguments[2]
-                    : "0") else {
-                throw NSError(
-                    domain: "myim.command",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey:
-                        "使い方: myim --render-candidate-panel <入力> <出力.png> [選択位置]"]
-                )
-            }
-            try InputController.renderCandidatePanelImage(
-                input: arguments[0],
-                selectedIndex: selectedIndex,
-                to: URL(fileURLWithPath: arguments[1])
-            )
-        case "--render-readme-demo":
-            let arguments = Array(CommandLine.arguments.dropFirst(2))
-            guard arguments.count == 2 else {
-                throw NSError(
-                    domain: "myim.command",
-                    code: 2,
-                    userInfo: [NSLocalizedDescriptionKey:
-                        "使い方: myim --render-readme-demo <シナリオ> <出力.gif>"]
-                )
-            }
-            try MainActor.assumeIsolated {
-                try ReadmeDemoRenderer.render(
-                    scenario: arguments[0],
-                    to: URL(fileURLWithPath: arguments[1])
-                )
-            }
         case "--install-default-extensions":
             guard JavaScriptExtensionClient.prepareUserExtensionDirectory()
                 != nil else {

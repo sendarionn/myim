@@ -327,7 +327,6 @@ final class CandidateWindowController: NSObject {
     private var alternateCommitIndicators: [Bool] = []
     private var inputCaretIndicators: [Bool] = []
     private var itemSizes: [NSSize] = []
-    private var laidOutWithGuide = false
 
     override init() {
         collectionView = NSCollectionView()
@@ -556,41 +555,6 @@ final class CandidateWindowController: NSObject {
         reservesEmptyRow: Bool = false,
         minimumPanelText: String? = nil
     ) {
-        layout(
-            candidates: candidates,
-            alternateCommitIndicators: alternateCommitIndicators,
-            inputCaretIndicators: inputCaretIndicators,
-            selectedIndex: selectedIndex,
-            near: anchorFrame,
-            guide: guide,
-            caption: caption,
-            isAccented: isAccented,
-            reservedRightWidth: reservedRightWidth,
-            reservesEmptyRow: reservesEmptyRow,
-            minimumPanelText: minimumPanelText
-        )
-        panel.orderFrontRegardless()
-        if laidOutWithGuide {
-            guidePanel.orderFrontRegardless()
-        } else {
-            guidePanel.orderOut(nil)
-        }
-    }
-
-    /// Sizes, places and fills the panel without putting it on screen
-    func layout(
-        candidates: [String],
-        alternateCommitIndicators: [Bool] = [],
-        inputCaretIndicators: [Bool] = [],
-        selectedIndex: Int?,
-        near anchorFrame: NSRect,
-        guide: String? = nil,
-        caption: String? = nil,
-        isAccented: Bool = false,
-        reservedRightWidth: CGFloat = 0,
-        reservesEmptyRow: Bool = false,
-        minimumPanelText: String? = nil
-    ) {
         panel.contentView?.layer?.borderWidth = isAccented ? 2 : 0
         panel.contentView?.layer?.borderColor = isAccented
             ? NSColor.controlAccentColor.cgColor
@@ -774,20 +738,12 @@ final class CandidateWindowController: NSObject {
         } else {
             clearSelection()
         }
-        laidOutWithGuide = hasGuide
-    }
-
-    /// The panel as drawn, including its background, whether or not it is
-    /// on screen; reading it changes neither placement nor selection
-    func renderedImage() -> NSBitmapImageRep? {
-        guard let view = panel.contentView?.superview ?? panel.contentView
-        else { return nil }
-        view.layoutSubtreeIfNeeded()
-        guard let image = view.bitmapImageRepForCachingDisplay(
-            in: view.bounds
-        ) else { return nil }
-        view.cacheDisplay(in: view.bounds, to: image)
-        return image
+        panel.orderFrontRegardless()
+        if hasGuide {
+            guidePanel.orderFrontRegardless()
+        } else {
+            guidePanel.orderOut(nil)
+        }
     }
 
     func select(index: Int) {
