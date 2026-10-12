@@ -100,6 +100,7 @@ struct BundledVerbConjugationTests {
     @Test(arguments: [
         ("yobu", "呼ぶ"),
         ("yonde", "呼んで"),
+        ("yobarete", "呼ばれて"),
         ("yobaretemo", "呼ばれても"),
         ("yobarenakatta", "呼ばれなかった"),
         ("yobaserareru", "呼ばせられる"),
@@ -111,6 +112,26 @@ struct BundledVerbConjugationTests {
         expected: String
     ) throws {
         #expect(try candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("yobarete", "呼ばれて"),
+        ("yobaretemo", "呼ばれても")
+    ])
+    func keepsCompoundFormsInCandidatePresentation(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        let generated = source.candidates(for: .init(
+            input: input,
+            conversionReading: input
+        ))
+        var session = CandidateSession()
+
+        session.replace(with: generated, input: input, reading: input)
+
+        #expect(session.candidateTexts.contains(expected))
     }
 
     @Test
