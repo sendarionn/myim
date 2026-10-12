@@ -1,0 +1,248 @@
+{
+  "schemaVersion": 1,
+  "demos": [
+    {
+      "id": "modeless-input",
+      "title": "モードレスな日本語・英語入力",
+      "anchor": "モードレスな日本語英語入力",
+      "published": true,
+      "status": "active",
+      "description": [
+        "ローマ字から日本語と英語の候補を同時に生成し、入力モードを切り替えずに選択できます"
+      ],
+      "image": {
+        "alt": "モードレスな日本語・英語入力",
+        "path": "https://gyazo.com/68af79c934fe2b1f257d0ae5dc81e44f.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/RomajiConverter.swift",
+        "Sources/MyIMECore/StandardConversionCandidateSource.swift",
+        "Sources/MyIMEMacOS/CandidateWindowController.swift"
+      ],
+      "recording": {
+        "scenario": "basic-conversion",
+        "output": ".build/readme-demo-artifacts/modeless-input.gif",
+        "expectedText": "候補"
+      },
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "dictionary-registration",
+      "title": "シームレスな辞書登録",
+      "anchor": "シームレスな辞書登録",
+      "published": true,
+      "status": "active",
+      "description": [
+        "欲しい候補がない場合は`⌥D`で辞書登録を開始できます",
+        "登録中にもう一度`⌥D`を押すと候補表示と挿入文字列が切り替わり、表示と異なる文字列を挿入する候補には右端に`●`が表示されます"
+      ],
+      "image": {
+        "alt": "シームレスな辞書登録",
+        "path": "https://gyazo.com/463f422c915f0db1357492bb97805535.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/DictionaryRegistration*.swift",
+        "Sources/MyIMEMacOS/InputController.swift",
+        "Sources/MyIMEMacOS/CandidateWindowController.swift"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "macos-dictionary",
+      "title": "Macの標準辞書で語義を確認する機能",
+      "anchor": "macの標準辞書で語義を確認する機能",
+      "published": true,
+      "status": "active",
+      "description": [
+        "候補を選択すると、macOSで有効な複数の辞書から語義を確認できます"
+      ],
+      "image": {
+        "alt": "Macの標準辞書で語義を確認する機能",
+        "path": "https://gyazo.com/19ac28af4961209e279375b33005f4e9.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMEMacOS/ExternalInformationWindowController.swift",
+        "Sources/MyIMEMacOS/SystemDictionary*.swift"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "external-information",
+      "title": "外部Webサイトで語義を確認する機能",
+      "anchor": "外部webサイトで語義を確認する機能",
+      "published": true,
+      "status": "active",
+      "description": [
+        "外部情報パネルからWikipediaなどの任意のWebサイトを検索できます",
+        "検索先は`~/Library/Application Support/myim/Extensions/external-information.js`で`%s`を含むURLとして定義します"
+      ],
+      "image": {
+        "alt": "外部Webサイトで語義を確認する機能",
+        "path": "https://gyazo.com/55f609194a329b05c061008d230ffccd.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMEMacOS/ExternalInformationWindowController.swift",
+        "Sources/MyIMEMacOS/ExternalBrowser*.swift",
+        "Sources/MyIMEMacOS/Resources/Extensions/external-information.js"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "translation",
+      "title": "翻訳候補",
+      "anchor": "翻訳候補",
+      "published": true,
+      "status": "active",
+      "description": [
+        "日本語候補を選択すると、設定した言語への単語・語句レベルの翻訳候補を隣接パネルへ表示します"
+      ],
+      "image": {
+        "alt": "翻訳候補",
+        "path": "https://gyazo.com/14c7547a5ab66e568978962787fbc58d.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/Translation*.swift",
+        "Sources/MyIMEMacOS/AppleTranslationCandidateProvider.swift",
+        "Sources/MyIMEMacOS/InputPanelCoordinator.swift"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "calculation",
+      "title": "計算機能",
+      "anchor": "計算機能",
+      "published": true,
+      "status": "active",
+      "description": [
+        "四則演算を入力すると計算結果を候補として表示します"
+      ],
+      "image": {
+        "alt": "計算機能",
+        "path": "https://gyazo.com/cd4782c14191884b0628eb4bda7f933c.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/Calculation*.swift",
+        "Sources/MyIMECore/SpecialConversionCandidateSource.swift",
+        "Sources/MyIMEMacOS/CandidateWindowController.swift"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "calendar",
+      "title": "カレンダー入力モード",
+      "anchor": "カレンダー入力モード",
+      "published": true,
+      "status": "active",
+      "description": [
+        "`⌥C`でカレンダーを開き、日付と書式を選択して入力できます"
+      ],
+      "image": {
+        "alt": "カレンダー入力モード",
+        "path": "https://gyazo.com/7f887690c2e19871a9975ad78eb4f84d.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/Calendar*.swift",
+        "Sources/MyIMEMacOS/CalendarWindowController.swift",
+        "Sources/MyIMEMacOS/Resources/Extensions/datetime.js"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "unit-conversion",
+      "title": "単位変換機能",
+      "anchor": "単位変換機能",
+      "published": true,
+      "status": "active",
+      "description": [
+        "距離・量・時間などを入力すると、換算結果を候補として表示します"
+      ],
+      "image": {
+        "alt": "単位変換機能",
+        "path": "https://gyazo.com/80011e0c6e0da3855fabfab10df7be7f.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/UnitConversionCandidateGenerator.swift",
+        "Sources/MyIMEMacOS/Resources/Extensions/numeric-tools.js"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "emoji",
+      "title": "絵文字の見え方をOS別に比較する機能",
+      "anchor": "絵文字の見え方をos別に比較する機能",
+      "published": true,
+      "status": "active",
+      "description": [
+        "`⌥E`で絵文字パネルを開き、Apple、Google、Windowsでの表示を比較して入力できます"
+      ],
+      "image": {
+        "alt": "絵文字の見え方をOS別に比較する機能",
+        "path": "https://gyazo.com/97a4aa55d05783bf7c4a262b531e8781.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/Emoji*.swift",
+        "Sources/MyIMEMacOS/Emoji*.swift",
+        "Sources/MyIMEMacOS/Resources/Emoji/**/*"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "symbol-tips",
+      "title": "記号の文字コード・名称を確認できる機能",
+      "anchor": "記号の文字コード名称を確認できる機能",
+      "published": true,
+      "status": "active",
+      "description": [
+        "入力した記号のUnicode文字コードと名称を候補付近へ表示します"
+      ],
+      "image": {
+        "alt": "記号の文字コード・名称を確認できる機能",
+        "path": "https://gyazo.com/f9b2fb62d0d381347ffd48657227fb5b.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/SymbolTips.swift",
+        "Sources/MyIMEMacOS/SymbolTipsWindowController.swift"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "next-input",
+      "title": "次の入力を予測・提案する機能",
+      "anchor": "次の入力を予測提案する機能",
+      "published": true,
+      "status": "active",
+      "description": [
+        "確定履歴から次の入力を予測し、単語や頻繁に続く複数の確定単位を候補として表示します"
+      ],
+      "image": {
+        "alt": "次の入力を予測・提案する機能",
+        "path": "https://gyazo.com/b8f6001f989132355b1c6665d77ef05c.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/NextInput*.swift",
+        "Sources/MyIMEMacOS/InputController.swift"
+      ],
+      "verifiedSourceHash": ""
+    },
+    {
+      "id": "fuzzy-suggestion",
+      "title": "誤入力を補完する機能",
+      "anchor": "誤入力を補完する機能",
+      "published": true,
+      "status": "active",
+      "description": [
+        "脱字、転置、近接キーの押し間違いなどを補い、推測結果を「もしかして」候補として表示します"
+      ],
+      "image": {
+        "alt": "誤入力を補完する機能",
+        "path": "https://gyazo.com/1395de111dc54ad00ffb0e8f425a05f2.gif"
+      },
+      "watchPaths": [
+        "Sources/MyIMECore/Fuzzy*.swift",
+        "Sources/MyIMECore/RomajiKeyboard*.swift",
+        "Sources/MyIMEMacOS/FuzzySuggestionWindowController.swift"
+      ],
+      "verifiedSourceHash": ""
+    }
+  ]
+}
