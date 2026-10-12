@@ -2609,3 +2609,4 @@
 - 実IME操作を録画せず、同梱辞書による実際の候補とAppKitの入力欄、既存の候補パネル描画からREADMEデモGIFを生成する`myim --render-readme-demo <シナリオ> <出力.gif>`と`Scripts/render-readme-demo.sh`を追加し、`kouho`から`候補`を確定する`basic-conversion`を生成
 - READMEデモは実機の操作を手動で録画する方針へ変更し、合成キーイベントによる自動録画、変換エンジンと候補パネル描画によるGIF生成、関連する開発用コマンド・スクリプト・テストを削除
 - 候補パネルの`show()`を画像生成用に分割した変更を元に戻し、READMEの機能一覧と関連実装の対応付け、更新が必要なデモの判定は維持
+- READMEのGIF撮影・掲載・更新を手動管理へ移行し、`docs/readme-demos.json`、`docs/README_DEMOS.md`、`Scripts/readme_demos.py`、`Scripts/update-readme-demos.sh`と専用テストを削除
