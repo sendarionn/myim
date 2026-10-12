@@ -81,7 +81,6 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 | 数字表記 | 桁区切り、漢数字、数値単位へ変換する | `NumberGroupingCandidateGenerator`、`JapaneseNumericUnitCandidateGenerator`、`JapaneseNumberConverter` | 特殊変換候補 |
 | 記号変換 | ASCII記号を全角記号や関連記号へ変換する | `JapaneseSymbolConverter` | 特殊変換候補 |
 | 誤入力補正 | 入力の誤りを推定して近い読みの語を取得する | `FuzzyEngineRepository`、`FuzzyConversionEngine`、`RomajiTypoScorer`、`RomajiConsonantIndex`、`FuzzyConversionMatchFilter` | 曖昧候補 |
-| 辞書合成 | 複数の辞書エントリで入力全体を覆う語を合成する | `CompoundDictionaryCandidateGenerator` | 曖昧候補 |
 | 学習した連結語句 | 確定時の読みの前方一致で連結語句を取得する | `NextInputCandidateCoordinator.learnedCompoundPredictions(matchingPrefix:excluding:limit:)` | 曖昧候補 |
 | 次入力予測 | 確定済みの文脈から学習した続きを取得する | `NextInputPredictionModel`、`NextInputLearningStore` | 次入力候補 |
 | 辞書の続き | 確定した語の後に続く辞書上の語を取得する | `DictionaryContinuationCandidateGenerator` | 次入力候補 |
@@ -162,7 +161,7 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 - `ki-` → `キー`
 - `kii` → `奇異`
 
-入力中の`-`を連続母音へ展開せず、入力どおりのキーを通常辞書、辞書合成、誤入力補完の基準にする
+入力中の`-`を連続母音へ展開せず、入力どおりのキーを通常辞書と誤入力補完の基準にする
 
 このため`byu-`の`ビュー`と`byuu`の`別府`、`ki-`の`キー`と`kii`の`奇異`を辞書段階から分離する
 
@@ -563,7 +562,7 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 選定根拠と既知の制約は`docs/JAPANESE_PARTICLE_SOURCES.md`を参照する
 
-## 誤入力補完と合成候補
+## 誤入力補完と学習済み連結候補
 
 曖昧候補は標準候補とは別の候補集合として生成する
 
@@ -635,33 +634,11 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 - `vaiyou` → `baiyou` → `培養`
 - `susmete` → `susumete` → `進めて`
 
-### 合成候補の順位
+辞書の複数エントリへ入力を分割し、各候補を機械的に連結する処理は行わない
 
-辞書の複数エントリで入力全体を完全被覆できる場合は、それらを連結した候補も生成する
+連結語句は、実際に連続確定した単位と読みを`NextInputPredictionModel`で学習した場合だけ曖昧候補へ表示する
 
-例
-
-- `keioudaigaku` → `keiou + daigaku` → `慶應大学`
-- `keioudaigku` → タイポ補正を含む分割 → `慶應大学`
-- `yu-za-jisho` → `yu-za- + jisho` → `ユーザー辞書`
-
-合成元の各候補は、漢字だけまたはカタカナだけで構成される語に限定する
-
-漢字語とカタカナ語の組み合わせ、カタカナの長音記号`ー`は許可する
-
-ひらがな、英数字、中黒を含む語は合成元に使用しない
-
-文字種条件を満たさない経路は分割探索から除外し、別の有効な完全被覆経路を探索する
-
-この制限は辞書エントリを機械的に連結する合成候補だけに適用し、学習した連結語句と通常の誤入力補完には適用しない
-
-曖昧候補内の大きな優先段階は次の順とする
-
-1. 4文字以上の部分語だけで構成したタイポなしの合成候補
-2. 読み全体の編集距離1以内の補正候補
-3. 短い部分語を含むタイポなしの合成候補
-4. 読み全体の編集距離2の補正候補
-5. タイポ補正を含む合成候補
+曖昧候補内では、学習済み連結候補、読み全体の編集距離1以内の補正候補、より遠い補正候補の順に扱う
 
 選択履歴は各段階の中だけで最終選択順を変更し、段階をまたいで誤入力候補を押し上げない
 

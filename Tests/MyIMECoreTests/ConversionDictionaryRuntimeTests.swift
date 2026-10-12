@@ -108,9 +108,6 @@ struct ConversionDictionaryRuntimeTests {
             verbInflectionGenerator: VerbInflectionCandidateGenerator(
                 entries: basicEntries
             ),
-            compoundGenerator: CompoundDictionaryCandidateGenerator(
-                entries: basicEntries
-            ),
             systemEngine: IndexedDictionaryEngine()
         )
     }

@@ -52,40 +52,14 @@ struct BundledLongVowelCandidateTests {
     }
 
     @Test
-    func bundledDictionaryBuildsLongVowelCompounds() throws {
+    func bundledDictionaryKeepsWholeLongVowelWords() throws {
         let entries = try #require(Self.basicEntries)
-        let generator = CompoundDictionaryCandidateGenerator(entries: entries)
 
-        #expect(generator.candidates(for: "yu-za-jisho").contains("ユーザー辞書"))
         #expect(
             ConversionEngine(entries: entries)
                 .candidates(for: "de-tabe-su")
                 .contains("データベース")
         )
-    }
-
-    @Test
-    func fuzzySourceDisplaysBundledLongVowelCompound() async throws {
-        let entries = try #require(Self.basicEntries)
-        let repository = FuzzyEngineRepository()
-        repository.prepare(for: entries)
-        let source = FuzzyCandidateSource(
-            query: "yu-za-jisho",
-            visibleCandidates: [],
-            userDictionary: LayeredConversionEngine(engines: []),
-            basicDictionary: ConversionEngine(entries: entries),
-            mozcDictionary: try #require(Self.systemDictionary),
-            compoundGenerator: CompoundDictionaryCandidateGenerator(
-                entries: entries
-            ),
-            fuzzyRepository: repository
-        )
-
-        let candidates = await source.matchTiers()
-            .flatMap { $0 }
-            .flatMap(\.candidates)
-
-        #expect(candidates.contains("ユーザー辞書"))
     }
 
     private func makeSource() throws -> StandardConversionCandidateSource {

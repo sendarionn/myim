@@ -49,7 +49,6 @@ public struct ConversionDictionaryRuntime: Sendable {
     public private(set) var basicEngine: ConversionEngine
     public let systemEngine: IndexedDictionaryEngine
     public private(set) var verbInflectionGenerator: VerbInflectionCandidateGenerator
-    public let compoundGenerator: CompoundDictionaryCandidateGenerator
     private var userContinuationGenerator:
         LayeredDictionaryContinuationCandidateGenerator
     private var basicContinuationGenerator:
@@ -62,7 +61,6 @@ public struct ConversionDictionaryRuntime: Sendable {
         basicEntries: [DictionaryEntry],
         basicEngine: ConversionEngine,
         verbInflectionGenerator: VerbInflectionCandidateGenerator,
-        compoundGenerator: CompoundDictionaryCandidateGenerator,
         systemEngine: IndexedDictionaryEngine
     ) {
         self.imported = imported
@@ -70,7 +68,6 @@ public struct ConversionDictionaryRuntime: Sendable {
         self.basicEngine = basicEngine
         self.systemEngine = systemEngine
         self.verbInflectionGenerator = verbInflectionGenerator
-        self.compoundGenerator = compoundGenerator
         basicContinuationGenerator = DictionaryContinuationCandidateGenerator(
             entries: basicEntries
         )

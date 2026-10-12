@@ -112,9 +112,6 @@ struct DictionaryRegistrationRoundTripTests {
             verbInflectionGenerator: VerbInflectionCandidateGenerator(
                 entries: []
             ),
-            compoundGenerator: CompoundDictionaryCandidateGenerator(
-                entries: []
-            ),
             systemEngine: IndexedDictionaryEngine()
         )
         let source = StandardConversionCandidateSource(

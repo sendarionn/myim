@@ -10,7 +10,6 @@ struct BundledFuzzyCandidateTests {
         let entries: [DictionaryEntry]
         let basic: ConversionEngine
         let system: IndexedDictionaryEngine
-        let compound: CompoundDictionaryCandidateGenerator
         let conjugations: VerbConjugationDictionary
         let repository: FuzzyEngineRepository
     }
@@ -49,7 +48,6 @@ struct BundledFuzzyCandidateTests {
             entries: entries,
             basic: ConversionEngine(entries: entries),
             system: system,
-            compound: CompoundDictionaryCandidateGenerator(entries: entries),
             conjugations: conjugations,
             repository: repository
         )
@@ -83,7 +81,7 @@ struct BundledFuzzyCandidateTests {
         ("gyouka", ["魚羽化", "ギョ羽化"]),
         ("matomte", ["魔トム手", "マトム手"])
     ])
-    func splitCompoundsDoNotOutrankTheCorrection(
+    func doesNotGenerateSplitDictionaryCompounds(
         query: String,
         fragments: [String]
     ) async throws {
@@ -91,6 +89,31 @@ struct BundledFuzzyCandidateTests {
         let page = fuzzyCandidates.prefix(4)
 
         #expect(fragments.allSatisfy { !page.contains($0) })
+    }
+
+    @Test
+    func keepsCompoundVerbInStandardCandidatesWithoutMechanicalSplits()
+        async throws {
+        let fixture = try #require(Self.fixture)
+        let standard = StandardConversionCandidateSource(
+            userEngine: LayeredConversionEngine(engines: []),
+            importedEngine: Self.importedSKK,
+            basicEngine: fixture.basic,
+            symbolEngine: ConversionEngine(entries: []),
+            systemEngine: fixture.system,
+            verbInflectionGenerator: VerbInflectionCandidateGenerator(
+                entries: fixture.entries
+            ),
+            verbConjugations: fixture.conjugations
+        ).candidates(for: .init(
+            input: "yobaretemo",
+            conversionReading: "yobaretemo"
+        )).map(\.storageText)
+        let fuzzy = try await fuzzyCandidates(for: "yobaretemo")
+
+        #expect(standard.contains("呼ばれても"))
+        #expect(!fuzzy.contains("世場レテ藻"))
+        #expect(!fuzzy.contains("世場レテ喪"))
     }
 
     @Test(arguments: [
@@ -192,7 +215,6 @@ struct BundledFuzzyCandidateTests {
             importedDictionary: Self.importedSKK,
             basicDictionary: fixture.basic,
             mozcDictionary: fixture.system,
-            compoundGenerator: fixture.compound,
             fuzzyRepository: repository
         )
         let fuzzyCandidates = await source.matchTiers()
@@ -229,7 +251,6 @@ struct BundledFuzzyCandidateTests {
             importedDictionary: Self.importedSKK,
             basicDictionary: fixture.basic,
             mozcDictionary: fixture.system,
-            compoundGenerator: fixture.compound,
             fuzzyRepository: fixture.repository
         )
         var session = FuzzyCandidateSession()

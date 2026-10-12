@@ -79,8 +79,6 @@ final class InputController: IMKInputController {
     )
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
-    private static let sharedBasicCompoundGenerator =
-        CompoundDictionaryCandidateGenerator(entries: sharedBasicEntries)
     private static let sharedBasicFuzzyEntries = sharedBasicEntries
         + VerbInflectionCandidateGenerator.typoSearchEntries(
             from: sharedBasicEntries,
@@ -276,7 +274,6 @@ final class InputController: IMKInputController {
             basicEntries: bundledEntries,
             basicEngine: Self.sharedBasicConversionEngine,
             verbInflectionGenerator: Self.sharedVerbInflectionGenerator,
-            compoundGenerator: Self.sharedBasicCompoundGenerator,
             systemEngine: indexedMozcEngine
         )
         candidateSelectionHistoryStore = Self.sharedCandidateSelectionHistoryStore
@@ -3136,7 +3133,6 @@ final class InputController: IMKInputController {
             importedDictionary: dictionaryRuntime.importedEngine,
             basicDictionary: dictionaryRuntime.basicEngine,
             mozcDictionary: dictionaryRuntime.systemEngine,
-            compoundGenerator: dictionaryRuntime.compoundGenerator,
             fuzzyRepository: Self.fuzzyEngineRepository,
             learnedCompounds: learnedCompounds
         )

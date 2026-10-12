@@ -5,7 +5,6 @@ public struct FuzzyCandidateSource: Sendable {
     private let importedDictionary: LayeredConversionEngine
     private let basicDictionary: ConversionEngine
     private let mozcDictionary: IndexedDictionaryEngine
-    private let compoundGenerator: CompoundDictionaryCandidateGenerator
     private let fuzzyRepository: FuzzyEngineRepository
     private let learnedCompounds: [LearnedCompoundPrediction]
 
@@ -18,7 +17,6 @@ public struct FuzzyCandidateSource: Sendable {
         ),
         basicDictionary: ConversionEngine,
         mozcDictionary: IndexedDictionaryEngine,
-        compoundGenerator: CompoundDictionaryCandidateGenerator,
         fuzzyRepository: FuzzyEngineRepository,
         learnedCompounds: [LearnedCompoundPrediction] = []
     ) {
@@ -28,7 +26,6 @@ public struct FuzzyCandidateSource: Sendable {
         self.importedDictionary = importedDictionary
         self.basicDictionary = basicDictionary
         self.mozcDictionary = mozcDictionary
-        self.compoundGenerator = compoundGenerator
         self.fuzzyRepository = fuzzyRepository
         self.learnedCompounds = learnedCompounds
     }
@@ -56,36 +53,6 @@ public struct FuzzyCandidateSource: Sendable {
                 for: query,
                 excluding: visibleCandidates
             ))
-            let compounds = compoundGenerator
-                .matches(for: query) {
-                    userCandidates(for: $0)
-                        + mozcDictionary.candidates(for: $0)
-                } typoMatches: { segment in
-                    var seenReadings = Set<String>()
-                    let keyboardMatches =
-                        RomajiKeyboardTypoGenerator.dictionaryMatches(
-                            for: segment
-                        ) { reading in
-                            userCandidates(for: reading)
-                                + basicDictionary.candidates(for: reading)
-                                + mozcDictionary.candidates(for: reading)
-                        }
-                    let fuzzyMatches = fuzzyRepository.matches(
-                        for: segment,
-                        maximumDistance: 1,
-                        limit: 4
-                    )
-                    return (keyboardMatches + fuzzyMatches).filter {
-                        seenReadings.insert($0.reading).inserted
-                    }
-                }
-                .filter {
-                    !visibleCandidates.contains($0.text)
-                        && LongVowelNotationCandidateFilter.candidates(
-                            [$0.text],
-                            for: query
-                        ).isEmpty == false
-                }
             let learnedMatches: [FuzzyConversionMatch] = learnedCompounds
                 .compactMap { prediction in
                 guard !visibleCandidates.contains(prediction.text) else {
@@ -101,8 +68,7 @@ public struct FuzzyCandidateSource: Sendable {
                 )
             }
             return [learnedMatches] + FuzzyCandidateTierBuilder.build(
-                directTypoMatches: filtered,
-                compounds: compounds
+                directTypoMatches: filtered
             )
         }.value
     }

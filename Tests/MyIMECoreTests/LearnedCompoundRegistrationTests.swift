@@ -176,9 +176,6 @@ struct LearnedCompoundRegistrationTests {
             userDictionary: LayeredConversionEngine(engines: []),
             basicDictionary: ConversionEngine(entries: []),
             mozcDictionary: IndexedDictionaryEngine(),
-            compoundGenerator: CompoundDictionaryCandidateGenerator(
-                entries: []
-            ),
             fuzzyRepository: repository,
             learnedCompounds: learning.learnedCompoundPredictions(
                 matchingPrefix: query,

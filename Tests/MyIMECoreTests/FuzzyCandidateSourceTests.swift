@@ -5,7 +5,7 @@ import Testing
 @Suite
 struct FuzzyCandidateSourceTests {
     @Test
-    func generatesTypoCorrectedCompoundTiers() async {
+    func doesNotMechanicallyCombineDictionaryEntries() async {
         let entries = [
             DictionaryEntry(input: "keiou", candidates: ["慶應"]),
             DictionaryEntry(input: "daigaku", candidates: ["大学"])
@@ -13,7 +13,7 @@ struct FuzzyCandidateSourceTests {
         let repository = FuzzyEngineRepository()
         repository.prepare(for: entries)
         let source = makeSource(
-            query: "keioudaigku",
+            query: "keioudaigaku",
             entries: entries,
             repository: repository
         )
@@ -22,7 +22,7 @@ struct FuzzyCandidateSourceTests {
             .flatMap { $0 }
             .flatMap(\.candidates)
 
-        #expect(candidates.contains("慶應大学"))
+        #expect(!candidates.contains("慶應大学"))
     }
 
     @Test
@@ -68,7 +68,7 @@ struct FuzzyCandidateSourceTests {
     }
 
     @Test
-    func excludesCompoundContainingAHiraganaSegment() async {
+    func doesNotCombineDictionaryEntryWithHiraganaEntry() async {
         let entries = [
             DictionaryEntry(input: "tokyo", candidates: ["東京"]),
             DictionaryEntry(input: "to", candidates: ["と"])
@@ -89,27 +89,6 @@ struct FuzzyCandidateSourceTests {
     }
 
     @Test
-    func combinesLongVowelSegmentsThroughTheFuzzySource() async {
-        let entries = [
-            DictionaryEntry(input: "yu-za-", candidates: ["ユーザー"]),
-            DictionaryEntry(input: "jisho", candidates: ["辞書"])
-        ]
-        let repository = FuzzyEngineRepository()
-        repository.prepare(for: entries)
-        let source = makeSource(
-            query: "yu-za-jisho",
-            entries: entries,
-            repository: repository
-        )
-
-        let candidates = await source.matchTiers()
-            .flatMap { $0 }
-            .flatMap(\.candidates)
-
-        #expect(candidates.contains("ユーザー辞書"))
-    }
-
-    @Test
     func placesLearnedCompoundInFuzzyCandidatesBesideStandardCandidates() async {
         let repository = FuzzyEngineRepository()
         repository.prepare(for: [])
@@ -125,9 +104,6 @@ struct FuzzyCandidateSourceTests {
             userDictionary: LayeredConversionEngine(engines: []),
             basicDictionary: ConversionEngine(entries: []),
             mozcDictionary: IndexedDictionaryEngine(),
-            compoundGenerator: CompoundDictionaryCandidateGenerator(
-                entries: []
-            ),
             fuzzyRepository: repository,
             learnedCompounds: [learned]
         )
@@ -155,9 +131,6 @@ struct FuzzyCandidateSourceTests {
             userDictionary: LayeredConversionEngine(engines: []),
             basicDictionary: ConversionEngine(entries: []),
             mozcDictionary: IndexedDictionaryEngine(),
-            compoundGenerator: CompoundDictionaryCandidateGenerator(
-                entries: []
-            ),
             fuzzyRepository: repository,
             learnedCompounds: [learned]
         )
@@ -181,9 +154,6 @@ struct FuzzyCandidateSourceTests {
             userDictionary: LayeredConversionEngine(engines: []),
             basicDictionary: ConversionEngine(entries: entries),
             mozcDictionary: IndexedDictionaryEngine(),
-            compoundGenerator: CompoundDictionaryCandidateGenerator(
-                entries: entries
-            ),
             fuzzyRepository: repository
         )
     }
