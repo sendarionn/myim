@@ -6,7 +6,17 @@ struct JapaneseParticleCandidateGeneratorTests {
     private let dictionary = [
         "kouho": ["候補"],
         "shitei": ["指定"],
-        "sentaku": ["選択"]
+        "sentaku": ["選択"],
+        "baai": ["場合"],
+        "kekka": ["結果"],
+        "houhou": ["方法"],
+        "kanousei": ["可能性"],
+        "riyuu": ["理由"],
+        "keesu": ["ケース"],
+        "gazoufairu": ["画像ファイル"],
+        "shirizoku": ["退く"],
+        "eibun": ["ABC"],
+        "kigou": ["データ・ベース"]
     ]
 
     @Test
@@ -17,6 +27,49 @@ struct JapaneseParticleCandidateGeneratorTests {
     @Test
     func doesNotGenerateLeadingParticleCandidate() {
         #expect(candidates(for: "hakouho").isEmpty)
+    }
+
+    @Test(arguments: [
+        ("nobaai", "の場合"),
+        ("nokekka", "の結果"),
+        ("nohouhou", "の方法"),
+        ("nokanousei", "の可能性"),
+        ("noriyuu", "の理由")
+    ])
+    func generatesLeadingNoBeforeNounLikeCandidates(
+        input: String,
+        expected: String
+    ) {
+        #expect(candidates(for: input) == [expected])
+    }
+
+    @Test
+    func nounLikeApproximationAcceptsKatakanaAndMixedScripts() {
+        #expect(candidates(for: "nokeesu") == ["のケース"])
+        #expect(candidates(for: "nogazoufairu") == ["の画像ファイル"])
+    }
+
+    @Test
+    func doesNotGenerateOtherLeadingParticles() {
+        #expect(candidates(for: "hakouho").isEmpty)
+        #expect(candidates(for: "gakouho").isEmpty)
+        #expect(candidates(for: "nekouho").isEmpty)
+        #expect(candidates(for: "yokouho").isEmpty)
+        #expect(candidates(for: "nodekouho").isEmpty)
+        #expect(candidates(for: "nonikouho").isEmpty)
+    }
+
+    @Test
+    func leadingNoRequiresAnExactNounLikeCandidate() {
+        #expect(candidates(for: "nomityakuwp").isEmpty)
+        #expect(candidates(for: "noshirizoku").isEmpty)
+        #expect(candidates(for: "noeibun").isEmpty)
+        #expect(candidates(for: "nokigou").isEmpty)
+    }
+
+    @Test
+    func doesNotSplitLeadingNoInsideInput() {
+        #expect(candidates(for: "kouhonobaai").isEmpty)
     }
 
     @Test

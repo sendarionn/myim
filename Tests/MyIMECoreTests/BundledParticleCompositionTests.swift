@@ -47,7 +47,12 @@ struct BundledParticleCompositionTests {
         ("kouhowo", "候補を"),
         ("kouhonite", "候補にて"),
         ("kouhonitsuki", "候補につき"),
-        ("kouhoniyotte", "候補によって")
+        ("kouhoniyotte", "候補によって"),
+        ("nobaai", "の場合"),
+        ("nokekka", "の結果"),
+        ("nohouhou", "の方法"),
+        ("nokanousei", "の可能性"),
+        ("noriyuu", "の理由")
     ])
     func ranksTheNaturalReadingFirst(input: String, expected: String) throws {
         let source = try #require(Self.source)

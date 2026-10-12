@@ -127,6 +127,26 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
+    func wholeInputExactCandidateOutranksALeadingParticleComposition() throws {
+        let source = makeSource(basicEntries: [
+            DictionaryEntry(reading: "baai", candidates: ["場合"]),
+            DictionaryEntry(reading: "nobaai", candidates: ["野場合"])
+        ])
+
+        let candidates = source.candidates(for: .init(
+            input: "nobaai",
+            conversionReading: "nobaai"
+        ))
+        let composition = try #require(candidates.first {
+            $0.storageText == "の場合"
+        })
+
+        #expect(candidates.first?.storageText == "野場合")
+        #expect(composition.hasSource(.particleComposition))
+        #expect(composition.hasAttribute(.generated))
+    }
+
+    @Test
     func basicDictionaryAloneRanksTheReadingFirst() {
         let candidates = texts(makeSource(basicEntries: madeBasic), "made")
 

@@ -1,8 +1,25 @@
 public enum JapaneseParticleCandidateGenerator {
     // 選定根拠はdocs/JAPANESE_PARTICLE_SOURCES.mdを参照
+    private enum LeadingConnectionRule: Sendable {
+        /// Runtime dictionaries do not retain POS data, so this accepts
+        /// candidates written only with kanji and katakana as noun-like
+        case nounLikeByScript
+    }
+
     private struct Particle: Sendable {
         let reading: String
         let text: String
+        let leadingConnection: LeadingConnectionRule?
+
+        init(
+            reading: String,
+            text: String,
+            leadingConnection: LeadingConnectionRule? = nil
+        ) {
+            self.reading = reading
+            self.text = text
+            self.leadingConnection = leadingConnection
+        }
     }
 
     private static let particles: [Particle] = [
@@ -43,7 +60,11 @@ public enum JapaneseParticleCandidateGenerator {
         Particle(reading: "ga", text: "が"),
         Particle(reading: "de", text: "で"),
         Particle(reading: "to", text: "と"),
-        Particle(reading: "no", text: "の"),
+        Particle(
+            reading: "no",
+            text: "の",
+            leadingConnection: .nounLikeByScript
+        ),
         Particle(reading: "mo", text: "も"),
         Particle(reading: "he", text: "へ"),
         Particle(reading: "ya", text: "や"),
@@ -75,6 +96,19 @@ public enum JapaneseParticleCandidateGenerator {
             }
         }
 
+        func appendLeading(stem: String, particle: Particle) {
+            guard stem.count >= 2,
+                  let rule = particle.leadingConnection else { return }
+            for candidate in exactCandidates(stem)
+            where allowsLeadingConnection(candidate, rule: rule) {
+                let combined = particle.text + candidate
+                if seen.insert(combined).inserted {
+                    results.append(combined)
+                }
+                if results.count >= limit { return }
+            }
+        }
+
         let orderedParticles = particles.sorted {
             $0.reading.count > $1.reading.count
         }
@@ -87,7 +121,48 @@ public enum JapaneseParticleCandidateGenerator {
                 )
             }
         }
+        for particle in orderedParticles where particle.leadingConnection != nil {
+            guard results.count < limit else { break }
+            if input.hasPrefix(particle.reading) {
+                appendLeading(
+                    stem: String(input.dropFirst(particle.reading.count)),
+                    particle: particle
+                )
+            }
+        }
         return results
+    }
+
+    private static func allowsLeadingConnection(
+        _ candidate: String,
+        rule: LeadingConnectionRule
+    ) -> Bool {
+        guard !candidate.isEmpty else { return false }
+        switch rule {
+        case .nounLikeByScript:
+            return candidate.allSatisfy {
+                isKanji($0) || isKatakana($0)
+            }
+        }
+    }
+
+    private static func isKanji(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy {
+            (0x3400...0x4dbf).contains($0.value)
+                || (0x4e00...0x9fff).contains($0.value)
+                || (0xf900...0xfaff).contains($0.value)
+                || (0x20000...0x2fa1f).contains($0.value)
+        }
+    }
+
+    private static func isKatakana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy {
+            (0x30a1...0x30fa).contains($0.value)
+                || (0x30fd...0x30ff).contains($0.value)
+                || (0x31f0...0x31ff).contains($0.value)
+                || (0xff66...0xff9d).contains($0.value)
+                || $0.value == 0x30fc
+        }
     }
 
     public static func generatedOnlyCandidates(
