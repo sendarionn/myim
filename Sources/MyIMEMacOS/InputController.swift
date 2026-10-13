@@ -248,6 +248,24 @@ final class InputController: IMKInputController {
         }
     }
 
+    static func handleGlobalCandidateDeletionShortcut() {
+        guard let controller = activeController,
+              let client = controller.activeInputClient,
+              let textClient = client as? IMKTextInput,
+              InputClientRole.resolve(
+                bundleIdentifier: textClient.bundleIdentifier()
+              ).participatesInInputSessionLifecycle,
+              !SecureInputDetector.isEnabled else {
+            CandidateDeletionGlobalHotKey.shared.deactivate()
+            return
+        }
+        guard controller.removeSelectedCandidate(client: client) else {
+            CandidateDeletionGlobalHotKey.shared.deactivate()
+            return
+        }
+        controller.updateCandidateDeletionShortcutCapture()
+    }
+
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
         let cachedUserEntries = Self.loadUserEntries()
         let bundledEntries = Self.sharedBasicEntries
@@ -329,6 +347,7 @@ final class InputController: IMKInputController {
         let start = clock.now
         let tracesNavigation = beginNavigationTrace(for: event)
         let handled = handleUnmeasured(event, client: sender)
+        updateCandidateDeletionShortcutCapture()
         if tracesNavigation {
             endNavigationTrace(handled: handled)
         }
@@ -528,11 +547,15 @@ final class InputController: IMKInputController {
             return handleDictionaryRegistration(event, client: sender)
         }
 
-        if isUserDictionaryDeletionShortcut(event),
-           inputBuffer.isEmpty,
-           nextInputCandidateCoordinator.selectedIndex != nil {
-            removeSelectedNextInputCandidate(client: sender)
-            return true
+        if isUserDictionaryDeletionShortcut(event) {
+            if removeSelectedCandidate(client: sender) {
+                return true
+            }
+            if !inputBuffer.isEmpty {
+                NSSound.beep()
+                return true
+            }
+            return false
         }
 
         if inputBuffer.isEmpty,
@@ -556,18 +579,6 @@ final class InputController: IMKInputController {
 
         if event.keyCode == 15,
            event.modifierFlags.contains([.command, .option, .control]) {
-            return true
-        }
-
-        if isUserDictionaryDeletionShortcut(event),
-           !inputBuffer.isEmpty {
-            if interactionState == .selectingFuzzyCandidate {
-                removeSelectedFuzzyCandidateFromUserDictionary(
-                    client: sender
-                )
-            } else {
-                removeSelectedUserDictionaryCandidate(client: sender)
-            }
             return true
         }
 
@@ -1427,6 +1438,7 @@ final class InputController: IMKInputController {
         activeInputClient = sender
         inputSession.activate(sessionGeneration: activation.globalGeneration)
         Self.activeController = self
+        updateCandidateDeletionShortcutCapture()
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
         Self.lifecycleLogger.notice(
@@ -1447,6 +1459,7 @@ final class InputController: IMKInputController {
         let deactivation = lifecycleCoordinator.beginDeactivation(
             hasComposition: !inputBuffer.isEmpty
         )
+        CandidateDeletionGlobalHotKey.shared.deactivate()
         EmojiGlobalHotKey.shared.deactivate()
         if Self.activeController === self {
             Self.activeController = nil
@@ -1517,6 +1530,10 @@ final class InputController: IMKInputController {
         }
         trace("InputController.willClose", sender: client())
         let closure = lifecycleCoordinator.close()
+        if Self.activeController === self {
+            CandidateDeletionGlobalHotKey.shared.deactivate()
+            Self.activeController = nil
+        }
         activeInputClient = nil
         Self.lifecycleLogger.notice(
             "input controller closing bufferLength=\(self.inputBuffer.count, privacy: .public) pendingDeactivation=\(closure.deactivationWasPending, privacy: .public) superseded=\(closure.sessionWasSuperseded, privacy: .public)"
@@ -3103,6 +3120,7 @@ final class InputController: IMKInputController {
                 detail: "standard=\(selectedCandidateIndex.map(String.init) ?? "none")"
             )
         }
+        updateCandidateDeletionShortcutCapture()
     }
 
     private func updateFuzzyCandidatesIfNeeded() {
@@ -3189,6 +3207,7 @@ final class InputController: IMKInputController {
             recencyRanks: candidateSelectionRanks(for: conversionReading),
             preserveSelectionWhenUnchanged: secondaryCandidatePanel.isVisible
         )
+        updateCandidateDeletionShortcutCapture()
         if !changed, secondaryCandidatePanel.isVisible {
             return
         }
@@ -3497,6 +3516,7 @@ final class InputController: IMKInputController {
             sender: client(),
             detail: "fuzzy=\(resolvedIndex)"
         )
+        updateCandidateDeletionShortcutCapture()
         primaryCandidatePanel.clearSelection()
         let displayValue = fuzzyCandidate.storageText + conversionSuffix
             + compositionSuffix
@@ -3864,6 +3884,7 @@ final class InputController: IMKInputController {
                     _ = self.fuzzyCandidateSession.select(
                         candidate: source
                     )
+                    self.updateCandidateDeletionShortcutCapture()
                     self.trace(
                         "candidateSelection.changed",
                         sender: self.client(),
@@ -4162,6 +4183,43 @@ final class InputController: IMKInputController {
             rebuildConversionEngine()
             NSSound.beep()
         }
+    }
+
+    private var selectedCandidateDeletionTarget: CandidateDeletionTarget? {
+        CandidateDeletionCommandPolicy.target(
+            hasInput: !inputBuffer.isEmpty,
+            hasStandardSelection: selectedCandidateIndex != nil,
+            hasFuzzySelection: selectedFuzzyCandidateIndex != nil,
+            hasNextInputSelection:
+                nextInputCandidateCoordinator.selectedIndex != nil
+        )
+    }
+
+    @discardableResult
+    private func removeSelectedCandidate(client sender: Any) -> Bool {
+        guard let target = selectedCandidateDeletionTarget else {
+            return false
+        }
+        switch target {
+        case .standardCandidate:
+            removeSelectedUserDictionaryCandidate(client: sender)
+        case .fuzzyCandidate:
+            removeSelectedFuzzyCandidateFromUserDictionary(client: sender)
+        case .nextInputCandidate:
+            removeSelectedNextInputCandidate(client: sender)
+        }
+        return true
+    }
+
+    private func updateCandidateDeletionShortcutCapture() {
+        guard Self.activeController === self else { return }
+        guard activeInputClient != nil,
+              selectedCandidateDeletionTarget != nil,
+              !SecureInputDetector.isEnabled else {
+            CandidateDeletionGlobalHotKey.shared.deactivate()
+            return
+        }
+        CandidateDeletionGlobalHotKey.shared.activate()
     }
 
     private func clearCompositionForSystemPaste(in sender: Any) {
@@ -4884,6 +4942,7 @@ final class InputController: IMKInputController {
         setMarkedText(candidate, in: sender)
         showPreview(for: candidate)
         panelCoordinator.cancelNextInputDismissal()
+        updateCandidateDeletionShortcutCapture()
         return true
     }
 
@@ -5040,6 +5099,7 @@ final class InputController: IMKInputController {
         candidateSearchCoordinator.cancel(.nextInputExtension)
         panelCoordinator.stopNextInputLifecycle()
         nextInputCandidateCoordinator.resetCandidates()
+        updateCandidateDeletionShortcutCapture()
     }
 
     private func startNextInputOutsideClickMonitoring() {
@@ -5321,9 +5381,11 @@ final class InputController: IMKInputController {
 
     private func clearCandidateState(includingFuzzy: Bool = false) {
         candidateSession.reset()
-        guard includingFuzzy else { return }
-        clearSessionTranslationCandidates()
-        fuzzyCandidateSession.reset()
+        if includingFuzzy {
+            clearSessionTranslationCandidates()
+            fuzzyCandidateSession.reset()
+        }
+        updateCandidateDeletionShortcutCapture()
     }
 
     private func hideConversionPanels() {
@@ -5703,6 +5765,7 @@ final class InputController: IMKInputController {
                 sender: client(),
                 detail: "standard=\(newValue.map(String.init) ?? "none")"
             )
+            updateCandidateDeletionShortcutCapture()
         }
     }
 
@@ -5715,6 +5778,7 @@ final class InputController: IMKInputController {
                 sender: client(),
                 detail: "fuzzy=\(selectedFuzzyCandidateIndex.map(String.init) ?? "none")"
             )
+            updateCandidateDeletionShortcutCapture()
         }
     }
 
