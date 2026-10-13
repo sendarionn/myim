@@ -62,6 +62,29 @@ struct BundledLongVowelCandidateTests {
         )
     }
 
+    @Test
+    func bundledDictionariesKeepLearnedKatakanaPrefixCompletion() throws {
+        let source = try makeSource()
+        var history = CandidateSelectionHistory()
+        history.record("ホットペッパー", reading: "hottopeppa-")
+
+        for input in ["hottope", "hottopep", "hottopepp"] {
+            var session = CandidateSession()
+            session.replace(
+                with: source.candidates(for: .init(
+                    input: input,
+                    conversionReading: input,
+                    selectionHistory: history
+                )),
+                input: input,
+                reading: input
+            )
+            #expect(
+                session.candidateTexts.prefix(4).contains("ホットペッパー")
+            )
+        }
+    }
+
     private func makeSource() throws -> StandardConversionCandidateSource {
         let basicEntries = try #require(Self.basicEntries)
         return StandardConversionCandidateSource(

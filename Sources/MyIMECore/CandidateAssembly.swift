@@ -164,7 +164,8 @@ public struct CandidateAssembly: Sendable {
         ) + makeCandidates(
             input.learnedCompletion,
             source: .selectionHistory,
-            reading: input.reading
+            reading: input.reading,
+            attributes: [.preservesLongVowelNotation]
         ) + input.external + makeCandidates(
             input.symbolPrefix,
             source: .symbolDictionary,

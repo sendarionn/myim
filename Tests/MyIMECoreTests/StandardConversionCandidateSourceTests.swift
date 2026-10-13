@@ -75,6 +75,36 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
+    func keepsLearnedLongVowelCandidateDuringPrefixCompletion() throws {
+        let source = makeSource()
+        var history = CandidateSelectionHistory()
+        history.record("ホットペッパー", reading: "hottopeppa-")
+        let saved = try JSONEncoder().encode(history)
+        let restored = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: saved
+        )
+
+        for input in ["hottope", "hottopep", "hottopepp"] {
+            let generated = source.candidates(for: .init(
+                input: input,
+                conversionReading: input,
+                selectionHistory: restored
+            ))
+            let learned = try #require(generated.first {
+                $0.storageText == "ホットペッパー"
+            })
+            #expect(learned.hasSource(.selectionHistory))
+
+            var session = CandidateSession()
+            session.replace(with: generated, input: input, reading: input)
+            #expect(
+                session.candidateTexts.prefix(4).contains("ホットペッパー")
+            )
+        }
+    }
+
+    @Test
     func particleStemsIgnoreImportedAbbrevHeadwords() {
         let source = makeSource(
             importedEntries: [DictionaryEntry(reading: "made", candidates: ["メイド"])],
