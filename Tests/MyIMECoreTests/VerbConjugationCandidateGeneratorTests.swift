@@ -153,6 +153,122 @@ struct VerbConjugationCandidateGeneratorTests {
         #expect(generator.candidates(for: input).contains(expected))
     }
 
+    /// A passive or causative verb is re-conjugated as an ichidan verb,
+    /// including the forms that do not end a sentence
+    @Test(arguments: [
+        ("yobare", "呼ばれ"),
+        ("yobarereba", "呼ばれれば"),
+        ("yobarenakereba", "呼ばれなければ"),
+        ("yobarenakute", "呼ばれなくて"),
+        ("yobaremasu", "呼ばれます"),
+        ("yobaremashita", "呼ばれました"),
+        ("yobaremasen", "呼ばれません"),
+        ("yobaremasendeshita", "呼ばれませんでした"),
+        ("yobaretari", "呼ばれたり"),
+        ("yobareteitemo", "呼ばれていても"),
+        ("yobarerunode", "呼ばれるので"),
+        ("yobase", "呼ばせ"),
+        ("yobasereba", "呼ばせれば"),
+        ("yobasenakatta", "呼ばせなかった"),
+        ("yobaseteoku", "呼ばせておく"),
+        ("yobaserarereba", "呼ばせられれば"),
+        ("taberarereba", "食べられれば"),
+        ("benkyousaserarereba", "勉強させられれば"),
+        ("korarenai", "来られない")
+    ])
+    func reconjugatesDerivedVerbs(input: String, expected: String) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("yobasareru", "呼ばされる"),
+        ("yobasareta", "呼ばされた"),
+        ("yobasarenai", "呼ばされない"),
+        ("yobasarereba", "呼ばされれば"),
+        ("yobasaretara", "呼ばされたら"),
+        ("kakasareta", "書かされた"),
+        ("matasareta", "待たされた"),
+        ("kawasareta", "買わされた"),
+        ("ikasareta", "行かされた")
+    ])
+    func composesShortCausativePassiveOfGodanVerbs(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test
+    func shortCausativePassiveIsOnlyForGodanVerbsOutsideTheSuRow() {
+        #expect(!generator.candidates(for: "hanasasareta").contains("話さされた"))
+        #expect(generator.candidates(for: "hanasaserareta").contains("話させられた"))
+        #expect(!generator.candidates(for: "tabesasareta").contains("食べさされた"))
+        #expect(!generator.candidates(for: "benkyousasareta")
+            .contains("勉強さされた"))
+    }
+
+    @Test(arguments: [
+        ("yobeba", "呼べば"),
+        ("kakeba", "書けば"),
+        ("mateba", "待てば"),
+        ("kaeba", "買えば"),
+        ("ikeba", "行けば"),
+        ("tabereba", "食べれば"),
+        ("mireba", "見れば"),
+        ("benkyousureba", "勉強すれば"),
+        ("ninzureba", "任ずれば"),
+        ("kureba", "来れば")
+    ])
+    func conjugatesConditionalFormOfEachClass(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("yondeoku", "呼んでおく"),
+        ("yondeoita", "呼んでおいた"),
+        ("yondeshimau", "呼んでしまう"),
+        ("yondeshimatta", "呼んでしまった"),
+        ("yondemiru", "呼んでみる"),
+        ("yondekara", "呼んでから"),
+        ("kaiteoku", "書いておく"),
+        ("tabeteshimatta", "食べてしまった"),
+        ("ittemita", "行ってみた"),
+        ("yobinagara", "呼びながら"),
+        ("yobuna", "呼ぶな"),
+        ("yobunode", "呼ぶので"),
+        ("yobukeredo", "呼ぶけれど")
+    ])
+    func joinsAuxiliariesAndConjunctions(input: String, expected: String) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test
+    func rejectsFormsTheVerbClassDoesNotHave() {
+        // 書かれば and 食べられば join ば to the wrong form
+        #expect(!generator.candidates(for: "kakareba").contains("書かれば"))
+        #expect(!generator.candidates(for: "taberareba").contains("食べられば"))
+        // 取る is godan, so 取れば rather than an ichidan 取れれば
+        #expect(generator.candidates(for: "toreba").contains("取れば"))
+        #expect(!generator.candidates(for: "torureba").contains("取るれば"))
+        // Bare base forms are the dictionary's own words
+        #expect(generator.candidates(for: "yobu").isEmpty)
+        #expect(generator.candidates(for: "yobi").isEmpty)
+    }
+
+    @Test
+    func derivedFormsStayFewAndUnique() {
+        for input in [
+            "yobare", "yobasareta", "yobaserarereba", "yobareteshimatta"
+        ] {
+            let candidates = generator.candidates(for: input)
+            #expect(candidates.count == Set(candidates).count)
+            #expect(candidates.count <= 2)
+        }
+    }
+
     @Test
     func compoundGenerationDoesNotDuplicateOrGuessUnknownVerbs() {
         let candidates = generator.candidates(for: "yobaseraretemo")

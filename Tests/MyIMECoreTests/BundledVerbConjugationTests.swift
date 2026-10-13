@@ -134,6 +134,52 @@ struct BundledVerbConjugationTests {
         #expect(session.candidateTexts.contains(expected))
     }
 
+    /// Re-conjugated passive and causative verbs reach the candidate panel
+    @Test(arguments: [
+        ("yobare", "呼ばれ"),
+        ("yobarereba", "呼ばれれば"),
+        ("yobaretemo", "呼ばれても"),
+        ("yobarenakatta", "呼ばれなかった"),
+        ("yobaremasendeshita", "呼ばれませんでした"),
+        ("yobase", "呼ばせ"),
+        ("yobaseru", "呼ばせる"),
+        ("yobasereba", "呼ばせれば"),
+        ("yobasareta", "呼ばされた"),
+        ("yobasarenai", "呼ばされない"),
+        ("yobaserarereba", "呼ばせられれば"),
+        ("yondeiru", "呼んでいる"),
+        ("yondeita", "呼んでいた"),
+        ("yondeshimatta", "呼んでしまった"),
+        ("yobeba", "呼べば"),
+        ("tabereba", "食べれば"),
+        ("kureba", "来れば"),
+        ("ikeba", "行けば")
+    ])
+    func showsReconjugatedVerbsOnTheFirstPage(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        var session = CandidateSession()
+
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: input
+            )),
+            input: input,
+            reading: input
+        )
+
+        #expect(session.candidateTexts.prefix(4).contains(expected))
+    }
+
+    @Test
+    func doesNotGenerateWrongConditionalForms() throws {
+        #expect(try !candidates(for: "kakareba").contains("書かれば"))
+        #expect(try !candidates(for: "taberareba").contains("食べられば"))
+    }
+
     @Test
     func keepsNounsAndExactWordsAhead() throws {
         #expect(try candidates(for: "kitai").first == "期待")

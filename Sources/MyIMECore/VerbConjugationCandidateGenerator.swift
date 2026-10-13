@@ -17,6 +17,10 @@ public enum VerbConjugationForm: Sendable, CaseIterable {
     case past
     /// 未然形 such as 分から in 分からない
     case negative
+    /// 仮定形 such as 分かれ in 分かれば
+    case conditional
+    /// 終止形 such as 分かる in 分かるので
+    case terminal
 }
 
 public struct VerbConjugationDictionary: Sendable {
@@ -77,15 +81,24 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         let requiredVerbForm: VerbConjugationForm
         let readingSuffix: String
         let surfaceSuffix: String
+        /// Bare 連用形 and 終止形 of a dictionary verb are dictionary words
+        /// themselves, so only verbs derived here are generated bare
+        let derivedOnly: Bool
 
         init(
             _ readingSuffix: String,
             _ surfaceSuffix: String,
-            requiring requiredVerbForm: VerbConjugationForm
+            requiring requiredVerbForm: VerbConjugationForm,
+            derivedOnly: Bool = false
         ) {
             self.requiredVerbForm = requiredVerbForm
             self.readingSuffix = readingSuffix
             self.surfaceSuffix = surfaceSuffix
+            self.derivedOnly = derivedOnly
+        }
+
+        var isBareContinuative: Bool {
+            readingSuffix.isEmpty && requiredVerbForm == .continuative
         }
     }
 
@@ -107,44 +120,45 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     ]
 
     private static let otherFollowings: [FollowingExpression] = [
+        FollowingExpression("", "", requiring: .continuative, derivedOnly: true),
+        FollowingExpression("", "", requiring: .terminal, derivedOnly: true),
         FollowingExpression("", "", requiring: .te),
         FollowingExpression("", "", requiring: .past),
-        FollowingExpression("itemo", "いても", requiring: .te),
+        FollowingExpression("masendeshita", "ませんでした", requiring: .continuative),
         FollowingExpression("masu", "ます", requiring: .continuative),
         FollowingExpression("mashita", "ました", requiring: .continuative),
         FollowingExpression("masen", "ません", requiring: .continuative),
-        FollowingExpression("iru", "いる", requiring: .te),
-        FollowingExpression("ita", "いた", requiring: .te),
-        FollowingExpression("inai", "いない", requiring: .te),
-        FollowingExpression("imasu", "います", requiring: .te),
-        FollowingExpression("mo", "も", requiring: .te),
-        FollowingExpression("ra", "ら", requiring: .past),
-        FollowingExpression("ri", "り", requiring: .past),
+        FollowingExpression("nagara", "ながら", requiring: .continuative),
         FollowingExpression("nai", "ない", requiring: .negative),
         FollowingExpression("nakatta", "なかった", requiring: .negative),
-        FollowingExpression("nakereba", "なければ", requiring: .negative)
+        FollowingExpression("nakereba", "なければ", requiring: .negative),
+        FollowingExpression("nakute", "なくて", requiring: .negative),
+        FollowingExpression("ba", "ば", requiring: .conditional),
+        FollowingExpression("ra", "ら", requiring: .past),
+        FollowingExpression("ri", "り", requiring: .past),
+        FollowingExpression("na", "な", requiring: .terminal),
+        FollowingExpression("node", "ので", requiring: .terminal),
+        FollowingExpression("kara", "から", requiring: .terminal),
+        FollowingExpression("kedo", "けど", requiring: .terminal),
+        FollowingExpression("keredo", "けれど", requiring: .terminal)
     ]
+
+    /// Expressions joined to the テ形, including the auxiliary verbs いる,
+    /// おく, しまう, and みる in their common forms
+    private static let teFollowings: [FollowingExpression] = [
+        ("itemo", "いても"), ("iru", "いる"), ("ita", "いた"),
+        ("inai", "いない"), ("imasu", "います"),
+        ("oku", "おく"), ("oita", "おいた"), ("oite", "おいて"),
+        ("shimau", "しまう"), ("shimatta", "しまった"),
+        ("shimatte", "しまって"),
+        ("miru", "みる"), ("mita", "みた"), ("mite", "みて"),
+        ("mo", "も"), ("kara", "から")
+    ].map { FollowingExpression($0.0, $0.1, requiring: .te) }
+
+    private static let maximumBareContinuativeCandidates = 1
 
     private static let followingExpressions =
-        desireChanges + desireInflections + otherFollowings
-
-    /// Endings applied after a passive, causative, or causative-passive verb
-    /// has been derived as an ichidan verb
-    private static let derivedExpressions: [DerivedExpression] = [
-        DerivedExpression("teitemo", "ていても"),
-        DerivedExpression("teinai", "ていない"),
-        DerivedExpression("teiru", "ている"),
-        DerivedExpression("teita", "ていた"),
-        DerivedExpression("nakereba", "なければ"),
-        DerivedExpression("nakatta", "なかった"),
-        DerivedExpression("temo", "ても"),
-        DerivedExpression("tara", "たら"),
-        DerivedExpression("tari", "たり"),
-        DerivedExpression("nai", "ない"),
-        DerivedExpression("te", "て"),
-        DerivedExpression("ta", "た"),
-        DerivedExpression("ru", "る")
-    ]
+        desireChanges + desireInflections + otherFollowings + teFollowings
 
     private static let voiceReverseRules: [VoiceReverseRule] = {
         var rules: [VoiceReverseRule] = []
@@ -184,6 +198,18 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             derivedStem: GodanRow.iku.negative.0,
             baseEnding: GodanRow.iku.reading
         )
+        // 呼ばされる is the short 呼ばせられる; す verbs keep the long form
+        let shortCausativeRows = GodanRow.rows.map { ($0, VerbConjugationClass.godan) }
+            + [(GodanRow.iku, .godanIku)]
+        for (row, conjugationClass) in shortCausativeRows
+        where row.reading != "su" {
+            rules.append(VoiceReverseRule(
+                .shortCausativePassive,
+                row.negative.0 + "sareru",
+                row.reading,
+                conjugationClass
+            ))
+        }
         rules.append(contentsOf: [
             VoiceReverseRule(.causativePassive, "saserareru", "ru", .ichidan),
             VoiceReverseRule(.causative, "saseru", "ru", .ichidan),
@@ -210,6 +236,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     public func candidates(for input: String) -> [String] {
         let reading = RomajiCanonicalizer.canonicalInput(from: input)
         var costs: [String: (cost: Int, order: Int)] = [:]
+        var bareContinuatives: [(surface: String, cost: Int)] = []
         func record(_ candidate: String, cost: Int) {
             let order = costs[candidate]?.order ?? costs.count
             costs[candidate] = (
@@ -218,7 +245,8 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             )
         }
         for following in Self.followingExpressions
-        where reading.hasSuffix(following.readingSuffix) {
+        where !following.derivedOnly
+            && reading.hasSuffix(following.readingSuffix) {
             let formReading = String(
                 reading.dropLast(following.readingSuffix.count)
             )
@@ -241,12 +269,21 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 }
             }
         }
-        for expression in Self.derivedExpressions
-        where reading.hasSuffix(expression.readingEnding) {
-            let derivedStem = String(
-                reading.dropLast(expression.readingEnding.count)
+        // A passive or causative verb is an ichidan verb, so it takes the
+        // same expressions after the same ichidan forms
+        for following in Self.followingExpressions
+        where reading.hasSuffix(following.readingSuffix) {
+            let formReading = String(
+                reading.dropLast(following.readingSuffix.count)
             )
-            let derivedReading = derivedStem + "ru"
+            let formEnding = Self.nonGodanEnding(
+                .ichidan,
+                following.requiredVerbForm
+            ).reading
+            guard formReading.hasSuffix(formEnding) else { continue }
+            let derivedReading = String(
+                formReading.dropLast(formEnding.count)
+            ) + "ru"
             for rule in Self.voiceReverseRules
             where derivedReading.hasSuffix(rule.derivedEnding) {
                 let baseReading = String(
@@ -255,40 +292,54 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 for entry in dictionary.entries(for: baseReading)
                 where entry.conjugationClass == rule.conjugationClass {
                     guard let derived = Self.derive(entry, as: rule.voice),
-                          derived.reading == derivedReading,
-                          derived.reading.hasSuffix("ru"),
-                          derived.surface.hasSuffix("る") else { continue }
-                    let candidateReading = String(
-                        derived.reading.dropLast(2)
-                    ) + expression.readingEnding
-                    guard candidateReading == reading else { continue }
-                    record(
-                        String(derived.surface.dropLast())
-                            + expression.surfaceEnding,
-                        cost: entry.cost
-                    )
+                          let conjugated = Self.conjugate(
+                            derived,
+                            to: following.requiredVerbForm
+                          ),
+                          conjugated.reading == formReading else { continue }
+                    if following.isBareContinuative {
+                        bareContinuatives.append(
+                            (conjugated.surface, entry.cost)
+                        )
+                    } else {
+                        record(
+                            conjugated.surface + following.surfaceSuffix,
+                            cost: entry.cost
+                        )
+                    }
                 }
             }
+        }
+        // A bare stem such as つかれ fits many verbs, so only the most
+        // common ones are offered
+        for (surface, cost) in bareContinuatives
+            .sorted(by: { $0.cost < $1.cost })
+            .prefix(Self.maximumBareContinuativeCandidates) {
+            record(surface, cost: cost)
         }
         return costs.sorted {
             ($0.value.cost, $0.value.order) < ($1.value.cost, $1.value.order)
         }.map(\.key)
     }
 
+    /// The ichidan verb such as 呼ばれる derived from `entry`
     private static func derive(
         _ entry: VerbConjugationDictionary.Entry,
         as voice: DerivedVoice
-    ) -> (reading: String, surface: String)? {
+    ) -> VerbConjugationDictionary.Entry? {
         let stem: (reading: String, surface: String)
-        let suffix: (reading: String, surface: String)
+        let suffix: (reading: String, surface: String)?
         switch entry.conjugationClass {
         case .godan, .godanIku:
             guard let value = conjugate(entry, to: .negative) else {
                 return nil
             }
             stem = value
-            suffix = voice.godanSuffix
-        case .ichidan:
+            // The reading of 待つ also ends in su, so the kana decides
+            suffix = entry.surface.hasSuffix("す")
+                ? voice.godanSuffixAfterSu
+                : voice.godanSuffix
+        case .ichidan, .zuru:
             guard let value = conjugate(entry, to: .continuative) else {
                 return nil
             }
@@ -303,12 +354,6 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             ) else { return nil }
             stem = value
             suffix = voice.suruSuffix
-        case .zuru:
-            guard let value = conjugate(entry, to: .continuative) else {
-                return nil
-            }
-            stem = value
-            suffix = voice.nonGodanSuffix
         case .kuru:
             guard let value = conjugate(entry, to: .negative) else {
                 return nil
@@ -316,9 +361,12 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             stem = value
             suffix = voice.nonGodanSuffix
         }
-        return (
-            stem.reading + suffix.reading,
-            stem.surface + suffix.surface
+        guard let suffix else { return nil }
+        return VerbConjugationDictionary.Entry(
+            reading: stem.reading + suffix.reading,
+            surface: stem.surface + suffix.surface,
+            conjugationClass: .ichidan,
+            cost: entry.cost
         )
     }
 
@@ -340,50 +388,17 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                     + ending.reading,
                 String(entry.surface.dropLast(row.kana.count)) + ending.kana
             )
-        case .ichidan:
+        case .ichidan, .suru, .zuru:
+            let baseEnding = nonGodanEnding(entry.conjugationClass, .terminal)
             return replacingEnding(
                 of: entry,
-                reading: "ru",
-                kana: "る",
-                with: [
-                    .continuative: ("", ""),
-                    .negative: ("", ""),
-                    .te: ("te", "て"),
-                    .past: ("ta", "た")
-                ][form]!
-            )
-        case .suru:
-            return replacingEnding(
-                of: entry,
-                reading: "suru",
-                kana: "する",
-                with: [
-                    .continuative: ("shi", "し"),
-                    .negative: ("shi", "し"),
-                    .te: ("shite", "して"),
-                    .past: ("shita", "した")
-                ][form]!
-            )
-        case .zuru:
-            return replacingEnding(
-                of: entry,
-                reading: "zuru",
-                kana: "ずる",
-                with: [
-                    .continuative: ("ji", "じ"),
-                    .negative: ("ji", "じ"),
-                    .te: ("jite", "じて"),
-                    .past: ("jita", "じた")
-                ][form]!
+                reading: baseEnding.reading,
+                kana: baseEnding.kana,
+                with: nonGodanEnding(entry.conjugationClass, form)
             )
         case .kuru:
             let kana = entry.surface.hasSuffix("来る") ? "来る" : "くる"
-            let ending: (reading: String, kana: String) = [
-                .continuative: ("ki", "き"),
-                .negative: ("ko", "こ"),
-                .te: ("kite", "きて"),
-                .past: ("kita", "きた")
-            ][form]!
+            let ending = nonGodanEnding(.kuru, form)
             return replacingEnding(
                 of: entry,
                 reading: "kuru",
@@ -396,6 +411,41 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 )
             )
         }
+    }
+
+    /// Forms of the verb classes other than 五段, written in kana
+    private static func nonGodanEnding(
+        _ conjugationClass: VerbConjugationClass,
+        _ form: VerbConjugationForm
+    ) -> (reading: String, kana: String) {
+        let endings: [VerbConjugationForm: (String, String)]
+        switch conjugationClass {
+        case .godan, .godanIku, .ichidan:
+            endings = [
+                .continuative: ("", ""), .negative: ("", ""),
+                .te: ("te", "て"), .past: ("ta", "た"),
+                .conditional: ("re", "れ"), .terminal: ("ru", "る")
+            ]
+        case .suru:
+            endings = [
+                .continuative: ("shi", "し"), .negative: ("shi", "し"),
+                .te: ("shite", "して"), .past: ("shita", "した"),
+                .conditional: ("sure", "すれ"), .terminal: ("suru", "する")
+            ]
+        case .zuru:
+            endings = [
+                .continuative: ("ji", "じ"), .negative: ("ji", "じ"),
+                .te: ("jite", "じて"), .past: ("jita", "じた"),
+                .conditional: ("zure", "ずれ"), .terminal: ("zuru", "ずる")
+            ]
+        case .kuru:
+            endings = [
+                .continuative: ("ki", "き"), .negative: ("ko", "こ"),
+                .te: ("kite", "きて"), .past: ("kita", "きた"),
+                .conditional: ("kure", "くれ"), .terminal: ("kuru", "くる")
+            ]
+        }
+        return endings[form]!
     }
 
     private static func replacingEnding(
@@ -412,42 +462,42 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         )
     }
 
-    private struct DerivedExpression: Sendable {
-        let readingEnding: String
-        let surfaceEnding: String
-
-        init(_ readingEnding: String, _ surfaceEnding: String) {
-            self.readingEnding = readingEnding
-            self.surfaceEnding = surfaceEnding
-        }
-    }
-
     private enum DerivedVoice: Sendable {
         case passive
         case causative
         case causativePassive
+        /// 呼ばされる, the short 使役受身 of 五段 verbs
+        case shortCausativePassive
 
-        var godanSuffix: (reading: String, surface: String) {
+        var godanSuffix: (reading: String, surface: String)? {
             switch self {
             case .passive: ("reru", "れる")
             case .causative: ("seru", "せる")
             case .causativePassive: ("serareru", "せられる")
+            case .shortCausativePassive: ("sareru", "される")
             }
         }
 
-        var nonGodanSuffix: (reading: String, surface: String) {
+        /// 話さされる is not used; 話させられる is the only form
+        var godanSuffixAfterSu: (reading: String, surface: String)? {
+            self == .shortCausativePassive ? nil : godanSuffix
+        }
+
+        var nonGodanSuffix: (reading: String, surface: String)? {
             switch self {
             case .passive: ("rareru", "られる")
             case .causative: ("saseru", "させる")
             case .causativePassive: ("saserareru", "させられる")
+            case .shortCausativePassive: nil
             }
         }
 
-        var suruSuffix: (reading: String, surface: String) {
+        var suruSuffix: (reading: String, surface: String)? {
             switch self {
             case .passive: ("reru", "れる")
             case .causative: ("seru", "せる")
             case .causativePassive: ("serareru", "せられる")
+            case .shortCausativePassive: nil
             }
         }
     }
@@ -488,17 +538,14 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 append(formReading.dropLast(ending.count), row.reading)
             }
         }
-        let irregular: [(ending: String, base: String)] = [
-            ("", "ru"),
-            ("shi", "suru"), ("ji", "zuru"), ("ki", "kuru"), ("ko", "kuru")
-        ]
-        let formEnding = [
-            .continuative: "", .negative: "", .te: "te", .past: "ta"
-        ][form]!
-        guard formReading.hasSuffix(formEnding) else { return result }
-        let stem = formReading.dropLast(formEnding.count)
-        for rule in irregular where stem.hasSuffix(rule.ending) {
-            append(stem.dropLast(rule.ending.count), rule.base)
+        for conjugationClass in [
+            VerbConjugationClass.ichidan, .suru, .zuru, .kuru
+        ] {
+            let ending = nonGodanEnding(conjugationClass, form).reading
+            let base = nonGodanEnding(conjugationClass, .terminal).reading
+            if formReading.hasSuffix(ending) {
+                append(formReading.dropLast(ending.count), base)
+            }
         }
         return result
     }
@@ -511,6 +558,7 @@ private struct GodanRow: Sendable {
     let negative: (String, String)
     let te: (String, String)
     let past: (String, String)
+    let conditional: (String, String)
 
     func ending(
         for form: VerbConjugationForm
@@ -520,32 +568,44 @@ private struct GodanRow: Sendable {
         case .negative: negative
         case .te: te
         case .past: past
+        case .conditional: conditional
+        case .terminal: (reading, kana)
         }
     }
 
     static let rows: [GodanRow] = [
         GodanRow(reading: "tsu", kana: "つ", continuative: ("chi", "ち"),
-                 negative: ("ta", "た"), te: ("tte", "って"), past: ("tta", "った")),
+                 negative: ("ta", "た"), te: ("tte", "って"), past: ("tta", "った"),
+                 conditional: ("te", "て")),
         GodanRow(reading: "su", kana: "す", continuative: ("shi", "し"),
-                 negative: ("sa", "さ"), te: ("shite", "して"), past: ("shita", "した")),
+                 negative: ("sa", "さ"), te: ("shite", "して"), past: ("shita", "した"),
+                 conditional: ("se", "せ")),
         GodanRow(reading: "ku", kana: "く", continuative: ("ki", "き"),
-                 negative: ("ka", "か"), te: ("ite", "いて"), past: ("ita", "いた")),
+                 negative: ("ka", "か"), te: ("ite", "いて"), past: ("ita", "いた"),
+                 conditional: ("ke", "け")),
         GodanRow(reading: "gu", kana: "ぐ", continuative: ("gi", "ぎ"),
-                 negative: ("ga", "が"), te: ("ide", "いで"), past: ("ida", "いだ")),
+                 negative: ("ga", "が"), te: ("ide", "いで"), past: ("ida", "いだ"),
+                 conditional: ("ge", "げ")),
         GodanRow(reading: "nu", kana: "ぬ", continuative: ("ni", "に"),
-                 negative: ("na", "な"), te: ("nde", "んで"), past: ("nda", "んだ")),
+                 negative: ("na", "な"), te: ("nde", "んで"), past: ("nda", "んだ"),
+                 conditional: ("ne", "ね")),
         GodanRow(reading: "bu", kana: "ぶ", continuative: ("bi", "び"),
-                 negative: ("ba", "ば"), te: ("nde", "んで"), past: ("nda", "んだ")),
+                 negative: ("ba", "ば"), te: ("nde", "んで"), past: ("nda", "んだ"),
+                 conditional: ("be", "べ")),
         GodanRow(reading: "mu", kana: "む", continuative: ("mi", "み"),
-                 negative: ("ma", "ま"), te: ("nde", "んで"), past: ("nda", "んだ")),
+                 negative: ("ma", "ま"), te: ("nde", "んで"), past: ("nda", "んだ"),
+                 conditional: ("me", "め")),
         GodanRow(reading: "ru", kana: "る", continuative: ("ri", "り"),
-                 negative: ("ra", "ら"), te: ("tte", "って"), past: ("tta", "った")),
+                 negative: ("ra", "ら"), te: ("tte", "って"), past: ("tta", "った"),
+                 conditional: ("re", "れ")),
         GodanRow(reading: "u", kana: "う", continuative: ("i", "い"),
-                 negative: ("wa", "わ"), te: ("tte", "って"), past: ("tta", "った"))
+                 negative: ("wa", "わ"), te: ("tte", "って"), past: ("tta", "った"),
+                 conditional: ("e", "え"))
     ]
 
     static let iku = GodanRow(
         reading: "ku", kana: "く", continuative: ("ki", "き"),
-        negative: ("ka", "か"), te: ("tte", "って"), past: ("tta", "った")
+        negative: ("ka", "か"), te: ("tte", "って"), past: ("tta", "った"),
+        conditional: ("ke", "け")
     )
 }
