@@ -4506,8 +4506,8 @@ final class InputController: IMKInputController {
         }
         candidateSelectionHistoryStore.record(
             candidate,
-            readings: RomajiCanonicalizer.dictionaryLookupInputs(
-                from: learnedReading
+            readings: CandidateSelectionReading.historyReadings(
+                for: learnedReading
             )
         )
     }
@@ -4533,7 +4533,7 @@ final class InputController: IMKInputController {
             return [:]
         }
         return candidateSelectionHistoryStore.ranks(
-            for: RomajiCanonicalizer.dictionaryLookupInputs(from: reading)
+            for: CandidateSelectionReading.historyReadings(for: reading)
         )
     }
 
