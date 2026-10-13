@@ -33,7 +33,6 @@ final class InputController: IMKInputController {
     private static let candidatePanelAnchorSpacing: CGFloat = 8
     private static let fuzzyCandidateDisplayDelay = Duration.milliseconds(120)
     private static let maximumMozcDictionaryPrefixCandidates = 2048
-    private static let nextInputDismissInterval: TimeInterval = 5
     private static let sharedBasicEntries = loadBasicEntries()
     private static let sharedBasicConversionEngine = ConversionEngine(
         entries: sharedBasicEntries
@@ -4941,7 +4940,7 @@ final class InputController: IMKInputController {
         }
         setMarkedText(candidate, in: sender)
         showPreview(for: candidate)
-        panelCoordinator.cancelNextInputDismissal()
+        scheduleNextInputDismissal()
         updateCandidateDeletionShortcutCapture()
         return true
     }
@@ -5008,11 +5007,7 @@ final class InputController: IMKInputController {
         } else {
             showNextInputCandidatePanel(client: sender)
             startNextInputOutsideClickMonitoring()
-            if closingBracketTracker.candidate == nil {
-                scheduleNextInputDismissal()
-            } else {
-                panelCoordinator.cancelNextInputDismissal()
-            }
+            scheduleNextInputDismissal()
         }
         guard Self.diagnosticConfiguration.enables(.jsExtensions),
               let asyncSnapshot = currentInputSessionSnapshot() else {
@@ -5045,7 +5040,11 @@ final class InputController: IMKInputController {
                 }
                 self.showNextInputCandidatePanel(client: sender)
                 self.startNextInputOutsideClickMonitoring()
-                self.scheduleNextInputDismissal()
+                // A late result is not an operation, so it keeps the
+                // countdown of the panel it joins
+                self.panelCoordinator.startNextInputDismissalIfIdle(
+                    onDismiss: self.dismissNextInputCandidatesOnTimeout
+                )
             },
             retainQueryAfterCompletion: false
         )
@@ -5072,9 +5071,13 @@ final class InputController: IMKInputController {
     }
 
     private func scheduleNextInputDismissal() {
-        panelCoordinator.scheduleNextInputDismissal(
-            after: Self.nextInputDismissInterval
-        ) { [weak self] in
+        panelCoordinator.restartNextInputDismissal(
+            onDismiss: dismissNextInputCandidatesOnTimeout
+        )
+    }
+
+    private var dismissNextInputCandidatesOnTimeout: () -> Void {
+        { [weak self] in
             guard let self else { return }
             trace(
                 "panel.hide",

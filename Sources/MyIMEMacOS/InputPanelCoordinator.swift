@@ -14,7 +14,17 @@ final class InputPanelCoordinator {
     private var visibleTranslationCandidateCount = 0
     let externalInformation = ExternalInformationWindowController()
     let symbolTips = SymbolTipsWindowController()
-    private var nextInputDismissTimer: Timer?
+    /// The next-input panel closes after this long without an operation
+    static let nextInputDismissInterval: TimeInterval = 5
+    private let nextInputDismissal = InactivityDismissal(
+        interval: nextInputDismissInterval
+    ) { interval, action in
+        let timer = Timer.scheduledTimer(
+            withTimeInterval: interval,
+            repeats: false
+        ) { _ in action() }
+        return { timer.invalidate() }
+    }
     private var nextInputOutsideLocalMonitor: Any?
     private var nextInputOutsideGlobalMonitor: Any?
     private var calendarAnchorFrame: NSRect?
@@ -56,25 +66,19 @@ final class InputPanelCoordinator {
         stopNextInputLifecycle()
     }
 
-    func scheduleNextInputDismissal(
-        after interval: TimeInterval,
-        onDismiss: @escaping () -> Void
-    ) {
-        cancelNextInputDismissal()
-        nextInputDismissTimer = Timer.scheduledTimer(
-            withTimeInterval: interval,
-            repeats: false
-        ) { [weak self] timer in
-            guard let self,
-                  timer === nextInputDismissTimer else { return }
-            nextInputDismissTimer = nil
-            onDismiss()
-        }
+    /// Counts the timeout again from now, for a newly shown panel or an
+    /// operation on it
+    func restartNextInputDismissal(onDismiss: @escaping () -> Void) {
+        nextInputDismissal.restart(onDismiss: onDismiss)
+    }
+
+    /// Keeps a running countdown, for candidates added in the background
+    func startNextInputDismissalIfIdle(onDismiss: @escaping () -> Void) {
+        nextInputDismissal.startIfIdle(onDismiss: onDismiss)
     }
 
     func cancelNextInputDismissal() {
-        nextInputDismissTimer?.invalidate()
-        nextInputDismissTimer = nil
+        nextInputDismissal.cancel()
     }
 
     func startNextInputOutsideClickMonitoring(
