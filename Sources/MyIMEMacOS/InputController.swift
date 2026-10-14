@@ -1394,12 +1394,21 @@ final class InputController: IMKInputController {
         }
 
         trace("commitComposition.execute", sender: sender)
-        let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
+        commitCurrentCompositionFromSystem(to: sender)
+    }
+
+    private func commitCurrentCompositionFromSystem(to sender: Any) {
+        let plan = SystemCompositionCommitPlan.resolve(
             originalInput: inputBuffer,
-            hasSelectedCandidate: selectedCandidateValue != nil
+            selectedCandidate: candidateSession.selectedCandidate,
+            conversionSuffix: conversionSuffix,
+            compositionSuffix: compositionSuffix
         )
-        commit(inputBuffer, to: sender)
-        learnUnselectedInput(unselectedInputLearningEntry)
+        if let selectedCandidate = plan.selectedCandidate {
+            recordCandidateSelectionForCurrentInput(selectedCandidate)
+        }
+        commit(plan.committedText, to: sender)
+        learnUnselectedInput(plan.unselectedInputLearningEntry)
     }
 
     override func cancelComposition() {
@@ -1571,7 +1580,7 @@ final class InputController: IMKInputController {
             if reconversionOriginal != nil {
                 restoreReconversionOriginal(client: sender as Any)
             } else {
-                commit(inputBuffer, to: sender as Any)
+                commitCurrentCompositionFromSystem(to: sender as Any)
             }
         }
         resetTransientInteractionState()
