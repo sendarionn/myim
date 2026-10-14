@@ -38,7 +38,7 @@ struct NextInputPredictionModelTests {
         model.record("A")
         model.record("C")
 
-        #expect(model.candidates(after: "A") == ["C", "B"])
+        #expect(model.candidates(after: "A") == ["C", "BA", "B"])
     }
 
     @Test
@@ -450,6 +450,75 @@ struct NextInputPredictionModelTests {
         #expect(restored.learnedCompoundPredictions(
             matchingPrefix: "abc"
         ).first?.text == "ABC123")
+    }
+
+    @Test
+    func preservesSeparatorsInLearnedCompoundSurfaceAndPersistence() throws {
+        let variants: [(tokens: [NextInputLearningToken], expected: String)] = [
+            ([
+                NextInputLearningToken(text: "Smart ", reading: "smart"),
+                NextInputLearningToken(text: "Inn", reading: "inn")
+            ], "Smart Inn"),
+            ([
+                NextInputLearningToken(text: "Smart", reading: "smart"),
+                NextInputLearningToken(text: "Inn", reading: "inn")
+            ], "SmartInn"),
+            ([
+                NextInputLearningToken(text: "Smart　", reading: "smart"),
+                NextInputLearningToken(text: "Inn", reading: "inn")
+            ], "Smart　Inn"),
+            ([
+                NextInputLearningToken(text: "Smart  ", reading: "smart"),
+                NextInputLearningToken(text: "Inn", reading: "inn")
+            ], "Smart  Inn"),
+            ([
+                NextInputLearningToken(text: "Hello, ", reading: "hello"),
+                NextInputLearningToken(text: "world", reading: "world")
+            ], "Hello, world"),
+            ([
+                NextInputLearningToken(text: "東京・", reading: "toukyou"),
+                NextInputLearningToken(text: "大阪", reading: "oosaka")
+            ], "東京・大阪")
+        ]
+        var model = NextInputPredictionModel()
+        for variant in variants {
+            for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+                model.record(learningTokens: variant.tokens)
+                model.breakSequence()
+            }
+        }
+
+        let restored = try JSONDecoder().decode(
+            NextInputPredictionModel.self,
+            from: JSONEncoder().encode(model)
+        )
+
+        for variant in variants {
+            #expect(restored.learnedCompoundPredictions(
+                matchingPrefix: variant.tokens.compactMap(\.reading).joined()
+            ).contains { $0.text == variant.expected })
+        }
+    }
+
+    @Test
+    func combinesDirectAndAcceptedEvidenceAtTheSecondObservation() {
+        var model = NextInputPredictionModel()
+        let first = NextInputLearningToken(text: "Smart ", reading: "smart")
+        let second = NextInputLearningToken(text: "Inn", reading: "inn")
+
+        model.record(learningTokens: [first, second])
+        model.breakSequence()
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "smart"
+        ).isEmpty)
+
+        model.record(learningTokens: [first])
+        model.record(learningTokens: [second], source: .acceptedCandidate)
+        model.breakSequence()
+
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "smart"
+        ).first?.text == "Smart Inn")
     }
 
     @Test

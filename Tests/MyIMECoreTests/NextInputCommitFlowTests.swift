@@ -512,7 +512,7 @@ struct NextInputCommitFlowTests {
     }
 
     @Test
-    func oneSelectedFollowerDoesNotLearnThePhraseYet() {
+    func oneDirectAndOneSelectedObservationLearnThePhrase() {
         let flow = CommitFlow.seededWithTypedTokyoNakano()
         flow.commitInput("東京都", reading: "toukyouto")
         flow.selectAndCommit("中野区")
@@ -521,7 +521,7 @@ struct NextInputCommitFlowTests {
         #expect(flow.coordinator.learnedCompoundPredictions(
             matchingPrefix: "toukyouto",
             excluding: []
-        ).isEmpty)
+        ).first?.text == "東京都中野区")
     }
 
     @Test

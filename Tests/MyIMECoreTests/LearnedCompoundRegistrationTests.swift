@@ -94,6 +94,39 @@ struct LearnedCompoundRegistrationTests {
     }
 
     @Test
+    func nextInputCompoundRegistersOnlyWithCompleteSourceMetadata() {
+        let candidate = NextInputCandidateMetadata.candidate(
+            from: NextInputPrediction(
+                text: "Smart Inn",
+                sourceTokens: ["Smart ", "Inn"],
+                sourceReadings: ["smart", "inn"]
+            )
+        )
+        let missingReading = NextInputCandidateMetadata.candidate(
+            from: NextInputPrediction(
+                text: "Smart Inn",
+                sourceTokens: ["Smart ", "Inn"],
+                sourceReadings: ["smart", nil]
+            )
+        )
+        let oneToken = NextInputCandidateMetadata.candidate(
+            from: NextInputPrediction(
+                text: "Smart Inn",
+                sourceTokens: ["Smart Inn"],
+                sourceReadings: ["smartinn"]
+            )
+        )
+
+        #expect(LearnedCompoundRegistration.entry(from: candidate)
+            == UserDictionaryRegistration(
+                reading: "smartinn",
+                candidate: "Smart Inn"
+            ))
+        #expect(LearnedCompoundRegistration.entry(from: missingReading) == nil)
+        #expect(LearnedCompoundRegistration.entry(from: oneToken) == nil)
+    }
+
+    @Test
     func phraseWhoseTokensDoNotFormTheTextIsNotRegistered() {
         let fuzzyCandidate = FuzzyCandidate(
             storageText: "東京都中野区",

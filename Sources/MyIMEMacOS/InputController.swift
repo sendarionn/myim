@@ -1871,7 +1871,10 @@ final class InputController: IMKInputController {
                 )
                 return true
             }
-            guard space == "　" else { return false }
+            guard space == "　" else {
+                nextInputCandidateCoordinator.appendSeparatorToLastInput(space)
+                return false
+            }
             commit(space, to: sender)
             return true
         }
@@ -1889,12 +1892,13 @@ final class InputController: IMKInputController {
         let punctuation = selectedCandidateValue == nil
             ? ""
             : compositionSuffix
+        let committedValue = value + (punctuation.isEmpty ? space : "")
         recordSelectedCandidate()
         // Punctuation after the text takes the place of the space
         commit(
-            value + (punctuation.isEmpty ? space : ""),
+            committedValue,
             to: sender,
-            historyValue: value
+            historyValue: committedValue
         )
         learnUnselectedInput(unselectedInputLearningEntry)
         continueWithTrailingPunctuation(punctuation, client: sender)
@@ -4170,6 +4174,16 @@ final class InputController: IMKInputController {
         do {
             if removesDictionaryEntry {
                 try userDictionaryStore.remove(candidate: candidate)
+                do {
+                    try nextInputCandidateCoordinator.suppressLearnedCandidate(
+                        candidateValueForCommit(candidate)
+                    )
+                } catch {
+                    NSLog(
+                        "削除した連結候補の再学習抑制に失敗: %@",
+                        error.localizedDescription
+                    )
+                }
                 rebuildConversionEngine()
             }
             candidateSelectionHistoryStore.remove(historyCandidates)
@@ -4620,17 +4634,43 @@ final class InputController: IMKInputController {
         replacingMarkedText: Bool = true,
         to sender: Any
     ) {
+        let selectedCandidateModel = nextInputCandidateCoordinator
+            .selectedCandidateModel
         let sourceTokens = nextInputCandidateCoordinator.selectedSourceTokens
         let sourceReadings = nextInputCandidateCoordinator
             .selectedSourceReadings
+        if Self.diagnosticConfiguration.enables(.learning),
+           let selectedCandidateModel,
+           let entry = LearnedCompoundRegistration.entry(
+            from: selectedCandidateModel
+           ) {
+            do {
+                try saveUserDictionaryEntry(
+                    reading: entry.reading,
+                    candidate: entry.candidate
+                )
+            } catch {
+                NSLog(
+                    "学習済み連結候補の辞書登録に失敗: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+        let committedValue = value + suffix
+        let committedTokens = sourceTokens.map { tokens in
+            guard !suffix.isEmpty, !tokens.isEmpty else { return tokens }
+            var result = tokens
+            result[result.count - 1] += suffix
+            return result
+        }
         recordNextInputCandidateSelection(value)
         clearNextInputCandidateState()
         commit(
-            value + suffix,
+            committedValue,
             to: sender,
             replacingMarkedText: replacingMarkedText,
-            historyValue: value,
-            historyTokens: sourceTokens,
+            historyValue: committedValue,
+            historyTokens: committedTokens,
             historyReadings: sourceReadings,
             historyLearningSource: .acceptedCandidate
         )
@@ -4761,7 +4801,12 @@ final class InputController: IMKInputController {
         symbolTipsWindow.hide()
         clearCalendarSelection()
         resetCandidateFilters()
-        if nextInputPolicy.updatesCandidates {
+        if inputHistoryValue.allSatisfy({ $0.isWhitespace }),
+           !inputHistoryValue.isEmpty {
+            nextInputCandidateCoordinator.appendSeparatorToLastInput(
+                inputHistoryValue
+            )
+        } else if nextInputPolicy.updatesCandidates {
             let structuralCandidates = closingBracketTracker.candidate.map {
                 [$0]
             } ?? []

@@ -47,15 +47,52 @@ extension FuzzyCandidate {
                 )
                 : nil
         }
+        return LearnedCompoundRegistration.entry(
+            text: storageText,
+            sourceTokens: sourceTokens,
+            sourceReadings: sourceReadings
+        )
+    }
+}
+
+public enum LearnedCompoundRegistration {
+    public static func entry(
+        from candidate: Candidate
+    ) -> UserDictionaryRegistration? {
+        guard NextInputCandidateMetadata.isAcceptedCandidate(candidate),
+              let sourceTokens = NextInputCandidateMetadata.sourceTokens(
+                from: candidate
+              ),
+              let sourceReadings = NextInputCandidateMetadata.sourceReadings(
+                from: candidate
+              ) else {
+            return nil
+        }
+        return entry(
+            text: candidate.commitText,
+            sourceTokens: sourceTokens,
+            sourceReadings: sourceReadings
+        )
+    }
+
+    public static func entry(
+        text: String,
+        sourceTokens: [String],
+        sourceReadings: [String?]
+    ) -> UserDictionaryRegistration? {
+        guard sourceTokens.count >= 2,
+              sourceReadings.count == sourceTokens.count,
+              sourceTokens.joined() == text else {
+            return nil
+        }
         let readings = sourceReadings.compactMap { $0 }
         guard readings.count == sourceTokens.count,
-              readings.allSatisfy({ !$0.isEmpty }),
-              sourceTokens.joined() == storageText else {
+              readings.allSatisfy({ !$0.isEmpty }) else {
             return nil
         }
         return UserDictionaryRegistration(
             reading: readings.joined(),
-            candidate: storageText
+            candidate: text
         )
     }
 }

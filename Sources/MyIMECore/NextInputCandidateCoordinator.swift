@@ -151,6 +151,11 @@ public final class NextInputCandidateCoordinator {
     }
 
     @discardableResult
+    public func appendSeparatorToLastInput(_ separator: String) -> Bool {
+        cursor.appendSeparatorToLastInput(separator)
+    }
+
+    @discardableResult
     public func beginCandidates(
         context: String,
         preferredCandidates: [String],

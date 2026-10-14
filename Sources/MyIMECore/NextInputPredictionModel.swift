@@ -123,6 +123,31 @@ public struct NextInputSequenceCursor: Sendable {
     public fileprivate(set) var lastInput: String?
 
     public init() {}
+
+    @discardableResult
+    public mutating func appendSeparatorToLastInput(
+        _ separator: String
+    ) -> Bool {
+        guard !separator.isEmpty,
+              !separator.contains("\n"),
+              !separator.contains("\r"),
+              separator.allSatisfy({ $0.isWhitespace }),
+              let lastIndex = recentInputs.indices.last,
+              recentInputs[lastIndex].count + separator.count
+                <= NextInputPredictionModel.maximumValueLength else {
+            return false
+        }
+        let previous = recentInputs[lastIndex]
+        recentInputs[lastIndex] += separator
+        lastInput = recentInputs[lastIndex]
+        if var episode,
+           episode.tokens.last == previous,
+           let episodeLastIndex = episode.tokens.indices.last {
+            episode.tokens[episodeLastIndex] += separator
+            self.episode = episode
+        }
+        return true
+    }
 }
 
 public struct NextInputPredictionModel: Codable, Sendable {
@@ -132,7 +157,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
     public static let maximumValueLength = 80
     public static let maximumContextTokenCount = 4
     public static let maximumPredictionTokenCount = 4
-    public static let minimumDirectSequenceCount = 3
+    public static let minimumDirectSequenceCount = 2
     public static let minimumLearnedCompoundPrefixLength = 3
     public static let maximumLearnedCompoundCandidateCount = 4
     /// Selecting the same run of candidates this many times combines it
@@ -925,17 +950,17 @@ public struct NextInputPredictionModel: Codable, Sendable {
         return lhs.prediction.text < rhs.prediction.text
     }
 
-    /// A multi-token candidate is offered once it was typed as a sentence
-    /// often enough or selected as the same run of candidates twice
+    /// A multi-token candidate is offered after two independent observations
+    /// regardless of whether each observation was typed or selected
     private static func isEligible(_ stat: SequenceCandidateStat) -> Bool {
         stat.tokens.count == 1
-            || stat.directCount >= minimumDirectSequenceCount
-            || stat.acceptedSuggestionCount >= minimumEpisodePromotionCount
+            || stat.directCount + stat.acceptedSuggestionCount
+                >= minimumDirectSequenceCount
     }
 
     private static func isEligible(_ stat: LearnedPhraseStat) -> Bool {
-        stat.directCount >= minimumDirectSequenceCount
-            || stat.acceptedSuggestionCount >= minimumEpisodePromotionCount
+        stat.directCount + stat.acceptedSuggestionCount
+            >= minimumDirectSequenceCount
     }
 
     private static func hasCompleteReadings(_ readings: [String?]) -> Bool {
@@ -1214,17 +1239,16 @@ public struct NextInputPredictionModel: Codable, Sendable {
     }
 
     private static func normalizedValue(_ value: String) -> String? {
-        let normalized = value.trimmingCharacters(
-            in: .whitespacesAndNewlines
-        )
+        let content = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard
-            !normalized.isEmpty,
-            !normalized.contains("\n"),
-            normalized.count <= maximumValueLength
+            !content.isEmpty,
+            !value.contains("\n"),
+            !value.contains("\r"),
+            value.count <= maximumValueLength
         else {
             return nil
         }
-        return normalized
+        return value
     }
 
     private static func normalizedReading(_ reading: String?) -> String? {

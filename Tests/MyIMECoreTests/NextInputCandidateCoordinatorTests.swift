@@ -186,6 +186,44 @@ struct NextInputCandidateCoordinatorTests {
             == ["toukyouto", "nakanoku"])
     }
 
+    @Test
+    func separatelyCommittedSpaceBecomesPartOfThePreviousLearningUnit() {
+        let fixture = makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            _ = fixture.coordinator.learnedCandidateModels(
+                after: "Smart",
+                committedTokens: [
+                    NextInputLearningToken(text: "Smart", reading: "smart")
+                ],
+                learningSource: .directInput,
+                predictionEnabled: true,
+                learningEnabled: true,
+                breakPreviousSequence: false,
+                limit: 16
+            )
+            #expect(fixture.coordinator.appendSeparatorToLastInput(" "))
+            _ = fixture.coordinator.learnedCandidateModels(
+                after: "Inn",
+                committedTokens: [
+                    NextInputLearningToken(text: "Inn", reading: "inn")
+                ],
+                learningSource: .directInput,
+                predictionEnabled: true,
+                learningEnabled: true,
+                breakPreviousSequence: false,
+                limit: 16
+            )
+            fixture.coordinator.breakSequence()
+        }
+
+        #expect(fixture.coordinator.learnedCompoundPredictions(
+            matchingPrefix: "smart",
+            excluding: []
+        ).first?.text == "Smart Inn")
+    }
+
     private func makeFixture() -> (
         coordinator: NextInputCandidateCoordinator,
         directory: URL,
