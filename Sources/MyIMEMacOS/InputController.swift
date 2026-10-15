@@ -225,6 +225,7 @@ final class InputController: IMKInputController {
             EmojiGlobalHotKey.shared.endPanelCapture()
             return
         }
+        defer { controller.updateCandidateDeletionShortcutCapture() }
         let client: Any? = controller.activeInputClient
             ?? (controller.client() as Any?)
         switch command {
@@ -796,6 +797,12 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool {
+        defer { updateCandidateDeletionShortcutCapture() }
+        if isUserDictionaryDeletionShortcut(event),
+           selectedCandidateDeletionTarget == .recentEmoji {
+            removeSelectedRecentEmoji()
+            return true
+        }
         switch InputKey(keyCode: event.keyCode) {
         case .tab:
             if emojiWindow.canSelectEmoji {
@@ -4279,7 +4286,9 @@ final class InputController: IMKInputController {
             hasStandardSelection: selectedCandidateIndex != nil,
             hasFuzzySelection: selectedFuzzyCandidateIndex != nil,
             hasNextInputSelection:
-                nextInputCandidateCoordinator.selectedIndex != nil
+                nextInputCandidateCoordinator.selectedIndex != nil,
+            hasRecentEmojiSelection: isEditingEmojiSearch
+                && emojiWindow.selectedRecentEmoji != nil
         )
     }
 
@@ -4295,8 +4304,23 @@ final class InputController: IMKInputController {
             removeSelectedFuzzyCandidateFromUserDictionary(client: sender)
         case .nextInputCandidate:
             removeSelectedNextInputCandidate(client: sender)
+        case .recentEmoji:
+            removeSelectedRecentEmoji()
         }
         return true
+    }
+
+    /// Removes the emoji from the recent history only; it stays in search
+    /// results and nothing is committed
+    private func removeSelectedRecentEmoji() {
+        guard let emoji = emojiWindow.removeSelectedRecentEmoji() else {
+            NSSound.beep()
+            return
+        }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(emoji, forType: .string)
+        updateCandidateDeletionShortcutCapture()
     }
 
     private func updateCandidateDeletionShortcutCapture() {

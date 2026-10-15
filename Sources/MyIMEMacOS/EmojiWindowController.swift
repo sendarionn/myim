@@ -230,6 +230,10 @@ final class EmojiWindowController: NSObject {
     }
 
     func hide() {
+        // ⌘X captured for the selected recent emoji goes back to the app
+        if selectedRecentIndex != nil {
+            CandidateDeletionGlobalHotKey.shared.deactivate()
+        }
         stopOutsideClickMonitoring()
         EmojiGlobalHotKey.shared.endPanelCapture()
         panel.orderOut(nil)
@@ -254,6 +258,38 @@ final class EmojiWindowController: NSObject {
             forKey: Self.recentDefaultsKey
         )
         rebuildRecentArea()
+    }
+
+    var selectedRecentEmoji: String? {
+        guard showsRecentArea,
+              let selectedRecentIndex,
+              recentHistory.emojis.indices.contains(selectedRecentIndex)
+        else { return nil }
+        return recentHistory.emojis[selectedRecentIndex]
+    }
+
+    /// Removes the selected recent emoji from the history and selects the
+    /// one taking its place
+    @discardableResult
+    func removeSelectedRecentEmoji() -> String? {
+        guard let selectedRecentIndex,
+              let emoji = selectedRecentEmoji,
+              recentHistory.remove(emoji) else { return nil }
+        UserDefaults.standard.set(
+            recentHistory.emojis,
+            forKey: Self.recentDefaultsKey
+        )
+        self.selectedRecentIndex = nil
+        rebuildRecentArea()
+        if let next = RecentEmojiHistory.selectionAfterRemoving(
+            at: selectedRecentIndex,
+            remainingCount: recentHistory.emojis.count
+        ) {
+            selectRecent(index: next)
+        } else {
+            comparisonPanel.orderOut(nil)
+        }
+        return emoji
     }
 
     func updateSearchText(_ text: String) {

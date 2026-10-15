@@ -18,4 +18,22 @@ public struct RecentEmojiHistory: Equatable, Sendable {
             emojis.removeLast(emojis.count - Self.maximumCount)
         }
     }
+
+    /// Removes one emoji from the history; using it again records it anew
+    @discardableResult
+    public mutating func remove(_ emoji: String) -> Bool {
+        guard emojis.contains(emoji) else { return false }
+        emojis.removeAll { $0 == emoji }
+        return true
+    }
+
+    /// The recent emoji to select after the one at `index` is removed: the
+    /// next one in its place, or the previous one when it was the last
+    public static func selectionAfterRemoving(
+        at index: Int,
+        remainingCount: Int
+    ) -> Int? {
+        guard remainingCount > 0 else { return nil }
+        return min(index, remainingCount - 1)
+    }
 }
