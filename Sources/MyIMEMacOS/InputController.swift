@@ -57,6 +57,20 @@ final class InputController: IMKInputController {
                 }
             )
         )
+    private static let sharedUnselectedInputLearningStore =
+        UnselectedInputLearningStore(
+            history: loadUnselectedInputLearningHistory(),
+            writer: DeferredJSONFileWriter(
+                fileURL: unselectedInputLearningHistoryURL(),
+                queueLabel: "myim.unselected-input-learning",
+                errorHandler: {
+                    NSLog(
+                        "未選択確定履歴の保存に失敗: %@",
+                        $0.localizedDescription
+                    )
+                }
+            )
+        )
     private static let sharedNextInputLearningStore = NextInputLearningStore(
         model: loadNextInputPredictionModel(),
         writer: DeferredJSONFileWriter(
@@ -124,6 +138,7 @@ final class InputController: IMKInputController {
             client: Self.javaScriptExtensionClient
         )
     private let candidateSelectionHistoryStore: CandidateSelectionHistoryStore
+    private let unselectedInputLearningStore: UnselectedInputLearningStore
     private var closingBracketTracker = ClosingBracketTracker()
     private let nextInputCandidateCoordinator: NextInputCandidateCoordinator
     private let candidateSearchCoordinator = CandidateSearchCoordinator()
@@ -294,6 +309,7 @@ final class InputController: IMKInputController {
             systemEngine: indexedMozcEngine
         )
         candidateSelectionHistoryStore = Self.sharedCandidateSelectionHistoryStore
+        unselectedInputLearningStore = Self.sharedUnselectedInputLearningStore
         nextInputCandidateCoordinator = NextInputCandidateCoordinator(
             store: Self.sharedNextInputLearningStore
         )
@@ -3527,6 +3543,9 @@ final class InputController: IMKInputController {
                 candidate: fuzzyCandidate.storageText,
                 matchingReadings: [fuzzyCandidate.reading]
             )
+            unselectedInputLearningStore.remove(
+                candidate: fuzzyCandidate.storageText
+            )
             rebuildConversionEngine()
             candidateSelectionHistoryStore.remove([fuzzyCandidate.storageText])
             self.selectedFuzzyCandidateIndex = nil
@@ -4167,6 +4186,7 @@ final class InputController: IMKInputController {
             candidate: candidate,
             display: display
         )
+        unselectedInputLearningStore.markRegistered(candidate: candidate)
         rebuildConversionEngine()
     }
 
@@ -4198,6 +4218,7 @@ final class InputController: IMKInputController {
         do {
             if removesDictionaryEntry {
                 try userDictionaryStore.remove(candidate: candidate)
+                unselectedInputLearningStore.remove(candidate: candidate)
                 do {
                     try nextInputCandidateCoordinator.suppressLearnedCandidate(
                         candidateValueForCommit(candidate)
@@ -4481,10 +4502,15 @@ final class InputController: IMKInputController {
               let entry else {
             return
         }
+        guard let registration = unselectedInputLearningStore.registration(
+            after: entry
+        ) else {
+            return
+        }
         do {
             try saveUserDictionaryEntry(
-                reading: entry.reading,
-                candidate: entry.candidate
+                reading: registration.reading,
+                candidate: registration.candidate
             )
         } catch {
             NSLog(
@@ -4957,6 +4983,7 @@ final class InputController: IMKInputController {
 
     private func flushPendingHistoryWrites() {
         candidateSelectionHistoryStore.flush()
+        unselectedInputLearningStore.flush()
         nextInputCandidateCoordinator.flush()
     }
 
@@ -6131,6 +6158,27 @@ final class InputController: IMKInputController {
 
     private static func candidateSelectionHistoryURL() -> URL {
         userDataURL(fileName: "candidate-selection-history.json")
+    }
+
+    private static func loadUnselectedInputLearningHistory()
+        -> UnselectedInputLearningHistory {
+        guard
+            let data = try? Data(
+                contentsOf: unselectedInputLearningHistoryURL()
+            ),
+            !data.isEmpty,
+            let history = try? JSONDecoder().decode(
+                UnselectedInputLearningHistory.self,
+                from: data
+            )
+        else {
+            return UnselectedInputLearningHistory()
+        }
+        return history
+    }
+
+    private static func unselectedInputLearningHistoryURL() -> URL {
+        userDataURL(fileName: "unselected-input-learning.json")
     }
 
     private static func loadNextInputPredictionModel()

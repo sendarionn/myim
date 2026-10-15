@@ -80,6 +80,41 @@ public enum UnselectedInputLearningPolicy {
         )
     }
 
+    public static func requiresRepeatedConfirmation(_ input: String) -> Bool {
+        guard !input.isEmpty else { return false }
+        let normalized = input.precomposedStringWithCanonicalMapping
+        return isASCIIAlphanumeric(normalized)
+            || isHiraganaOnly(normalized)
+            || isKatakanaOnly(normalized)
+    }
+
+    private static func isASCIIAlphanumeric(_ input: String) -> Bool {
+        input.unicodeScalars.allSatisfy { scalar in
+            scalar.isASCII && (
+                CharacterSet.letters.contains(scalar)
+                    || CharacterSet.decimalDigits.contains(scalar)
+            )
+        }
+    }
+
+    private static func isHiraganaOnly(_ input: String) -> Bool {
+        input.unicodeScalars.allSatisfy {
+            (0x3041...0x309f).contains($0.value)
+        }
+    }
+
+    private static func isKatakanaOnly(_ input: String) -> Bool {
+        input.unicodeScalars.allSatisfy {
+            switch $0.value {
+            case 0x30a1...0x30fa, 0x30fc...0x30ff,
+                 0xff66...0xff9f:
+                true
+            default:
+                false
+            }
+        }
+    }
+
     private static func isSingleEnglishLetterOrSymbol(_ input: String) -> Bool {
         guard input.count == 1 else { return false }
         let scalars = input.unicodeScalars
