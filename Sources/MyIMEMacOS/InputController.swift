@@ -779,6 +779,7 @@ final class InputController: IMKInputController {
         }
         if inputBuffer.isEmpty {
             nextInputCandidateCoordinator.breakSequence()
+            closingBracketTracker.reset()
             recentCommittedContext = String(
                 (recentCommittedContext + "\n").suffix(256)
             )
@@ -958,6 +959,7 @@ final class InputController: IMKInputController {
            ["insertNewline:", "insertNewlineIgnoringFieldEditor:"]
             .contains(NSStringFromSelector(aSelector)) {
             nextInputCandidateCoordinator.breakSequence()
+            closingBracketTracker.reset()
         }
         if let aSelector,
            candidateFilterCoordinator.draft != nil
@@ -1606,6 +1608,7 @@ final class InputController: IMKInputController {
         }
         resetTransientInteractionState()
         nextInputCandidateCoordinator.breakSequence()
+        closingBracketTracker.reset()
         if closesController {
             candidateSearchCoordinator.cancel(.fuzzyIndexBuild)
         }
@@ -4321,6 +4324,7 @@ final class InputController: IMKInputController {
         NSLog("myim: Secure Event Inputを検知し、キー処理を停止")
         discardComposition(in: sender)
         nextInputCandidateCoordinator.breakSequence()
+        closingBracketTracker.reset()
     }
 
     private var secureInputStatusDescription: String {
@@ -4854,6 +4858,9 @@ final class InputController: IMKInputController {
         )
         isInsertingCommittedText = false
         trace("insertText.complete", sender: sender, detail: "value=\(value)")
+        if beginsAfterLineBreak {
+            closingBracketTracker.reset()
+        }
         closingBracketTracker.consume(value)
         recentCommittedContext = String(
             (recentCommittedContext + value).suffix(256)
@@ -5109,13 +5116,19 @@ final class InputController: IMKInputController {
             after: predictionContext,
             limit: 16
         ).map { Candidate(storageText: $0, source: .nextInput) }
+        // Only the structural candidate offers a closing bracket, so one is
+        // not suggested where no bracket is open
         let hasCandidates = nextInputCandidateCoordinator.beginCandidates(
             context: predictionContext,
             preferredCandidates: preferredCandidates.map {
                 Candidate(storageText: $0, source: .nextInput)
             },
-            learnedCandidates: learnedCandidates,
-            dictionaryCandidates: dictionaryCandidates,
+            learnedCandidates: learnedCandidates.filter {
+                !ClosingBracketTracker.startsWithClosingBracket($0.commitText)
+            },
+            dictionaryCandidates: dictionaryCandidates.filter {
+                !ClosingBracketTracker.startsWithClosingBracket($0.commitText)
+            },
             unsuppressibleCandidates: Set(preferredCandidates.filter {
                 closingBracketTracker.shouldBypassCandidateSuppression($0)
             })
