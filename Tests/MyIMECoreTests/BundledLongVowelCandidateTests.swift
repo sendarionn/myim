@@ -67,6 +67,7 @@ struct BundledLongVowelCandidateTests {
         let source = try makeSource()
         var history = CandidateSelectionHistory()
         history.record("ホットペッパー", reading: "hottopeppa-")
+        history.record("ホットペッパー", reading: "hottopeppa-")
 
         for input in ["hottope", "hottopep", "hottopepp"] {
             var session = CandidateSession()

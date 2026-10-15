@@ -9,6 +9,8 @@ struct CandidateFilterTests {
         var history = CandidateSelectionHistory()
         let reading = CandidateFilterLearning.reading(for: "1")
         if let reading {
+            // Digits alone are learned from the second commit
+            history.record("1", reading: reading)
             history.record("1", reading: reading)
         }
 

@@ -79,6 +79,7 @@ struct StandardConversionCandidateSourceTests {
         let source = makeSource()
         var history = CandidateSelectionHistory()
         history.record("ホットペッパー", reading: "hottopeppa-")
+        history.record("ホットペッパー", reading: "hottopeppa-")
         let saved = try JSONEncoder().encode(history)
         let restored = try JSONDecoder().decode(
             CandidateSelectionHistory.self,
@@ -108,6 +109,7 @@ struct StandardConversionCandidateSourceTests {
     func keepsLearnedCompletionFromOneCharacterInStandardCandidates() throws {
         let source = makeSource()
         var history = CandidateSelectionHistory()
+        history.record("Smartlock", reading: "smartlock")
         history.record("Smartlock", reading: "smartlock")
 
         let learned = try #require(source.candidates(for: .init(

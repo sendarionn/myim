@@ -33,6 +33,9 @@ struct LearnedCompletionFlowTests {
         let typing = try Typing()
         #expect(!typing.candidates(for: "hottope").contains("ホットペッパー"))
 
+        // Katakana alone is learned from its second commit
+        try typing.commit("ホットペッパー", typed: "hottopeppa-")
+        #expect(!typing.candidates(for: "hottope").contains("ホットペッパー"))
         try typing.commit("ホットペッパー", typed: "hottopeppa-")
 
         for input in ["hottope", "hottopep", "hottopeppa"] {
@@ -46,6 +49,9 @@ struct LearnedCompletionFlowTests {
         let typing = try Typing()
         try typing.commit("ホットペッパー", typed: "hottopeppa-")
 
+        try typing.restart()
+        #expect(!typing.candidates(for: "hottope").contains("ホットペッパー"))
+        try typing.commit("ホットペッパー", typed: "hottopeppa-")
         try typing.restart()
 
         #expect(typing.candidates(for: "hottope").contains("ホットペッパー"))
@@ -67,8 +73,34 @@ struct LearnedCompletionFlowTests {
         try typing.commit("開発", typed: "kaihatsu")
         try typing.commit("Smartlock", typed: "smartlock")
 
+        // Text containing kanji is learned from one commit as before
         #expect(typing.candidates(for: "kaihat").contains("開発"))
+        #expect(!typing.candidates(for: "smartl").contains("Smartlock"))
+        try typing.commit("Smartlock", typed: "smartlock")
         #expect(typing.candidates(for: "smartl").contains("Smartlock"))
+    }
+
+    @Test
+    func hiraganaIsLearnedFromItsSecondCommitAgainAfterDeletion() throws {
+        let typing = try Typing()
+        let before = typing.candidates(for: "sokokara")
+
+        try typing.commit("そこから", typed: "sokokara")
+        #expect(typing.candidates(for: "sokokara") == before)
+        #expect(!typing.candidates(for: "sokoka").contains("そこから"))
+        try typing.commit("そこから", typed: "sokokara")
+        #expect(typing.candidates(for: "sokoka").contains("そこから"))
+
+        // ⌘X removes the history, and with it the first commit
+        typing.store.remove(["そこから"])
+        try typing.commit("そこから", typed: "sokokara")
+        #expect(typing.candidates(for: "sokokara") == before)
+        #expect(!typing.candidates(for: "sokoka").contains("そこから"))
+        try typing.restart()
+        try typing.commit("そこから", typed: "sokokara")
+
+        #expect(typing.candidates(for: "sokoka").contains("そこから"))
+        #expect(typing.candidates(for: "sokokara").first == "そこから")
     }
 
     @Test

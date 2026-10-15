@@ -97,6 +97,9 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
                 }
             }
         }
+        combinedStats = combinedStats.filter {
+            Self.isEstablished($0.key, count: $0.value.count)
+        }
         guard !combinedStats.isEmpty else {
             return [:]
         }
@@ -125,7 +128,8 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         for (reading, candidates) in statsByReading
         where reading != prefix && reading.hasPrefix(prefix) {
             let remainingLength = reading.count - prefix.count
-            for (candidate, stat) in candidates {
+            for (candidate, stat) in candidates
+            where Self.isEstablished(candidate, count: stat.count) {
                 let age = max(nextRank - stat.lastUsed, 1)
                 let score = log1p(Double(stat.count)) * 4
                     + 2 / log2(Double(age) + 2)
@@ -137,6 +141,16 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
             if $0.value != $1.value { return $0.value > $1.value }
             return $0.key < $1.key
         }.prefix(limit).map(\.key)
+    }
+
+    /// Alphanumerics and kana alone are also typed as they are, so one
+    /// commit does not show the intent to reuse them; like their
+    /// dictionary registration, they are learned from the second commit
+    private static func isEstablished(_ candidate: String, count: Int) -> Bool {
+        count >= 2
+            || !UnselectedInputLearningPolicy.requiresRepeatedConfirmation(
+                candidate
+            )
     }
 
     private static func compacted(
