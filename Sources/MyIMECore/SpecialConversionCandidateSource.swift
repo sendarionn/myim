@@ -3,6 +3,9 @@ import Foundation
 public enum SpecialConversionCandidateOrdering: Equatable, Sendable {
     case sourceOrder
     case selectionHistory
+    /// The defined first candidate, such as `。` for `.`, stays first and
+    /// the rest follow the selection history
+    case selectionHistoryAfterFirst
 }
 
 public struct SpecialConversionCandidateContext: Equatable, Sendable {
@@ -42,11 +45,22 @@ public struct SpecialConversionCandidateResult: Equatable, Sendable {
     public func orderedCandidates(
         recencyRanks: [String: Int]
     ) -> [Candidate] {
-        guard ordering == .selectionHistory else { return candidates }
-        return CandidateRecencyOrderer.orderedIndices(
-            candidates.map(\.storageText),
-            ranks: recencyRanks
-        ).map { candidates[$0] }
+        switch ordering {
+        case .sourceOrder:
+            return candidates
+        case .selectionHistory:
+            return CandidateRecencyOrderer.orderedIndices(
+                candidates.map(\.storageText),
+                ranks: recencyRanks
+            ).map { candidates[$0] }
+        case .selectionHistoryAfterFirst:
+            guard let first = candidates.first else { return [] }
+            let rest = Array(candidates.dropFirst())
+            return [first] + CandidateRecencyOrderer.orderedIndices(
+                rest.map(\.storageText),
+                ranks: recencyRanks
+            ).map { rest[$0] }
+        }
     }
 }
 
@@ -148,7 +162,7 @@ public struct SpecialConversionCandidateSource: Sendable {
                     source: .specialConversion,
                     reading: input
                 ) + javaScript,
-                ordering: .sourceOrder,
+                ordering: .selectionHistoryAfterFirst,
                 showsSymbolTips: true
             )
         }
