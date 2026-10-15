@@ -241,9 +241,7 @@ final class InputController: IMKInputController {
         case 8, 9:
             guard let client else { return }
             if let emoji = controller.emojiWindow.selectedEmoji {
-                controller.emojiWindow.recordUsage(emoji)
-                controller.emojiWindow.hide()
-                controller.commit(emoji, to: client, replacingMarkedText: true)
+                controller.commitSelectedEmoji(emoji, to: client)
                 return
             }
             guard controller.emojiWindow.isSearchConfirmed else {
@@ -832,9 +830,7 @@ final class InputController: IMKInputController {
             handleEmojiArrow(.up, client: sender)
         case .returnKey:
             if let emoji = emojiWindow.selectedEmoji {
-                emojiWindow.recordUsage(emoji)
-                emojiWindow.hide()
-                commit(emoji, to: sender, replacingMarkedText: true)
+                commitSelectedEmoji(emoji, to: sender)
                 return true
             }
             if !emojiWindow.isSearchConfirmed {
@@ -2557,6 +2553,25 @@ final class InputController: IMKInputController {
         } ?? inputBuffer
         emojiSearchLearning.searchChanged(to: searchText)
         emojiWindow.updateSearchText(searchText)
+    }
+
+    /// Commits the emoji, registering it under the letters typed for the
+    /// search like a learnable candidate chosen in ordinary conversion
+    private func commitSelectedEmoji(_ emoji: String, to sender: Any) {
+        if let reading = EmojiSearchRegistration.reading(
+            typedInput: inputBuffer,
+            conversionReading: conversionReading,
+            isRecentEmoji: emojiWindow.selectedRecentEmoji != nil
+        ) {
+            recordCandidateSelection(
+                emoji,
+                reading: reading,
+                isLearnable: true
+            )
+        }
+        emojiWindow.recordUsage(emoji)
+        emojiWindow.hide()
+        commit(emoji, to: sender, replacingMarkedText: true)
     }
 
     private func confirmEmojiSearch(client sender: Any) {
