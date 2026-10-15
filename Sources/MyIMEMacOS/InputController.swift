@@ -140,6 +140,7 @@ final class InputController: IMKInputController {
     private let candidateSelectionHistoryStore: CandidateSelectionHistoryStore
     private let unselectedInputLearningStore: UnselectedInputLearningStore
     private var closingBracketTracker = ClosingBracketTracker()
+    private var emojiSearchLearning = EmojiSearchLearning()
     private let nextInputCandidateCoordinator: NextInputCandidateCoordinator
     private let candidateSearchCoordinator = CandidateSearchCoordinator()
     private let specialConversionCandidateSource =
@@ -2531,6 +2532,7 @@ final class InputController: IMKInputController {
         dismissNextInputCandidates(clearMarkedTextIn: sender)
         primaryCandidatePanel.hide()
         previewWindow.hide()
+        emojiSearchLearning.reset()
         emojiWindow.show(near: inputLocation(for: sender))
         Self.emojiPanelController = self
         updateEmojiSearchFromComposition()
@@ -2553,15 +2555,29 @@ final class InputController: IMKInputController {
                 ? candidateDisplayValue(currentCandidates[index])
                 : nil
         } ?? inputBuffer
+        emojiSearchLearning.searchChanged(to: searchText)
         emojiWindow.updateSearchText(searchText)
     }
 
     private func confirmEmojiSearch(client sender: Any) {
+        let chosenCandidate = selectedCandidateIndex.flatMap { index in
+            currentCandidateModels.indices.contains(index)
+                ? currentCandidateModels[index]
+                : nil
+        }
         let searchText = selectedCandidateIndex.flatMap { index in
             currentCandidates.indices.contains(index)
                 ? candidateDisplayValue(currentCandidates[index])
                 : nil
         } ?? inputBuffer
+        // A search chosen from the conversion candidates is learned as the
+        // same commit of that candidate would be
+        if emojiSearchLearning.learns(
+            confirming: searchText,
+            choseCandidate: chosenCandidate != nil
+        ), let chosenCandidate {
+            recordCandidateSelectionForCurrentInput(chosenCandidate)
+        }
         emojiWindow.updateSearchText(searchText)
         setMarkedText(searchText, in: sender)
         hideConversionPanels()
