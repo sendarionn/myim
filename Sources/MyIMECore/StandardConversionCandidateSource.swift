@@ -147,9 +147,25 @@ public struct StandardConversionCandidateSource: Sendable {
                 )
             }
         }
-        let particles = particleCandidates(
+        let particleCompositions = particleCompositions(
             for: context.conversionReading
         )
+        let particles = particleCompositions.map(\.text)
+        let fullReadingRanks = recencyRanks(
+            for: context.conversionReading,
+            history: context.selectionHistory,
+            learningEnabled: context.learningEnabled
+        )
+        // Particle compositions follow the selection of their base
+        // candidates, ahead of their own selection history
+        let particleRanks = context.learningEnabled
+            ? ParticleCompositionRanking.ranks(
+                for: particles + deferredSystemExact,
+                compositions: particleCompositions,
+                history: context.selectionHistory,
+                compositionRanks: fullReadingRanks
+            )
+            : nil
         let generatedParticles = JapaneseParticleCandidateGenerator
             .generatedOnlyCandidates(
                 generated: particles,
@@ -221,11 +237,8 @@ public struct StandardConversionCandidateSource: Sendable {
             importedPrefix: imported.reading.prefix + imported.spelling.prefix,
             english: context.englishCandidates,
             uppercase: caseCandidates,
-            recencyRanks: recencyRanks(
-                for: context.conversionReading,
-                history: context.selectionHistory,
-                learningEnabled: context.learningEnabled
-            ),
+            recencyRanks: fullReadingRanks,
+            particleRanks: particleRanks,
             contextualCandidates: context.contextualCandidates,
             prioritizeKana: kana.first?.count == 1,
             longVowelNotationProtectedCandidates:
@@ -279,8 +292,10 @@ public struct StandardConversionCandidateSource: Sendable {
         )
     }
 
-    private func particleCandidates(for input: String) -> [String] {
-        JapaneseParticleCandidateGenerator.candidates(for: input) { reading in
+    private func particleCompositions(
+        for input: String
+    ) -> [ParticleComposition] {
+        JapaneseParticleCandidateGenerator.compositions(for: input) { reading in
             let readings = RomajiCanonicalizer.dictionaryLookupInputs(
                 from: reading
             )

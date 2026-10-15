@@ -26,6 +26,9 @@ public struct CandidateAssembly: Sendable {
         public let english: [String]
         public let uppercase: [String]
         public let recencyRanks: [String: Int]
+        /// Ranks ordering the particle compositions, from their base
+        /// candidates' selection history
+        public let particleRanks: [String: Int]?
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
         public let includeAutomaticKanaCandidates: Bool
@@ -58,6 +61,7 @@ public struct CandidateAssembly: Sendable {
             english: [String],
             uppercase: [String],
             recencyRanks: [String: Int],
+            particleRanks: [String: Int]? = nil,
             contextualCandidates: [String],
             prioritizeKana: Bool,
             includeAutomaticKanaCandidates: Bool = true,
@@ -89,6 +93,7 @@ public struct CandidateAssembly: Sendable {
             self.english = english
             self.uppercase = uppercase
             self.recencyRanks = recencyRanks
+            self.particleRanks = particleRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
             self.includeAutomaticKanaCandidates =
@@ -220,6 +225,7 @@ public struct CandidateAssembly: Sendable {
                     reading: input.reading
                 ),
                 recencyRanks: input.recencyRanks,
+                secondaryRanks: input.particleRanks,
                 contextualCandidates: input.contextualCandidates,
                 prioritizeKana: input.prioritizeKana,
                 includeAutomaticKanaCandidates:

@@ -1,3 +1,18 @@
+/// A particle composition and the dictionary candidate it was built on
+public struct ParticleComposition: Equatable, Sendable {
+    public let text: String
+    /// The dictionary candidate before the particle, such as 私 in 私は
+    public let base: String
+    /// The romaji reading the base candidate was looked up with
+    public let baseReading: String
+
+    public init(text: String, base: String, baseReading: String) {
+        self.text = text
+        self.base = base
+        self.baseReading = baseReading
+    }
+}
+
 public enum JapaneseParticleCandidateGenerator {
     // 選定根拠はdocs/JAPANESE_PARTICLE_SOURCES.mdを参照
     private enum LeadingConnectionRule: Sendable {
@@ -78,11 +93,23 @@ public enum JapaneseParticleCandidateGenerator {
         limit: Int = 16,
         exactCandidates: (String) -> [String]
     ) -> [String] {
+        compositions(
+            for: input,
+            limit: limit,
+            exactCandidates: exactCandidates
+        ).map(\.text)
+    }
+
+    public static func compositions(
+        for input: String,
+        limit: Int = 16,
+        exactCandidates: (String) -> [String]
+    ) -> [ParticleComposition] {
         guard limit > 0 else { return [] }
         let input = RomajiCanonicalizer.canonicalInput(from: input)
         guard input.count >= 4 else { return [] }
 
-        var results: [String] = []
+        var results: [ParticleComposition] = []
         var seen = Set<String>()
 
         func append(stem: String, particle: Particle) {
@@ -90,7 +117,11 @@ public enum JapaneseParticleCandidateGenerator {
             for candidate in exactCandidates(stem) where !candidate.isEmpty {
                 let combined = candidate + particle.text
                 if seen.insert(combined).inserted {
-                    results.append(combined)
+                    results.append(ParticleComposition(
+                        text: combined,
+                        base: candidate,
+                        baseReading: stem
+                    ))
                 }
                 if results.count >= limit { return }
             }
@@ -103,7 +134,11 @@ public enum JapaneseParticleCandidateGenerator {
             where allowsLeadingConnection(candidate, rule: rule) {
                 let combined = particle.text + candidate
                 if seen.insert(combined).inserted {
-                    results.append(combined)
+                    results.append(ParticleComposition(
+                        text: combined,
+                        base: candidate,
+                        baseReading: stem
+                    ))
                 }
                 if results.count >= limit { return }
             }

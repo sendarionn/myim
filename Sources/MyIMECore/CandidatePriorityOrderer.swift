@@ -5,6 +5,7 @@ public enum CandidatePriorityOrderer {
         secondary: [String] = [],
         others: [String],
         recencyRanks: [String: Int],
+        secondaryRanks: [String: Int]? = nil,
         contextualCandidates: [String] = [],
         prioritizeKana: Bool
     ) -> [String] {
@@ -47,7 +48,7 @@ public enum CandidatePriorityOrderer {
             ))
             appendUnique(CandidateRecencyOrderer.ordered(
                 secondary.filter { !seen.contains($0) },
-                ranks: recencyRanks
+                ranks: secondaryRanks ?? recencyRanks
             ))
             appendUnique(CandidateRecencyOrderer.ordered(
                 others.filter { !seen.contains($0) },
@@ -62,7 +63,7 @@ public enum CandidatePriorityOrderer {
         ))
         appendUnique(CandidateRecencyOrderer.ordered(
             secondary.filter { !seen.contains($0) },
-            ranks: recencyRanks
+            ranks: secondaryRanks ?? recencyRanks
         ))
         appendUnique(CandidateRecencyOrderer.ordered(
             kana.filter { !seen.contains($0) },

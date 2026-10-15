@@ -7,6 +7,8 @@ public struct CandidatePipeline: Sendable {
         public let english: [Candidate]
         public let trailing: [Candidate]
         public let recencyRanks: [String: Int]
+        /// Ranks used within `secondary` instead of `recencyRanks`
+        public let secondaryRanks: [String: Int]?
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
         public let includeAutomaticKanaCandidates: Bool
@@ -19,6 +21,7 @@ public struct CandidatePipeline: Sendable {
             english: [Candidate] = [],
             trailing: [Candidate] = [],
             recencyRanks: [String: Int],
+            secondaryRanks: [String: Int]? = nil,
             contextualCandidates: [String] = [],
             prioritizeKana: Bool,
             includeAutomaticKanaCandidates: Bool = true
@@ -30,6 +33,7 @@ public struct CandidatePipeline: Sendable {
             self.english = english
             self.trailing = trailing
             self.recencyRanks = recencyRanks
+            self.secondaryRanks = secondaryRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
             self.includeAutomaticKanaCandidates = includeAutomaticKanaCandidates
@@ -44,6 +48,8 @@ public struct CandidatePipeline: Sendable {
         public let english: [String]
         public let trailing: [String]
         public let recencyRanks: [String: Int]
+        /// Ranks used within `secondary` instead of `recencyRanks`
+        public let secondaryRanks: [String: Int]?
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
         public let includeAutomaticKanaCandidates: Bool
@@ -56,6 +62,7 @@ public struct CandidatePipeline: Sendable {
             english: [String] = [],
             trailing: [String] = [],
             recencyRanks: [String: Int],
+            secondaryRanks: [String: Int]? = nil,
             contextualCandidates: [String] = [],
             prioritizeKana: Bool,
             includeAutomaticKanaCandidates: Bool = true
@@ -67,6 +74,7 @@ public struct CandidatePipeline: Sendable {
             self.english = english
             self.trailing = trailing
             self.recencyRanks = recencyRanks
+            self.secondaryRanks = secondaryRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
             self.includeAutomaticKanaCandidates = includeAutomaticKanaCandidates
@@ -84,6 +92,7 @@ public struct CandidatePipeline: Sendable {
             english: input.english.map(\.storageText),
             trailing: input.trailing.map(\.storageText),
             recencyRanks: input.recencyRanks,
+            secondaryRanks: input.secondaryRanks,
             contextualCandidates: input.contextualCandidates,
             prioritizeKana: input.prioritizeKana,
             includeAutomaticKanaCandidates:
@@ -115,6 +124,7 @@ public struct CandidatePipeline: Sendable {
             secondary: input.secondary,
             others: input.other + input.english,
             recencyRanks: input.recencyRanks,
+            secondaryRanks: input.secondaryRanks,
             contextualCandidates: input.contextualCandidates,
             prioritizeKana: input.includeAutomaticKanaCandidates
                 && input.prioritizeKana
