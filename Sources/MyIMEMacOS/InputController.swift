@@ -220,7 +220,10 @@ final class InputController: IMKInputController {
         controller.toggleEmojiWindow(client: client)
     }
 
-    static func handleGlobalEmojiPanelCommand(_ command: UInt32) {
+    static func handleGlobalEmojiPanelCommand(
+        _ command: UInt32,
+        isRepeat: Bool = false
+    ) {
         guard let controller = activeController ?? emojiPanelController,
               controller.emojiWindow.isVisible else {
             EmojiGlobalHotKey.shared.endPanelCapture()
@@ -257,6 +260,13 @@ final class InputController: IMKInputController {
         case 12:
             guard controller.emojiWindow.canSelectEmoji else { return }
             controller.emojiWindow.advanceSelection(backward: true)
+        case 13:
+            guard let client else { return }
+            controller.handleEmojiDeletion(
+                unit: .character,
+                isRepeat: isRepeat,
+                client: client
+            )
         default:
             break
         }
@@ -877,11 +887,15 @@ final class InputController: IMKInputController {
         isRepeat: Bool,
         client sender: Any
     ) {
-        switch EmojiPanelDeletion.action(
+        let action = EmojiPanelDeletion.action(
             searchWasEmpty: inputBuffer.isEmpty,
             isSearchConfirmed: emojiWindow.isSearchConfirmed,
             isRepeat: isRepeat
-        ) {
+        )
+        EmojiDiagnostics.logger.notice(
+            "delete action=\(String(describing: action), privacy: .public) repeat=\(isRepeat, privacy: .public)"
+        )
+        switch action {
         case .closePanel:
             emojiWindow.hide()
             Self.emojiPanelController = nil

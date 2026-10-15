@@ -130,7 +130,10 @@ final class EmojiGlobalHotKey {
             (7, UInt32(kVK_DownArrow), 0),
             (8, UInt32(kVK_Return), 0),
             (9, UInt32(kVK_ANSI_KeypadEnter), 0),
-            (10, UInt32(kVK_Escape), 0)
+            (10, UInt32(kVK_Escape), 0),
+            // Chromium apps also perform Delete the input method handled
+            // when nothing is composed, so it is taken before them
+            (13, UInt32(kVK_Delete), 0)
         ]
         for (id, keyCode, modifiers) in shortcuts {
             var reference: EventHotKeyRef?
@@ -200,7 +203,8 @@ final class EmojiGlobalHotKey {
     }
 
     private func startRepeating(command: UInt32) {
-        guard (4...7).contains(command), repeatingCommand != command else {
+        guard (4...7).contains(command) || command == 13,
+              repeatingCommand != command else {
             return
         }
         stopRepeating()
@@ -222,7 +226,10 @@ final class EmojiGlobalHotKey {
         timer.setEventHandler { [weak self] in
             guard let self,
                   self.repeatingCommand == command else { return }
-            InputController.handleGlobalEmojiPanelCommand(command)
+            InputController.handleGlobalEmojiPanelCommand(
+                command,
+                isRepeat: true
+            )
         }
         repeatTimer = timer
         timer.resume()
