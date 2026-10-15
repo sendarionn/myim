@@ -230,6 +230,9 @@ final class EmojiWindowController: NSObject {
     }
 
     func hide() {
+        if panel.isVisible {
+            EmojiDiagnostics.logger.notice("panel hidden")
+        }
         // ⌘X captured for the selected recent emoji goes back to the app
         if selectedRecentIndex != nil {
             CandidateDeletionGlobalHotKey.shared.deactivate()

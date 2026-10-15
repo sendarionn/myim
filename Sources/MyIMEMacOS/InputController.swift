@@ -797,6 +797,14 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool {
+        // The controller receiving the panel's keys holds its search text,
+        // which may not be the controller that opened the shared panel
+        if Self.emojiPanelController !== self {
+            EmojiDiagnostics.logger.notice(
+                "panel keys taken over owner=\(Self.emojiPanelController?.controllerID ?? "nil", privacy: .public) controller=\(self.controllerID, privacy: .public)"
+            )
+            Self.emojiPanelController = self
+        }
         defer { updateCandidateDeletionShortcutCapture() }
         if isUserDictionaryDeletionShortcut(event),
            selectedCandidateDeletionTarget == .recentEmoji {
@@ -3034,6 +3042,11 @@ final class InputController: IMKInputController {
             }
         }
         guard !inputBuffer.isEmpty else {
+            if emojiWindow.isVisible {
+                EmojiDiagnostics.logger.notice(
+                    "search emptied owner=\(Self.emojiPanelController?.controllerID ?? "nil", privacy: .public) controller=\(self.controllerID, privacy: .public) keepsPanel=\(self.isEditingEmojiSearch, privacy: .public)"
+                )
+            }
             clearCandidateState(includingFuzzy: true)
             dismissInputSessionPanels(
                 using: isEditingEmojiSearch
@@ -5012,10 +5025,13 @@ final class InputController: IMKInputController {
         fuzzyCandidateSession.reset()
         selectedFuzzyCandidateIndex = nil
         let hidesSharedEmoji = shouldDismissSharedEmojiPanel
+            && policy.panelsToDismiss.contains(.emoji)
         panelCoordinator.dismiss(
             using: policy,
             hidesSharedEmoji: hidesSharedEmoji
         )
+        // A panel left open keeps its owner, so clearing the search again
+        // still returns to the initial emojis
         if hidesSharedEmoji {
             Self.emojiPanelController = nil
         }
