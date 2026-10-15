@@ -1388,11 +1388,12 @@ final class InputController: IMKInputController {
         } else {
             storedCandidate = Candidate(storageText: candidateText)
         }
-        recordCandidateSelectionForCurrentInput(storedCandidate)
+        // Confirming the emoji search records the chosen candidate once
         if emojiWindow.isVisible {
             confirmEmojiSearch(client: client() as Any)
             return
         }
+        recordCandidateSelectionForCurrentInput(storedCandidate)
         let historyValue = CalculationInputHistory.value(
             input: inputBuffer,
             selectedCandidate: storedCandidate.storageText,

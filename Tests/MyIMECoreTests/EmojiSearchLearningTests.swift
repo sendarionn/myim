@@ -69,6 +69,25 @@ struct EmojiSearchLearningTests {
         #expect(learned8)
     }
 
+    /// Confirming 丸 from `maru` in the emoji panel, going back to edit and
+    /// confirming again, leaves the same history as one ordinary commit
+    @Test
+    func emojiSearchLearnsLikeOneOrdinaryCommit() {
+        let readings = CandidateSelectionReading.historyReadings(for: "maru")
+        var ordinary = CandidateSelectionHistory()
+        ordinary.record("丸", readings: readings)
+
+        var emoji = CandidateSelectionHistory()
+        var learning = EmojiSearchLearning()
+        for _ in 0..<2 {
+            if learning.learns(confirming: "丸", choseCandidate: true) {
+                emoji.record("丸", readings: readings)
+            }
+        }
+
+        #expect(emoji == ordinary)
+    }
+
     /// The learned candidate reaches the ordinary candidates of its reading
     @Test
     func learnedSearchIsOfferedFirstForItsReading() throws {
