@@ -310,6 +310,11 @@ final class InputController: IMKInputController {
         )
         candidateSelectionHistoryStore = Self.sharedCandidateSelectionHistoryStore
         unselectedInputLearningStore = Self.sharedUnselectedInputLearningStore
+        unselectedInputLearningStore.remove(candidates: Set(
+            cachedUserEntries.flatMap(\.candidates).map {
+                DictionaryCandidateRepresentation.value(from: $0)
+            }
+        ))
         nextInputCandidateCoordinator = NextInputCandidateCoordinator(
             store: Self.sharedNextInputLearningStore
         )
@@ -3517,6 +3522,9 @@ final class InputController: IMKInputController {
                     fuzzyCandidate.storageText
                 )
                 candidateSelectionHistoryStore.remove([fuzzyCandidate.storageText])
+                unselectedInputLearningStore.remove(
+                    candidate: fuzzyCandidate.storageText
+                )
                 candidateSearchCoordinator.cancel(.fuzzy)
                 fuzzyCandidateSession.reset()
                 selectedFuzzyCandidateIndex = nil
@@ -4186,7 +4194,7 @@ final class InputController: IMKInputController {
             candidate: candidate,
             display: display
         )
-        unselectedInputLearningStore.markRegistered(candidate: candidate)
+        unselectedInputLearningStore.remove(candidate: candidate)
         rebuildConversionEngine()
     }
 
@@ -4218,7 +4226,6 @@ final class InputController: IMKInputController {
         do {
             if removesDictionaryEntry {
                 try userDictionaryStore.remove(candidate: candidate)
-                unselectedInputLearningStore.remove(candidate: candidate)
                 do {
                     try nextInputCandidateCoordinator.suppressLearnedCandidate(
                         candidateValueForCommit(candidate)
@@ -4232,6 +4239,7 @@ final class InputController: IMKInputController {
                 rebuildConversionEngine()
             }
             candidateSelectionHistoryStore.remove(historyCandidates)
+            unselectedInputLearningStore.remove(candidates: historyCandidates)
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(
@@ -4500,6 +4508,13 @@ final class InputController: IMKInputController {
     ) {
         guard Self.diagnosticConfiguration.enables(.learning),
               let entry else {
+            return
+        }
+        guard !userDictionaryStore.contains(
+            reading: entry.reading,
+            candidate: entry.candidate
+        ) else {
+            unselectedInputLearningStore.remove(candidate: entry.candidate)
             return
         }
         guard let registration = unselectedInputLearningStore.registration(

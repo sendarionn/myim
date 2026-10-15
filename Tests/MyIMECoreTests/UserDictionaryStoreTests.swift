@@ -58,4 +58,17 @@ struct UserDictionaryStoreTests {
         #expect(store.replaceEntriesIfChanged(replacement))
         #expect(store.entries == replacement)
     }
+
+    @Test
+    func detectsAnExistingRegistrationWithoutChangingItsCase() {
+        let store = UserDictionaryStore(
+            entries: [
+                DictionaryEntry(reading: "smart", candidates: ["Smart"])
+            ],
+            persist: { _ in }
+        )
+
+        #expect(store.contains(reading: "SMArT", candidate: "Smart"))
+        #expect(!store.contains(reading: "smart", candidate: "smart"))
+    }
 }

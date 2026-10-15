@@ -16,6 +16,19 @@ public final class UserDictionaryStore {
         entries.count
     }
 
+    public func contains(
+        reading: String,
+        candidate: String,
+        display: String? = nil
+    ) -> Bool {
+        UserDictionaryEditor.adding(
+            reading: reading,
+            candidate: candidate,
+            display: display,
+            to: entries
+        ) == entries
+    }
+
     @discardableResult
     public func add(
         reading: String,

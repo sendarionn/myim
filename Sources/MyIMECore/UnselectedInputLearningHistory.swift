@@ -44,19 +44,18 @@ public struct UnselectedInputLearningHistory: Equatable, Codable, Sendable {
         return stat.count >= 2 ? entry : nil
     }
 
-    public mutating func markRegistered(candidate: String) {
-        guard UnselectedInputLearningPolicy.requiresRepeatedConfirmation(
-            candidate
-        ) else {
-            return
-        }
-        sequence = min(sequence + 1, Int.max - 1)
-        statsByCandidate[candidate] = Stat(count: 2, lastUsed: sequence)
-        compactIfNeeded()
+    @discardableResult
+    public mutating func remove(candidate: String) -> Bool {
+        statsByCandidate.removeValue(forKey: candidate) != nil
     }
 
-    public mutating func remove(candidate: String) {
-        statsByCandidate.removeValue(forKey: candidate)
+    @discardableResult
+    public mutating func remove(candidates: Set<String>) -> Bool {
+        let previousCount = statsByCandidate.count
+        for candidate in candidates {
+            statsByCandidate.removeValue(forKey: candidate)
+        }
+        return statsByCandidate.count != previousCount
     }
 
     private mutating func compactIfNeeded() {
@@ -122,18 +121,13 @@ public final class UnselectedInputLearningStore {
         return registration
     }
 
-    public func markRegistered(candidate: String) {
-        guard UnselectedInputLearningPolicy.requiresRepeatedConfirmation(
-            candidate
-        ) else {
-            return
-        }
-        history.markRegistered(candidate: candidate)
+    public func remove(candidate: String) {
+        guard history.remove(candidate: candidate) else { return }
         writer.schedule(history)
     }
 
-    public func remove(candidate: String) {
-        history.remove(candidate: candidate)
+    public func remove(candidates: Set<String>) {
+        guard history.remove(candidates: candidates) else { return }
         writer.schedule(history)
     }
 

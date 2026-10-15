@@ -104,6 +104,41 @@ struct UnselectedInputLearningHistoryTests {
     }
 
     @Test
+    func successfulRegistrationClearsEarlierConfirmation() throws {
+        let entry = try #require(UnselectedInputLearningPolicy.entry(
+            originalInput: "smart",
+            hasSelectedCandidate: false
+        ))
+        var history = UnselectedInputLearningHistory()
+        #expect(history.registration(after: entry) == nil)
+
+        history.remove(candidate: entry.candidate)
+
+        #expect(history.registration(after: entry) == nil)
+        #expect(history.registration(after: entry) == entry)
+    }
+
+    @Test
+    func existingDictionaryCandidatesClearLegacyConfirmations() throws {
+        let existing = try #require(UnselectedInputLearningPolicy.entry(
+            originalInput: "existing",
+            hasSelectedCandidate: false
+        ))
+        let pending = try #require(UnselectedInputLearningPolicy.entry(
+            originalInput: "pending",
+            hasSelectedCandidate: false
+        ))
+        var history = UnselectedInputLearningHistory()
+        _ = history.registration(after: existing)
+        _ = history.registration(after: pending)
+
+        history.remove(candidates: [existing.candidate])
+
+        #expect(history.confirmationCount(for: existing.candidate) == 0)
+        #expect(history.confirmationCount(for: pending.candidate) == 1)
+    }
+
+    @Test
     func oldConfirmationsAreBounded() throws {
         var history = UnselectedInputLearningHistory(maximumEntryCount: 2)
         let first = try #require(UnselectedInputLearningPolicy.entry(
