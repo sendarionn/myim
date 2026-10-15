@@ -3138,7 +3138,7 @@ final class InputController: IMKInputController {
     private func updateFuzzyCandidatesIfNeeded() {
         guard Self.diagnosticConfiguration.enables(.fuzzyCandidate),
               Self.featureSettings.isFuzzyCandidatesEnabled,
-              conversionReading.count >= 2 else {
+              !conversionReading.isEmpty else {
             candidateSearchCoordinator.cancel(.fuzzy)
             secondaryCandidatePanel.hide()
             fuzzyCandidateSession.reset()
@@ -3156,6 +3156,14 @@ final class InputController: IMKInputController {
                 matchingPrefix: query,
                 excluding: visibleCandidates
             )
+        let includesTypoCorrections = query.count >= 2
+        guard includesTypoCorrections || !learnedCompounds.isEmpty else {
+            candidateSearchCoordinator.cancel(.fuzzy)
+            secondaryCandidatePanel.hide()
+            fuzzyCandidateSession.reset()
+            selectedFuzzyCandidateIndex = nil
+            return
+        }
         let source = FuzzyCandidateSource(
             query: query,
             visibleCandidates: visibleCandidates,
@@ -3174,9 +3182,15 @@ final class InputController: IMKInputController {
             .fuzzy,
             query: query,
             operation: {
-                try await Task.sleep(for: .milliseconds(80))
-                let matchTiers = await source.matchTiers()
-                try await Task.sleep(for: Self.fuzzyCandidateDisplayDelay)
+                if includesTypoCorrections {
+                    try await Task.sleep(for: .milliseconds(80))
+                }
+                let matchTiers = await source.matchTiers(
+                    includesTypoCorrections: includesTypoCorrections
+                )
+                if includesTypoCorrections {
+                    try await Task.sleep(for: Self.fuzzyCandidateDisplayDelay)
+                }
                 return matchTiers
             },
             validate: { [weak self] in

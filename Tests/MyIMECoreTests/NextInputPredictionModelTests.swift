@@ -394,7 +394,7 @@ struct NextInputPredictionModelTests {
     }
 
     @Test
-    func ignoresAnExtremelyShortPrefixAndVisibleCandidate() {
+    func findsACompoundFromOneCharacterAndExcludesVisibleCandidate() {
         var model = NextInputPredictionModel()
         for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
             model.record(learningTokens: [
@@ -404,11 +404,43 @@ struct NextInputPredictionModelTests {
             model.breakSequence()
         }
 
-        #expect(model.learnedCompoundPredictions(matchingPrefix: "to").isEmpty)
+        #expect(model.learnedCompoundPredictions(
+            matchingPrefix: "t"
+        ).first?.text == "東京都中野区")
+        #expect(model.learnedCompoundPredictions(matchingPrefix: "").isEmpty)
         #expect(model.learnedCompoundPredictions(
             matchingPrefix: "toukyouto",
             excluding: ["東京都中野区"]
         ).isEmpty)
+    }
+
+    @Test
+    func oneCharacterCompoundLookupKeepsTheMaximumCandidateCount() {
+        var model = NextInputPredictionModel()
+        for index in 0..<6 {
+            for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+                model.record(learningTokens: [
+                    NextInputLearningToken(
+                        text: "東京都\(index)",
+                        reading: "toukyouto\(index)"
+                    ),
+                    NextInputLearningToken(
+                        text: "中野区\(index)",
+                        reading: "nakanoku\(index)"
+                    )
+                ])
+                model.breakSequence()
+            }
+        }
+
+        let predictions = model.learnedCompoundPredictions(
+            matchingPrefix: "t"
+        )
+
+        #expect(
+            predictions.count
+                == NextInputPredictionModel.maximumLearnedCompoundCandidateCount
+        )
     }
 
     @Test
@@ -669,6 +701,32 @@ struct NextInputPredictionModelTests {
             _ = model.learnedCompoundPredictions(
                 matchingPrefix: "todoufuken999"
             )
+        }
+
+        #expect(Date().timeIntervalSince(start) < 2)
+    }
+
+    @Test
+    func oneCharacterLearnedCompoundLookupRemainsBounded() {
+        var model = NextInputPredictionModel()
+        for index in 0..<1_000 {
+            for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+                model.record(learningTokens: [
+                    NextInputLearningToken(
+                        text: "都道府県\(index)",
+                        reading: "todoufuken\(index)"
+                    ),
+                    NextInputLearningToken(
+                        text: "市区町村\(index)",
+                        reading: "shikuchouson\(index)"
+                    )
+                ])
+                model.breakSequence()
+            }
+        }
+        let start = Date()
+        for _ in 0..<100 {
+            _ = model.learnedCompoundPredictions(matchingPrefix: "t")
         }
 
         #expect(Date().timeIntervalSince(start) < 2)

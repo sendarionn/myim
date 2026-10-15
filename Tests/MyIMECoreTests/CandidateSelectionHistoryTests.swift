@@ -147,11 +147,37 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
-    func doesNotSuggestCompletionsForOneCharacterInput() {
+    func suggestsCompletionsForOneCharacterInput() {
         var history = CandidateSelectionHistory()
         history.record("そのまま", reading: "sonomama")
 
-        #expect(history.completions(for: "s").isEmpty)
+        #expect(history.completions(for: "s") == ["そのまま"])
+        #expect(history.completions(for: "").isEmpty)
+    }
+
+    @Test
+    func oneCharacterCompletionsKeepTheRequestedLimit() {
+        var history = CandidateSelectionHistory()
+        for index in 0..<12 {
+            history.record("候補\(index)", reading: "saki\(index)")
+        }
+
+        #expect(history.completions(for: "s", limit: 4).count == 4)
+    }
+
+    @Test
+    func oneCharacterCompletionLookupRemainsBounded() {
+        var history = CandidateSelectionHistory()
+        for index in 0..<CandidateSelectionHistory.defaultMaximumEntryCount {
+            history.record("候補\(index)", reading: "saki\(index)")
+        }
+        let start = Date()
+
+        for _ in 0..<10 {
+            _ = history.completions(for: "s", limit: 8)
+        }
+
+        #expect(Date().timeIntervalSince(start) < 2)
     }
 
     @Test

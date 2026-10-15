@@ -116,6 +116,35 @@ struct FuzzyCandidateSourceTests {
     }
 
     @Test
+    func oneCharacterQueryReturnsOnlyLearnedCompounds() async {
+        let repository = FuzzyEngineRepository()
+        repository.prepare(for: [
+            DictionaryEntry(input: "t", candidates: ["通常補正候補"])
+        ])
+        let learned = LearnedCompoundPrediction(
+            text: "東京都中野区",
+            reading: "toukyoutonakanoku",
+            sourceTokens: ["東京都", "中野区"],
+            sourceReadings: ["toukyouto", "nakanoku"]
+        )
+        let source = FuzzyCandidateSource(
+            query: "t",
+            visibleCandidates: [],
+            userDictionary: LayeredConversionEngine(engines: []),
+            basicDictionary: ConversionEngine(entries: []),
+            mozcDictionary: IndexedDictionaryEngine(),
+            fuzzyRepository: repository,
+            learnedCompounds: [learned]
+        )
+
+        let candidates = await source.matchTiers(
+            includesTypoCorrections: false
+        ).flatMap { $0 }.flatMap(\.candidates)
+
+        #expect(candidates == ["東京都中野区"])
+    }
+
+    @Test
     func excludesLearnedCompoundAlreadyVisibleAsAStandardCandidate() async {
         let repository = FuzzyEngineRepository()
         repository.prepare(for: [])

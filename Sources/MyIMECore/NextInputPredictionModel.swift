@@ -171,7 +171,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
     public static let maximumContextTokenCount = 4
     public static let maximumPredictionTokenCount = 4
     public static let minimumDirectSequenceCount = 2
-    public static let minimumLearnedCompoundPrefixLength = 3
+    public static let minimumLearnedCompoundPrefixLength = 1
     public static let maximumLearnedCompoundCandidateCount = 4
     /// Selecting the same run of candidates this many times combines it
     public static let minimumEpisodePromotionCount = 2

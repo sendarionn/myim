@@ -105,6 +105,21 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
+    func keepsLearnedCompletionFromOneCharacterInStandardCandidates() throws {
+        let source = makeSource()
+        var history = CandidateSelectionHistory()
+        history.record("Smartlock", reading: "smartlock")
+
+        let learned = try #require(source.candidates(for: .init(
+            input: "s",
+            conversionReading: "s",
+            selectionHistory: history
+        )).first { $0.storageText == "Smartlock" })
+
+        #expect(learned.hasSource(.selectionHistory))
+    }
+
+    @Test
     func particleStemsIgnoreImportedAbbrevHeadwords() {
         let source = makeSource(
             importedEntries: [DictionaryEntry(reading: "made", candidates: ["メイド"])],

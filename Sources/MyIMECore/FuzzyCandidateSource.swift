@@ -30,8 +30,27 @@ public struct FuzzyCandidateSource: Sendable {
         self.learnedCompounds = learnedCompounds
     }
 
-    public func matchTiers() async -> [[FuzzyConversionMatch]] {
+    public func matchTiers(
+        includesTypoCorrections: Bool = true
+    ) async -> [[FuzzyConversionMatch]] {
         await Task.detached(priority: .userInitiated) {
+            let learnedMatches: [FuzzyConversionMatch] = learnedCompounds
+                .compactMap { prediction in
+                guard !visibleCandidates.contains(prediction.text) else {
+                    return nil
+                }
+                return FuzzyConversionMatch(
+                    reading: prediction.reading,
+                    candidates: [prediction.text],
+                    distance: 0,
+                    isLearnable: false,
+                    sourceTokens: prediction.sourceTokens,
+                    sourceReadings: prediction.sourceReadings
+                )
+            }
+            guard includesTypoCorrections else {
+                return [learnedMatches]
+            }
             let keyboardMatches =
                 RomajiKeyboardTypoGenerator.dictionaryMatches(
                     for: query
@@ -53,20 +72,6 @@ public struct FuzzyCandidateSource: Sendable {
                 for: query,
                 excluding: visibleCandidates
             ))
-            let learnedMatches: [FuzzyConversionMatch] = learnedCompounds
-                .compactMap { prediction in
-                guard !visibleCandidates.contains(prediction.text) else {
-                    return nil
-                }
-                return FuzzyConversionMatch(
-                    reading: prediction.reading,
-                    candidates: [prediction.text],
-                    distance: 0,
-                    isLearnable: false,
-                    sourceTokens: prediction.sourceTokens,
-                    sourceReadings: prediction.sourceReadings
-                )
-            }
             return [learnedMatches] + FuzzyCandidateTierBuilder.build(
                 directTypoMatches: filtered
             )

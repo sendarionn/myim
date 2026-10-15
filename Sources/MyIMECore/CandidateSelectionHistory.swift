@@ -120,7 +120,7 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
 
     public func completions(for readingPrefix: String, limit: Int = 14) -> [String] {
         let prefix = readingPrefix.lowercased()
-        guard prefix.count >= 2, limit > 0 else { return [] }
+        guard !prefix.isEmpty, limit > 0 else { return [] }
         var bestScores: [String: Double] = [:]
         for (reading, candidates) in statsByReading
         where reading != prefix && reading.hasPrefix(prefix) {
