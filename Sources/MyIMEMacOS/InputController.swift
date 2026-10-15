@@ -839,18 +839,11 @@ final class InputController: IMKInputController {
         case .escape:
             handleEmojiEscape(client: sender)
         case .delete:
-            if inputBuffer.isEmpty {
-                emojiWindow.hide()
-                Self.emojiPanelController = nil
-                return true
-            }
-            if !emojiWindow.isSearchConfirmed {
-                _ = deleteBackward(
-                    from: sender,
-                    unit: deletionUnit(for: event)
-                )
-                updateEmojiSearchFromComposition()
-            }
+            handleEmojiDeletion(
+                unit: deletionUnit(for: event),
+                isRepeat: event.isARepeat,
+                client: sender
+            )
         case .inputFormFunction:
             if !emojiWindow.isSearchConfirmed {
                 _ = handleInputFormFunctionKey(
@@ -877,6 +870,27 @@ final class InputController: IMKInputController {
             }
         }
         return true
+    }
+
+    private func handleEmojiDeletion(
+        unit: InputBufferDeletionUnit,
+        isRepeat: Bool,
+        client sender: Any
+    ) {
+        switch EmojiPanelDeletion.action(
+            searchWasEmpty: inputBuffer.isEmpty,
+            isSearchConfirmed: emojiWindow.isSearchConfirmed,
+            isRepeat: isRepeat
+        ) {
+        case .closePanel:
+            emojiWindow.hide()
+            Self.emojiPanelController = nil
+        case .deleteSearchCharacter:
+            _ = deleteBackward(from: sender, unit: unit)
+            updateEmojiSearchFromComposition()
+        case .ignore:
+            break
+        }
     }
 
     private func handleEmojiArrow(
@@ -949,6 +963,21 @@ final class InputController: IMKInputController {
                 "Tab command routed to emoji panel backward=\(backward, privacy: .public)"
             )
             emojiWindow.advanceSelection(backward: backward)
+            return
+        }
+        // Delete reaching the input method as a command would otherwise be
+        // performed in the app while the panel is open
+        if let aSelector,
+           emojiWindow.isVisible,
+           let unit = EmojiPanelDeletion.unit(
+               forCommand: NSStringFromSelector(aSelector)
+           ),
+           let inputClient = activeInputClient ?? client() {
+            EmojiDiagnostics.logger.notice(
+                "delete command routed to emoji panel selector=\(NSStringFromSelector(aSelector), privacy: .public)"
+            )
+            // A command does not tell whether the key is repeating
+            handleEmojiDeletion(unit: unit, isRepeat: false, client: inputClient)
             return
         }
         if let aSelector,
