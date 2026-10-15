@@ -173,6 +173,22 @@ struct NextInputSeparatorLearningTests {
         #expect(restarted.compounds(for: "sma").first?.reading == "smartinn")
     }
 
+    @Test(arguments: ["smar", "Smar", "SMAR", "sMaR"])
+    func learnedCompoundLookupIgnoresReadingCase(prefix: String) throws {
+        let typing = Typing()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            typing.commit("Smart", reading: "Smart", then: " ", via: .spaceAfterCommit)
+            typing.commit("Inn", reading: "Inn")
+            typing.startNewLine()
+        }
+
+        let restarted = try typing.restarted()
+        let prediction = try #require(restarted.compounds(for: prefix).first)
+
+        #expect(prediction.text == "Smart Inn")
+        #expect(prediction.reading == "smartinn")
+    }
+
     @Test
     func nextInputAfterTheSpacedWordOffersTheFollowingWord() {
         let typing = Typing()

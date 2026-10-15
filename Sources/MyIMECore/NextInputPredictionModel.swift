@@ -1102,14 +1102,26 @@ public struct NextInputPredictionModel: Codable, Sendable {
     private static func learnedPhrasePrefixes(
         for readings: [String?]
     ) -> [String] {
-        guard hasCompleteReadings(readings) else { return [] }
-        let reading = readings.compactMap { $0 }.joined()
+        guard let reading = normalizedCombinedReading(readings) else {
+            return []
+        }
         guard reading.count >= minimumLearnedCompoundPrefixLength else {
             return []
         }
         return (minimumLearnedCompoundPrefixLength...reading.count).map {
             String(reading.prefix($0))
         }
+    }
+
+    private static func normalizedCombinedReading(
+        _ readings: [String?]
+    ) -> String? {
+        let normalized = readings.map(normalizedReading)
+        guard !normalized.isEmpty,
+              normalized.allSatisfy({ $0 != nil }) else {
+            return nil
+        }
+        return normalized.compactMap { $0 }.joined()
     }
 
     private mutating func rebuildLearnedPhrasePrefixIndex() {
@@ -1162,6 +1174,11 @@ public struct NextInputPredictionModel: Codable, Sendable {
             [String: LearnedPhraseStat].self,
             forKey: .learnedPhrases
         ) ?? [:]
+        for key in Array(learnedPhrases.keys) {
+            guard var stat = learnedPhrases[key] else { continue }
+            stat.readings = stat.readings.map(Self.normalizedReading)
+            learnedPhrases[key] = stat
+        }
         learnedPhrasePrefixIndex = [:]
         sequence = try container.decodeIfPresent(Int.self, forKey: .sequence)
             ?? 0

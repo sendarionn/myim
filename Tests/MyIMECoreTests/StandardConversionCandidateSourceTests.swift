@@ -119,6 +119,22 @@ struct StandardConversionCandidateSourceTests {
         #expect(learned.hasSource(.selectionHistory))
     }
 
+    @Test(arguments: ["smar", "Smar", "SMAR", "sMaR"])
+    func learnedCompletionLookupIgnoresReadingCase(input: String) throws {
+        let source = makeSource()
+        var history = CandidateSelectionHistory()
+        history.record("Smart Inn", reading: "SmArTiNn")
+
+        let learned = try #require(source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: history
+        )).first { $0.storageText == "Smart Inn" })
+
+        #expect(learned.storageText == "Smart Inn")
+        #expect(learned.hasSource(.selectionHistory))
+    }
+
     @Test
     func particleStemsIgnoreImportedAbbrevHeadwords() {
         let source = makeSource(

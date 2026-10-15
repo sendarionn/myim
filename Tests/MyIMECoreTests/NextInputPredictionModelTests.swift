@@ -484,6 +484,38 @@ struct NextInputPredictionModelTests {
         ).first?.text == "ABC123")
     }
 
+    @Test(arguments: ["smar", "Smar", "SMAR", "sMaR"])
+    func legacyMixedCaseReadingsAreSearchableAfterReload(
+        prefix: String
+    ) throws {
+        var model = NextInputPredictionModel()
+        for _ in 0..<NextInputPredictionModel.minimumDirectSequenceCount {
+            model.record(learningTokens: [
+                NextInputLearningToken(text: "Smart ", reading: "smart"),
+                NextInputLearningToken(text: "Inn", reading: "inn")
+            ])
+            model.breakSequence()
+        }
+        let currentJSON = try #require(String(
+            data: JSONEncoder().encode(model),
+            encoding: .utf8
+        ))
+        let legacyJSON = currentJSON
+            .replacingOccurrences(of: "\"smart\"", with: "\"SmArT\"")
+            .replacingOccurrences(of: "\"inn\"", with: "\"InN\"")
+        let restored = try JSONDecoder().decode(
+            NextInputPredictionModel.self,
+            from: try #require(legacyJSON.data(using: .utf8))
+        )
+
+        let prediction = try #require(restored.learnedCompoundPredictions(
+            matchingPrefix: prefix
+        ).first)
+
+        #expect(prediction.text == "Smart Inn")
+        #expect(prediction.reading == "smartinn")
+    }
+
     @Test
     func preservesSeparatorsInLearnedCompoundSurfaceAndPersistence() throws {
         let variants: [(tokens: [NextInputLearningToken], expected: String)] = [
