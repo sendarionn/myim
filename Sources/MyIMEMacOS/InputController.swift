@@ -4579,7 +4579,13 @@ final class InputController: IMKInputController {
     ) {
         guard Self.diagnosticConfiguration.enables(.learning) else { return }
         let learnedReading = reading ?? candidateSelectionReading
-        if isLearnable, !learnedReading.isEmpty {
+        if isLearnable, !learnedReading.isEmpty,
+           UnselectedInputLearningPolicy.requiresRepeatedSelection(candidate) {
+            learnUnselectedInput(UnselectedInputLearningEntry(
+                reading: learnedReading,
+                candidate: candidate
+            ))
+        } else if isLearnable, !learnedReading.isEmpty {
             do {
                 try saveUserDictionaryEntry(
                     reading: learnedReading,

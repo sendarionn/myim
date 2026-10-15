@@ -21,6 +21,53 @@ struct UnselectedInputLearningHistoryTests {
         #expect(history.registration(after: entry) == entry)
     }
 
+    /// Kana chosen from candidates the dictionaries lack, such as the
+    /// particle composition そこから, is registered on its second selection
+    @Test(arguments: [
+        ("sokokara", "そこから"), ("itsuno", "いつの"),
+        ("hottopeppa-", "ホットペッパー"), ("hotto", "ﾎｯﾄ")
+    ])
+    func selectedKanaIsRegisteredOnItsSecondSelection(
+        reading: String,
+        candidate: String
+    ) {
+        #expect(UnselectedInputLearningPolicy.requiresRepeatedSelection(
+            candidate
+        ))
+        let entry = UnselectedInputLearningEntry(
+            reading: reading,
+            candidate: candidate
+        )
+        var history = UnselectedInputLearningHistory()
+
+        #expect(history.registration(after: entry) == nil)
+        #expect(history.registration(after: entry) == entry)
+    }
+
+    @Test(arguments: ["指示書を作成", "HubSpot", "Smart Inn", "第一パネル", ""])
+    func selectedCandidatesOtherThanKanaAreRegisteredAtOnce(
+        _ candidate: String
+    ) {
+        #expect(!UnselectedInputLearningPolicy.requiresRepeatedSelection(
+            candidate
+        ))
+    }
+
+    @Test
+    func deletedKanaStartsCountingAgain() {
+        let entry = UnselectedInputLearningEntry(
+            reading: "sokokara",
+            candidate: "そこから"
+        )
+        var history = UnselectedInputLearningHistory()
+        #expect(history.registration(after: entry) == nil)
+
+        history.remove(candidate: "そこから")
+
+        #expect(history.registration(after: entry) == nil)
+        #expect(history.registration(after: entry) == entry)
+    }
+
     @Test
     func confirmationsDoNotNeedToBeConsecutive() throws {
         let target = try #require(UnselectedInputLearningPolicy.entry(

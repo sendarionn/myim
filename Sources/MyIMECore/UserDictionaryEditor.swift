@@ -88,6 +88,15 @@ public enum UnselectedInputLearningPolicy {
             || isKatakanaOnly(normalized)
     }
 
+    /// A kana candidate missing from the dictionaries, such as a particle
+    /// composition, is registered when it is chosen a second time, as kana
+    /// committed without choosing a candidate is
+    public static func requiresRepeatedSelection(_ candidate: String) -> Bool {
+        guard !candidate.isEmpty else { return false }
+        let normalized = candidate.precomposedStringWithCanonicalMapping
+        return isHiraganaOnly(normalized) || isKatakanaOnly(normalized)
+    }
+
     private static func isASCIIAlphanumeric(_ input: String) -> Bool {
         input.unicodeScalars.allSatisfy { scalar in
             scalar.isASCII && (
