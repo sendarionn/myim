@@ -3446,11 +3446,21 @@ final class InputController: IMKInputController {
         let sourceTokens = fuzzyCandidate.sourceTokens.isEmpty
             ? nil
             : fuzzyCandidate.sourceTokens
+        // The space committed with the candidate is part of what was typed,
+        // as with the standard candidates; text after the candidate keeps
+        // it from following the candidate directly
+        let learnedSeparator = conversionSuffix.isEmpty ? suffix : ""
+        let historyTokens = learnedSeparator.isEmpty
+            ? sourceTokens
+            : NextInputLearningToken.texts(
+                sourceTokens ?? [fuzzyCandidate.storageText],
+                followedBy: learnedSeparator
+            )
         commit(
             value + suffix,
             to: sender,
             historyValue: fuzzyCandidate.storageText,
-            historyTokens: sourceTokens,
+            historyTokens: historyTokens,
             historyReadings: sourceTokens == nil
                 ? nil
                 : fuzzyCandidate.sourceReadings,
@@ -4657,11 +4667,8 @@ final class InputController: IMKInputController {
             }
         }
         let committedValue = value + suffix
-        let committedTokens = sourceTokens.map { tokens in
-            guard !suffix.isEmpty, !tokens.isEmpty else { return tokens }
-            var result = tokens
-            result[result.count - 1] += suffix
-            return result
+        let committedTokens = sourceTokens.map {
+            NextInputLearningToken.texts($0, followedBy: suffix)
         }
         recordNextInputCandidateSelection(value)
         clearNextInputCandidateState()

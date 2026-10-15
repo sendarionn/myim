@@ -16,6 +16,19 @@ public struct NextInputLearningToken: Equatable, Sendable {
     }
 }
 
+public extension NextInputLearningToken {
+    /// The learning units of a commit inserted with `separator` after it,
+    /// so the space committed with a candidate stays part of the last unit
+    /// as it does when typed separately
+    static func texts(
+        _ texts: [String],
+        followedBy separator: String
+    ) -> [String] {
+        guard !separator.isEmpty, let last = texts.last else { return texts }
+        return texts.dropLast() + [last + separator]
+    }
+}
+
 public struct NextInputPrediction: Equatable, Sendable {
     public let text: String
     public let sourceTokens: [String]
@@ -327,16 +340,19 @@ public struct NextInputPredictionModel: Codable, Sendable {
         refreshesRecency: Bool
     ) {
         sequence += 1
+        // A space committed after the text separates it from the next
+        // commit, so it stays in the context but is not offered with it
+        let learned = Self.removingTrailingSeparator(normalized)
         if let previous = lastInput, previous != normalized {
             var context = contexts[previous]
                 ?? Context(candidates: [:], lastUsed: sequence)
-            var stat = context.candidates[normalized]
+            var stat = context.candidates[learned]
                 ?? CandidateStat(count: 0, lastUsed: 0)
             stat.count = min(stat.count + 1, Int.max - 1)
             if refreshesRecency {
                 stat.lastUsed = sequence
             }
-            context.candidates[normalized] = stat
+            context.candidates[learned] = stat
             context.candidates = Self.compactedCandidates(
                 context.candidates,
                 limit: Self.maximumFollowersPerContext
@@ -346,7 +362,7 @@ public struct NextInputPredictionModel: Codable, Sendable {
         }
 
         recordVariableLengthSequences(
-            endingWith: normalized,
+            endingWith: learned,
             reading: reading,
             source: source,
             refreshesRecency: refreshesRecency
@@ -396,7 +412,8 @@ public struct NextInputPredictionModel: Codable, Sendable {
     /// Counts an episode the user built from several selections; picking an
     /// already combined candidate only refreshes its recency
     private mutating func recordEpisodeEvidence() {
-        guard let episode else { return }
+        guard var episode else { return }
+        episode.tokens = Self.removingTrailingSeparator(from: episode.tokens)
         recordAcceptedPhraseEvidence(for: episode)
         guard episode.tokens.count >= 2,
               episode.tokens.joined().count <= Self.maximumValueLength else {
@@ -1236,6 +1253,21 @@ public struct NextInputPredictionModel: Codable, Sendable {
         if let lastInput, Self.normalizedValue(lastInput) == nil {
             self.lastInput = nil
         }
+    }
+
+    private static func removingTrailingSeparator(_ value: String) -> String {
+        var result = value
+        while result.last?.isWhitespace == true {
+            result.removeLast()
+        }
+        return result
+    }
+
+    private static func removingTrailingSeparator(
+        from tokens: [String]
+    ) -> [String] {
+        guard let last = tokens.last else { return tokens }
+        return tokens.dropLast() + [removingTrailingSeparator(last)]
     }
 
     private static func normalizedValue(_ value: String) -> String? {
