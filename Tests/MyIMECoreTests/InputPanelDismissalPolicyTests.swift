@@ -12,6 +12,17 @@ struct InputPanelDismissalPolicyTests {
             == Set(InputPanelKind.allCases))
     }
 
+    /// Deleting the whole emoji search keeps the panel open, so it shows
+    /// its initial emojis again, while the candidate panels still close
+    @Test
+    func clearedEmojiSearchKeepsOnlyTheEmojiPanel() {
+        let policy = InputPanelDismissalPolicy.emojiSearchBecameEmpty
+
+        #expect(policy.panelsToDismiss
+            == Set(InputPanelKind.allCases).subtracting([.emoji]))
+        #expect(!InputPanelDismissalPolicy.inputBecameEmpty.preservesEmoji)
+    }
+
     @Test
     func deactivationPreservesOnlyThePanelBeingInteractedWith() {
         let external = InputPanelDismissalPolicy.deactivation(

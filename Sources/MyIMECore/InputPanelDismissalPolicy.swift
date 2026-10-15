@@ -13,10 +13,29 @@ public enum InputPanelKind: String, CaseIterable, Hashable, Sendable {
 public struct InputPanelDismissalPolicy: Equatable, Sendable {
     public let preservesExternalInformation: Bool
     public let preservesCalendar: Bool
+    public let preservesEmoji: Bool
+
+    public init(
+        preservesExternalInformation: Bool,
+        preservesCalendar: Bool,
+        preservesEmoji: Bool = false
+    ) {
+        self.preservesExternalInformation = preservesExternalInformation
+        self.preservesCalendar = preservesCalendar
+        self.preservesEmoji = preservesEmoji
+    }
 
     public static let inputBecameEmpty = InputPanelDismissalPolicy(
         preservesExternalInformation: false,
         preservesCalendar: false
+    )
+
+    /// Clearing the emoji search returns the panel to its initial emojis
+    /// instead of closing it
+    public static let emojiSearchBecameEmpty = InputPanelDismissalPolicy(
+        preservesExternalInformation: false,
+        preservesCalendar: false,
+        preservesEmoji: true
     )
 
     public var cancelsCalendarWork: Bool {
@@ -31,6 +50,9 @@ public struct InputPanelDismissalPolicy: Equatable, Sendable {
         if preservesCalendar {
             panels.remove(.primaryCandidatePanel)
             panels.remove(.calendar)
+        }
+        if preservesEmoji {
+            panels.remove(.emoji)
         }
         return panels
     }

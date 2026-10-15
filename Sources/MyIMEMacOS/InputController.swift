@@ -2526,6 +2526,12 @@ final class InputController: IMKInputController {
         }
     }
 
+    /// The composition is the search text of the emoji panel this
+    /// controller opened
+    private var isEditingEmojiSearch: Bool {
+        emojiWindow.isVisible && Self.emojiPanelController === self
+    }
+
     private func updateEmojiSearchFromComposition() {
         let searchText = selectedCandidateIndex.flatMap { index in
             currentCandidates.indices.contains(index)
@@ -3022,7 +3028,11 @@ final class InputController: IMKInputController {
         }
         guard !inputBuffer.isEmpty else {
             clearCandidateState(includingFuzzy: true)
-            dismissInputSessionPanels(using: .inputBecameEmpty)
+            dismissInputSessionPanels(
+                using: isEditingEmojiSearch
+                    ? .emojiSearchBecameEmpty
+                    : .inputBecameEmpty
+            )
             return
         }
         let reloadStart = performanceClock.now
