@@ -316,6 +316,25 @@ public enum RomajiCanonicalizer {
         return inputs
     }
 
+    /// Readings that take an `n` between vowels as ん, as dictionaries key
+    /// 順位 as `jun'i` while `juni` reads じゅに; only exact matches use
+    /// them, after those of the reading as typed
+    public static func moraicNBeforeVowelLookupInputs(
+        from input: String
+    ) -> [String] {
+        let inputs = dictionaryLookupInputs(from: input)
+        var result: [String] = []
+        for value in inputs {
+            let moraicN = moraicNBeforeVowelInput(from: value)
+            if moraicN != value,
+               !inputs.contains(moraicN),
+               !result.contains(moraicN) {
+                result.append(moraicN)
+            }
+        }
+        return result
+    }
+
     private static func canonicalHyphenatedInput(from input: String) -> String {
         guard input.contains("-") else { return input }
         return input.split(
@@ -338,6 +357,27 @@ public enum RomajiCanonicalizer {
                 return input
             }
             result.append(previous)
+        }
+        return result
+    }
+
+    /// Reads an `n` between vowels as ん, as dictionaries key 単位 as
+    /// `tan'i` and 原因 as `gen'in`
+    private static func moraicNBeforeVowelInput(from input: String) -> String {
+        let characters = Array(input)
+        guard characters.count >= 3 else { return input }
+        var result = ""
+        for index in characters.indices {
+            let character = characters[index]
+            if character == "n",
+               index > characters.startIndex,
+               index + 1 < characters.endIndex,
+               "aeiou".contains(characters[index + 1]),
+               "aeiou".contains(characters[index - 1]) {
+                result.append("n'")
+            } else {
+                result.append(character)
+            }
         }
         return result
     }

@@ -147,6 +147,19 @@ public struct StandardConversionCandidateSource: Sendable {
                 )
             }
         }
+        // Exact words for an `n` read as ん, such as 順位 for `juni`, follow
+        // every exact word of the reading as typed; prefixes and
+        // compositions keep to the reading as typed
+        let moraicNExact = mergedCandidates(
+            readings: RomajiCanonicalizer.moraicNBeforeVowelLookupInputs(
+                from: context.conversionReading
+            ),
+            lookup: { reading in
+                userEngine.candidates(for: reading)
+                    + basicEngine.candidates(for: reading)
+                    + systemEngine.candidates(for: reading)
+            }
+        )
         let particleCompositions = particleCompositions(
             for: context.conversionReading
         )
@@ -218,7 +231,7 @@ public struct StandardConversionCandidateSource: Sendable {
             basicExact: basic.exact,
             systemExact: system.exact.filter {
                 !deferredSystemExact.contains($0)
-            },
+            } + moraicNExact,
             deferredSystemExact: deferredSystemExact,
             importedExact: imported.reading.exact,
             importedSpelling: imported.spelling.exact,
