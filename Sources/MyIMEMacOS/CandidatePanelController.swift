@@ -414,27 +414,6 @@ final class CandidatePanelController: NSObject {
             : panel.frame
     }
 
-    /// Moves the existing panel without rebuilding its rows or changing its
-    /// visibility, selection, or window ordering
-    func reposition(near anchorFrame: NSRect) {
-        guard panel.isVisible else { return }
-        let visibleFrame = screenContaining(anchorFrame)?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let hasGuide = guidePanel.isVisible
-        let guideSize = hasGuide ? guidePanel.frame.size : .zero
-        let reservedPanelHeight = CGFloat(Self.maximumRows) * Self.itemHeight
-            + CGFloat(Self.maximumRows - 1) * CandidatePanelItemStyle.spacing
-        positionPanels(
-            near: anchorFrame,
-            visibleFrame: visibleFrame,
-            hasGuide: hasGuide,
-            panelSize: panel.frame.size,
-            guideSize: guideSize,
-            reservedPanelHeight: reservedPanelHeight,
-            reservedRightWidth: 0
-        )
-    }
-
     func rowFrame(at index: Int) -> NSRect? {
         guard candidates.indices.contains(index) else { return nil }
         collectionView.layoutSubtreeIfNeeded()

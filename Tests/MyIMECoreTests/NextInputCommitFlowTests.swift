@@ -87,24 +87,38 @@ struct NextInputCommitFlowTests {
     }
 
     @Test
-    func openingBracketOffersItsClosingAsNextInput() {
+    func firstTextAfterTheOpeningOffersItsClosing() {
         let flow = CommitFlow()
 
         flow.commitInput("（")
+        #expect(!flow.coordinator.candidates.contains("）"))
+        flow.commitInput("本文")
 
         #expect(flow.coordinator.candidates.first == "）")
         #expect(!flow.tracker.shouldRecordAsNextInput("）"))
     }
 
     @Test
+    func secondTextDoesNotOfferTheClosingAgain() {
+        let flow = CommitFlow()
+        flow.commitInput("（")
+        flow.commitInput("本文")
+
+        flow.commitInput("続き")
+
+        #expect(!flow.coordinator.candidates.contains("）"))
+    }
+
+    @Test
     func committedClosingCandidateDoesNotLeaveItsSessionSelected() {
         let flow = CommitFlow()
         flow.commitInput("（")
+        flow.commitInput("本文")
         flow.select("）")
 
         flow.commitSelectedNextInput()
 
-        #expect(flow.text == "（）")
+        #expect(flow.text == "（本文）")
         #expect(flow.coordinator.selectedCandidate == nil)
         #expect(flow.tracker.candidate == nil)
     }
@@ -113,31 +127,34 @@ struct NextInputCommitFlowTests {
     func nextTypedTextFollowsTheCommittedClosingOnce() {
         let flow = CommitFlow()
         flow.commitInput("（")
+        flow.commitInput("本文")
         flow.select("）")
         flow.commitSelectedNextInput()
 
         flow.type("a")
 
-        #expect(flow.text == "（）a")
+        #expect(flow.text == "（本文）a")
     }
 
     @Test
     func closingBracketIsNotLearnedAsAFollower() {
         let flow = CommitFlow()
         flow.commitInput("（")
+        flow.commitInput("本文")
         flow.select("）")
         flow.commitSelectedNextInput()
 
         flow.commitInput("（")
+        flow.commitInput("本文")
 
-        #expect(flow.coordinator.candidates == ["）"])
-        #expect(flow.coordinator.learnedCandidates(
-            after: "（",
+        #expect(flow.coordinator.candidates.first == "）")
+        #expect(!flow.coordinator.learnedCandidates(
+            after: "本文",
             predictionEnabled: true,
             learningEnabled: false,
             breakPreviousSequence: false,
             limit: 16
-        ).isEmpty)
+        ).contains("）"))
     }
 
     @Test
@@ -156,7 +173,7 @@ struct NextInputCommitFlowTests {
     }
 
     @Test
-    func nestedClosingCandidatesAreOfferedInTurn() {
+    func nestedOpeningOffersOnlyItsOwnClosing() {
         let flow = CommitFlow()
         flow.commitInput("（")
         flow.commitInput("「")
@@ -166,14 +183,11 @@ struct NextInputCommitFlowTests {
         flow.select("」")
         flow.commitSelectedNextInput()
 
-        #expect(flow.coordinator.candidates.first == "）")
+        #expect(!flow.coordinator.candidates.contains("）"))
         #expect(flow.coordinator.selectedCandidate == nil)
-
-        flow.select("）")
-        flow.commitSelectedNextInput()
         flow.type("a")
 
-        #expect(flow.text == "（「本文」）a")
+        #expect(flow.text == "（「本文」a")
         #expect(flow.tracker.candidate == nil)
     }
 

@@ -33,8 +33,6 @@ final class InputController: IMKInputController {
     private static let candidatePanelAnchorSpacing: CGFloat = 8
     private static let fuzzyCandidateDisplayDelay = Duration.milliseconds(120)
     private static let maximumMozcDictionaryPrefixCandidates = 2048
-    private static let structuralClosingBracketContext =
-        "structuralClosingBracket"
     private static let sharedBasicEntries = loadBasicEntries()
     private static let sharedBasicConversionEngine = ConversionEngine(
         entries: sharedBasicEntries
@@ -142,8 +140,6 @@ final class InputController: IMKInputController {
     private let candidateSelectionHistoryStore: CandidateSelectionHistoryStore
     private let unselectedInputLearningStore: UnselectedInputLearningStore
     private var closingBracketTracker = ClosingBracketTracker()
-    private var closingBracketContextRefreshGeneration = 0
-    private static let closingBracketContextCharacterLimit = 512
     private var emojiSearchLearning = EmojiSearchLearning()
     private let nextInputCandidateCoordinator: NextInputCandidateCoordinator
     private let candidateSearchCoordinator = CandidateSearchCoordinator()
@@ -657,7 +653,6 @@ final class InputController: IMKInputController {
             return selectFuzzyCandidate(index: 0, client: sender)
         }
 
-        let refreshesClosingBracketsAfterPaste = isPasteShortcut(event)
         if let handled = handleStandardKeyEvent(event, client: sender) {
             return handled
         }
@@ -670,11 +665,8 @@ final class InputController: IMKInputController {
             if !inputBuffer.isEmpty {
                 commit(inputBuffer, to: sender)
             }
-            if refreshesClosingBracketsAfterPaste {
-                scheduleClosingBracketContextRefresh(
-                    client: sender,
-                    reason: "paste"
-                )
+            if isPasteShortcut(event) {
+                followPastedText(client: sender)
             }
             return false
         }
@@ -728,17 +720,10 @@ final class InputController: IMKInputController {
         case .returnKey:
             return handleReturnKey(client: sender)
         case .delete:
-            let handled = deleteBackward(
+            return deleteBackward(
                 from: sender,
                 unit: deletionUnit(for: event)
             )
-            if !handled {
-                scheduleClosingBracketContextRefresh(
-                    client: sender,
-                    reason: "delete"
-                )
-            }
-            return handled
         case .escape:
             if candidateSession.unfilteredCandidates != nil {
                 removeLastCandidateFilter(client: sender)
@@ -754,22 +739,18 @@ final class InputController: IMKInputController {
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        if inputBuffer.isEmpty {
-            if nextInputCandidateCoordinator.hasCandidates {
-                noteNavigation("horizontalArrow.nextInput")
-                if nextInputCandidateCoordinator.selectedIndex != nil {
-                    return moveNextInputCandidate(direction, client: sender)
-                }
-                if nextInputCandidateCoordinator.context
-                    != Self.structuralClosingBracketContext {
-                    dismissNextInputCandidates(clearMarkedTextIn: nil)
-                }
+        // Moving the insertion point cancels the closing bracket offer
+        if inputBuffer.isEmpty,
+           nextInputCandidateCoordinator.selectedIndex == nil {
+            closingBracketTracker.reset()
+        }
+        if inputBuffer.isEmpty, nextInputCandidateCoordinator.hasCandidates {
+            noteNavigation("horizontalArrow.nextInput")
+            guard nextInputCandidateCoordinator.selectedIndex != nil else {
+                dismissNextInputCandidates(clearMarkedTextIn: nil)
+                return false
             }
-            scheduleClosingBracketContextRefresh(
-                client: sender,
-                reason: direction == .left ? "leftArrow" : "rightArrow"
-            )
-            return false
+            return moveNextInputCandidate(direction, client: sender)
         }
         if selectedCandidateIndex != nil,
            shouldEnterTranslationCandidates(
@@ -1085,18 +1066,13 @@ final class InputController: IMKInputController {
                 break
             }
         }
+        if let aSelector,
+           inputBuffer.isEmpty,
+           ["moveLeft:", "moveRight:", "moveBackward:", "moveForward:"]
+            .contains(NSStringFromSelector(aSelector)) {
+            closingBracketTracker.reset()
+        }
         guard let aSelector, responds(to: aSelector) else {
-            if let aSelector,
-               let inputClient = activeInputClient ?? client(),
-               ["paste:", "moveLeft:", "moveRight:",
-                "moveBackward:", "moveForward:",
-                "deleteBackward:", "deleteForward:"]
-                .contains(NSStringFromSelector(aSelector)) {
-                scheduleClosingBracketContextRefresh(
-                    client: inputClient,
-                    reason: "command"
-                )
-            }
             super.doCommand(by: aSelector, command: infoDictionary)
             return
         }
@@ -1497,21 +1473,16 @@ final class InputController: IMKInputController {
             return
         }
         if inputBuffer.isEmpty {
-            let preservesStructuralCandidate = closingBracketTracker
+            if closingBracketTracker
                 .shouldPreserveCandidatesDuringEmptySystemCommit(
                     hasCandidates: nextInputCandidateCoordinator.hasCandidates
-                )
-            if preservesStructuralCandidate {
+                ) {
                 Self.lifecycleLogger.notice(
                     "preserved structural next-input candidate after empty system commit"
                 )
-            } else {
-                dismissNextInputCandidates(clearMarkedTextIn: sender)
+                return
             }
-            scheduleClosingBracketContextRefresh(
-                client: sender,
-                reason: "emptySystemCommit"
-            )
+            dismissNextInputCandidates(clearMarkedTextIn: sender)
             return
         }
 
@@ -5354,6 +5325,51 @@ final class InputController: IMKInputController {
         )
     }
 
+    /// Pasted text counts as the first text after an opening bracket; the
+    /// app inserts it after the key returns, so the offer is shown at the
+    /// insertion point it moves to
+    private func followPastedText(client sender: Any) {
+        guard let pasted = NSPasteboard.general.string(forType: .string),
+              !pasted.isEmpty else {
+            // An unknown paste may have filled the bracket, so no offer
+            closingBracketTracker.reset()
+            return
+        }
+        let lines = pasted.components(separatedBy: .newlines)
+        if lines.count > 1 {
+            closingBracketTracker.reset()
+        }
+        closingBracketTracker.consume(lines.last ?? "")
+        guard let closing = closingBracketTracker.candidate,
+              let snapshot = currentInputSessionSnapshot() else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.acceptsAsyncResult(
+                    snapshot,
+                    source: "pastedClosingBracket",
+                    sender: sender
+                  ),
+                  self.inputBuffer.isEmpty,
+                  self.closingBracketTracker.candidate == closing else {
+                return
+            }
+            self.candidateSearchCoordinator.cancel(.nextInputExtension)
+            self.nextInputCandidateCoordinator.beginCandidates(
+                context: closing,
+                preferredCandidates: [Candidate(
+                    storageText: closing,
+                    source: .nextInput
+                )],
+                learnedCandidates: [],
+                dictionaryCandidates: [],
+                unsuppressibleCandidates: [closing]
+            )
+            self.showNextInputCandidatePanel(client: sender)
+            self.startNextInputOutsideClickMonitoring()
+            self.scheduleNextInputDismissal()
+        }
+    }
+
     private func showNextInputCandidatePanel(client sender: Any) {
         let pageRange = nextInputCandidateCoordinator.pageRange(
             pageSize: Self.maximumCandidateCount
@@ -5395,6 +5411,9 @@ final class InputController: IMKInputController {
     private func dismissNextInputCandidates(
         clearMarkedTextIn sender: Any?
     ) {
+        // The closing bracket is offered once; it does not return when
+        // its panel closes for the next input, a timeout, or a click
+        closingBracketTracker.endOffering()
         if nextInputCandidateCoordinator.selectedIndex != nil, let sender {
             setMarkedText("", in: sender)
         }
@@ -5750,126 +5769,6 @@ final class InputController: IMKInputController {
         if nextInputCandidateCoordinator.hasCandidates {
             dismissNextInputCandidates(clearMarkedTextIn: sender)
         }
-    }
-
-    /// Paste and cursor movement are applied by the input client after the
-    /// key event returns, so bracket state is rebuilt on the next main-loop
-    /// turn from a bounded window around the new insertion point
-    private func scheduleClosingBracketContextRefresh(
-        client sender: Any,
-        reason: String
-    ) {
-        guard let snapshot = currentInputSessionSnapshot() else { return }
-        closingBracketContextRefreshGeneration += 1
-        let refreshGeneration = closingBracketContextRefreshGeneration
-        DispatchQueue.main.async { [weak self] in
-            guard let self,
-                  refreshGeneration
-                    == self.closingBracketContextRefreshGeneration,
-                  self.acceptsAsyncResult(
-                    snapshot,
-                    source: "closingBracketContext",
-                    sender: sender
-                  ),
-                  self.inputBuffer.isEmpty else {
-                return
-            }
-            self.refreshClosingBracketContext(
-                client: sender,
-                reason: reason
-            )
-        }
-    }
-
-    private func refreshClosingBracketContext(
-        client sender: Any,
-        reason: String
-    ) {
-        let context = (sender as? IMKTextInput).flatMap {
-            closingBracketTextContext(from: $0)
-        }
-        if let context {
-            closingBracketTracker.synchronize(
-                precedingText: context.preceding,
-                followingText: context.following
-            )
-        }
-        trace(
-            "closingBracketContext.refresh",
-            sender: sender,
-            detail: "reason=\(reason) available=\(context != nil) beforeLength=\(context?.preceding.utf16.count ?? 0) afterLength=\(context?.following.utf16.count ?? 0)"
-        )
-        let update = ClosingBracketPanelUpdate.resolve(
-            currentContext: nextInputCandidateCoordinator.context,
-            currentCandidates: nextInputCandidateCoordinator.candidates,
-            isPanelVisible: primaryCandidatePanel.isVisible,
-            refreshedCandidate: closingBracketTracker.candidate
-        )
-        switch update {
-        case .unchanged:
-            return
-        case .reposition:
-            guard let location = locationCoordinator.currentLocation(
-                for: sender
-            ) else {
-                return
-            }
-            primaryCandidatePanel.reposition(near: location)
-        case let .present(candidate):
-            candidateSearchCoordinator.cancel(.nextInputExtension)
-            let hadVisibleNextInput = nextInputCandidateCoordinator
-                .hasCandidates && primaryCandidatePanel.isVisible
-            _ = nextInputCandidateCoordinator.beginCandidates(
-                context: Self.structuralClosingBracketContext,
-                preferredCandidates: [Candidate(
-                    storageText: candidate,
-                    source: .nextInput
-                )],
-                learnedCandidates: [],
-                dictionaryCandidates: [],
-                unsuppressibleCandidates: [candidate]
-            )
-            showNextInputCandidatePanel(client: sender)
-            if !hadVisibleNextInput {
-                startNextInputOutsideClickMonitoring()
-                scheduleNextInputDismissal()
-            }
-        case .dismiss:
-            candidateSearchCoordinator.cancel(.nextInputExtension)
-            if nextInputCandidateCoordinator.hasCandidates {
-                dismissNextInputCandidates(clearMarkedTextIn: nil)
-            }
-        }
-    }
-
-    private func closingBracketTextContext(
-        from textClient: IMKTextInput
-    ) -> (preceding: String, following: String)? {
-        let selection = textClient.selectedRange()
-        guard selection.location != NSNotFound else { return nil }
-        let precedingLength = min(
-            selection.location,
-            Self.closingBracketContextCharacterLimit
-        )
-        let preceding: String
-        if precedingLength == 0 {
-            preceding = ""
-        } else {
-            let range = NSRange(
-                location: selection.location - precedingLength,
-                length: precedingLength
-            )
-            guard let value = textClient.attributedSubstring(from: range)?
-                .string else {
-                return nil
-            }
-            preceding = value
-        }
-        let following = textClient.attributedSubstring(from: NSRange(
-            location: selection.location,
-            length: 1
-        ))?.string ?? ""
-        return (preceding, following)
     }
 
     private func showInputPreview(client sender: Any) {

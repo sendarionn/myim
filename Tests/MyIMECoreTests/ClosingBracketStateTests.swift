@@ -28,10 +28,11 @@ struct ClosingBracketStateTests {
 
     @Test
     func nestedBracketsStillCloseInTurn() {
-        let commits = commit(["「", "『", "a", "』", "b", "」"])
+        let commits = commit(["「", "『", "a", "』", "b", "」", "c"])
 
+        // Only the innermost opening is offered, once after its first text
         #expect(commits.map(\.offered)
-            == ["」", "』", "』", "」", "」", nil])
+            == [nil, nil, "』", nil, nil, nil, nil])
     }
 
     @Test
@@ -59,6 +60,7 @@ struct ClosingBracketStateTests {
 
         #expect(tracker.candidate == nil)
         tracker.consume("「")
+        tracker.consume("b")
         #expect(tracker.candidate == "」")
     }
 

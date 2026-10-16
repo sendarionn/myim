@@ -1,60 +1,171 @@
 import Testing
 @testable import MyIMECore
 
+/// The closing bracket is offered once, right after the first text
+/// committed or pasted after its opening
+@Suite
 struct ClosingBracketTrackerTests {
-    @Test func pendingClosingIsExcludedFromNextInputLearning() {
+    @Test func openingAloneOffersNothing() {
         var tracker = ClosingBracketTracker()
-        tracker.consume("（")
 
-        #expect(!tracker.shouldRecordAsNextInput("）"))
-        #expect(!tracker.shouldRecordCommittedInput("）", requested: true))
-        #expect(tracker.shouldRecordAsNextInput("続き"))
-        #expect(tracker.shouldRecordCommittedInput("続き", requested: true))
-        #expect(!tracker.shouldRecordCommittedInput("続き", requested: false))
-        #expect(tracker.shouldBypassCandidateSuppression("）"))
-        #expect(!tracker.shouldBypassCandidateSuppression("続き"))
-    }
-
-    @Test func keepsClosingBracketUntilItIsEntered() {
-        var tracker = ClosingBracketTracker()
         tracker.consume("「")
-        #expect(tracker.candidate == "」")
 
-        tracker.consume("文章")
-        #expect(tracker.candidate == "」")
-
-        tracker.consume("」")
         #expect(tracker.candidate == nil)
     }
 
-    @Test func followsNestedBrackets() {
+    @Test func firstCommittedTextOffersTheClosing() {
         var tracker = ClosingBracketTracker()
-        tracker.consume("（「")
+        tracker.consume("「")
+
+        tracker.consume("こんにちは")
+
         #expect(tracker.candidate == "」")
+        #expect(!tracker.shouldRecordAsNextInput("」"))
+    }
+
+    @Test func nextCommitEndsTheOfferForGood() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("「")
+        tracker.consume("こんにちは")
+
+        tracker.consume("世界")
+        #expect(tracker.candidate == nil)
+        tracker.consume("です")
+        #expect(tracker.candidate == nil)
+    }
+
+    @Test func startingTheNextInputEndsTheOffer() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("「")
+        tracker.consume("こんにちは")
+
+        tracker.endOffering()
+        #expect(tracker.candidate == nil)
+        tracker.consume("世界")
+
+        #expect(tracker.candidate == nil)
+    }
+
+    @Test func endingTheOfferBeforeTheFirstTextKeepsWaitingForIt() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("「")
+
+        // Panels closing before the first text do not affect the offer
+        tracker.endOffering()
+        tracker.consume("こんにちは")
+
+        #expect(tracker.candidate == "」")
+    }
+
+    @Test func spaceIsNotTheFirstText() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("(")
+        tracker.consume(" ")
+        #expect(tracker.candidate == nil)
+
+        tracker.consume("text")
+        #expect(tracker.candidate == ")")
+    }
+
+    @Test func textCommittedWithTheOpeningOffersTheClosing() {
+        var tracker = ClosingBracketTracker()
+
+        tracker.consume("「こんにちは")
+
+        #expect(tracker.candidate == "」")
+    }
+
+    @Test func textAlreadyClosedOffersNothing() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("「")
+
+        tracker.consume("こんにちは」")
+
+        #expect(tracker.candidate == nil)
+    }
+
+    @Test func typedClosingEndsTheOffer() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("「")
+        tracker.consume("こんにちは")
+
         tracker.consume("」")
+        #expect(tracker.candidate == nil)
+        tracker.consume("続き")
+
+        #expect(tracker.candidate == nil)
+    }
+
+    @Test func cancellingForgetsTheOpening() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("「")
+
+        tracker.reset()
+        tracker.consume("こんにちは")
+
+        #expect(tracker.candidate == nil)
+    }
+
+    @Test func newOpeningStartsANewOffer() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("「")
+        tracker.consume("前")
+        tracker.consume("後")
+        #expect(tracker.candidate == nil)
+
+        tracker.consume("「")
+        tracker.consume("次")
+
+        #expect(tracker.candidate == "」")
+    }
+
+    @Test func nestedOpeningIsOfferedForItsOwnText() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("「")
+        tracker.consume("（")
+        #expect(tracker.candidate == nil)
+
+        tracker.consume("こんにちは")
+        #expect(tracker.candidate == "）")
+
+        // Closing the inner bracket ends the cycle without offering 」
+        tracker.consume("）")
+        #expect(tracker.candidate == nil)
+    }
+
+    @Test func eitherWidthClosesTheOpening() {
+        var tracker = ClosingBracketTracker()
+        tracker.consume("（")
+        tracker.consume("text")
+        #expect(tracker.candidate == "）")
+
+        tracker.consume(")")
+        tracker.consume("（")
+        tracker.consume("more")
+
         #expect(tracker.candidate == "）")
     }
 
-    @Test func preservesAClosingCandidateAcrossAnEmptySystemCommit() {
+    @Test func preservesTheOfferAcrossAnEmptySystemCommit() {
         var tracker = ClosingBracketTracker()
         tracker.consume("[")
+        #expect(!tracker.shouldPreserveCandidatesDuringEmptySystemCommit(
+            hasCandidates: true
+        ))
 
+        tracker.consume("text")
         #expect(tracker.shouldPreserveCandidatesDuringEmptySystemCommit(
             hasCandidates: true
         ))
         #expect(!tracker.shouldPreserveCandidatesDuringEmptySystemCommit(
             hasCandidates: false
         ))
-
-        tracker.consume("]")
-        #expect(!tracker.shouldPreserveCandidatesDuringEmptySystemCommit(
-            hasCandidates: true
-        ))
     }
 
     @Test func consumesTheSameClosingTypedOverASelectedCandidate() {
         var tracker = ClosingBracketTracker()
         tracker.consume("[")
+        tracker.consume("text")
 
         #expect(tracker.shouldConsumeTypedClosing(
             "]",
@@ -68,72 +179,5 @@ struct ClosingBracketTrackerTests {
             "]",
             selectedCandidate: "続き"
         ))
-    }
-
-    @Test(arguments: [
-        ("「こんにちは", "", "」"),
-        ("（こんにちは", "", "）"),
-        ("「（こんにちは", "", "）"),
-        ("「（こんにちは）", "", "」"),
-        ("「こんにちは」", "", nil),
-        ("", "「こんにちは", nil)
-    ])
-    func rebuildsTheCandidateFromTextBeforeTheCursor(
-        preceding: String,
-        following: String,
-        expected: String?
-    ) {
-        var tracker = ClosingBracketTracker()
-
-        tracker.synchronize(
-            precedingText: preceding,
-            followingText: following
-        )
-
-        #expect(tracker.candidate == expected)
-    }
-
-    @Test(arguments: [
-        ("「こんにちは", "」続き"),
-        ("(hello", "）"),
-        ("（hello", ")"),
-        ("[hello", "］")
-    ])
-    func doesNotOfferAClosingAlreadyAfterTheCursor(
-        preceding: String,
-        following: String
-    ) {
-        var tracker = ClosingBracketTracker()
-
-        tracker.synchronize(
-            precedingText: preceding,
-            followingText: following
-        )
-
-        #expect(tracker.candidate == nil)
-    }
-
-    @Test
-    func offersTheOuterClosingAfterMovingPastTheInnerClosing() {
-        var tracker = ClosingBracketTracker()
-
-        tracker.synchronize(
-            precedingText: "「（こんにちは）",
-            followingText: "続き"
-        )
-
-        #expect(tracker.candidate == "」")
-    }
-
-    @Test
-    func ignoresOpeningsBeforeTheLatestLineBreak() {
-        var tracker = ClosingBracketTracker()
-
-        tracker.synchronize(
-            precedingText: "「前の行\n現在の行",
-            followingText: ""
-        )
-
-        #expect(tracker.candidate == nil)
     }
 }

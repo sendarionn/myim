@@ -1,5 +1,3 @@
-import Foundation
-
 public struct ClosingBracketTracker: Equatable, Sendable {
     private static let pairs: [Character: Character] = [
         "(": ")", "（": "）", "[": "]", "［": "］", "{": "}",
@@ -17,18 +15,28 @@ public struct ClosingBracketTracker: Equatable, Sendable {
     private static let closings = Set(pairs.values)
         .union(closingKinds.keys)
 
+    /// Where the innermost open bracket is in its single offer of the
+    /// closing bracket
+    private enum Phase: Equatable, Sendable {
+        case inactive
+        /// Opened, waiting for the first text committed or pasted after it
+        case awaitingFirstCommit
+        /// The first text after the opening was just committed
+        case offering
+        /// Offered or cancelled; the same opening is not offered again
+        case finished
+    }
+
     private var pendingClosings: [Character] = []
-    private var followingCharacter: Character?
+    private var phase = Phase.inactive
 
     public init() {}
 
+    /// The closing bracket offered right after the first text following its
+    /// opening, and only until the next input starts
     public var candidate: String? {
-        guard let closing = pendingClosings.last else { return nil }
-        if let followingCharacter,
-           Self.kind(of: followingCharacter) == Self.kind(of: closing) {
-            return nil
-        }
-        return String(closing)
+        guard phase == .offering else { return nil }
+        return pendingClosings.last.map(String.init)
     }
 
     /// A closing bracket alone belongs to its opening rather than to the
@@ -73,39 +81,39 @@ public struct ClosingBracketTracker: Equatable, Sendable {
         candidate != nil && hasCandidates
     }
 
+    /// Follows text committed or pasted at the insertion point
     public mutating func consume(_ text: String) {
+        // The text after the offered closing ends the offer
+        endOffering()
         for character in text {
             if let closing = Self.pairs[character] {
                 pendingClosings.append(closing)
+                phase = .awaitingFirstCommit
             } else if let index = pendingClosings.lastIndex(where: {
                 Self.kind(of: $0) == Self.kind(of: character)
             }) {
                 // Brackets opened inside and left unclosed end with it
                 pendingClosings.removeSubrange(index...)
+                phase = .finished
+            } else if phase == .awaitingFirstCommit,
+                      !character.isWhitespace {
+                phase = .offering
             }
         }
     }
 
-    /// Rebuilds the open-bracket stack from the text surrounding the
-    /// insertion point after an edit performed by the input client
-    public mutating func synchronize(
-        precedingText: String,
-        followingText: String
-    ) {
-        reset()
-        let relevantStart = precedingText.lastIndex(where: {
-            $0.unicodeScalars.contains(where: CharacterSet.newlines.contains)
-        }).map { precedingText.index(after: $0) }
-            ?? precedingText.startIndex
-        let relevantText = precedingText[relevantStart...]
-        consume(String(relevantText))
-        followingCharacter = followingText.first
+    /// Ends the offer when the next input starts or its panel closes
+    public mutating func endOffering() {
+        if phase == .offering {
+            phase = .finished
+        }
     }
 
-    /// Forgets open brackets when the text they were opened in is left
+    /// Cancels the offer when the insertion point moves or the text it
+    /// was opened in is left
     public mutating func reset() {
         pendingClosings = []
-        followingCharacter = nil
+        phase = .inactive
     }
 
     private static func kind(of closing: Character) -> Character {
