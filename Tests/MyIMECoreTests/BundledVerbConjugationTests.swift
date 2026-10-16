@@ -35,6 +35,7 @@ struct BundledVerbConjugationTests {
                 entries: basicEntries
             ),
             verbConjugations: VerbConjugationDictionary(text: verbs)
+                .addingSuruVerbs(from: basicEntries)
         )
     }()
 
@@ -172,6 +173,63 @@ struct BundledVerbConjugationTests {
         )
 
         #expect(session.candidateTexts.prefix(4).contains(expected))
+    }
+
+    /// Suru verbs listed in the basic dictionary and the volitional,
+    /// obligation, and permission endings of every verb
+    @Test(arguments: [
+        ("kentoushiyou", "検討しよう"),
+        ("kentoushimashou", "検討しましょう"),
+        ("kentoushitai", "検討したい"),
+        ("kentoushitakunai", "検討したくない"),
+        ("kentoushinai", "検討しない"),
+        ("kentoushinakatta", "検討しなかった"),
+        ("kentoushiteiru", "検討している"),
+        ("kentoushiteimasu", "検討しています"),
+        ("kentoushitemiru", "検討してみる"),
+        ("kentoushiteoku", "検討しておく"),
+        ("kentoushitearu", "検討してある"),
+        ("kentousubeki", "検討すべき"),
+        ("kentoushinakerebanaranai", "検討しなければならない"),
+        ("kentoushinakutemoii", "検討しなくてもいい"),
+        ("kentoushitemoii", "検討してもいい"),
+        ("kentoushitehanaranai", "検討してはならない"),
+        ("tabeyou", "食べよう"),
+        ("tabemashou", "食べましょう"),
+        ("ikou", "行こう"),
+        ("ikouka", "行こうか"),
+        ("ikimashou", "行きましょう"),
+        ("ikimasuka", "行きますか"),
+        ("tabetakotogaaru", "食べたことがある"),
+        ("tabeteshimatta", "食べてしまった")
+    ])
+    func showsSuruVerbsAndNewEndingsOnTheFirstPage(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        var session = CandidateSession()
+
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: input
+            )),
+            input: input,
+            reading: input
+        )
+
+        #expect(session.candidateTexts.prefix(4).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("dassou", "脱そう"), ("gisou", "議そう"), ("hiyou", "干よう")
+    ])
+    func rareVerbsDoNotOfferTheVolitional(
+        input: String,
+        unexpected: String
+    ) throws {
+        #expect(try !candidates(for: input).contains(unexpected))
     }
 
     @Test

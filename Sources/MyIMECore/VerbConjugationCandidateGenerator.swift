@@ -21,6 +21,10 @@ public enum VerbConjugationForm: Sendable, CaseIterable {
     case conditional
     /// 終止形 such as 分かる in 分かるので
     case terminal
+    /// 意向形 such as 分かろう, 食べよう, and 検討しよう
+    case volitional
+    /// 終止形 before べき, where する keeps its classical す as in すべき
+    case beforeBeki
 }
 
 public struct VerbConjugationDictionary: Sendable {
@@ -32,7 +36,7 @@ public struct VerbConjugationDictionary: Sendable {
         public let cost: Int
     }
 
-    private let entriesByReading: [String: [Entry]]
+    private var entriesByReading: [String: [Entry]]
 
     public init(text: String = "") {
         var entries: [String: [Entry]] = [:]
@@ -56,6 +60,32 @@ public struct VerbConjugationDictionary: Sendable {
 
     public func entries(for reading: String) -> [Entry] {
         entriesByReading[reading] ?? []
+    }
+
+    /// Adds the suru verbs a dictionary lists as a word followed by する,
+    /// such as `kentousuru` 検討する, which the Mozc verb table leaves out
+    /// because Mozc keeps them as nouns
+    public func addingSuruVerbs(
+        from dictionaryEntries: [DictionaryEntry],
+        cost: Int = 3000
+    ) -> VerbConjugationDictionary {
+        var result = self
+        for entry in dictionaryEntries
+        where entry.input.hasSuffix("suru") && entry.input.count > 4 {
+            for candidate in entry.candidates
+            where candidate.hasSuffix("する") && candidate.count > 2 {
+                guard !result.entries(for: entry.input).contains(where: {
+                    $0.surface == candidate
+                }) else { continue }
+                result.entriesByReading[entry.input, default: []].append(Entry(
+                    reading: entry.input,
+                    surface: candidate,
+                    conjugationClass: .suru,
+                    cost: cost
+                ))
+            }
+        }
+        return result
     }
 
     /// Whether the Mozc verb table contains this reading, surface, and class
@@ -84,17 +114,26 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         /// Bare 連用形 and 終止形 of a dictionary verb are dictionary words
         /// themselves, so only verbs derived here are generated bare
         let derivedOnly: Bool
+        /// Readings such as `-sou` and `-you` are also common nouns, so
+        /// these forms are offered for common verbs only
+        let maximumCost: Int?
 
         init(
             _ readingSuffix: String,
             _ surfaceSuffix: String,
             requiring requiredVerbForm: VerbConjugationForm,
-            derivedOnly: Bool = false
+            derivedOnly: Bool = false,
+            maximumCost: Int? = nil
         ) {
             self.requiredVerbForm = requiredVerbForm
             self.readingSuffix = readingSuffix
             self.surfaceSuffix = surfaceSuffix
             self.derivedOnly = derivedOnly
+            self.maximumCost = maximumCost
+        }
+
+        func allows(_ entry: VerbConjugationDictionary.Entry) -> Bool {
+            maximumCost.map { entry.cost < $0 } ?? true
         }
 
         var isBareContinuative: Bool {
@@ -129,6 +168,29 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         FollowingExpression("mashita", "ました", requiring: .continuative),
         FollowingExpression("masen", "ません", requiring: .continuative),
         FollowingExpression("nagara", "ながら", requiring: .continuative),
+        FollowingExpression("mashou", "ましょう", requiring: .continuative),
+        FollowingExpression("masuka", "ますか", requiring: .continuative),
+        FollowingExpression(
+            "",
+            "",
+            requiring: .volitional,
+            maximumCost: commonVerbCost
+        ),
+        FollowingExpression(
+            "ka",
+            "か",
+            requiring: .volitional,
+            maximumCost: commonVerbCost
+        ),
+        FollowingExpression(
+            "nakerebanaranai",
+            "なければならない",
+            requiring: .negative
+        ),
+        FollowingExpression("nakutemoii", "なくてもいい", requiring: .negative),
+        FollowingExpression("beki", "べき", requiring: .beforeBeki),
+        FollowingExpression("kamoshirenai", "かもしれない", requiring: .terminal),
+        FollowingExpression("kotogaaru", "ことがある", requiring: .past),
         FollowingExpression("nai", "ない", requiring: .negative),
         FollowingExpression("nakatta", "なかった", requiring: .negative),
         FollowingExpression("nakereba", "なければ", requiring: .negative),
@@ -152,10 +214,15 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         ("shimau", "しまう"), ("shimatta", "しまった"),
         ("shimatte", "しまって"),
         ("miru", "みる"), ("mita", "みた"), ("mite", "みて"),
-        ("mo", "も"), ("kara", "から")
+        ("mo", "も"), ("kara", "から"),
+        ("moii", "もいい"), ("hanaranai", "はならない"), ("aru", "ある")
     ].map { FollowingExpression($0.0, $0.1, requiring: .te) }
 
     private static let maximumBareContinuativeCandidates = 1
+
+    /// Mozc costs of everyday verbs such as 行く and 書く stay below this,
+    /// while 脱す and 議す, whose 意向形 read like 脱走 and 偽装, do not
+    private static let commonVerbCost = 4500
 
     private static let followingExpressions =
         desireChanges + desireInflections + otherFollowings + teFollowings
@@ -257,7 +324,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             ) {
                 let kanaReading = RomajiConverter().hiragana(from: baseReading)
                 for entry in dictionary.entries(for: baseReading)
-                where entry.surface != kanaReading {
+                where entry.surface != kanaReading && following.allows(entry) {
                     guard let conjugated = Self.conjugate(
                         entry,
                         to: following.requiredVerbForm
@@ -290,7 +357,8 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                     derivedReading.dropLast(rule.derivedEnding.count)
                 ) + rule.baseEnding
                 for entry in dictionary.entries(for: baseReading)
-                where entry.conjugationClass == rule.conjugationClass {
+                where entry.conjugationClass == rule.conjugationClass
+                    && following.allows(entry) {
                     guard let derived = Self.derive(entry, as: rule.voice),
                           let conjugated = Self.conjugate(
                             derived,
@@ -424,25 +492,29 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             endings = [
                 .continuative: ("", ""), .negative: ("", ""),
                 .te: ("te", "て"), .past: ("ta", "た"),
-                .conditional: ("re", "れ"), .terminal: ("ru", "る")
+                .conditional: ("re", "れ"), .terminal: ("ru", "る"),
+                .volitional: ("you", "よう"), .beforeBeki: ("ru", "る")
             ]
         case .suru:
             endings = [
                 .continuative: ("shi", "し"), .negative: ("shi", "し"),
                 .te: ("shite", "して"), .past: ("shita", "した"),
-                .conditional: ("sure", "すれ"), .terminal: ("suru", "する")
+                .conditional: ("sure", "すれ"), .terminal: ("suru", "する"),
+                .volitional: ("shiyou", "しよう"), .beforeBeki: ("su", "す")
             ]
         case .zuru:
             endings = [
                 .continuative: ("ji", "じ"), .negative: ("ji", "じ"),
                 .te: ("jite", "じて"), .past: ("jita", "じた"),
-                .conditional: ("zure", "ずれ"), .terminal: ("zuru", "ずる")
+                .conditional: ("zure", "ずれ"), .terminal: ("zuru", "ずる"),
+                .volitional: ("jiyou", "じよう"), .beforeBeki: ("zuru", "ずる")
             ]
         case .kuru:
             endings = [
                 .continuative: ("ki", "き"), .negative: ("ko", "こ"),
                 .te: ("kite", "きて"), .past: ("kita", "きた"),
-                .conditional: ("kure", "くれ"), .terminal: ("kuru", "くる")
+                .conditional: ("kure", "くれ"), .terminal: ("kuru", "くる"),
+                .volitional: ("koyou", "こよう"), .beforeBeki: ("kuru", "くる")
             ]
         }
         return endings[form]!
@@ -559,6 +631,7 @@ private struct GodanRow: Sendable {
     let te: (String, String)
     let past: (String, String)
     let conditional: (String, String)
+    let volitional: (String, String)
 
     func ending(
         for form: VerbConjugationForm
@@ -569,43 +642,54 @@ private struct GodanRow: Sendable {
         case .te: te
         case .past: past
         case .conditional: conditional
-        case .terminal: (reading, kana)
+        case .terminal, .beforeBeki: (reading, kana)
+        case .volitional: volitional
         }
     }
 
     static let rows: [GodanRow] = [
         GodanRow(reading: "tsu", kana: "つ", continuative: ("chi", "ち"),
                  negative: ("ta", "た"), te: ("tte", "って"), past: ("tta", "った"),
-                 conditional: ("te", "て")),
+                 conditional: ("te", "て"),
+                 volitional: ("tou", "とう")),
         GodanRow(reading: "su", kana: "す", continuative: ("shi", "し"),
                  negative: ("sa", "さ"), te: ("shite", "して"), past: ("shita", "した"),
-                 conditional: ("se", "せ")),
+                 conditional: ("se", "せ"),
+                 volitional: ("sou", "そう")),
         GodanRow(reading: "ku", kana: "く", continuative: ("ki", "き"),
                  negative: ("ka", "か"), te: ("ite", "いて"), past: ("ita", "いた"),
-                 conditional: ("ke", "け")),
+                 conditional: ("ke", "け"),
+                 volitional: ("kou", "こう")),
         GodanRow(reading: "gu", kana: "ぐ", continuative: ("gi", "ぎ"),
                  negative: ("ga", "が"), te: ("ide", "いで"), past: ("ida", "いだ"),
-                 conditional: ("ge", "げ")),
+                 conditional: ("ge", "げ"),
+                 volitional: ("gou", "ごう")),
         GodanRow(reading: "nu", kana: "ぬ", continuative: ("ni", "に"),
                  negative: ("na", "な"), te: ("nde", "んで"), past: ("nda", "んだ"),
-                 conditional: ("ne", "ね")),
+                 conditional: ("ne", "ね"),
+                 volitional: ("nou", "のう")),
         GodanRow(reading: "bu", kana: "ぶ", continuative: ("bi", "び"),
                  negative: ("ba", "ば"), te: ("nde", "んで"), past: ("nda", "んだ"),
-                 conditional: ("be", "べ")),
+                 conditional: ("be", "べ"),
+                 volitional: ("bou", "ぼう")),
         GodanRow(reading: "mu", kana: "む", continuative: ("mi", "み"),
                  negative: ("ma", "ま"), te: ("nde", "んで"), past: ("nda", "んだ"),
-                 conditional: ("me", "め")),
+                 conditional: ("me", "め"),
+                 volitional: ("mou", "もう")),
         GodanRow(reading: "ru", kana: "る", continuative: ("ri", "り"),
                  negative: ("ra", "ら"), te: ("tte", "って"), past: ("tta", "った"),
-                 conditional: ("re", "れ")),
+                 conditional: ("re", "れ"),
+                 volitional: ("rou", "ろう")),
         GodanRow(reading: "u", kana: "う", continuative: ("i", "い"),
                  negative: ("wa", "わ"), te: ("tte", "って"), past: ("tta", "った"),
-                 conditional: ("e", "え"))
+                 conditional: ("e", "え"),
+                 volitional: ("ou", "おう"))
     ]
 
     static let iku = GodanRow(
         reading: "ku", kana: "く", continuative: ("ki", "き"),
         negative: ("ka", "か"), te: ("tte", "って"), past: ("tta", "った"),
-        conditional: ("ke", "け")
+        conditional: ("ke", "け"),
+        volitional: ("kou", "こう")
     )
 }

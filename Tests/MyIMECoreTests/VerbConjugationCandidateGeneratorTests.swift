@@ -245,6 +245,76 @@ struct VerbConjugationCandidateGeneratorTests {
         #expect(generator.candidates(for: input).contains(expected))
     }
 
+    @Test(arguments: [
+        ("kakou", "書こう"),
+        ("yobou", "呼ぼう"),
+        ("matou", "待とう"),
+        ("kaou", "買おう"),
+        ("ikou", "行こう"),
+        ("tabeyou", "食べよう"),
+        ("miyou", "見よう"),
+        ("benkyoushiyou", "勉強しよう"),
+        ("ninjiyou", "任じよう"),
+        ("koyou", "来よう"),
+        ("yobareyou", "呼ばれよう"),
+        ("ikouka", "行こうか")
+    ])
+    func conjugatesTheVolitionalOfEachClass(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("benkyoushimashou", "勉強しましょう"),
+        ("kakimasuka", "書きますか"),
+        ("benkyousubeki", "勉強すべき"),
+        ("taberubeki", "食べるべき"),
+        ("benkyoushinakerebanaranai", "勉強しなければならない"),
+        ("tabenakutemoii", "食べなくてもいい"),
+        ("yondemoii", "読んでもいい"),
+        ("yondehanaranai", "読んではならない"),
+        ("kaitearu", "書いてある"),
+        ("ikukamoshirenai", "行くかもしれない"),
+        ("tabetakotogaaru", "食べたことがある")
+    ])
+    func joinsObligationPermissionAndExperience(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test
+    func rareVerbsDoNotOfferTheVolitional() {
+        let generator = VerbConjugationCandidateGenerator(
+            dictionary: VerbConjugationDictionary(text: """
+            dassu\t脱す\tgodan\t6329
+            iku\t行く\tgodan-iku\t119
+            """)
+        )
+
+        #expect(!generator.candidates(for: "dassou").contains("脱そう"))
+        #expect(generator.candidates(for: "dasshita").contains("脱した"))
+        #expect(generator.candidates(for: "ikou").contains("行こう"))
+    }
+
+    @Test
+    func takesSuruVerbsFromDictionaryWordsWithSuru() {
+        let generator = VerbConjugationCandidateGenerator(
+            dictionary: VerbConjugationDictionary().addingSuruVerbs(from: [
+                DictionaryEntry(reading: "kentousuru", candidates: ["検討する"]),
+                DictionaryEntry(reading: "kentou", candidates: ["検討", "見当"]),
+                DictionaryEntry(reading: "kouho", candidates: ["候補"])
+            ])
+        )
+
+        #expect(generator.candidates(for: "kentoushiyou") == ["検討しよう"])
+        #expect(generator.candidates(for: "kentoushiteiru") == ["検討している"])
+        #expect(generator.candidates(for: "kouhoshiyou").isEmpty)
+    }
+
     @Test
     func rejectsFormsTheVerbClassDoesNotHave() {
         // 書かれば and 食べられば join ば to the wrong form

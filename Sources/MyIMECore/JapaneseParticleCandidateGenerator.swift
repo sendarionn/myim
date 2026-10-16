@@ -32,33 +32,64 @@ public enum JapaneseParticleCandidateGenerator {
         let leadingConnection: ConnectionRule?
         /// The words this ending may follow; nil joins any word
         let trailingConnection: ConnectionRule?
+        let minimumStemLength: Int
 
         init(
             reading: String,
             text: String,
             leadingConnection: ConnectionRule? = nil,
-            trailingConnection: ConnectionRule? = nil
+            trailingConnection: ConnectionRule? = nil,
+            minimumStemLength: Int = 2
         ) {
             self.reading = reading
             self.text = text
             self.leadingConnection = leadingConnection
             self.trailingConnection = trailingConnection
+            self.minimumStemLength = minimumStemLength
         }
     }
 
-    private static let particles: [Particle] = [
-        // Polite copula endings; an i-adjective takes です but not でした,
-        // its past being 美しかったです
+    /// Copula and sentence endings that follow a noun or adjective as a
+    /// whole input, such as `kouhodearu` 候補である; だ and its forms follow
+    /// nouns and na-adjective stems only, since 美しいだ and 美しいでした are
+    /// not Japanese
+    private static let copulaEndings: [Particle] = [
+        Particle(reading: "desu", text: "です", trailingConnection: .copulaStemByScript),
+        Particle(reading: "desuka", text: "ですか", trailingConnection: .copulaStemByScript),
+        Particle(reading: "desune", text: "ですね", trailingConnection: .copulaStemByScript),
+        Particle(reading: "desuyo", text: "ですよ", trailingConnection: .copulaStemByScript),
+        Particle(reading: "deshou", text: "でしょう", trailingConnection: .copulaStemByScript),
+        Particle(reading: "darou", text: "だろう", trailingConnection: .copulaStemByScript),
+        Particle(reading: "kamoshirenai", text: "かもしれない", trailingConnection: .copulaStemByScript),
+        Particle(reading: "deshita", text: "でした", trailingConnection: .nounLikeByScript),
+        // Short readings ending in da are common words, so だ follows
+        // stems of four letters or more, as kouho and benri are
         Particle(
-            reading: "deshita",
-            text: "でした",
-            trailingConnection: .nounLikeByScript
+            reading: "da",
+            text: "だ",
+            trailingConnection: .nounLikeByScript,
+            minimumStemLength: 4
         ),
-        Particle(
-            reading: "desu",
-            text: "です",
-            trailingConnection: .copulaStemByScript
-        ),
+        Particle(reading: "datta", text: "だった", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dearu", text: "である", trailingConnection: .nounLikeByScript),
+        Particle(reading: "deatta", text: "であった", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dehanai", text: "ではない", trailingConnection: .nounLikeByScript),
+        Particle(reading: "janai", text: "じゃない", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dehanakatta", text: "ではなかった", trailingConnection: .nounLikeByScript),
+        Particle(reading: "janakatta", text: "じゃなかった", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dehaarimasen", text: "ではありません", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dayo", text: "だよ", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dayone", text: "だよね", trailingConnection: .nounLikeByScript),
+        Particle(reading: "nara", text: "なら", trailingConnection: .nounLikeByScript),
+        Particle(reading: "deareba", text: "であれば", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dattara", text: "だったら", trailingConnection: .nounLikeByScript),
+        Particle(reading: "nohazuda", text: "のはずだ", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dasouda", text: "だそうだ", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dearubeki", text: "であるべき", trailingConnection: .nounLikeByScript),
+        Particle(reading: "dearukamoshirenai", text: "であるかもしれない", trailingConnection: .nounLikeByScript),
+    ]
+
+    private static let particles: [Particle] = copulaEndings + [
         Particle(reading: "wotsuujite", text: "を通じて"),
         Particle(reading: "wotooshite", text: "を通して"),
         Particle(reading: "nikurabete", text: "に比べて"),
@@ -134,7 +165,7 @@ public enum JapaneseParticleCandidateGenerator {
         var seen = Set<String>()
 
         func append(stem: String, particle: Particle) {
-            guard stem.count >= 2 else { return }
+            guard stem.count >= particle.minimumStemLength else { return }
             for candidate in exactCandidates(stem) where !candidate.isEmpty
                 && particle.trailingConnection.map({
                     allowsConnection(candidate, rule: $0)

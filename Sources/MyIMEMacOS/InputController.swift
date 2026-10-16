@@ -87,9 +87,10 @@ final class InputController: IMKInputController {
     private static let sharedDeferredSystemCandidates = DeferredSystemCandidates(
         text: loadBundledText(resource: "mozc-person-name-hints") ?? ""
     )
+    /// Mozc verb classes plus the suru verbs the basic dictionary lists
     private static let sharedVerbConjugations = VerbConjugationDictionary(
         text: loadBundledText(resource: "mozc-verb-classes") ?? ""
-    )
+    ).addingSuruVerbs(from: sharedBasicEntries)
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
     private static let sharedBasicFuzzyEntries = sharedBasicEntries

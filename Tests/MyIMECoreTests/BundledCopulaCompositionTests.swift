@@ -36,6 +36,7 @@ struct BundledCopulaCompositionTests {
                 entries: basicEntries
             ),
             verbConjugations: VerbConjugationDictionary(text: verbs)
+                .addingSuruVerbs(from: basicEntries)
         )
     }()
 
@@ -46,7 +47,27 @@ struct BundledCopulaCompositionTests {
         ("gakuseideshita", "学生でした"),
         ("benridesu", "便利です"),
         ("benrideshita", "便利でした"),
-        ("utsukushiidesu", "美しいです")
+        ("utsukushiidesu", "美しいです"),
+        ("kouhoda", "候補だ"),
+        ("kouhodatta", "候補だった"),
+        ("kouhodearu", "候補である"),
+        ("kouhodeatta", "候補であった"),
+        ("kouhodehanai", "候補ではない"),
+        ("kouhojanai", "候補じゃない"),
+        ("kouhodehanakatta", "候補ではなかった"),
+        ("kouhodehaarimasen", "候補ではありません"),
+        ("kouhodeshou", "候補でしょう"),
+        ("kouhodarou", "候補だろう"),
+        ("kouhodesuka", "候補ですか"),
+        ("kouhodayone", "候補だよね"),
+        ("kouhonara", "候補なら"),
+        ("kouhodeareba", "候補であれば"),
+        ("kouhodattara", "候補だったら"),
+        ("kouhokamoshirenai", "候補かもしれない"),
+        ("kouhodearukamoshirenai", "候補であるかもしれない"),
+        ("kouhodearubeki", "候補であるべき"),
+        ("kouhonohazuda", "候補のはずだ"),
+        ("benridatta", "便利だった")
     ])
     func convertsWordsFollowedByTheCopula(
         input: String,
@@ -72,6 +93,10 @@ struct BundledCopulaCompositionTests {
         #expect(try !visible("ikudesu").contains("行くです"))
         #expect(try !visible("taberudesu").contains("食べるです"))
         #expect(try !visible("utsukushiideshita").contains("美しいでした"))
+        #expect(try !visible("utsukushiida").contains("美しいだ"))
+        #expect(try !visible("taberudearu").contains("食べるである"))
+        #expect(try !visible("kouhoshiyou").contains("候補しよう"))
+        #expect(try !visible("kouhoshitai").contains("候補したい"))
     }
 
     @Test(arguments: ["kouhodes", "kouhode", "desu", "deshita"])
@@ -81,6 +106,19 @@ struct BundledCopulaCompositionTests {
         }
 
         #expect(joined.allSatisfy { $0 == "です" || $0 == "でした" })
+    }
+
+    /// Readings such as `fuda` are words of their own rather than a short
+    /// word followed by だ
+    @Test(arguments: ["fuda", "kuda", "inada"])
+    func shortWordsDoNotTakeDa(_ input: String) throws {
+        let source = try #require(Self.source)
+        let composed = source.candidates(for: .init(
+            input: input,
+            conversionReading: input
+        )).filter { $0.hasSource(.particleComposition) }
+
+        #expect(!composed.contains { $0.storageText.hasSuffix("だ") })
     }
 
     @Test
