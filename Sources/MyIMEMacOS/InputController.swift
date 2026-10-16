@@ -140,6 +140,7 @@ final class InputController: IMKInputController {
     private let candidateSelectionHistoryStore: CandidateSelectionHistoryStore
     private let unselectedInputLearningStore: UnselectedInputLearningStore
     private var closingBracketTracker = ClosingBracketTracker()
+    private static let closingBracketContextCharacterLimit = 512
     private var emojiSearchLearning = EmojiSearchLearning()
     private let nextInputCandidateCoordinator: NextInputCandidateCoordinator
     private let candidateSearchCoordinator = CandidateSearchCoordinator()
@@ -653,6 +654,7 @@ final class InputController: IMKInputController {
             return selectFuzzyCandidate(index: 0, client: sender)
         }
 
+        let refreshesClosingBracketsAfterPaste = isPasteShortcut(event)
         if let handled = handleStandardKeyEvent(event, client: sender) {
             return handled
         }
@@ -664,6 +666,12 @@ final class InputController: IMKInputController {
         else {
             if !inputBuffer.isEmpty {
                 commit(inputBuffer, to: sender)
+            }
+            if refreshesClosingBracketsAfterPaste {
+                scheduleClosingBracketContextRefresh(
+                    client: sender,
+                    reason: "paste"
+                )
             }
             return false
         }
@@ -717,10 +725,17 @@ final class InputController: IMKInputController {
         case .returnKey:
             return handleReturnKey(client: sender)
         case .delete:
-            return deleteBackward(
+            let handled = deleteBackward(
                 from: sender,
                 unit: deletionUnit(for: event)
             )
+            if !handled {
+                scheduleClosingBracketContextRefresh(
+                    client: sender,
+                    reason: "delete"
+                )
+            }
+            return handled
         case .escape:
             if candidateSession.unfilteredCandidates != nil {
                 removeLastCandidateFilter(client: sender)
@@ -736,13 +751,19 @@ final class InputController: IMKInputController {
         _ direction: CandidateNavigationDirection,
         client sender: Any
     ) -> Bool {
-        if inputBuffer.isEmpty, nextInputCandidateCoordinator.hasCandidates {
-            noteNavigation("horizontalArrow.nextInput")
-            guard nextInputCandidateCoordinator.selectedIndex != nil else {
+        if inputBuffer.isEmpty {
+            if nextInputCandidateCoordinator.hasCandidates {
+                noteNavigation("horizontalArrow.nextInput")
+                if nextInputCandidateCoordinator.selectedIndex != nil {
+                    return moveNextInputCandidate(direction, client: sender)
+                }
                 dismissNextInputCandidates(clearMarkedTextIn: nil)
-                return false
             }
-            return moveNextInputCandidate(direction, client: sender)
+            scheduleClosingBracketContextRefresh(
+                client: sender,
+                reason: direction == .left ? "leftArrow" : "rightArrow"
+            )
+            return false
         }
         if selectedCandidateIndex != nil,
            shouldEnterTranslationCandidates(
@@ -1059,6 +1080,17 @@ final class InputController: IMKInputController {
             }
         }
         guard let aSelector, responds(to: aSelector) else {
+            if let aSelector,
+               let inputClient = activeInputClient ?? client(),
+               ["paste:", "moveLeft:", "moveRight:",
+                "moveBackward:", "moveForward:",
+                "deleteBackward:", "deleteForward:"]
+                .contains(NSStringFromSelector(aSelector)) {
+                scheduleClosingBracketContextRefresh(
+                    client: inputClient,
+                    reason: "command"
+                )
+            }
             super.doCommand(by: aSelector, command: infoDictionary)
             return
         }
@@ -1459,16 +1491,21 @@ final class InputController: IMKInputController {
             return
         }
         if inputBuffer.isEmpty {
-            if closingBracketTracker
+            let preservesStructuralCandidate = closingBracketTracker
                 .shouldPreserveCandidatesDuringEmptySystemCommit(
                     hasCandidates: nextInputCandidateCoordinator.hasCandidates
-                ) {
+                )
+            if preservesStructuralCandidate {
                 Self.lifecycleLogger.notice(
                     "preserved structural next-input candidate after empty system commit"
                 )
-                return
+            } else {
+                dismissNextInputCandidates(clearMarkedTextIn: sender)
             }
-            dismissNextInputCandidates(clearMarkedTextIn: sender)
+            scheduleClosingBracketContextRefresh(
+                client: sender,
+                reason: "emptySystemCommit"
+            )
             return
         }
 
@@ -5707,6 +5744,101 @@ final class InputController: IMKInputController {
         if nextInputCandidateCoordinator.hasCandidates {
             dismissNextInputCandidates(clearMarkedTextIn: sender)
         }
+    }
+
+    /// Paste and cursor movement are applied by the input client after the
+    /// key event returns, so bracket state is rebuilt on the next main-loop
+    /// turn from a bounded window around the new insertion point
+    private func scheduleClosingBracketContextRefresh(
+        client sender: Any,
+        reason: String
+    ) {
+        guard let snapshot = currentInputSessionSnapshot() else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.acceptsAsyncResult(
+                    snapshot,
+                    source: "closingBracketContext",
+                    sender: sender
+                  ),
+                  self.inputBuffer.isEmpty else {
+                return
+            }
+            self.refreshClosingBracketContext(
+                client: sender,
+                reason: reason
+            )
+        }
+    }
+
+    private func refreshClosingBracketContext(
+        client sender: Any,
+        reason: String
+    ) {
+        let context = (sender as? IMKTextInput).flatMap {
+            closingBracketTextContext(from: $0)
+        }
+        if let context {
+            closingBracketTracker.synchronize(
+                precedingText: context.preceding,
+                followingText: context.following
+            )
+        }
+        trace(
+            "closingBracketContext.refresh",
+            sender: sender,
+            detail: "reason=\(reason) available=\(context != nil) beforeLength=\(context?.preceding.utf16.count ?? 0) afterLength=\(context?.following.utf16.count ?? 0)"
+        )
+        candidateSearchCoordinator.cancel(.nextInputExtension)
+        guard let candidate = closingBracketTracker.candidate else {
+            if nextInputCandidateCoordinator.hasCandidates {
+                dismissNextInputCandidates(clearMarkedTextIn: nil)
+            }
+            return
+        }
+        _ = nextInputCandidateCoordinator.beginCandidates(
+            context: "structuralClosingBracket",
+            preferredCandidates: [Candidate(
+                storageText: candidate,
+                source: .nextInput
+            )],
+            learnedCandidates: [],
+            dictionaryCandidates: [],
+            unsuppressibleCandidates: [candidate]
+        )
+        showNextInputCandidatePanel(client: sender)
+        startNextInputOutsideClickMonitoring()
+        scheduleNextInputDismissal()
+    }
+
+    private func closingBracketTextContext(
+        from textClient: IMKTextInput
+    ) -> (preceding: String, following: String)? {
+        let selection = textClient.selectedRange()
+        guard selection.location != NSNotFound else { return nil }
+        let precedingLength = min(
+            selection.location,
+            Self.closingBracketContextCharacterLimit
+        )
+        let preceding: String
+        if precedingLength == 0 {
+            preceding = ""
+        } else {
+            let range = NSRange(
+                location: selection.location - precedingLength,
+                length: precedingLength
+            )
+            guard let value = textClient.attributedSubstring(from: range)?
+                .string else {
+                return nil
+            }
+            preceding = value
+        }
+        let following = textClient.attributedSubstring(from: NSRange(
+            location: selection.location,
+            length: 1
+        ))?.string ?? ""
+        return (preceding, following)
     }
 
     private func showInputPreview(client sender: Any) {

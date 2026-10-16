@@ -1,3 +1,5 @@
+import Foundation
+
 public struct ClosingBracketTracker: Equatable, Sendable {
     private static let pairs: [Character: Character] = [
         "(": ")", "（": "）", "[": "]", "［": "］", "{": "}",
@@ -16,11 +18,17 @@ public struct ClosingBracketTracker: Equatable, Sendable {
         .union(closingKinds.keys)
 
     private var pendingClosings: [Character] = []
+    private var followingCharacter: Character?
 
     public init() {}
 
     public var candidate: String? {
-        pendingClosings.last.map(String.init)
+        guard let closing = pendingClosings.last else { return nil }
+        if let followingCharacter,
+           Self.kind(of: followingCharacter) == Self.kind(of: closing) {
+            return nil
+        }
+        return String(closing)
     }
 
     /// A closing bracket alone belongs to its opening rather than to the
@@ -78,9 +86,26 @@ public struct ClosingBracketTracker: Equatable, Sendable {
         }
     }
 
+    /// Rebuilds the open-bracket stack from the text surrounding the
+    /// insertion point after an edit performed by the input client
+    public mutating func synchronize(
+        precedingText: String,
+        followingText: String
+    ) {
+        reset()
+        let relevantStart = precedingText.lastIndex(where: {
+            $0.unicodeScalars.contains(where: CharacterSet.newlines.contains)
+        }).map { precedingText.index(after: $0) }
+            ?? precedingText.startIndex
+        let relevantText = precedingText[relevantStart...]
+        consume(String(relevantText))
+        followingCharacter = followingText.first
+    }
+
     /// Forgets open brackets when the text they were opened in is left
     public mutating func reset() {
         pendingClosings = []
+        followingCharacter = nil
     }
 
     private static func kind(of closing: Character) -> Character {

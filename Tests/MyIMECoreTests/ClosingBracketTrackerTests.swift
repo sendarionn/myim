@@ -69,4 +69,71 @@ struct ClosingBracketTrackerTests {
             selectedCandidate: "続き"
         ))
     }
+
+    @Test(arguments: [
+        ("「こんにちは", "", "」"),
+        ("（こんにちは", "", "）"),
+        ("「（こんにちは", "", "）"),
+        ("「（こんにちは）", "", "」"),
+        ("「こんにちは」", "", nil),
+        ("", "「こんにちは", nil)
+    ])
+    func rebuildsTheCandidateFromTextBeforeTheCursor(
+        preceding: String,
+        following: String,
+        expected: String?
+    ) {
+        var tracker = ClosingBracketTracker()
+
+        tracker.synchronize(
+            precedingText: preceding,
+            followingText: following
+        )
+
+        #expect(tracker.candidate == expected)
+    }
+
+    @Test(arguments: [
+        ("「こんにちは", "」続き"),
+        ("(hello", "）"),
+        ("（hello", ")"),
+        ("[hello", "］")
+    ])
+    func doesNotOfferAClosingAlreadyAfterTheCursor(
+        preceding: String,
+        following: String
+    ) {
+        var tracker = ClosingBracketTracker()
+
+        tracker.synchronize(
+            precedingText: preceding,
+            followingText: following
+        )
+
+        #expect(tracker.candidate == nil)
+    }
+
+    @Test
+    func offersTheOuterClosingAfterMovingPastTheInnerClosing() {
+        var tracker = ClosingBracketTracker()
+
+        tracker.synchronize(
+            precedingText: "「（こんにちは）",
+            followingText: "続き"
+        )
+
+        #expect(tracker.candidate == "」")
+    }
+
+    @Test
+    func ignoresOpeningsBeforeTheLatestLineBreak() {
+        var tracker = ClosingBracketTracker()
+
+        tracker.synchronize(
+            precedingText: "「前の行\n現在の行",
+            followingText: ""
+        )
+
+        #expect(tracker.candidate == nil)
+    }
 }
