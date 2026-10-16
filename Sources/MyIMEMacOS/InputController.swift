@@ -33,6 +33,8 @@ final class InputController: IMKInputController {
     private static let candidatePanelAnchorSpacing: CGFloat = 8
     private static let fuzzyCandidateDisplayDelay = Duration.milliseconds(120)
     private static let maximumMozcDictionaryPrefixCandidates = 2048
+    private static let structuralClosingBracketContext =
+        "structuralClosingBracket"
     private static let sharedBasicEntries = loadBasicEntries()
     private static let sharedBasicConversionEngine = ConversionEngine(
         entries: sharedBasicEntries
@@ -140,6 +142,7 @@ final class InputController: IMKInputController {
     private let candidateSelectionHistoryStore: CandidateSelectionHistoryStore
     private let unselectedInputLearningStore: UnselectedInputLearningStore
     private var closingBracketTracker = ClosingBracketTracker()
+    private var closingBracketContextRefreshGeneration = 0
     private static let closingBracketContextCharacterLimit = 512
     private var emojiSearchLearning = EmojiSearchLearning()
     private let nextInputCandidateCoordinator: NextInputCandidateCoordinator
@@ -757,7 +760,10 @@ final class InputController: IMKInputController {
                 if nextInputCandidateCoordinator.selectedIndex != nil {
                     return moveNextInputCandidate(direction, client: sender)
                 }
-                dismissNextInputCandidates(clearMarkedTextIn: nil)
+                if nextInputCandidateCoordinator.context
+                    != Self.structuralClosingBracketContext {
+                    dismissNextInputCandidates(clearMarkedTextIn: nil)
+                }
             }
             scheduleClosingBracketContextRefresh(
                 client: sender,
@@ -5754,8 +5760,12 @@ final class InputController: IMKInputController {
         reason: String
     ) {
         guard let snapshot = currentInputSessionSnapshot() else { return }
+        closingBracketContextRefreshGeneration += 1
+        let refreshGeneration = closingBracketContextRefreshGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self,
+                  refreshGeneration
+                    == self.closingBracketContextRefreshGeneration,
                   self.acceptsAsyncResult(
                     snapshot,
                     source: "closingBracketContext",
@@ -5789,26 +5799,47 @@ final class InputController: IMKInputController {
             sender: sender,
             detail: "reason=\(reason) available=\(context != nil) beforeLength=\(context?.preceding.utf16.count ?? 0) afterLength=\(context?.following.utf16.count ?? 0)"
         )
-        candidateSearchCoordinator.cancel(.nextInputExtension)
-        guard let candidate = closingBracketTracker.candidate else {
+        let update = ClosingBracketPanelUpdate.resolve(
+            currentContext: nextInputCandidateCoordinator.context,
+            currentCandidates: nextInputCandidateCoordinator.candidates,
+            isPanelVisible: primaryCandidatePanel.isVisible,
+            refreshedCandidate: closingBracketTracker.candidate
+        )
+        switch update {
+        case .unchanged:
+            return
+        case .reposition:
+            guard let location = locationCoordinator.currentLocation(
+                for: sender
+            ) else {
+                return
+            }
+            primaryCandidatePanel.reposition(near: location)
+        case let .present(candidate):
+            candidateSearchCoordinator.cancel(.nextInputExtension)
+            let hadVisibleNextInput = nextInputCandidateCoordinator
+                .hasCandidates && primaryCandidatePanel.isVisible
+            _ = nextInputCandidateCoordinator.beginCandidates(
+                context: Self.structuralClosingBracketContext,
+                preferredCandidates: [Candidate(
+                    storageText: candidate,
+                    source: .nextInput
+                )],
+                learnedCandidates: [],
+                dictionaryCandidates: [],
+                unsuppressibleCandidates: [candidate]
+            )
+            showNextInputCandidatePanel(client: sender)
+            if !hadVisibleNextInput {
+                startNextInputOutsideClickMonitoring()
+                scheduleNextInputDismissal()
+            }
+        case .dismiss:
+            candidateSearchCoordinator.cancel(.nextInputExtension)
             if nextInputCandidateCoordinator.hasCandidates {
                 dismissNextInputCandidates(clearMarkedTextIn: nil)
             }
-            return
         }
-        _ = nextInputCandidateCoordinator.beginCandidates(
-            context: "structuralClosingBracket",
-            preferredCandidates: [Candidate(
-                storageText: candidate,
-                source: .nextInput
-            )],
-            learnedCandidates: [],
-            dictionaryCandidates: [],
-            unsuppressibleCandidates: [candidate]
-        )
-        showNextInputCandidatePanel(client: sender)
-        startNextInputOutsideClickMonitoring()
-        scheduleNextInputDismissal()
     }
 
     private func closingBracketTextContext(

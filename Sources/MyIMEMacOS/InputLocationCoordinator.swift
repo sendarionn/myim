@@ -47,6 +47,14 @@ final class InputLocationCoordinator {
         return location ?? .zero
     }
 
+    /// Returns only the location reported for the current insertion point
+    /// instead of moving a panel back to a cached pre-movement location
+    func currentLocation(for sender: Any) -> NSRect? {
+        let result = query(sender)
+        anchorSession.record(result)
+        return result.location
+    }
+
     func candidateAnchor(
         for sender: Any
     ) -> CandidateAnchorResolution<NSRect> {
