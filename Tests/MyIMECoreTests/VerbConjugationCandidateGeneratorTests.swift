@@ -286,6 +286,35 @@ struct VerbConjugationCandidateGeneratorTests {
         #expect(generator.candidates(for: input).contains(expected))
     }
 
+    @Test(arguments: [
+        ("kakazu", "書かず"),
+        ("yomazu", "読まず"),
+        ("matazu", "待たず"),
+        ("kawazu", "買わず"),
+        ("ikazu", "行かず"),
+        ("tabezu", "食べず"),
+        ("mizuni", "見ずに"),
+        ("benkyousezu", "勉強せず"),
+        ("ninzezu", "任ぜず"),
+        ("kozu", "来ず"),
+        ("yobarezu", "呼ばれず"),
+        ("tabenaide", "食べないで"),
+        ("kakanakute", "書かなくて")
+    ])
+    func conjugatesTheNegativeWithZuAndNai(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test
+    func zuFollowsTheClassicalNegativeOfSuru() {
+        #expect(!generator.candidates(for: "benkyoushizu").contains("勉強しず"))
+        #expect(!generator.candidates(for: "kakizu").contains("書きず"))
+        #expect(generator.candidates(for: "benkyoushinai").contains("勉強しない"))
+    }
+
     @Test
     func rareVerbsDoNotOfferTheVolitional() {
         let generator = VerbConjugationCandidateGenerator(

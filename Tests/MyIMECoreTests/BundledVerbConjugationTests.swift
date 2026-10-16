@@ -223,6 +223,50 @@ struct BundledVerbConjugationTests {
     }
 
     @Test(arguments: [
+        ("kagirazu", "限らず"),
+        ("kagiranai", "限らない"),
+        ("kagiranakatta", "限らなかった"),
+        ("kagiranakereba", "限らなければ"),
+        ("kagiranakute", "限らなくて"),
+        ("kagiranaide", "限らないで"),
+        ("kagirazuni", "限らずに"),
+        ("kakazu", "書かず"),
+        ("yomazu", "読まず"),
+        ("tabezu", "食べず"),
+        ("sezu", "せず"),
+        ("kozu", "来ず"),
+        ("kentousezu", "検討せず"),
+        ("kagirimasen", "限りません"),
+        ("kagirimasendeshita", "限りませんでした"),
+        ("tabemasendeshita", "食べませんでした")
+    ])
+    func showsNegativeFormsOnTheFirstPage(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        var session = CandidateSession()
+
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: input
+            )),
+            input: input,
+            reading: input
+        )
+
+        #expect(session.candidateTexts.prefix(4).contains(expected))
+        #expect(!session.candidateTexts.contains("限りず"))
+    }
+
+    @Test
+    func wordsEndingInZuKeepTheirDictionaryWordFirst() throws {
+        #expect(try candidates(for: "mizu").first == "水")
+        #expect(try candidates(for: "okazu").prefix(2).contains("おかず"))
+    }
+
+    @Test(arguments: [
         ("dassou", "脱そう"), ("gisou", "議そう"), ("hiyou", "干よう")
     ])
     func rareVerbsDoNotOfferTheVolitional(

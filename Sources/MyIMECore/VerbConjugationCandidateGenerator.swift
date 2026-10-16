@@ -25,6 +25,8 @@ public enum VerbConjugationForm: Sendable, CaseIterable {
     case volitional
     /// 終止形 before べき, where する keeps its classical す as in すべき
     case beforeBeki
+    /// 未然形 before ず, where する takes せ as in せず rather than しない
+    case beforeZu
 }
 
 public struct VerbConjugationDictionary: Sendable {
@@ -195,6 +197,9 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         FollowingExpression("nakatta", "なかった", requiring: .negative),
         FollowingExpression("nakereba", "なければ", requiring: .negative),
         FollowingExpression("nakute", "なくて", requiring: .negative),
+        FollowingExpression("naide", "ないで", requiring: .negative),
+        FollowingExpression("zu", "ず", requiring: .beforeZu),
+        FollowingExpression("zuni", "ずに", requiring: .beforeZu),
         FollowingExpression("ba", "ば", requiring: .conditional),
         FollowingExpression("ra", "ら", requiring: .past),
         FollowingExpression("ri", "り", requiring: .past),
@@ -493,28 +498,32 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 .continuative: ("", ""), .negative: ("", ""),
                 .te: ("te", "て"), .past: ("ta", "た"),
                 .conditional: ("re", "れ"), .terminal: ("ru", "る"),
-                .volitional: ("you", "よう"), .beforeBeki: ("ru", "る")
+                .volitional: ("you", "よう"), .beforeBeki: ("ru", "る"),
+                .beforeZu: ("", "")
             ]
         case .suru:
             endings = [
                 .continuative: ("shi", "し"), .negative: ("shi", "し"),
                 .te: ("shite", "して"), .past: ("shita", "した"),
                 .conditional: ("sure", "すれ"), .terminal: ("suru", "する"),
-                .volitional: ("shiyou", "しよう"), .beforeBeki: ("su", "す")
+                .volitional: ("shiyou", "しよう"), .beforeBeki: ("su", "す"),
+                .beforeZu: ("se", "せ")
             ]
         case .zuru:
             endings = [
                 .continuative: ("ji", "じ"), .negative: ("ji", "じ"),
                 .te: ("jite", "じて"), .past: ("jita", "じた"),
                 .conditional: ("zure", "ずれ"), .terminal: ("zuru", "ずる"),
-                .volitional: ("jiyou", "じよう"), .beforeBeki: ("zuru", "ずる")
+                .volitional: ("jiyou", "じよう"), .beforeBeki: ("zuru", "ずる"),
+                .beforeZu: ("ze", "ぜ")
             ]
         case .kuru:
             endings = [
                 .continuative: ("ki", "き"), .negative: ("ko", "こ"),
                 .te: ("kite", "きて"), .past: ("kita", "きた"),
                 .conditional: ("kure", "くれ"), .terminal: ("kuru", "くる"),
-                .volitional: ("koyou", "こよう"), .beforeBeki: ("kuru", "くる")
+                .volitional: ("koyou", "こよう"), .beforeBeki: ("kuru", "くる"),
+                .beforeZu: ("ko", "こ")
             ]
         }
         return endings[form]!
@@ -638,7 +647,7 @@ private struct GodanRow: Sendable {
     ) -> (reading: String, kana: String) {
         switch form {
         case .continuative: continuative
-        case .negative: negative
+        case .negative, .beforeZu: negative
         case .te: te
         case .past: past
         case .conditional: conditional
