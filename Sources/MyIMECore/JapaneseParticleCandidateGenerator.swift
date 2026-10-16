@@ -15,29 +15,50 @@ public struct ParticleComposition: Equatable, Sendable {
 
 public enum JapaneseParticleCandidateGenerator {
     // 選定根拠はdocs/JAPANESE_PARTICLE_SOURCES.mdを参照
-    private enum LeadingConnectionRule: Sendable {
-        /// Runtime dictionaries do not retain POS data, so this accepts
-        /// candidates written only with kanji and katakana as noun-like
+    /// Runtime dictionaries do not retain POS data, so connections are
+    /// judged from how the candidate is written
+    private enum ConnectionRule: Sendable {
+        /// Kanji and katakana only, as nouns are written
         case nounLikeByScript
+        /// Nouns and na-adjective stems such as 学生 and 便利, and
+        /// i-adjectives such as 美しい; verbs end in an u-row kana and kana
+        /// words cannot be told apart, so neither is joined
+        case copulaStemByScript
     }
 
     private struct Particle: Sendable {
         let reading: String
         let text: String
-        let leadingConnection: LeadingConnectionRule?
+        let leadingConnection: ConnectionRule?
+        /// The words this ending may follow; nil joins any word
+        let trailingConnection: ConnectionRule?
 
         init(
             reading: String,
             text: String,
-            leadingConnection: LeadingConnectionRule? = nil
+            leadingConnection: ConnectionRule? = nil,
+            trailingConnection: ConnectionRule? = nil
         ) {
             self.reading = reading
             self.text = text
             self.leadingConnection = leadingConnection
+            self.trailingConnection = trailingConnection
         }
     }
 
     private static let particles: [Particle] = [
+        // Polite copula endings; an i-adjective takes です but not でした,
+        // its past being 美しかったです
+        Particle(
+            reading: "deshita",
+            text: "でした",
+            trailingConnection: .nounLikeByScript
+        ),
+        Particle(
+            reading: "desu",
+            text: "です",
+            trailingConnection: .copulaStemByScript
+        ),
         Particle(reading: "wotsuujite", text: "を通じて"),
         Particle(reading: "wotooshite", text: "を通して"),
         Particle(reading: "nikurabete", text: "に比べて"),
@@ -114,7 +135,10 @@ public enum JapaneseParticleCandidateGenerator {
 
         func append(stem: String, particle: Particle) {
             guard stem.count >= 2 else { return }
-            for candidate in exactCandidates(stem) where !candidate.isEmpty {
+            for candidate in exactCandidates(stem) where !candidate.isEmpty
+                && particle.trailingConnection.map({
+                    allowsConnection(candidate, rule: $0)
+                }) ?? true {
                 let combined = candidate + particle.text
                 if seen.insert(combined).inserted {
                     results.append(ParticleComposition(
@@ -131,7 +155,7 @@ public enum JapaneseParticleCandidateGenerator {
             guard stem.count >= 2,
                   let rule = particle.leadingConnection else { return }
             for candidate in exactCandidates(stem)
-            where allowsLeadingConnection(candidate, rule: rule) {
+            where allowsConnection(candidate, rule: rule) {
                 let combined = particle.text + candidate
                 if seen.insert(combined).inserted {
                     results.append(ParticleComposition(
@@ -168,16 +192,37 @@ public enum JapaneseParticleCandidateGenerator {
         return results
     }
 
-    private static func allowsLeadingConnection(
+    private static func allowsConnection(
         _ candidate: String,
-        rule: LeadingConnectionRule
+        rule: ConnectionRule
     ) -> Bool {
         guard !candidate.isEmpty else { return false }
+        let nounLike = candidate.allSatisfy {
+            isKanji($0) || isKatakana($0)
+        }
         switch rule {
         case .nounLikeByScript:
-            return candidate.allSatisfy {
-                isKanji($0) || isKatakana($0)
-            }
+            return nounLike
+        case .copulaStemByScript:
+            return nounLike || isIAdjectiveLike(candidate)
+        }
+    }
+
+    /// Written with a kanji stem and kana inflection ending in い, as 美しい
+    /// and 高い are; a verb never ends in い
+    private static func isIAdjectiveLike(_ candidate: String) -> Bool {
+        guard candidate.last == "い",
+              let first = candidate.first, isKanji(first) else {
+            return false
+        }
+        return candidate.dropFirst().allSatisfy {
+            isKanji($0) || isHiragana($0)
+        }
+    }
+
+    private static func isHiragana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy {
+            (0x3041...0x309f).contains($0.value)
         }
     }
 

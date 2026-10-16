@@ -16,8 +16,35 @@ struct JapaneseParticleCandidateGeneratorTests {
         "gazoufairu": ["画像ファイル"],
         "shirizoku": ["退く"],
         "eibun": ["ABC"],
-        "kigou": ["データ・ベース"]
+        "kigou": ["データ・ベース"],
+        "gakusei": ["学生"],
+        "benri": ["便利"],
+        "kirei": ["綺麗", "きれい"],
+        "utsukushii": ["美しい"],
+        "iku": ["行く"],
+        "taberu": ["食べる"]
     ]
+
+    @Test(arguments: [
+        ("kouhodesu", ["候補です"]),
+        ("gakuseideshita", ["学生でした"]),
+        ("benridesu", ["便利です"]),
+        ("utsukushiidesu", ["美しいです"]),
+        ("kireidesu", ["綺麗です"])
+    ])
+    func joinsTheCopulaToNounsAndAdjectives(
+        input: String,
+        expected: [String]
+    ) {
+        #expect(candidates(for: input) == expected)
+    }
+
+    @Test(arguments: [
+        "ikudesu", "taberudeshita", "utsukushiideshita", "desu", "kouhodes"
+    ])
+    func doesNotJoinTheCopulaToVerbsOrMissingWords(_ input: String) {
+        #expect(candidates(for: input).isEmpty)
+    }
 
     @Test
     func keepsTrailingParticleInHiragana() {
