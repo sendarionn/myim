@@ -98,4 +98,36 @@ struct EmojiSearchActivationPolicyTests {
             isSearchConfirmed: false
         ) == .closePanel)
     }
+
+    @Test
+    func clickingAVisibleEmojiCommitsItsExactIndex() {
+        #expect(EmojiSearchActivationPolicy.clickAction(
+            index: 128,
+            itemCount: 256,
+            isPanelVisible: true,
+            isCommitInProgress: false
+        ) == .commit(index: 128))
+    }
+
+    @Test
+    func ignoresInvalidOrRepeatedEmojiClicks() {
+        #expect(EmojiSearchActivationPolicy.clickAction(
+            index: 0,
+            itemCount: 1,
+            isPanelVisible: false,
+            isCommitInProgress: false
+        ) == .ignore)
+        #expect(EmojiSearchActivationPolicy.clickAction(
+            index: 0,
+            itemCount: 1,
+            isPanelVisible: true,
+            isCommitInProgress: true
+        ) == .ignore)
+        #expect(EmojiSearchActivationPolicy.clickAction(
+            index: 1,
+            itemCount: 1,
+            isPanelVisible: true,
+            isCommitInProgress: false
+        ) == .ignore)
+    }
 }

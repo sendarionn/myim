@@ -133,6 +133,8 @@ final class EmojiWindowController: NSObject {
     private var presentationVisibleFrame: NSRect?
     private var avoidedFrames: [NSRect] = []
     private(set) var isSearchConfirmed = false
+    private var isClickCommitInProgress = false
+    private var onEmojiClicked: ((String) -> Void)?
     private var outsideLocalMonitor: Any?
     private var outsideGlobalMonitor: Any?
     private let romajiConverter = RomajiConverter()
@@ -199,7 +201,12 @@ final class EmojiWindowController: NSObject {
         return selectedIndex.map { visibleEntries[$0].emoji }
     }
 
-    func show(near anchor: NSRect) {
+    func show(
+        near anchor: NSRect,
+        onEmojiClicked: @escaping (String) -> Void
+    ) {
+        self.onEmojiClicked = onEmojiClicked
+        isClickCommitInProgress = false
         selectedIndex = nil
         selectedRecentIndex = nil
         collectionView.selectionIndexPaths = []
@@ -241,6 +248,8 @@ final class EmojiWindowController: NSObject {
         EmojiGlobalHotKey.shared.endPanelCapture()
         panel.orderOut(nil)
         comparisonPanel.orderOut(nil)
+        onEmojiClicked = nil
+        isClickCommitInProgress = false
         selectedIndex = nil
         selectedRecentIndex = nil
         isSearchConfirmed = false
@@ -493,6 +502,10 @@ final class EmojiWindowController: NSObject {
         collectionView.isSelectable = true
         collectionView.allowsEmptySelection = true
         collectionView.backgroundColors = [.clear]
+        collectionView.addGestureRecognizer(NSClickGestureRecognizer(
+            target: self,
+            action: #selector(commitClickedCollectionEmoji(_:))
+        ))
         collectionView.register(
             EmojiCollectionItem.self,
             forItemWithIdentifier: NSUserInterfaceItemIdentifier("EmojiItem")
@@ -769,8 +782,42 @@ final class EmojiWindowController: NSObject {
     }
 
     @objc private func selectRecentEmoji(_ sender: NSButton) {
-        guard canSelectEmoji else { return }
+        guard recentHistory.emojis.indices.contains(sender.tag) else { return }
         selectRecent(index: sender.tag)
+        activateClickedEmoji(
+            recentHistory.emojis[sender.tag],
+            index: sender.tag,
+            itemCount: recentHistory.emojis.count
+        )
+    }
+
+    @objc private func commitClickedCollectionEmoji(
+        _ recognizer: NSClickGestureRecognizer
+    ) {
+        let point = recognizer.location(in: collectionView)
+        guard let index = collectionView.indexPathForItem(at: point)?.item,
+              visibleEntries.indices.contains(index) else { return }
+        select(index: index)
+        activateClickedEmoji(
+            visibleEntries[index].emoji,
+            index: index,
+            itemCount: visibleEntries.count
+        )
+    }
+
+    private func activateClickedEmoji(
+        _ emoji: String,
+        index: Int,
+        itemCount: Int
+    ) {
+        guard case .commit = EmojiSearchActivationPolicy.clickAction(
+            index: index,
+            itemCount: itemCount,
+            isPanelVisible: panel.isVisible,
+            isCommitInProgress: isClickCommitInProgress
+        ), let onEmojiClicked else { return }
+        isClickCommitInProgress = true
+        onEmojiClicked(emoji)
     }
 
     private func updateRecentSelection() {
@@ -1124,10 +1171,6 @@ extension EmojiWindowController: NSCollectionViewDataSource, NSCollectionViewDel
         _ collectionView: NSCollectionView,
         didSelectItemsAt indexPaths: Set<IndexPath>
     ) {
-        guard canSelectEmoji else {
-            collectionView.selectionIndexPaths = []
-            return
-        }
         guard let index = indexPaths.first?.item,
               visibleEntries.indices.contains(index) else { return }
         selectedRecentIndex = nil

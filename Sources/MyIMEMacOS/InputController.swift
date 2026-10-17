@@ -2637,7 +2637,14 @@ final class InputController: IMKInputController {
         primaryCandidatePanel.hide()
         previewWindow.hide()
         emojiSearchLearning.reset()
-        emojiWindow.show(near: inputLocation(for: sender))
+        emojiWindow.show(
+            near: inputLocation(for: sender),
+            onEmojiClicked: { [weak self] emoji in
+                guard let self,
+                      Self.emojiPanelController === self else { return }
+                self.commitSelectedEmoji(emoji, to: sender)
+            }
+        )
         Self.emojiPanelController = self
         updateEmojiSearchFromComposition()
         if EmojiSearchActivationPolicy.startsInSelectionMode(

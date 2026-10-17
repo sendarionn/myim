@@ -11,6 +11,11 @@ public enum EmojiSearchEscapeAction: Equatable {
     case closePanel
 }
 
+public enum EmojiClickAction: Equatable {
+    case commit(index: Int)
+    case ignore
+}
+
 public enum EmojiSearchActivationPolicy {
     public static func startsInSelectionMode(searchText: String) -> Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -50,5 +55,19 @@ public enum EmojiSearchActivationPolicy {
         isSearchConfirmed: Bool
     ) -> EmojiSearchEscapeAction {
         isSearchConfirmed ? .resumeSearchEditing : .closePanel
+    }
+
+    public static func clickAction(
+        index: Int,
+        itemCount: Int,
+        isPanelVisible: Bool,
+        isCommitInProgress: Bool
+    ) -> EmojiClickAction {
+        guard isPanelVisible,
+              !isCommitInProgress,
+              (0..<itemCount).contains(index) else {
+            return .ignore
+        }
+        return .commit(index: index)
     }
 }
