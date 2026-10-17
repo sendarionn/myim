@@ -1068,6 +1068,12 @@ final class InputController: IMKInputController {
             }
         }
         if let aSelector,
+           NSStringFromSelector(aSelector) == "cancelOperation:",
+           let inputClient = activeInputClient ?? client(),
+           handleCancelOperationCommand(client: inputClient) {
+            return
+        }
+        if let aSelector,
            inputBuffer.isEmpty,
            ["moveLeft:", "moveRight:", "moveBackward:", "moveForward:"]
             .contains(NSStringFromSelector(aSelector)) {
@@ -1078,6 +1084,49 @@ final class InputController: IMKInputController {
             return
         }
         perform(aSelector, with: infoDictionary)
+    }
+
+    private func handleCancelOperationCommand(client sender: Any) -> Bool {
+        let action = InputEscapeCommandAction.resolve(
+            isPreviewActive: previewWindow.isInteractionActive,
+            isEmojiVisible: emojiWindow.isVisible,
+            isCalendarVisible: calendarWindow.isVisible,
+            isCalendarFormatSelecting:
+                calendarSelectionSession.isSelectingFormat,
+            isTranslationSelecting:
+                translationCandidateSession.selectedCandidate != nil,
+            interactionState: interactionState,
+            hasNextInputCandidates:
+                nextInputCandidateCoordinator.hasCandidates
+        )
+        trace(
+            "cancelOperation",
+            sender: sender,
+            detail: "action=\(String(describing: action))"
+        )
+        switch action {
+        case .closePreview:
+            previewWindow.finishInteraction()
+            return true
+        case .closeEmoji:
+            handleEmojiEscape(client: sender)
+            return true
+        case .closeCalendar:
+            calendarWindow.hide()
+            return true
+        case .cancelCalendarFormat:
+            clearCalendarSelection()
+            primaryCandidatePanel.hide()
+            return true
+        case .leaveTranslation:
+            return returnFromTranslationCandidates(client: sender)
+        case .leaveFuzzyCandidate:
+            return returnToStandardCandidateSelection(client: sender)
+        case .cancelStandardInput:
+            return cancelInput(in: sender)
+        case .passThrough:
+            return false
+        }
     }
 
     override func menu() -> NSMenu! {
