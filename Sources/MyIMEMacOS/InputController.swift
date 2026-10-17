@@ -946,6 +946,9 @@ final class InputController: IMKInputController {
     }
 
     private func handleEmojiEscape(client sender: Any?) {
+        if emojiWindow.closeVariationsIfShown() {
+            return
+        }
         switch EmojiSearchActivationPolicy.escapeAction(
             isSearchConfirmed: emojiWindow.isSearchConfirmed
         ) {
