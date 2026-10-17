@@ -1,13 +1,12 @@
 @preconcurrency import AppKit
 import MyIMECore
 
-private final class EmojiCollectionButton: NSButton {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
 private final class EmojiCollectionItem: NSCollectionViewItem {
     override func loadView() {
-        let button = EmojiCollectionButton(
+        // The button takes the click itself, as the recent emojis do; the
+        // collection view tracks a mouse-down to its mouse-up for selection
+        // and dragging, which a click gesture on it does not receive
+        let button = NSButton(
             title: "",
             target: nil,
             action: nil
@@ -29,8 +28,19 @@ private final class EmojiCollectionItem: NSCollectionViewItem {
         }
     }
 
-    func configure(emoji: String) {
-        (view as? NSButton)?.title = emoji
+    /// `index` is the item's position in the visible entries, set again
+    /// whenever a reused item shows another emoji
+    func configure(
+        emoji: String,
+        index: Int,
+        target: AnyObject,
+        action: Selector
+    ) {
+        guard let button = view as? NSButton else { return }
+        button.title = emoji
+        button.tag = index
+        button.target = target
+        button.action = action
     }
 }
 
@@ -599,10 +609,6 @@ final class EmojiWindowController: NSObject {
         collectionView.isSelectable = true
         collectionView.allowsEmptySelection = true
         collectionView.backgroundColors = [.clear]
-        collectionView.addGestureRecognizer(NSClickGestureRecognizer(
-            target: self,
-            action: #selector(commitClickedCollectionEmoji(_:))
-        ))
         collectionView.register(
             EmojiCollectionItem.self,
             forItemWithIdentifier: NSUserInterfaceItemIdentifier("EmojiItem")
@@ -889,12 +895,13 @@ final class EmojiWindowController: NSObject {
         )
     }
 
-    @objc private func commitClickedCollectionEmoji(
-        _ recognizer: NSClickGestureRecognizer
-    ) {
-        let point = recognizer.location(in: collectionView)
-        guard let index = collectionView.indexPathForItem(at: point)?.item,
-              visibleEntries.indices.contains(index) else { return }
+    @objc private func commitClickedCollectionEmoji(_ sender: NSButton) {
+        let index = sender.tag
+        EmojiDiagnostics.logger.notice(
+            "grid emoji clicked index=\(index, privacy: .public) count=\(self.visibleEntries.count, privacy: .public)"
+        )
+        guard visibleEntries.indices.contains(index),
+              visibleEntries[index].emoji == sender.title else { return }
         select(index: index)
         let entry = visibleEntries[index]
         let variations = Self.variationGrouping
@@ -1376,7 +1383,12 @@ extension EmojiWindowController: NSCollectionViewDataSource, NSCollectionViewDel
             withIdentifier: NSUserInterfaceItemIdentifier("EmojiItem"),
             for: indexPath
         ) as! EmojiCollectionItem
-        item.configure(emoji: visibleEntries[indexPath.item].emoji)
+        item.configure(
+            emoji: visibleEntries[indexPath.item].emoji,
+            index: indexPath.item,
+            target: self,
+            action: #selector(commitClickedCollectionEmoji(_:))
+        )
         return item
     }
 
