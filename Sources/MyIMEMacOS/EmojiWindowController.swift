@@ -157,6 +157,7 @@ final class EmojiWindowController: NSObject {
     private var selectedVariationIndex: Int?
     private var variationEntries: [Entry] = []
     private var variationButtons: [NSButton] = []
+    private var variationSelectionState = EmojiVariationSelectionState()
     private var recentHistory: RecentEmojiHistory
     private let recentStack = NSStackView()
     private let recentSeparator = NSView()
@@ -255,7 +256,7 @@ final class EmojiWindowController: NSObject {
         isClickCommitInProgress = false
         selectedIndex = nil
         selectedRecentIndex = nil
-        hideVariations()
+        resetVariationPresentation()
         collectionView.selectionIndexPaths = []
         updateRecentSelection()
         let resolvedAnchor = anchor == .zero
@@ -303,6 +304,7 @@ final class EmojiWindowController: NSObject {
         selectedVariationIndex = nil
         variationEntries = []
         variationButtons = []
+        variationSelectionState.reset()
         isSearchConfirmed = false
         avoidedFrames = []
     }
@@ -350,6 +352,7 @@ final class EmojiWindowController: NSObject {
         ) {
             selectRecent(index: next)
         } else {
+            resetVariationPresentation()
             comparisonPanel.orderOut(nil)
         }
         return emoji
@@ -362,7 +365,7 @@ final class EmojiWindowController: NSObject {
     }
 
     func confirmSearch() {
-        hideVariations()
+        resetVariationPresentation()
         isSearchConfirmed = true
         selectedIndex = nil
         selectedRecentIndex = nil
@@ -447,7 +450,7 @@ final class EmojiWindowController: NSObject {
     @discardableResult
     func closeVariationsIfShown() -> Bool {
         guard variationPanel.isVisible else { return false }
-        hideVariations()
+        dismissVariationPresentation()
         return true
     }
 
@@ -481,7 +484,10 @@ final class EmojiWindowController: NSObject {
         }
     }
 
-    private func select(index: Int) {
+    private func select(
+        index: Int,
+        reopensSuppressedVariation: Bool = false
+    ) {
         guard visibleEntries.indices.contains(index) else { return }
         selectedRecentIndex = nil
         updateRecentSelection()
@@ -493,10 +499,18 @@ final class EmojiWindowController: NSObject {
             at: [indexPath],
             scrollPosition: [.nearestHorizontalEdge, .nearestVerticalEdge]
         )
-        showComparison(for: visibleEntries[index])
+        updateVariationPresentation(
+            for: visibleEntries[index],
+            near: screenFrameForCollectionItem(at: index)
+                ?? fallbackVariationAnchor(),
+            reopensSuppressed: reopensSuppressedVariation
+        )
     }
 
-    private func selectRecent(index: Int) {
+    private func selectRecent(
+        index: Int,
+        reopensSuppressedVariation: Bool = false
+    ) {
         guard recentHistory.emojis.indices.contains(index),
               let entry = Self.entries.first(where: {
                   $0.emoji == recentHistory.emojis[index]
@@ -505,7 +519,12 @@ final class EmojiWindowController: NSObject {
         collectionView.selectionIndexPaths = []
         selectedRecentIndex = index
         updateRecentSelection()
-        showComparison(for: entry)
+        updateVariationPresentation(
+            for: entry,
+            near: screenFrameForRecentEmoji(at: index)
+                ?? fallbackVariationAnchor(),
+            reopensSuppressed: reopensSuppressedVariation
+        )
     }
 
     private func moveRecentSelection(
@@ -618,6 +637,13 @@ final class EmojiWindowController: NSObject {
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
         scrollView.drawsBackground = false
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(collectionBoundsDidChange(_:)),
+            name: NSView.boundsDidChangeNotification,
+            object: scrollView.contentView
+        )
         let width = Self.panelWidth
         let height = Self.maximumListHeight + Self.panelChromeHeight
         let contentSize = NSSize(width: width, height: height)
@@ -648,7 +674,7 @@ final class EmojiWindowController: NSObject {
     }
 
     private func setSearchQuery(_ query: String) {
-        hideVariations()
+        resetVariationPresentation()
         searchQuery = query
         var queries = [query]
         if let hiragana = romajiConverter.hiragana(from: query) {
@@ -886,8 +912,17 @@ final class EmojiWindowController: NSObject {
     }
 
     @objc private func selectRecentEmoji(_ sender: NSButton) {
-        guard recentHistory.emojis.indices.contains(sender.tag) else { return }
-        selectRecent(index: sender.tag)
+        guard recentHistory.emojis.indices.contains(sender.tag),
+              let entry = Self.entries.first(where: {
+                  $0.emoji == recentHistory.emojis[sender.tag]
+              }) else { return }
+        selectRecent(
+            index: sender.tag,
+            reopensSuppressedVariation: true
+        )
+        if variationEntries(for: entry).count > 1 {
+            return
+        }
         activateClickedEmoji(
             recentHistory.emojis[sender.tag],
             index: sender.tag,
@@ -902,14 +937,12 @@ final class EmojiWindowController: NSObject {
         )
         guard visibleEntries.indices.contains(index),
               visibleEntries[index].emoji == sender.title else { return }
-        select(index: index)
         let entry = visibleEntries[index]
-        let variations = Self.variationGrouping
-            .memberCodes(forBaseCode: entry.code)
-            .compactMap { Self.entriesByCode[$0] }
-        if variations.count > 1,
-           let anchor = screenFrameForCollectionItem(at: index) {
-            showVariations(variations, near: anchor)
+        select(
+            index: index,
+            reopensSuppressedVariation: true
+        )
+        if variationEntries(for: entry).count > 1 {
             return
         }
         activateClickedEmoji(
@@ -927,6 +960,33 @@ final class EmojiWindowController: NSObject {
             index: sender.tag,
             itemCount: variationEntries.count
         )
+    }
+
+    private func variationEntries(for entry: Entry) -> [Entry] {
+        Self.variationGrouping
+            .memberCodes(forBaseCode: entry.code)
+            .compactMap { Self.entriesByCode[$0] }
+    }
+
+    private func updateVariationPresentation(
+        for entry: Entry,
+        near anchor: NSRect,
+        reopensSuppressed: Bool
+    ) {
+        let variations = variationEntries(for: entry)
+        let baseCode = variations.count > 1 ? entry.code : nil
+        switch variationSelectionState.selectionChanged(
+            to: baseCode,
+            reopensSuppressed: reopensSuppressed
+        ) {
+        case .show:
+            showVariations(variations, near: anchor)
+        case .keep:
+            positionVariationPanel(near: anchor)
+        case .hide:
+            clearVariationPanel()
+            showComparison(for: entry)
+        }
     }
 
     private func showVariations(_ entries: [Entry], near anchor: NSRect) {
@@ -986,6 +1046,16 @@ final class EmojiWindowController: NSObject {
         )
         variationPanel.setContentSize(size)
         variationStack.frame = NSRect(origin: .zero, size: size)
+        positionVariationPanel(near: anchor)
+        variationPanel.orderFrontRegardless()
+        updateTabCapture()
+    }
+
+    private func positionVariationPanel(near anchor: NSRect) {
+        guard variationPanel.isVisible || !variationEntries.isEmpty else {
+            return
+        }
+        let size = variationPanel.frame.size
         let visible = panel.screen?.visibleFrame
             ?? NSScreen.inputScreen(containing: anchor)?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
@@ -999,11 +1069,19 @@ final class EmojiWindowController: NSObject {
             visible.maxY - size.height
         )
         variationPanel.setFrameOrigin(NSPoint(x: x, y: y))
-        variationPanel.orderFrontRegardless()
-        updateTabCapture()
     }
 
-    private func hideVariations() {
+    private func dismissVariationPresentation() {
+        variationSelectionState.dismissCurrent()
+        clearVariationPanel()
+    }
+
+    private func resetVariationPresentation() {
+        variationSelectionState.reset()
+        clearVariationPanel()
+    }
+
+    private func clearVariationPanel() {
         variationPanel.orderOut(nil)
         selectedVariationIndex = nil
         variationEntries = []
@@ -1018,6 +1096,39 @@ final class EmojiWindowController: NSObject {
             .layoutAttributesForItem(at: indexPath) else { return nil }
         let windowFrame = collectionView.convert(attributes.frame, to: nil)
         return panel.convertToScreen(windowFrame)
+    }
+
+    @objc private func collectionBoundsDidChange(_ notification: Notification) {
+        guard variationPanel.isVisible,
+              selectedRecentIndex == nil,
+              let selectedIndex else { return }
+        let indexPath = IndexPath(item: selectedIndex, section: 0)
+        collectionView.layoutSubtreeIfNeeded()
+        guard let attributes = collectionView.collectionViewLayout?
+            .layoutAttributesForItem(at: indexPath),
+              collectionView.visibleRect.intersects(attributes.frame),
+              let anchor = screenFrameForCollectionItem(at: selectedIndex)
+        else {
+            dismissVariationPresentation()
+            return
+        }
+        positionVariationPanel(near: anchor)
+    }
+
+    private func screenFrameForRecentEmoji(at index: Int) -> NSRect? {
+        guard let button = recentButtons.first(where: { $0.tag == index }) else {
+            return nil
+        }
+        return panel.convertToScreen(button.convert(button.bounds, to: nil))
+    }
+
+    private func fallbackVariationAnchor() -> NSRect {
+        NSRect(
+            x: panel.frame.midX,
+            y: panel.frame.midY,
+            width: 0,
+            height: 0
+        )
     }
 
     private func activateClickedEmoji(
@@ -1346,7 +1457,7 @@ final class EmojiWindowController: NSObject {
         guard panel.isVisible else { return }
         if variationPanel.isVisible {
             guard !variationPanel.frame.contains(point) else { return }
-            hideVariations()
+            dismissVariationPresentation()
             return
         }
         guard !panel.frame.contains(point),
@@ -1401,6 +1512,11 @@ extension EmojiWindowController: NSCollectionViewDataSource, NSCollectionViewDel
         selectedRecentIndex = nil
         updateRecentSelection()
         selectedIndex = index
-        showComparison(for: visibleEntries[index])
+        updateVariationPresentation(
+            for: visibleEntries[index],
+            near: screenFrameForCollectionItem(at: index)
+                ?? fallbackVariationAnchor(),
+            reopensSuppressed: false
+        )
     }
 }
