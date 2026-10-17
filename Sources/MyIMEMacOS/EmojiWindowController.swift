@@ -158,6 +158,7 @@ final class EmojiWindowController: NSObject {
     private var variationEntries: [Entry] = []
     private var variationButtons: [NSButton] = []
     private var variationSelectionState = EmojiVariationSelectionState()
+    private var variationPresentationWorkItem: DispatchWorkItem?
     private var recentHistory: RecentEmojiHistory
     private let recentStack = NSStackView()
     private let recentSeparator = NSView()
@@ -223,7 +224,7 @@ final class EmojiWindowController: NSObject {
     var visibleFrame: NSRect? { panel.isVisible ? panel.frame : nil }
     var searchText: String { searchQuery }
     var canSelectEmoji: Bool {
-        variationPanel.isVisible || EmojiSearchActivationPolicy.tabNavigatesEmoji(
+        EmojiSearchActivationPolicy.tabNavigatesEmoji(
             searchText: searchQuery,
             isSearchConfirmed: isSearchConfirmed
         )
@@ -237,10 +238,6 @@ final class EmojiWindowController: NSObject {
         showsRecentArea ? recentHistory.emojis.count : 0
     }
     var selectedEmoji: String? {
-        if let selectedVariationIndex,
-           variationEntries.indices.contains(selectedVariationIndex) {
-            return variationEntries[selectedVariationIndex].emoji
-        }
         if let selectedRecentIndex,
            recentHistory.emojis.indices.contains(selectedRecentIndex) {
             return recentHistory.emojis[selectedRecentIndex]
@@ -305,6 +302,7 @@ final class EmojiWindowController: NSObject {
         variationEntries = []
         variationButtons = []
         variationSelectionState.reset()
+        cancelVariationPresentation()
         isSearchConfirmed = false
         avoidedFrames = []
     }
@@ -376,10 +374,6 @@ final class EmojiWindowController: NSObject {
     }
 
     func advanceSelection(backward: Bool) {
-        if variationPanel.isVisible {
-            advanceVariationSelection(backward: backward)
-            return
-        }
         guard !visibleEntries.isEmpty || visibleRecentCount > 0 else {
             return
         }
@@ -398,10 +392,6 @@ final class EmojiWindowController: NSObject {
     }
 
     func moveSelection(_ direction: EmojiGridDirection) {
-        if variationPanel.isVisible {
-            moveVariationSelection(direction)
-            return
-        }
         guard !visibleEntries.isEmpty || visibleRecentCount > 0 else {
             return
         }
@@ -454,26 +444,6 @@ final class EmojiWindowController: NSObject {
         return true
     }
 
-    private func advanceVariationSelection(backward: Bool) {
-        guard !variationEntries.isEmpty else { return }
-        let offset = backward ? -1 : 1
-        let current = selectedVariationIndex ?? (backward ? 0 : -1)
-        selectVariation(index: (
-            current + offset + variationEntries.count
-        ) % variationEntries.count)
-    }
-
-    private func moveVariationSelection(_ direction: EmojiGridDirection) {
-        guard !variationEntries.isEmpty else { return }
-        let current = selectedVariationIndex ?? 0
-        selectVariation(index: EmojiGridNavigator.nextIndex(
-            from: current,
-            direction: direction,
-            itemCount: variationEntries.count,
-            columnCount: Self.columnCount
-        ))
-    }
-
     private func selectVariation(index: Int) {
         guard variationEntries.indices.contains(index) else { return }
         selectedVariationIndex = index
@@ -486,7 +456,7 @@ final class EmojiWindowController: NSObject {
 
     private func select(
         index: Int,
-        reopensSuppressedVariation: Bool = false
+        presentsVariationsImmediately: Bool = false
     ) {
         guard visibleEntries.indices.contains(index) else { return }
         selectedRecentIndex = nil
@@ -503,13 +473,13 @@ final class EmojiWindowController: NSObject {
             for: visibleEntries[index],
             near: screenFrameForCollectionItem(at: index)
                 ?? fallbackVariationAnchor(),
-            reopensSuppressed: reopensSuppressedVariation
+            presentsImmediately: presentsVariationsImmediately
         )
     }
 
     private func selectRecent(
         index: Int,
-        reopensSuppressedVariation: Bool = false
+        presentsVariationsImmediately: Bool = false
     ) {
         guard recentHistory.emojis.indices.contains(index),
               let entry = Self.entries.first(where: {
@@ -523,7 +493,7 @@ final class EmojiWindowController: NSObject {
             for: entry,
             near: screenFrameForRecentEmoji(at: index)
                 ?? fallbackVariationAnchor(),
-            reopensSuppressed: reopensSuppressedVariation
+            presentsImmediately: presentsVariationsImmediately
         )
     }
 
@@ -918,7 +888,7 @@ final class EmojiWindowController: NSObject {
               }) else { return }
         selectRecent(
             index: sender.tag,
-            reopensSuppressedVariation: true
+            presentsVariationsImmediately: true
         )
         if variationEntries(for: entry).count > 1 {
             return
@@ -940,7 +910,7 @@ final class EmojiWindowController: NSObject {
         let entry = visibleEntries[index]
         select(
             index: index,
-            reopensSuppressedVariation: true
+            presentsVariationsImmediately: true
         )
         if variationEntries(for: entry).count > 1 {
             return
@@ -971,22 +941,102 @@ final class EmojiWindowController: NSObject {
     private func updateVariationPresentation(
         for entry: Entry,
         near anchor: NSRect,
-        reopensSuppressed: Bool
+        presentsImmediately: Bool
     ) {
         let variations = variationEntries(for: entry)
         let baseCode = variations.count > 1 ? entry.code : nil
         switch variationSelectionState.selectionChanged(
             to: baseCode,
-            reopensSuppressed: reopensSuppressed
+            presentsImmediately: presentsImmediately
         ) {
+        case let .schedule(baseCode, generation):
+            clearVariationPanel()
+            showComparison(for: entry)
+            scheduleVariationPresentation(
+                for: baseCode,
+                generation: generation
+            )
         case .show:
+            cancelVariationPresentation()
             showVariations(variations, near: anchor)
         case .keep:
             positionVariationPanel(near: anchor)
         case .hide:
+            cancelVariationPresentation()
             clearVariationPanel()
             showComparison(for: entry)
         }
+    }
+
+    private func scheduleVariationPresentation(
+        for baseCode: String,
+        generation: Int
+    ) {
+        cancelVariationPresentationWorkItem()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  self.variationSelectionState.pendingGeneration == generation
+            else { return }
+            self.variationPresentationWorkItem = nil
+            guard self.panel.isVisible,
+                  let entry = self.selectedEntry,
+                  entry.code == baseCode,
+                  let anchor = self.selectedEntryAnchor
+            else {
+                self.variationSelectionState.cancelPendingPresentation()
+                return
+            }
+            guard self.variationSelectionState.scheduledPresentationFired(
+                for: baseCode,
+                generation: generation
+            ) else { return }
+            let variations = self.variationEntries(for: entry)
+            guard variations.count > 1 else { return }
+            self.showVariations(variations, near: anchor)
+        }
+        variationPresentationWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now()
+                + EmojiVariationSelectionState.automaticPresentationDelay,
+            execute: workItem
+        )
+    }
+
+    private func cancelVariationPresentation() {
+        cancelVariationPresentationWorkItem()
+        variationSelectionState.cancelPendingPresentation()
+    }
+
+    private func cancelVariationPresentationWorkItem() {
+        variationPresentationWorkItem?.cancel()
+        variationPresentationWorkItem = nil
+    }
+
+    private var selectedEntry: Entry? {
+        if let selectedRecentIndex,
+           recentHistory.emojis.indices.contains(selectedRecentIndex) {
+            return Self.entries.first {
+                $0.emoji == recentHistory.emojis[selectedRecentIndex]
+            }
+        }
+        guard let selectedIndex,
+              visibleEntries.indices.contains(selectedIndex) else { return nil }
+        return visibleEntries[selectedIndex]
+    }
+
+    private var selectedEntryAnchor: NSRect? {
+        if let selectedRecentIndex {
+            return screenFrameForRecentEmoji(at: selectedRecentIndex)
+                ?? fallbackVariationAnchor()
+        }
+        guard let selectedIndex else { return nil }
+        let indexPath = IndexPath(item: selectedIndex, section: 0)
+        collectionView.layoutSubtreeIfNeeded()
+        guard let attributes = collectionView.collectionViewLayout?
+            .layoutAttributesForItem(at: indexPath),
+              collectionView.visibleRect.intersects(attributes.frame)
+        else { return nil }
+        return screenFrameForCollectionItem(at: selectedIndex)
     }
 
     private func showVariations(_ entries: [Entry], near anchor: NSRect) {
@@ -1072,11 +1122,13 @@ final class EmojiWindowController: NSObject {
     }
 
     private func dismissVariationPresentation() {
+        cancelVariationPresentation()
         variationSelectionState.dismissCurrent()
         clearVariationPanel()
     }
 
     private func resetVariationPresentation() {
+        cancelVariationPresentation()
         variationSelectionState.reset()
         clearVariationPanel()
     }
@@ -1516,7 +1568,7 @@ extension EmojiWindowController: NSCollectionViewDataSource, NSCollectionViewDel
             for: visibleEntries[index],
             near: screenFrameForCollectionItem(at: index)
                 ?? fallbackVariationAnchor(),
-            reopensSuppressed: false
+            presentsImmediately: false
         )
     }
 }
