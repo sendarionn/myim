@@ -26,9 +26,9 @@ public struct CandidateAssembly: Sendable {
         public let english: [String]
         public let uppercase: [String]
         public let recencyRanks: [String: Int]
-        /// Ranks ordering the particle compositions, from their base
-        /// candidates' selection history
-        public let particleRanks: [String: Int]?
+        /// Ranks ordering generated candidates without moving them ahead of
+        /// exact candidates
+        public let secondaryRanks: [String: Int]?
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
         public let includeAutomaticKanaCandidates: Bool
@@ -61,7 +61,7 @@ public struct CandidateAssembly: Sendable {
             english: [String],
             uppercase: [String],
             recencyRanks: [String: Int],
-            particleRanks: [String: Int]? = nil,
+            secondaryRanks: [String: Int]? = nil,
             contextualCandidates: [String],
             prioritizeKana: Bool,
             includeAutomaticKanaCandidates: Bool = true,
@@ -93,7 +93,7 @@ public struct CandidateAssembly: Sendable {
             self.english = english
             self.uppercase = uppercase
             self.recencyRanks = recencyRanks
-            self.particleRanks = particleRanks
+            self.secondaryRanks = secondaryRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
             self.includeAutomaticKanaCandidates =
@@ -120,10 +120,6 @@ public struct CandidateAssembly: Sendable {
             source: .dateTime,
             reading: input.reading
         ) + makeCandidates(
-            input.numericPrefix,
-            source: .numericPrefix,
-            reading: input.reading
-        ) + makeCandidates(
             input.javaScript,
             source: .javaScriptExtension,
             reading: input.reading
@@ -146,21 +142,23 @@ public struct CandidateAssembly: Sendable {
             preservingLongVowelNotation:
                 input.longVowelNotationProtectedCandidates
         ) + makeCandidates(
+            input.deferredSystemExact,
+            source: .systemDictionary,
+            reading: input.reading,
+            preservingLongVowelNotation:
+                input.longVowelNotationProtectedCandidates
+        ) + makeCandidates(
             input.importedExact,
             source: .importedDictionary,
             reading: input.reading,
             preservingLongVowelNotation:
                 input.longVowelNotationProtectedCandidates
         ) + makeCandidates(
-            input.inflection,
-            source: .verbInflection,
-            reading: input.reading
-        )
-        let other = makeCandidates(
             input.importedSpelling,
             source: .importedDictionary,
             reading: input.reading
-        ) + makeCandidates(
+        )
+        let other = makeCandidates(
             input.userPrefix,
             source: .userDictionary,
             reading: input.reading,
@@ -196,7 +194,15 @@ public struct CandidateAssembly: Sendable {
                     reading: input.reading
                 ),
                 direct: direct,
-                secondary: input.particle.map {
+                secondary: makeCandidates(
+                    input.numericPrefix,
+                    source: .numericPrefix,
+                    reading: input.reading
+                ) + makeCandidates(
+                    input.inflection,
+                    source: .verbInflection,
+                    reading: input.reading
+                ) + input.particle.map {
                     Candidate(
                         storageText: $0,
                         source: .particleComposition,
@@ -206,13 +212,7 @@ public struct CandidateAssembly: Sendable {
                             ? [.generated]
                             : []
                     )
-                } + makeCandidates(
-                    input.deferredSystemExact,
-                    source: .systemDictionary,
-                    reading: input.reading,
-                    preservingLongVowelNotation:
-                        input.longVowelNotationProtectedCandidates
-                ),
+                },
                 other: other,
                 english: makeCandidates(
                     input.english,
@@ -225,7 +225,7 @@ public struct CandidateAssembly: Sendable {
                     reading: input.reading
                 ),
                 recencyRanks: input.recencyRanks,
-                secondaryRanks: input.particleRanks,
+                secondaryRanks: input.secondaryRanks,
                 contextualCandidates: input.contextualCandidates,
                 prioritizeKana: input.prioritizeKana,
                 includeAutomaticKanaCandidates:

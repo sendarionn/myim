@@ -173,20 +173,95 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
-    func wholeInputExactCandidateOutranksAGeneratedParticleComposition() {
+    func wholeInputExactCandidateOutranksAGeneratedParticleComposition() throws {
         let source = makeSource(basicEntries: [
             DictionaryEntry(reading: "kouho", candidates: ["候補"]),
             DictionaryEntry(reading: "kouhowo", candidates: ["好捕を"])
         ])
+        var history = CandidateSelectionHistory()
+        for _ in 0..<3 {
+            history.record("候補を", reading: "kouhowo")
+        }
+        history = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: JSONEncoder().encode(history)
+        )
 
         let candidates = source.candidates(for: .init(
             input: "kouhowo",
-            conversionReading: "kouhowo"
+            conversionReading: "kouhowo",
+            selectionHistory: history
         ))
 
         #expect(candidates.map(\.storageText).prefix(2) == ["好捕を", "候補を"])
         #expect(candidates[1].hasSource(.particleComposition))
         #expect(candidates[1].hasAttribute(.generated))
+    }
+
+    @Test
+    func exactDuplicateKeepsItsDictionaryOriginAheadOfComposition() throws {
+        let source = makeSource(basicEntries: [
+            DictionaryEntry(reading: "kouho", candidates: ["候補"]),
+            DictionaryEntry(reading: "kouhowo", candidates: ["候補を"])
+        ])
+
+        let candidate = try #require(source.candidates(for: .init(
+            input: "kouhowo",
+            conversionReading: "kouhowo"
+        )).first { $0.storageText == "候補を" })
+
+        #expect(candidate.primarySource == .basicDictionary)
+        #expect(candidate.hasSource(.basicDictionary))
+        #expect(candidate.hasSource(.particleComposition))
+    }
+
+    @Test
+    func wholeInputExactCandidateOutranksNumericPrefixComposition() throws {
+        let source = makeSource(basicEntries: [
+            DictionaryEntry(reading: "nin", candidates: ["人"]),
+            DictionaryEntry(reading: "1nin", candidates: ["一任"])
+        ])
+        var history = CandidateSelectionHistory()
+        history.record("1人", reading: "1nin")
+
+        let values = source.candidates(for: .init(
+            input: "1nin",
+            conversionReading: "1nin",
+            selectionHistory: history
+        )).map(\.storageText)
+
+        let exactIndex = try #require(values.firstIndex(of: "一任"))
+        let compositionIndex = try #require(values.firstIndex(of: "1人"))
+
+        #expect(exactIndex < compositionIndex)
+    }
+
+    @Test
+    func wholeInputExactCandidateOutranksCompoundVerbInflection() throws {
+        let source = makeSource(
+            basicEntries: [DictionaryEntry(
+                reading: "yobaretemo",
+                candidates: ["呼ばれても完全一致"]
+            )],
+            verbText: "yobu\t呼ぶ\tgodan\t2756\n"
+        )
+        var history = CandidateSelectionHistory()
+        history.record("呼ばれても", reading: "yobaretemo")
+
+        let values = source.candidates(for: .init(
+            input: "yobaretemo",
+            conversionReading: "yobaretemo",
+            selectionHistory: history
+        )).map(\.storageText)
+
+        let exactIndex = try #require(
+            values.firstIndex(of: "呼ばれても完全一致")
+        )
+        let compositionIndex = try #require(
+            values.firstIndex(of: "呼ばれても")
+        )
+
+        #expect(exactIndex < compositionIndex)
     }
 
     @Test
@@ -235,15 +310,17 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
-    func importedSpellingMatchesFollowReadingMatchesAndKana() throws {
+    func importedSpellingExactMatchesFollowReadingExactMatches() throws {
         let values = texts(
             makeSource(importedEntries: madeImported, basicEntries: madeBasic),
             "made"
         )
 
         let maid = try #require(values.firstIndex(of: "メイド"))
+        let readingMatch = try #require(values.firstIndex(of: "迄"))
         let katakana = try #require(values.firstIndex(of: "マデ"))
-        #expect(maid > katakana)
+        #expect(readingMatch < maid)
+        #expect(maid < katakana)
         #expect(values.firstIndex(of: "メード") == maid + 1)
     }
 
@@ -298,7 +375,7 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
-    func deferredSystemCandidatesFollowParticleCompositions() {
+    func exactSystemCandidatesDoNotFollowParticleCompositions() {
         let values = texts(
             makeSource(
                 basicEntries: [DictionaryEntry(reading: "tsugi", candidates: ["次"])],
@@ -308,7 +385,7 @@ struct StandardConversionCandidateSourceTests {
             "tugino"
         )
 
-        #expect(values.prefix(2) == ["次の", "調"])
+        #expect(values.prefix(2) == ["調", "次の"])
     }
 
     @Test

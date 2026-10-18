@@ -169,28 +169,6 @@ public struct StandardConversionCandidateSource: Sendable {
             history: context.selectionHistory,
             learningEnabled: context.learningEnabled
         )
-        // Particle compositions follow the selection of their base
-        // candidates, ahead of their own selection history
-        let particleRanks = context.learningEnabled
-            ? ParticleCompositionRanking.ranks(
-                for: particles + deferredSystemExact,
-                compositions: particleCompositions,
-                history: context.selectionHistory,
-                compositionRanks: fullReadingRanks
-            )
-            : nil
-        let generatedParticles = JapaneseParticleCandidateGenerator
-            .generatedOnlyCandidates(
-                generated: particles,
-                exactDictionaryCandidates: user.exact
-                    + basic.exact
-                    + system.exact
-            )
-        let learnedExact = context.selectionHistory.candidates(
-            for: lookupReadings
-        ).filter {
-            !generatedParticles.contains($0)
-        }
         let kana = [
             romajiConverter.hiragana(from: context.conversionReading),
             romajiConverter.katakana(from: context.conversionReading)
@@ -215,17 +193,54 @@ public struct StandardConversionCandidateSource: Sendable {
                 lookup: systemEngine.candidates
             )
         }
+        let generatedInflections = Self.removingDuplicates(
+            conjugations + inflections
+        )
+        let numericPrefixes = numericPrefixCandidates(
+            for: context.conversionReading,
+            history: context.selectionHistory,
+            learningEnabled: context.learningEnabled
+        )
+        let exactDictionaryCandidates = user.exact
+            + symbols.exact
+            + basic.exact
+            + system.exact
+            + moraicNExact
+            + imported.reading.exact
+            + imported.spelling.exact
+        let generatedParticles = JapaneseParticleCandidateGenerator
+            .generatedOnlyCandidates(
+                generated: particles,
+                exactDictionaryCandidates: exactDictionaryCandidates
+            )
+        let generatedOnlyCandidates = Set(
+            numericPrefixes + generatedInflections + particles
+        ).subtracting(exactDictionaryCandidates)
+        // A selected generated candidate is recorded in the common history,
+        // but that history must not reclassify it as a whole-input exact match
+        let learnedExact = context.selectionHistory.candidates(
+            for: lookupReadings
+        ).filter {
+            !generatedOnlyCandidates.contains($0)
+        }
+        // Particle compositions follow the selection of their base
+        // candidates, while every generated candidate remains below the
+        // whole-input exact candidates
+        let secondaryRanks = context.learningEnabled
+            ? ParticleCompositionRanking.ranks(
+                for: numericPrefixes + generatedInflections + particles,
+                compositions: particleCompositions,
+                history: context.selectionHistory,
+                compositionRanks: fullReadingRanks
+            )
+            : nil
         return CandidateAssembly().candidates(from: .init(
             reading: context.conversionReading,
             kana: kana,
             userExact: user.exact,
             learnedExact: learnedExact,
             dateTime: [],
-            numericPrefix: numericPrefixCandidates(
-                for: context.conversionReading,
-                history: context.selectionHistory,
-                learningEnabled: context.learningEnabled
-            ),
+            numericPrefix: numericPrefixes,
             javaScript: context.javaScriptCandidates,
             symbolExact: symbols.exact,
             basicExact: basic.exact,
@@ -235,7 +250,7 @@ public struct StandardConversionCandidateSource: Sendable {
             deferredSystemExact: deferredSystemExact,
             importedExact: imported.reading.exact,
             importedSpelling: imported.spelling.exact,
-            inflection: Self.removingDuplicates(conjugations + inflections),
+            inflection: generatedInflections,
             particle: particles,
             generatedParticles: generatedParticles,
             userPrefix: user.prefix,
@@ -251,7 +266,7 @@ public struct StandardConversionCandidateSource: Sendable {
             english: context.englishCandidates,
             uppercase: caseCandidates,
             recencyRanks: fullReadingRanks,
-            particleRanks: particleRanks,
+            secondaryRanks: secondaryRanks,
             contextualCandidates: context.contextualCandidates,
             prioritizeKana: kana.first?.count == 1,
             longVowelNotationProtectedCandidates:

@@ -41,11 +41,11 @@ struct BundledPersonNameRankingTests {
     }()
 
     @Test(arguments: [
-        ("tugino", "次の"),
-        ("tsugino", "次の"),
-        ("imino", "意味の")
+        ("tugino", "調"),
+        ("tsugino", "調"),
+        ("imino", "イ・ミノ")
     ])
-    func ranksTheStemAndParticleAboveARarePersonName(
+    func keepsWholeInputPersonNameMatchesAheadOfParticleCompositions(
         input: String,
         expected: String
     ) throws {
