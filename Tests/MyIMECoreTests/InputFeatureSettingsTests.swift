@@ -13,11 +13,21 @@ struct InputFeatureSettingsTests {
         #expect(settings.isAppleTranslationEnabled)
         #expect(settings.isExternalInformationPanelEnabled)
         #expect(settings.isSystemDictionaryPreviewEnabled)
-        #expect(!settings.isWikipediaSuggestionsEnabled)
-        #expect(!settings.isGoogleJapaneseInputEnabled)
         #expect(!settings.isWebSearchEnabled)
         #expect(!settings.isFuzzyCandidatesEnabled)
         #expect(!settings.isDateTimeCandidatesEnabled)
+    }
+
+    @Test
+    func ignoresRemovedExternalCandidateSettingsWithoutDeletingThem() {
+        let defaults = makeDefaults()
+        defaults.set(true, forKey: "WikipediaSuggestionsEnabled")
+        defaults.set(true, forKey: "GoogleJapaneseInputEnabled")
+        let settings = InputFeatureSettings(defaults: defaults)
+
+        #expect(settings.isEnglishCompletionEnabled)
+        #expect(defaults.bool(forKey: "WikipediaSuggestionsEnabled"))
+        #expect(defaults.bool(forKey: "GoogleJapaneseInputEnabled"))
     }
 
     @Test

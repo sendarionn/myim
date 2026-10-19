@@ -146,7 +146,6 @@ final class InputController: IMKInputController {
     private let candidateSearchCoordinator = CandidateSearchCoordinator()
     private let specialConversionCandidateSource =
         SpecialConversionCandidateSource()
-    private var externalCandidates: [Candidate] = []
     private var javaScriptExtensionCandidates: [String] = []
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
@@ -1166,8 +1165,6 @@ final class InputController: IMKInputController {
     private var settingsFeatureStates: SettingsWindowBuilder.FeatureStates {
         SettingsWindowBuilder.FeatureStates(
             englishCompletion: Self.featureSettings.isEnglishCompletionEnabled,
-            wikipediaSuggestions: Self.featureSettings.isWikipediaSuggestionsEnabled,
-            googleJapaneseInput: Self.featureSettings.isGoogleJapaneseInputEnabled,
             appleTranslation: Self.featureSettings.isAppleTranslationEnabled,
             translationLanguageIdentifiers:
                 Set(Self.featureSettings.translationTargetLanguages.map(\.identifier)),
@@ -1193,8 +1190,6 @@ final class InputController: IMKInputController {
     private var settingsActions: SettingsWindowBuilder.Actions {
         SettingsWindowBuilder.Actions(
             toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
-            toggleWikipediaSuggestions: #selector(toggleWikipediaSuggestions(_:)),
-            toggleGoogleJapaneseInput: #selector(toggleGoogleJapaneseInput(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
             toggleTranslationLanguage: #selector(
                 toggleTranslationLanguage(_:)
@@ -1789,32 +1784,9 @@ final class InputController: IMKInputController {
     }
 
     @objc
-    private func toggleWikipediaSuggestions(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: Self.featureSettings.isWikipediaSuggestionsEnabled)
-        Self.featureSettings.isWikipediaSuggestionsEnabled = enabled
-        resetExternalCandidates()
-        guard !inputBuffer.isEmpty, let inputClient = client() else {
-            return
-        }
-        selectedCandidateIndex = nil
-        updateMarkedText(in: inputClient)
-        refreshCandidates(client: inputClient)
-    }
-
-    @objc
-    private func toggleGoogleJapaneseInput(_ sender: Any?) {
-        let enabled = checkboxValue(sender, current: Self.featureSettings.isGoogleJapaneseInputEnabled)
-        Self.featureSettings.isGoogleJapaneseInputEnabled = enabled
-        resetExternalCandidates()
-        guard !inputBuffer.isEmpty, let inputClient = client() else { return }
-        refreshCandidates(client: inputClient)
-    }
-
-    @objc
     private func toggleAppleTranslation(_ sender: Any?) {
         let enabled = checkboxValue(sender, current: Self.featureSettings.isAppleTranslationEnabled)
         Self.featureSettings.isAppleTranslationEnabled = enabled
-        resetExternalCandidates()
         guard !inputBuffer.isEmpty, let inputClient = client() else { return }
         refreshCandidates(client: inputClient)
     }
@@ -1846,11 +1818,6 @@ final class InputController: IMKInputController {
     @objc
     private func toggleWebSearch(_ sender: Any?) {
         Self.featureSettings.isWebSearchEnabled = checkboxValue(sender, current: Self.featureSettings.isWebSearchEnabled)
-    }
-
-    private func resetExternalCandidates() {
-        candidateSearchCoordinator.cancel(.external)
-        externalCandidates = []
     }
 
     private func toggleCandidateSource(
@@ -3248,20 +3215,11 @@ final class InputController: IMKInputController {
             return
         }
 
-        let externalSearchReading = conversionReading
-        defer {
-            updateExternalCandidatesIfNeeded(for: externalSearchReading)
-        }
-
         let englishStart = performanceClock.now
         let englishCandidates = Self.featureSettings.isEnglishCompletionEnabled
             ? englishCompletions(for: conversionReading)
             : []
         englishDuration = performanceClock.now - englishStart
-        let remoteCandidates = candidateSearchCoordinator.query(for: .external)
-            == conversionReading
-            ? externalCandidates
-            : []
         let contextualCandidates = Self.featureSettings.isNextInputPredictionEnabled
             && Self.diagnosticConfiguration.enables(.nextInput)
             ? nextInputCandidateCoordinator.candidatesAfterLastInput(
@@ -3285,7 +3243,6 @@ final class InputController: IMKInputController {
             input: input,
             conversionReading: conversionReading,
             javaScriptCandidates: scriptCandidates,
-            externalCandidates: remoteCandidates,
             englishCandidates: englishCandidates,
             selectionHistory: candidateSelectionHistoryStore.snapshot,
             contextualCandidates: contextualCandidates,
@@ -3849,82 +3806,6 @@ final class InputController: IMKInputController {
         }
     }
 
-    private func updateExternalCandidatesIfNeeded(for input: String) {
-        guard !Self.diagnosticConfiguration.minimalMode,
-              Self.featureSettings.isWikipediaSuggestionsEnabled
-                || Self.featureSettings.isGoogleJapaneseInputEnabled,
-              input.count >= 2,
-              candidateSearchCoordinator.query(for: .external) != input else {
-            return
-        }
-        externalCandidates = []
-        let japaneseInput = romajiConverter.hiragana(from: input) ?? input
-        guard let asyncSnapshot = currentInputSessionSnapshot() else {
-            return
-        }
-        var enabledSources: [any CandidateSource] = []
-        if Self.featureSettings.isWikipediaSuggestionsEnabled {
-            enabledSources.append(WikipediaCandidateSource())
-        }
-        if Self.featureSettings.isGoogleJapaneseInputEnabled {
-            enabledSources.append(GoogleJapaneseInputCandidateSource())
-        }
-        let sources = enabledSources
-        let context = CandidateSourceContext(
-            input: inputBuffer,
-            conversionReading: input,
-            japaneseReading: japaneseInput
-        )
-        candidateSearchCoordinator.start(
-            .external,
-            query: input,
-            operation: {
-                try await Task.sleep(for: .milliseconds(250))
-                return await CandidateSourceCollector.candidates(
-                    from: sources,
-                    context: context
-                )
-            },
-            validate: { [weak self] in
-                guard let self else { return false }
-                return (Self.featureSettings.isWikipediaSuggestionsEnabled
-                    || Self.featureSettings.isGoogleJapaneseInputEnabled)
-                    && self.conversionReading == input
-                    && self.acceptsAsyncResult(
-                        asyncSnapshot,
-                        source: "externalCandidates",
-                        sender: self.client()
-                    )
-            },
-            apply: { [weak self] candidates in
-                guard let self else { return }
-                guard CandidateResultUpdatePolicy.changes(
-                    current: self.externalCandidates,
-                    updated: candidates
-                ) else {
-                    return
-                }
-                self.externalCandidates = candidates
-                if let inputClient = self.client() {
-                    self.refreshCandidates(client: inputClient)
-                }
-            },
-            onCancel: { [weak self] in
-                self?.trace(
-                    "candidateGeneration.cancel",
-                    sender: self?.client(),
-                    detail: "source=externalCandidates"
-                )
-            },
-            onError: { error in
-                NSLog(
-                    "公式外部候補の取得に失敗: %@",
-                    error.localizedDescription
-                )
-            }
-        )
-    }
-
     private func updateJavaScriptExtensionCandidatesIfNeeded(for input: String) {
         guard Self.diagnosticConfiguration.enables(.jsExtensions),
               !input.isEmpty,
@@ -4032,7 +3913,6 @@ final class InputController: IMKInputController {
         client sender: Any
     ) {
         cancelCandidateTranslation()
-        candidateSearchCoordinator.cancel(.external)
         candidateSearchCoordinator.cancel(.javaScriptExtensions)
         if case .fuzzy = destination {
             candidateSearchCoordinator.cancel(.fuzzy)
@@ -5202,7 +5082,6 @@ final class InputController: IMKInputController {
     }
 
     private func cancelInputCandidateSearches() {
-        candidateSearchCoordinator.cancel(.external)
         candidateSearchCoordinator.cancel(.fuzzy)
         candidateSearchCoordinator.cancel(.javaScriptExtensions)
         candidateSearchCoordinator.cancel(.postalAddress)

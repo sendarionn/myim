@@ -75,8 +75,6 @@ enum SettingsWindowBuilder {
 
     struct FeatureStates {
         let englishCompletion: Bool
-        let wikipediaSuggestions: Bool
-        let googleJapaneseInput: Bool
         let appleTranslation: Bool
         let translationLanguageIdentifiers: Set<String>
         let nextInputPrediction: Bool
@@ -90,8 +88,6 @@ enum SettingsWindowBuilder {
 
     struct Actions {
         let toggleEnglishCompletion: Selector
-        let toggleWikipediaSuggestions: Selector
-        let toggleGoogleJapaneseInput: Selector
         let toggleAppleTranslation: Selector
         let toggleTranslationLanguage: Selector
         let toggleNextInputPrediction: Selector
@@ -139,18 +135,16 @@ enum SettingsWindowBuilder {
             right: 20
         )
 
-        addSection("変換候補", to: stack)
+        addSection("候補", to: stack)
         addCheckboxes([
-            ("英語補完を使用", actions.toggleEnglishCompletion, states.englishCompletion),
-            ("Wikipediaを辞書として利用", actions.toggleWikipediaSuggestions, states.wikipediaSuggestions),
-            ("Google CGI APIの変換候補を使用", actions.toggleGoogleJapaneseInput, states.googleJapaneseInput),
-            ("次入力候補を使用", actions.toggleNextInputPrediction, states.nextInputPrediction),
-            ("誤入力補完の「もしかして？」候補を表示", actions.toggleFuzzyCandidates, states.fuzzyCandidates),
-            ("日時の動的候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
+            ("英語候補を表示", actions.toggleEnglishCompletion, states.englishCompletion),
+            ("次入力候補を表示", actions.toggleNextInputPrediction, states.nextInputPrediction),
+            ("曖昧候補を表示", actions.toggleFuzzyCandidates, states.fuzzyCandidates),
+            ("日時候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
         ], target: target, to: stack)
-        addSection("翻訳候補", to: stack)
+        addSection("翻訳", to: stack)
         addCheckboxes([
-            ("翻訳候補を生成", actions.toggleAppleTranslation, states.appleTranslation)
+            ("翻訳候補を表示", actions.toggleAppleTranslation, states.appleTranslation)
         ], target: target, to: stack)
         addTranslationLanguageCheckboxes(
             selectedIdentifiers: states.translationLanguageIdentifiers,
@@ -158,14 +152,15 @@ enum SettingsWindowBuilder {
             target: target,
             to: stack
         )
+        addSection("履歴・学習", to: stack)
         addButtons([
             ("次入力履歴を削除", actions.clearNextInputHistory)
         ], target: target, to: stack)
 
-        addSection("外部表示", to: stack)
+        addSection("外部情報", to: stack)
         addCheckboxes([
-            ("外部情報パネルを使用", actions.toggleExternalInformationPanel, states.externalInformationPanel),
-            ("macOS辞書パネルを使用", actions.toggleSystemDictionaryPreview, states.systemDictionaryPreview),
+            ("外部情報パネルを表示", actions.toggleExternalInformationPanel, states.externalInformationPanel),
+            ("macOS辞書パネルを表示", actions.toggleSystemDictionaryPreview, states.systemDictionaryPreview),
             ("Web検索を使用", actions.toggleWebSearch, states.webSearch)
         ], target: target, to: stack)
         addSection("辞書管理", to: stack)

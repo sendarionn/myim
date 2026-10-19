@@ -30,7 +30,7 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 - 予測（Prediction）：学習結果から次の入力を推定した結果（`NextInputPrediction`、`LearnedCompoundPrediction`）
 - 補正（Correction）：誤入力を推定して正しい読みへ寄せる処理と、その一致結果（`FuzzyConversionMatch`）
 - 「直接候補」は標準候補の中で完全一致を中心とする優先グループを指し、候補群の名前には使わない
-- 設定画面では曖昧候補を「もしかして？」と表示する
+- 設定画面では「曖昧候補を表示」と表記する
 
 互換性のため、保存値と外部から参照される値は旧名称のまま維持する
 
@@ -40,7 +40,6 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 | `fuzzySuggestion` | 診断用環境変数`MYIM_DIAGNOSTIC_DISABLE`等の値 | `InputDiagnosticFeature.fuzzyCandidate` |
 | `acceptedSuggestion` | 次入力学習の保存データに残る入力元 | `NextInputLearningSource.acceptedCandidate` |
 | `acceptedSuggestionCount` | 次入力学習の保存データの選択回数 | 同名のプロパティ |
-| `WikipediaSuggestionsEnabled` | Wikipedia検索候補の設定の保存キー | `InputFeatureSettings.isWikipediaSuggestionsEnabled` |
 
 曖昧候補の文字列`FuzzyCandidate.storageText`は、`Candidate.storageText`と同じく辞書に保存された形の文字列で、表示、確定、ユーザー辞書登録、選択履歴にそのまま使う
 
@@ -73,7 +72,6 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 | 数字接頭辞 | 数字と語の組み合わせを生成する | `NumericPrefixCandidateComposer` | 標準候補 |
 | 動詞活用 | 活用形の入力から活用語を生成する | `VerbInflectionCandidateGenerator`、`VerbConjugationCandidateGenerator`、`VerbConjugationDictionary` | 標準候補 |
 | 助詞合成 | 名詞相当語と助詞を合成する | `JapaneseParticleCandidateGenerator` | 標準候補 |
-| 外部API候補 | Wikipedia、Google日本語入力から非同期取得する | `WikipediaCandidateSource`、`GoogleJapaneseInputCandidateSource`、`InputController.updateExternalCandidatesIfNeeded(for:)` | 標準候補 |
 | JavaScript拡張 | 入力から拡張機能の候補を非同期取得する | `JavaScriptExtensionClient`、`InputController.updateJavaScriptExtensionCandidatesIfNeeded(for:)` | 標準候補、特殊変換候補 |
 | 住所変換 | 郵便番号から住所を取得する | `PostalCodeNormalizer`、`PostalAddressCandidateClient` | 特殊変換候補 |
 | 計算 | 式と計算履歴から結果を生成する | `CalculationCandidateSet`、`CalculationInputHistory` | 特殊変換候補 |
@@ -320,11 +318,10 @@ SKK辞書は送りなしエントリをmyim形式の独立TSVへ変換して保�
 
 1. ユーザー辞書の前方一致
 2. 選択履歴からの読み補完
-3. WikipediaやGoogle CGI API等の外部候補
-4. 記号辞書の前方一致
-5. Mozcの前方一致
-6. 基本辞書の前方一致
-7. インポート辞書の読みまたは英字見出しの前方一致
+3. 記号辞書の前方一致
+4. Mozcの前方一致
+5. 基本辞書の前方一致
+6. インポート辞書の読みまたは英字見出しの前方一致
 
 このグループ内でも、選択履歴のある候補を最終選択順で前へ移動する
 
@@ -820,7 +817,6 @@ ASCII記号から全角記号、日本語組版向け記号、関連記号を生
 
 - 曖昧候補
 - 辞書に存在しない助詞合成候補
-- Google CGI APIやWikipedia等から得た外部候補
 
 候補を選ばず入力文字列をそのまま確定した場合も、次の条件を満たせばユーザー辞書へ保存する
 
@@ -1067,7 +1063,7 @@ ASCII英数字だけ、ひらがなだけ、カタカナだけの候補は、候
 
 ### 日付と時刻
 
-`datetime.js`は「日時の動的候補を表示」が有効な場合に動作する
+`datetime.js`は「日時候補を表示」が有効な場合に動作する
 
 `calendar`入力はこの設定に関係なく、選択日付の書式候補生成に使用する
 

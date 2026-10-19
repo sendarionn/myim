@@ -10,14 +10,14 @@ struct CandidateSearchCoordinatorTests {
         var applied: [String] = []
 
         coordinator.start(
-            .external,
+            .postalAddress,
             query: "old",
             operation: { "old" },
             validate: { true },
             apply: { applied.append($0) }
         )
         coordinator.start(
-            .external,
+            .postalAddress,
             query: "current",
             operation: { "current" },
             validate: { true },
@@ -26,7 +26,7 @@ struct CandidateSearchCoordinatorTests {
         await waitForTasks()
 
         #expect(applied == ["current"])
-        #expect(coordinator.query(for: .external) == "current")
+        #expect(coordinator.query(for: .postalAddress) == "current")
     }
 
     @Test

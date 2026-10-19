@@ -3,7 +3,6 @@ import Foundation
 public enum CandidateSearchKind: Hashable, Sendable {
     case calendarFormat
     case dictionaryDefinition
-    case external
     case fuzzy
     case fuzzyIndexBuild
     case javaScriptExtensions

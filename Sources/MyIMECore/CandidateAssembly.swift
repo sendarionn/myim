@@ -18,7 +18,6 @@ public struct CandidateAssembly: Sendable {
         public let generatedParticles: Set<String>
         public let userPrefix: [String]
         public let learnedCompletion: [String]
-        public let external: [Candidate]
         public let symbolPrefix: [String]
         public let systemPrefix: [String]
         public let basicPrefix: [String]
@@ -53,7 +52,6 @@ public struct CandidateAssembly: Sendable {
             generatedParticles: Set<String>,
             userPrefix: [String],
             learnedCompletion: [String],
-            external: [Candidate],
             symbolPrefix: [String],
             systemPrefix: [String],
             basicPrefix: [String],
@@ -85,7 +83,6 @@ public struct CandidateAssembly: Sendable {
             self.generatedParticles = generatedParticles
             self.userPrefix = userPrefix
             self.learnedCompletion = learnedCompletion
-            self.external = external
             self.symbolPrefix = symbolPrefix
             self.systemPrefix = systemPrefix
             self.basicPrefix = basicPrefix
@@ -169,7 +166,7 @@ public struct CandidateAssembly: Sendable {
             source: .selectionHistory,
             reading: input.reading,
             attributes: [.preservesLongVowelNotation]
-        ) + input.external + makeCandidates(
+        ) + makeCandidates(
             input.symbolPrefix,
             source: .symbolDictionary,
             reading: input.reading

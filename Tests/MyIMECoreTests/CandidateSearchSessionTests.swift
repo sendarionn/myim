@@ -18,13 +18,13 @@ struct CandidateSearchSessionTests {
     func kindsAreManagedIndependently() {
         let session = CandidateSearchSession()
         let fuzzy = session.begin(.fuzzy, query: "fuzzy")
-        let external = session.begin(.external, query: "external")
+        let postalAddress = session.begin(.postalAddress, query: "postal")
 
         session.cancel(.fuzzy)
 
         #expect(!session.isCurrent(fuzzy))
-        #expect(session.isCurrent(external))
-        #expect(session.query(for: .external) == "external")
+        #expect(session.isCurrent(postalAddress))
+        #expect(session.query(for: .postalAddress) == "postal")
     }
 
     @Test
@@ -41,12 +41,12 @@ struct CandidateSearchSessionTests {
     @Test
     func cancelAllInvalidatesEveryToken() {
         let session = CandidateSearchSession()
-        let external = session.begin(.external, query: "external")
+        let postalAddress = session.begin(.postalAddress, query: "postal")
         let fuzzy = session.begin(.fuzzy, query: "fuzzy")
 
         session.cancelAll()
 
-        #expect(!session.isCurrent(external))
+        #expect(!session.isCurrent(postalAddress))
         #expect(!session.isCurrent(fuzzy))
     }
 
@@ -54,13 +54,13 @@ struct CandidateSearchSessionTests {
     func completingCurrentSearchRemovesOnlyItsToken() {
         let session = CandidateSearchSession()
         let translation = session.begin(.translation, query: "候補")
-        let external = session.begin(.external, query: "kouho")
+        let postalAddress = session.begin(.postalAddress, query: "1000001")
 
         session.complete(translation)
 
         #expect(!session.isCurrent(translation))
         #expect(session.query(for: .translation) == nil)
-        #expect(session.isCurrent(external))
+        #expect(session.isCurrent(postalAddress))
     }
 
     @Test
@@ -78,11 +78,11 @@ struct CandidateSearchSessionTests {
     @Test
     func finishingTaskKeepsItsQueryCurrent() {
         let session = CandidateSearchSession()
-        let token = session.begin(.external, query: "kouho")
+        let token = session.begin(.postalAddress, query: "1000001")
 
         session.finishTask(token)
 
         #expect(session.isCurrent(token))
-        #expect(session.query(for: .external) == "kouho")
+        #expect(session.query(for: .postalAddress) == "1000001")
     }
 }

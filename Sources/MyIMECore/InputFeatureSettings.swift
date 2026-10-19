@@ -4,8 +4,6 @@ public struct InputFeatureSettings {
     private enum Key {
         static let nextInputPrediction = "NextInputPredictionEnabled"
         static let englishCompletion = "EnglishCompletionEnabled"
-        static let wikipediaSuggestions = "WikipediaSuggestionsEnabled"
-        static let googleJapaneseInput = "GoogleJapaneseInputEnabled"
         static let appleTranslation = "AppleTranslationEnabled"
         static let translationLanguages = "TranslationTargetLanguages"
         static let legacyTranslationLanguage = "DefaultTranslationLanguage"
@@ -32,16 +30,6 @@ public struct InputFeatureSettings {
     public var isEnglishCompletionEnabled: Bool {
         get { flag(Key.englishCompletion, default: true) }
         nonmutating set { setFlag(Key.englishCompletion, newValue) }
-    }
-
-    public var isWikipediaSuggestionsEnabled: Bool {
-        get { flag(Key.wikipediaSuggestions, default: false) }
-        nonmutating set { setFlag(Key.wikipediaSuggestions, newValue) }
-    }
-
-    public var isGoogleJapaneseInputEnabled: Bool {
-        get { flag(Key.googleJapaneseInput, default: false) }
-        nonmutating set { setFlag(Key.googleJapaneseInput, newValue) }
     }
 
     public var isAppleTranslationEnabled: Bool {

@@ -2,7 +2,6 @@ public struct StandardConversionCandidateContext: Sendable {
     public let input: String
     public let conversionReading: String
     public let javaScriptCandidates: [String]
-    public let externalCandidates: [Candidate]
     public let englishCandidates: [String]
     public let selectionHistory: CandidateSelectionHistory
     public let contextualCandidates: [String]
@@ -12,7 +11,6 @@ public struct StandardConversionCandidateContext: Sendable {
         input: String,
         conversionReading: String,
         javaScriptCandidates: [String] = [],
-        externalCandidates: [Candidate] = [],
         englishCandidates: [String] = [],
         selectionHistory: CandidateSelectionHistory =
             CandidateSelectionHistory(),
@@ -22,7 +20,6 @@ public struct StandardConversionCandidateContext: Sendable {
         self.input = input
         self.conversionReading = conversionReading
         self.javaScriptCandidates = javaScriptCandidates
-        self.externalCandidates = externalCandidates
         self.englishCandidates = englishCandidates
         self.selectionHistory = selectionHistory
         self.contextualCandidates = contextualCandidates
@@ -258,7 +255,6 @@ public struct StandardConversionCandidateSource: Sendable {
                 for: context.conversionReading,
                 limit: 8
             ),
-            external: context.externalCandidates,
             symbolPrefix: symbols.prefix,
             systemPrefix: system.prefix,
             basicPrefix: basic.prefix,

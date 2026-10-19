@@ -57,19 +57,14 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
-    func keepsExternalAndEnglishCandidatesInThePipeline() {
+    func keepsEnglishCandidatesInThePipeline() {
         let source = makeSource()
         let candidates = source.candidates(for: .init(
             input: "code",
             conversionReading: "code",
-            externalCandidates: [Candidate(
-                storageText: "外部候補",
-                source: .wikipedia
-            )],
             englishCandidates: ["coder"]
         ))
 
-        #expect(candidates.contains { $0.storageText == "外部候補" })
         #expect(candidates.contains { $0.storageText == "coder" })
         #expect(candidates.suffix(2).map(\.storageText) == ["Code", "CODE"])
     }

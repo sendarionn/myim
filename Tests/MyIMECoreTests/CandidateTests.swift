@@ -26,15 +26,15 @@ struct CandidateTests {
             storageText: "候補",
             source: .basicDictionary
         )
-        let external = Candidate(
+        let extensionCandidate = Candidate(
             storageText: "候補",
-            source: .externalCandidate,
+            source: .javaScriptExtension,
             isLearnable: true
         )
 
-        let merged = dictionary.mergingOrigins(from: external)
+        let merged = dictionary.mergingOrigins(from: extensionCandidate)
 
-        #expect(merged.sources == [.basicDictionary, .externalCandidate])
+        #expect(merged.sources == [.basicDictionary, .javaScriptExtension])
         #expect(merged.primarySource == .basicDictionary)
         #expect(merged.isLearnable)
     }

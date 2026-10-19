@@ -13,9 +13,6 @@ public enum CandidateSourceKind: String, CaseIterable, Sendable {
     case verbInflection
     case particleComposition
     case englishCompletion
-    case externalCandidate
-    case wikipedia
-    case googleJapaneseInput
     case uppercase
     case translation
     case fuzzyCandidate
