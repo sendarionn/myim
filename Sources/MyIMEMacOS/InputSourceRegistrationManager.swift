@@ -4,6 +4,8 @@ import Foundation
 enum InputSourceRegistrationManager {
     static let myIMIdentifier =
         "io.github.sendarionn.inputmethod.myime.Japanese"
+    static let legacyMyIMIdentifier =
+        "io.github.sendarionn.my-ime.Japanese"
     static let fallbackIdentifier = "com.apple.keylayout.ABC"
 
     static var isRegistered: Bool {
@@ -24,6 +26,23 @@ enum InputSourceRegistrationManager {
 
     static var isFallbackSelected: Bool {
         selectedSourceIdentifier() == fallbackIdentifier
+    }
+
+    static var isLegacyRegistered: Bool {
+        source(identifier: legacyMyIMIdentifier, includeAllInstalled: true)
+            != nil
+    }
+
+    static var isLegacySelected: Bool {
+        selectedSourceIdentifier() == legacyMyIMIdentifier
+    }
+
+    static var isLegacyEnabled: Bool {
+        guard let source = source(
+            identifier: legacyMyIMIdentifier,
+            includeAllInstalled: true
+        ) else { return false }
+        return booleanProperty(source, key: kTISPropertyInputSourceIsEnabled)
     }
 
     static func register(bundleURL: URL) throws {

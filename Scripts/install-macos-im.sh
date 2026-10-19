@@ -68,6 +68,7 @@ wait_for_running_server() {
     local expected_commit=$3
     local attempt
     local process_id
+    local myim_process_path
     local confirmed_process_id=""
     local stable_checks=0
     for attempt in {1..100}; do
@@ -75,12 +76,13 @@ wait_for_running_server() {
         local unexpected_process=""
         for process_id in ${(f)"$(pgrep -x myim 2>/dev/null || true)"}; do
             [[ -n "$process_id" ]] || continue
-            local observed_command
-            observed_command=$(ps -p "$process_id" -o command= 2>/dev/null || true)
-            if [[ "$observed_command" == "$expected_executable" ]]; then
+            myim_process_path=$(
+                ps -p "$process_id" -o command= 2>/dev/null || true
+            )
+            if [[ "$myim_process_path" == "$expected_executable" ]]; then
                 matching_process_id=$process_id
             else
-                unexpected_process="$process_id:$observed_command"
+                unexpected_process="$process_id:$myim_process_path"
             fi
         done
         if [[ -n "$unexpected_process" ]]; then
@@ -134,40 +136,96 @@ cleanup_staging() {
 }
 
 finish_installation() {
-    local status=$?
+    local exit_code=$?
     trap - EXIT
+    set +e
     cleanup_staging
-    if (( status != 0 && rollback_required == 1 )); then
+    if (( exit_code != 0 && rollback_required == 1 )); then
+        local rollback_failed=0
         if (( had_previous_application == 1 )); then
-            restore_previous_application
+            restore_previous_application \
+                && verify_restored_application \
+                || rollback_failed=1
         else
-            rm -rf "$app_destination"
+            rm -rf "$app_destination" || rollback_failed=1
         fi
         if (( had_previous_selection_service == 1 )); then
-            restore_previous_selection_service
+            restore_previous_selection_service \
+                && verify_restored_selection_service \
+                || rollback_failed=1
         else
-            rm -rf "$selection_service_destination"
+            rm -rf "$selection_service_destination" || rollback_failed=1
+        fi
+        if (( rollback_failed == 0 && had_previous_application == 1 )); then
+            restore_input_source_registration || rollback_failed=1
+        fi
+        if (( rollback_failed == 1 )); then
+            echo "旧版の復元に失敗しました" >&2
+            echo "アプリのバックアップ: $previous_destination" >&2
+            echo "Selection Serviceのバックアップ: $previous_selection_service" >&2
+            echo "RESULT=rollback-failed" >&2
+            exit 3
         fi
         echo "インストールに失敗したため置換前の状態へ戻しました" >&2
+        echo "RESULT=rollback-succeeded" >&2
+        rm -rf "$previous_destination" "$previous_selection_service"
+    elif (( exit_code != 0 )); then
+        rm -rf "$previous_destination" "$previous_selection_service"
     fi
-    exit "$status"
+    exit "$exit_code"
 }
 
 restore_previous_application() {
-    [[ -e "$previous_destination" ]] || return 0
+    [[ -e "$previous_destination" ]] || return 1
     mkdir -p "$app_destination"
-    /usr/bin/rsync -aE --delete \
+    /usr/bin/rsync -aE --checksum --delete \
         "$previous_destination/" \
         "$app_destination/"
 }
 
 restore_previous_selection_service() {
-    [[ -e "$previous_selection_service" ]] || return 0
+    [[ -e "$previous_selection_service" ]] || return 1
     mkdir -p "$selection_service_destination"
-    /usr/bin/rsync -aE --delete \
+    /usr/bin/rsync -aE --checksum --delete \
         "$previous_selection_service/" \
         "$selection_service_destination/"
 }
+
+verify_restored_application() {
+    diff -qr "$previous_destination" "$app_destination" >/dev/null \
+        && codesign --verify --deep --strict "$app_destination"
+}
+
+verify_restored_selection_service() {
+    diff -qr \
+        "$previous_selection_service" \
+        "$selection_service_destination" >/dev/null \
+        && codesign --verify \
+            --deep \
+            --strict \
+            "$selection_service_destination"
+}
+
+restore_input_source_registration() {
+    local restored_executable="$app_destination/Contents/MacOS/myim"
+    "$launch_services_register" -f "$app_destination" || return 1
+    if (( had_previous_selection_service == 1 )); then
+        "$launch_services_register" -f "$selection_service_destination" \
+            || return 1
+    fi
+    /System/Library/CoreServices/pbs -update || return 1
+    if [[ "$was_registered" == "1" ]]; then
+        "$restored_executable" --register-input-source || return 1
+        "$restored_executable" --enable-input-source || return 1
+    fi
+    if [[ "$was_selected" == "1" ]]; then
+        "$restored_executable" --select-input-source || return 1
+    fi
+}
+
+if [[ "${ZSH_EVAL_CONTEXT:-}" == *:file* ]]; then
+    return 0
+fi
 
 if [[ -d "$system_destination" ]] \
     && [[ "$(bundle_identifier "$system_destination")" \
@@ -213,6 +271,14 @@ MYIM_BUILD_NUMBER="$next_build_number" \
 source_executable="$app_source/Contents/MacOS/myim"
 was_registered=$(status_value "$source_executable" registered)
 was_selected=$(status_value "$source_executable" selected)
+legacy_selected=$(status_value "$source_executable" legacy-selected)
+
+if [[ "$legacy_selected" == "1" ]]; then
+    echo "旧名称my-imeが現在の入力ソースとして選択されています" >&2
+    echo "別の入力ソースへ切り替えてから再実行してください" >&2
+    echo "RESULT=legacy-input-source-selected" >&2
+    exit 1
+fi
 
 if [[ "$was_selected" == "1" ]]; then
     "$source_executable" --select-fallback-input-source
@@ -238,31 +304,51 @@ codesign --verify --deep --strict "$staged_selection_service"
 if [[ -e "$app_destination" ]]; then
     had_previous_application=1
     ditto "$app_destination" "$previous_destination"
+    if ! diff -qr \
+        "$app_destination" \
+        "$previous_destination" >/dev/null \
+        || ! codesign --verify \
+            --deep \
+            --strict \
+            "$previous_destination"; then
+        echo "myim.appのバックアップ検証に失敗しました" >&2
+        exit 1
+    fi
 fi
 if [[ -e "$selection_service_destination" ]]; then
     had_previous_selection_service=1
     ditto \
         "$selection_service_destination" \
         "$previous_selection_service"
+    if ! diff -qr \
+        "$selection_service_destination" \
+        "$previous_selection_service" >/dev/null \
+        || ! codesign --verify \
+            --deep \
+            --strict \
+            "$previous_selection_service"; then
+        echo "Selection Serviceのバックアップ検証に失敗しました" >&2
+        exit 1
+    fi
 fi
 rollback_required=1
 if (( had_previous_application == 1 )); then
-    /usr/bin/rsync -aE --delete \
+    /usr/bin/rsync -aE --checksum --delete \
         "$staged_destination/" \
         "$app_destination/"
 else
     mkdir -p "$app_destination"
-    /usr/bin/rsync -aE \
+    /usr/bin/rsync -aE --checksum \
         "$staged_destination/" \
         "$app_destination/"
 fi
 if (( had_previous_selection_service == 1 )); then
-    /usr/bin/rsync -aE --delete \
+    /usr/bin/rsync -aE --checksum --delete \
         "$staged_selection_service/" \
         "$selection_service_destination/"
 else
     mkdir -p "$selection_service_destination"
-    /usr/bin/rsync -aE \
+    /usr/bin/rsync -aE --checksum \
         "$staged_selection_service/" \
         "$selection_service_destination/"
 fi

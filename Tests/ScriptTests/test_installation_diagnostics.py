@@ -20,14 +20,42 @@ class InstallationDiagnosticsTests(unittest.TestCase):
         )
         self.assertIn("EXECUTABLE_SHA256", script)
         self.assertIn("RESOURCES_MATCH", script)
+        self.assertIn("APP_BUNDLE_MATCH", script)
+        self.assertIn("SELECTION_SERVICE_MATCH", script)
         self.assertIn("PROCESS_COMMAND", script)
         self.assertIn("RUNTIME_STATUS", script)
         self.assertIn("INSTALLED_IDENTITY_MATCH", script)
+        self.assertIn("INSTALL_STATE", script)
+        self.assertIn("RUN_STATE", script)
+        self.assertIn("HISTORY_STATE", script)
+        self.assertIn("LEGACY_STATE", script)
         self.assertIn(
-            "起動時ビルド情報がインストール済みアプリと一致しません",
+            "起動履歴がインストール済みアプリと一致しません",
             script,
         )
         self.assertIn("RESULT=attention", script)
+
+    def test_diagnostic_does_not_treat_history_as_a_running_process(self):
+        script = (ROOT / "Scripts/diagnose-installation.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('STATUS=last-launch', script)
+        self.assertIn('run_state="installed-not-running"', script)
+        self.assertIn('run_state="running-current"', script)
+        self.assertIn('run_state="old-running"', script)
+        self.assertIn('run_state="diagnostic-unavailable"', script)
+
+    def test_input_source_status_includes_the_legacy_identifier(self):
+        manager = (
+            ROOT / "Sources/MyIMEMacOS/InputSourceRegistrationManager.swift"
+        ).read_text(encoding="utf-8")
+        main = (ROOT / "Sources/MyIMEMacOS/main.swift").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("io.github.sendarionn.my-ime.Japanese", manager)
+        self.assertIn("legacy-registered", main)
+        self.assertIn("legacy-enabled", main)
+        self.assertIn("legacy-selected", main)
 
     def test_pkg_stops_every_bundled_process(self):
         script = (ROOT / "packaging/scripts/preinstall").read_text(

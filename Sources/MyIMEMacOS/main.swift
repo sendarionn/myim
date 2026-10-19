@@ -14,6 +14,9 @@ if let command = CommandLine.arguments.dropFirst().first {
             print("enabled=\(InputSourceRegistrationManager.isEnabled ? 1 : 0)")
             print("selected=\(InputSourceRegistrationManager.isSelected ? 1 : 0)")
             print("fallback-selected=\(InputSourceRegistrationManager.isFallbackSelected ? 1 : 0)")
+            print("legacy-registered=\(InputSourceRegistrationManager.isLegacyRegistered ? 1 : 0)")
+            print("legacy-enabled=\(InputSourceRegistrationManager.isLegacyEnabled ? 1 : 0)")
+            print("legacy-selected=\(InputSourceRegistrationManager.isLegacySelected ? 1 : 0)")
         case "--register-input-source":
             try InputSourceRegistrationManager.register(
                 bundleURL: Bundle.main.bundleURL
