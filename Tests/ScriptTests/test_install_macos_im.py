@@ -26,7 +26,6 @@ class InstallMacOSIMTests(unittest.TestCase):
 
     def test_preserves_bundle_root_and_previous_application(self):
         self.assertNotIn('mv "$app_destination" "$previous_destination"', self.script)
-        self.assertNotIn('rm -rf "$app_destination"', self.script)
         self.assertIn('ditto "$app_destination" "$previous_destination"', self.script)
         self.assertIn('/usr/bin/rsync -aE --delete', self.script)
 
@@ -63,21 +62,51 @@ class InstallMacOSIMTests(unittest.TestCase):
         )
 
     def test_waits_for_the_new_server_before_reporting_success(self):
-        verify_binary = self.script.index(
-            'cmp -s "$source_executable" "$installed_executable"'
+        verify_application = self.script.index(
+            'diff -qr "$app_source" "$app_destination"'
         )
         select_source = self.script.index(
             '"$installed_executable" --select-input-source'
         )
         wait_for_server = self.script.index(
-            'wait_for_running_server "$installed_executable"'
+            "if ! wait_for_running_server \\\n"
         )
         success = self.script.index(
             'echo "インストールしました: $app_destination"'
         )
-        self.assertLess(verify_binary, select_source)
+        self.assertLess(verify_application, select_source)
         self.assertLess(select_source, wait_for_server)
         self.assertLess(wait_for_server, success)
+
+    def test_checks_every_running_server_instead_of_only_the_first_pid(self):
+        self.assertNotIn("pgrep -x myim 2>/dev/null | head -n 1", self.script)
+        self.assertIn("for process_id in", self.script)
+        self.assertIn("別の場所にあるmyimプロセス", self.script)
+
+    def test_verifies_the_complete_application_before_success(self):
+        self.assertIn(
+            'diff -qr "$app_source" "$app_destination"',
+            self.script,
+        )
+        verify = self.script.index(
+            'diff -qr "$app_source" "$app_destination"'
+        )
+        delete_backup = self.script.index(
+            'rm -rf "$previous_destination"',
+            verify,
+        )
+        self.assertLess(verify, delete_backup)
+
+    def test_reports_an_unverified_launch_as_a_distinct_failure(self):
+        self.assertIn("RESULT=installed-launch-unverified", self.script)
+        self.assertIn("exit 2", self.script)
+
+    def test_refuses_a_conflicting_system_installation(self):
+        self.assertIn(
+            'system_destination="/Library/Input Methods/myim.app"',
+            self.script,
+        )
+        self.assertIn("システム領域のmyimと競合", self.script)
 
     def test_does_not_launch_input_method_as_a_regular_application(self):
         self.assertNotIn('open -gja "$app_destination"', self.script)

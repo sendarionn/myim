@@ -7,6 +7,8 @@ private let connectionName = "\(bundleIdentifier).connection"
 if let command = CommandLine.arguments.dropFirst().first {
     do {
         switch command {
+        case "--build-info":
+            try BuildIdentityReporter.printCurrent()
         case "--input-source-status":
             print("registered=\(InputSourceRegistrationManager.isRegistered ? 1 : 0)")
             print("enabled=\(InputSourceRegistrationManager.isEnabled ? 1 : 0)")
@@ -50,6 +52,7 @@ if let command = CommandLine.arguments.dropFirst().first {
 
 let application = NSApplication.shared
 application.setActivationPolicy(.accessory)
+BuildIdentityReporter.writeRuntimeStatus()
 guard let server = IMKServer(
     name: connectionName,
     bundleIdentifier: bundleIdentifier

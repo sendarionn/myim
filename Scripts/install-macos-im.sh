@@ -14,7 +14,32 @@ staged_selection_service="$services_directory/.myim-selection.installing.service
 previous_destination="$input_methods_directory/.myim.previous.app"
 previous_selection_service="$services_directory/.myim-selection.previous.service"
 legacy_destination="$input_methods_directory/my-ime.app"
+system_destination="/Library/Input Methods/myim.app"
+system_legacy_destination="/Library/Input Methods/my-ime.app"
+runtime_status="$HOME/Library/Caches/myim/runtime-status.json"
 launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+rollback_required=0
+had_previous_application=0
+had_previous_selection_service=0
+
+bundle_identifier() {
+    local application=$1
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+        "$application/Contents/Info.plist" 2>/dev/null || true
+}
+
+build_info_value() {
+    local executable=$1
+    local key=$2
+    "$executable" --build-info 2>/dev/null \
+        | awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print }'
+}
+
+json_value() {
+    local key=$1
+    plutil -extract "$key" raw -o - "$runtime_status" 2>/dev/null \
+        || true
+}
 
 status_value() {
     local executable=$1
@@ -39,14 +64,36 @@ wait_for_status() {
 
 wait_for_running_server() {
     local expected_executable=$1
+    local expected_build=$2
+    local expected_commit=$3
     local attempt
     local process_id
     local confirmed_process_id=""
     local stable_checks=0
     for attempt in {1..100}; do
-        process_id=$(pgrep -x myim 2>/dev/null | head -n 1 || true)
+        local matching_process_id=""
+        local unexpected_process=""
+        for process_id in ${(f)"$(pgrep -x myim 2>/dev/null || true)"}; do
+            [[ -n "$process_id" ]] || continue
+            local observed_command
+            observed_command=$(ps -p "$process_id" -o command= 2>/dev/null || true)
+            if [[ "$observed_command" == "$expected_executable" ]]; then
+                matching_process_id=$process_id
+            else
+                unexpected_process="$process_id:$observed_command"
+            fi
+        done
+        if [[ -n "$unexpected_process" ]]; then
+            echo "別の場所にあるmyimプロセスが動作しています: $unexpected_process" >&2
+            return 1
+        fi
+        process_id=$matching_process_id
         if [[ -n "$process_id" ]] \
-            && [[ "$(ps -p "$process_id" -o command= 2>/dev/null)" == "$expected_executable" ]]; then
+            && [[ -f "$runtime_status" ]] \
+            && [[ "$(json_value pid)" == "$process_id" ]] \
+            && [[ "$(json_value executable-path)" == "$expected_executable" ]] \
+            && [[ "$(json_value build)" == "$expected_build" ]] \
+            && [[ "$(json_value git-commit)" == "$expected_commit" ]]; then
             if [[ "$process_id" == "$confirmed_process_id" ]]; then
                 stable_checks=$((stable_checks + 1))
             else
@@ -86,6 +133,26 @@ cleanup_staging() {
         || rm -rf "$staged_selection_service"
 }
 
+finish_installation() {
+    local status=$?
+    trap - EXIT
+    cleanup_staging
+    if (( status != 0 && rollback_required == 1 )); then
+        if (( had_previous_application == 1 )); then
+            restore_previous_application
+        else
+            rm -rf "$app_destination"
+        fi
+        if (( had_previous_selection_service == 1 )); then
+            restore_previous_selection_service
+        else
+            rm -rf "$selection_service_destination"
+        fi
+        echo "インストールに失敗したため置換前の状態へ戻しました" >&2
+    fi
+    exit "$status"
+}
+
 restore_previous_application() {
     [[ -e "$previous_destination" ]] || return 0
     mkdir -p "$app_destination"
@@ -101,6 +168,21 @@ restore_previous_selection_service() {
         "$previous_selection_service/" \
         "$selection_service_destination/"
 }
+
+if [[ -d "$system_destination" ]] \
+    && [[ "$(bundle_identifier "$system_destination")" \
+        == "io.github.sendarionn.inputmethod.myime" ]]; then
+    echo "システム領域のmyimと競合するため開発版をインストールできません" >&2
+    echo "競合先: $system_destination" >&2
+    exit 1
+fi
+if [[ -d "$legacy_destination" || -d "$system_legacy_destination" ]]; then
+    echo "警告: 旧名称my-ime.appが残っています" >&2
+    [[ ! -d "$legacy_destination" ]] \
+        || echo "  $legacy_destination" >&2
+    [[ ! -d "$system_legacy_destination" ]] \
+        || echo "  $system_legacy_destination" >&2
+fi
 
 installed_build_number=0
 if [[ -f "$app_destination/Contents/Info.plist" ]]; then
@@ -145,17 +227,26 @@ stop_process myim-selection-service
 
 mkdir -p "$input_methods_directory" "$services_directory"
 cleanup_staging
-trap cleanup_staging EXIT
+trap finish_installation EXIT
 ditto "$app_source" "$staged_destination"
 codesign --verify --deep --strict "$staged_destination"
 ditto "$selection_service_source" "$staged_selection_service"
 codesign --verify --deep --strict "$staged_selection_service"
 
 [[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
-[[ ! -e "$previous_selection_service" ]] \
-    || rm -rf "$previous_selection_service"
+[[ ! -e "$previous_selection_service" ]] || rm -rf "$previous_selection_service"
 if [[ -e "$app_destination" ]]; then
+    had_previous_application=1
     ditto "$app_destination" "$previous_destination"
+fi
+if [[ -e "$selection_service_destination" ]]; then
+    had_previous_selection_service=1
+    ditto \
+        "$selection_service_destination" \
+        "$previous_selection_service"
+fi
+rollback_required=1
+if (( had_previous_application == 1 )); then
     /usr/bin/rsync -aE --delete \
         "$staged_destination/" \
         "$app_destination/"
@@ -165,10 +256,7 @@ else
         "$staged_destination/" \
         "$app_destination/"
 fi
-if [[ -e "$selection_service_destination" ]]; then
-    ditto \
-        "$selection_service_destination" \
-        "$previous_selection_service"
+if (( had_previous_selection_service == 1 )); then
     /usr/bin/rsync -aE --delete \
         "$staged_selection_service/" \
         "$selection_service_destination/"
@@ -179,25 +267,18 @@ else
         "$selection_service_destination/"
 fi
 if ! codesign --verify --deep --strict "$app_destination"; then
-    restore_previous_application
-    echo "myim.app の検証に失敗したため旧版へ戻しました" >&2
+    echo "myim.app の検証に失敗しました" >&2
     exit 1
 fi
 if ! codesign --verify --deep --strict "$selection_service_destination"; then
-    restore_previous_selection_service
-    echo "myim-selection.service の検証に失敗したため旧版へ戻しました" >&2
+    echo "myim-selection.service の検証に失敗しました" >&2
     exit 1
 fi
 cleanup_staging
-[[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
-[[ ! -e "$previous_selection_service" ]] \
-    || rm -rf "$previous_selection_service"
-[[ ! -e "$legacy_destination" ]] || rm -rf "$legacy_destination"
 
 installed_executable="$app_destination/Contents/MacOS/myim"
-if ! cmp -s "$source_executable" "$installed_executable"; then
-    restore_previous_application
-    echo "インストール先のmyimバイナリがビルド結果と一致しません" >&2
+if ! diff -qr "$app_source" "$app_destination" >/dev/null; then
+    echo "インストール先のmyim.appがビルド結果と一致しません" >&2
     exit 1
 fi
 source_selection_service_executable="$selection_service_source/Contents/MacOS/myim-selection-service"
@@ -205,7 +286,6 @@ installed_selection_service_executable="$selection_service_destination/Contents/
 if ! cmp -s \
     "$source_selection_service_executable" \
     "$installed_selection_service_executable"; then
-    restore_previous_selection_service
     echo "インストール先のSelection Serviceがビルド結果と一致しません" >&2
     exit 1
 fi
@@ -214,7 +294,6 @@ installed_build_number=$(
         "$app_destination/Contents/Info.plist"
 )
 if [[ "$installed_build_number" != "$next_build_number" ]]; then
-    restore_previous_application
     echo "myim.app のビルド番号が更新されていません" >&2
     exit 1
 fi
@@ -223,7 +302,6 @@ installed_selection_service_build_number=$(
         "$selection_service_destination/Contents/Info.plist"
 )
 if [[ "$installed_selection_service_build_number" != "$next_build_number" ]]; then
-    restore_previous_selection_service
     echo "myim-selection.service のビルド番号が更新されていません" >&2
     exit 1
 fi
@@ -239,16 +317,39 @@ fi
 wait_for_status "$installed_executable" registered 1
 wait_for_status "$installed_executable" enabled 1
 
+rm -f "$runtime_status"
+
 if [[ "$was_selected" == "1" || "$was_registered" != "1" ]]; then
     "$installed_executable" --select-input-source
     wait_for_status "$installed_executable" selected 1
 fi
 
 if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
-    if ! wait_for_running_server "$installed_executable"; then
-        echo "myimは入力欄へフォーカスした時点で起動します" >&2
+    expected_commit=$(build_info_value "$installed_executable" git-commit)
+    if ! wait_for_running_server \
+        "$installed_executable" \
+        "$installed_build_number" \
+        "$expected_commit"; then
+        rollback_required=0
+        [[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
+        [[ ! -e "$previous_selection_service" ]] || rm -rf "$previous_selection_service"
+        echo "インストールは完了しましたが、新しいmyimの起動は未確認です" >&2
+        echo "入力欄へフォーカスした後にScripts/diagnose-installation.shを実行してください" >&2
+        echo "RESULT=installed-launch-unverified"
+        exit 2
     fi
 fi
 
+rollback_required=0
+[[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
+[[ ! -e "$previous_selection_service" ]] || rm -rf "$previous_selection_service"
 trap - EXIT
 echo "インストールしました: $app_destination"
+echo "BUILD=$installed_build_number"
+echo "GIT_COMMIT=$(build_info_value "$installed_executable" git-commit)"
+echo "SHA256=$(shasum -a 256 "$installed_executable" | awk '{ print $1 }')"
+if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
+    echo "RESULT=installed-running"
+else
+    echo "RESULT=installed-not-selected"
+fi

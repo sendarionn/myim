@@ -12,9 +12,21 @@ build_number=${MYIM_BUILD_NUMBER:?MYIM_BUILD_NUMBERを指定してください}
 application_identity=${MYIM_CODE_SIGN_IDENTITY:?MYIM_CODE_SIGN_IDENTITYを指定してください}
 installer_identity=${MYIM_INSTALLER_SIGN_IDENTITY:?MYIM_INSTALLER_SIGN_IDENTITYを指定してください}
 package_path="$release_directory/myim-$version.pkg"
+package_receipt_version="$version.$build_number"
 
 if [[ "$application_identity" == "-" || "$installer_identity" == "-" ]]; then
     echo "リリースにはDeveloper ID署名が必要です" >&2
+    exit 1
+fi
+if [[ -n "${version//[0-9.]}" \
+    || "$version" == .* \
+    || "$version" == *. \
+    || "$version" == *..* ]]; then
+    echo "MYIM_VERSIONは数字とピリオドだけで指定してください" >&2
+    exit 1
+fi
+if [[ "$build_number" != <-> ]]; then
+    echo "MYIM_BUILD_NUMBERは整数で指定してください" >&2
     exit 1
 fi
 
@@ -28,6 +40,18 @@ MYIM_CODE_SIGN_IDENTITY="$application_identity" \
     "$repository_root/Scripts/build-macos-ime.sh"
 
 codesign --verify --deep --strict --verbose=2 "$application_bundle"
+actual_version=$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+        "$application_bundle/Contents/Info.plist"
+)
+actual_build=$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+        "$application_bundle/Contents/Info.plist"
+)
+if [[ "$actual_version" != "$version" || "$actual_build" != "$build_number" ]]; then
+    echo "アプリのバージョンが指定値と一致しません" >&2
+    exit 1
+fi
 file "$application_bundle/Contents/MacOS/myim" \
     | grep -q "arm64"
 file "$application_bundle/Contents/MacOS/myim" \
@@ -41,6 +65,12 @@ mkdir -p "$payload_directory/Library/Input Methods"
 COPYFILE_DISABLE=1 ditto \
     "$application_bundle" \
     "$payload_directory/Library/Input Methods/myim.app"
+if ! diff -qr \
+    "$application_bundle" \
+    "$payload_directory/Library/Input Methods/myim.app" >/dev/null; then
+    echo "PKGペイロードがビルド成果物と一致しません" >&2
+    exit 1
+fi
 pkgbuild --analyze --root "$payload_directory" "$component_plist"
 /usr/libexec/PlistBuddy \
     -c "Set :0:BundleIsRelocatable false" \
@@ -67,7 +97,7 @@ pkgbuild \
     --component-plist "$component_plist" \
     --scripts "$repository_root/packaging/scripts" \
     --identifier "io.github.sendarionn.myim.pkg" \
-    --version "$version" \
+    --version "$package_receipt_version" \
     --ownership recommended \
     --sign "$installer_identity" \
     "$package_path"

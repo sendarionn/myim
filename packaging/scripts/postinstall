@@ -1,0 +1,41 @@
+#!/bin/zsh
+
+set -eu
+
+application="/Library/Input Methods/myim.app"
+executable="$application/Contents/MacOS/myim"
+launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+if [[ ! -x "$executable" ]]; then
+    echo "インストール先にmyimの実行ファイルがありません" >&2
+    exit 1
+fi
+codesign --verify --deep --strict "$application"
+
+build=$(
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
+        "$application/Contents/Info.plist" 2>/dev/null || true
+)
+git_commit=$(
+    /usr/libexec/PlistBuddy -c 'Print :MyIMGitCommit' \
+        "$application/Contents/Info.plist" 2>/dev/null || true
+)
+if [[ -z "$build" || -z "$git_commit" ]]; then
+    echo "インストール済みアプリにビルド識別情報がありません" >&2
+    exit 1
+fi
+
+if /usr/bin/pgrep -x myim >/dev/null 2>&1; then
+    echo "更新中にmyimプロセスが再起動しました" >&2
+    exit 1
+fi
+
+"$launch_services_register" -f "$application"
+
+echo "myimをインストールしました"
+echo "BUILD=$build"
+echo "GIT_COMMIT=$git_commit"
+echo "SHA256=$(/usr/bin/shasum -a 256 "$executable" | awk '{ print $1 }')"
+echo "RESULT=installed-not-running"
+
+exit 0

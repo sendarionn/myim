@@ -25,6 +25,24 @@ code_sign_identity=${MYIM_CODE_SIGN_IDENTITY:--}
 architectures=(${=MYIM_ARCHITECTURES:-})
 version=${MYIM_VERSION:-}
 build_number=${MYIM_BUILD_NUMBER:-}
+git_commit=$(git rev-parse --verify HEAD 2>/dev/null || echo unknown)
+git_dirty=false
+if [[ -n "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]]; then
+    git_dirty=true
+fi
+build_timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+set_plist_value() {
+    local plist=$1
+    local key=$2
+    local type=$3
+    local value=$4
+    /usr/libexec/PlistBuddy -c "Set :$key $value" "$plist" \
+        2>/dev/null \
+        || /usr/libexec/PlistBuddy \
+            -c "Add :$key $type $value" \
+            "$plist"
+}
 
 cd "$repository_root"
 swift_build_arguments=(-c release --disable-sandbox)
@@ -97,6 +115,15 @@ for developer_rpath in "${browser_developer_rpaths[@]}"; do
 done
 
 cp "macOS/Info.plist" "$contents_directory/Info.plist"
+set_plist_value \
+    "$contents_directory/Info.plist" \
+    MyIMGitCommit string "$git_commit"
+set_plist_value \
+    "$contents_directory/Info.plist" \
+    MyIMGitDirty bool "$git_dirty"
+set_plist_value \
+    "$contents_directory/Info.plist" \
+    MyIMBuildTimestamp string "$build_timestamp"
 if [[ -n "$version" ]]; then
     /usr/libexec/PlistBuddy \
         -c "Set :CFBundleShortVersionString $version" \
