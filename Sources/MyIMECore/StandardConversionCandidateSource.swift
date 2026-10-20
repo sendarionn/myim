@@ -211,18 +211,17 @@ public struct StandardConversionCandidateSource: Sendable {
                 exactDictionaryCandidates: exactDictionaryCandidates
             )
         let generatedOnlyCandidates = Set(
-            numericPrefixes + generatedInflections + particles
+            kana + numericPrefixes + generatedInflections + particles
         ).subtracting(exactDictionaryCandidates)
-        // A selected generated candidate is recorded in the common history,
-        // but that history must not reclassify it as a whole-input exact match
+        // Selection history changes ranking without reclassifying candidates
+        // that are generated for the current input as whole-input exact matches
         let learnedExact = context.selectionHistory.candidates(
             for: lookupReadings
         ).filter {
             !generatedOnlyCandidates.contains($0)
         }
-        // Particle compositions follow the selection of their base
-        // candidates, while every generated candidate remains below the
-        // whole-input exact candidates
+        // Particle compositions also follow the selection of their base
+        // candidates before established full-input selection takes precedence
         let secondaryRanks = context.learningEnabled
             ? ParticleCompositionRanking.ranks(
                 for: numericPrefixes + generatedInflections + particles,

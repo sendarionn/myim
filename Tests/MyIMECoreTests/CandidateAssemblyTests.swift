@@ -4,7 +4,7 @@ import Testing
 @Suite
 struct CandidateAssemblyTests {
     @Test
-    func preservesTierOrderAndSourceSpecificLearningMetadata() {
+    func promotesLearnedParticleAndPreservesLearningMetadata() {
         let candidates = CandidateAssembly().candidates(from: .init(
             reading: "kouhowo",
             kana: ["こうほを", "コウホヲ"],
@@ -32,15 +32,15 @@ struct CandidateAssemblyTests {
         ))
 
         #expect(candidates.map(\.storageText) == [
-            "公募を", "候補を", "こうほを", "コウホヲ"
+            "候補を", "公募を", "こうほを", "コウホヲ"
         ])
-        #expect(candidates[1].primarySource == .particleComposition)
-        #expect(candidates[1].isLearnable)
-        #expect(candidates[1].hasAttribute(.generated))
+        #expect(candidates[0].primarySource == .particleComposition)
+        #expect(candidates[0].isLearnable)
+        #expect(candidates[0].hasAttribute(.generated))
     }
 
     @Test
-    func keepsEveryExactCandidateAheadOfGeneratedCandidates() throws {
+    func keepsEveryExactCandidateAheadOfUnlearnedGeneratedCandidates() throws {
         let candidates = CandidateAssembly().candidates(from: .init(
             reading: "whole",
             kana: ["かな"],
@@ -65,11 +65,7 @@ struct CandidateAssemblyTests {
             basicPrefix: [],
             english: [],
             uppercase: [],
-            recencyRanks: [
-                "数字合成": 100,
-                "活用生成": 99,
-                "助詞合成": 98
-            ],
+            recencyRanks: [:],
             secondaryRanks: ["助詞合成": 100],
             contextualCandidates: [],
             prioritizeKana: false
@@ -126,5 +122,39 @@ struct CandidateAssemblyTests {
         #expect(candidates.map(\.storageText) == [
             "完全一致", "活用生成", "助詞合成", "数字合成"
         ])
+    }
+
+    @Test
+    func movesLearnedGeneratedCandidateAheadWithoutChangingItsOrigin() throws {
+        let candidates = CandidateAssembly().candidates(from: .init(
+            reading: "arimasu",
+            kana: ["あります", "アリマス"],
+            userExact: [],
+            learnedExact: [],
+            dateTime: [],
+            numericPrefix: [],
+            javaScript: [],
+            symbolExact: [],
+            basicExact: [],
+            systemExact: ["アリマス"],
+            inflection: ["あります"],
+            particle: [],
+            generatedParticles: [],
+            userPrefix: [],
+            learnedCompletion: [],
+            symbolPrefix: [],
+            systemPrefix: [],
+            basicPrefix: [],
+            english: [],
+            uppercase: [],
+            recencyRanks: ["あります": 1],
+            secondaryRanks: ["あります": 1],
+            contextualCandidates: [],
+            prioritizeKana: false
+        ))
+
+        #expect(candidates.first?.storageText == "あります")
+        #expect(candidates.first?.hasSource(.verbInflection) == true)
+        #expect(candidates.first?.hasSource(.selectionHistory) == false)
     }
 }

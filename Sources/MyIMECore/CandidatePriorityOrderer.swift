@@ -36,6 +36,12 @@ public enum CandidatePriorityOrderer {
             }
         }
 
+        let learned = CandidateRecencyOrderer.ordered(
+            kana + direct + secondary + others,
+            ranks: recencyRanks
+        ).filter { recencyRanks[$0] != nil }
+        appendUnique(learned)
+
         if prioritizeKana {
             appendUnique(kana)
             let contextualSet = Set(contextualCandidates)

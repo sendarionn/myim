@@ -43,7 +43,7 @@ struct ParticleCompositionRankingTests {
     }
 
     @Test
-    func baseHistoryOutranksTheCompositionsOwn() {
+    func compositionsOwnEstablishedHistoryOutranksBaseHistory() {
         var history = CandidateSelectionHistory()
         for _ in 0..<3 {
             history.record("私は", reading: "watashiha")
@@ -51,7 +51,7 @@ struct ParticleCompositionRankingTests {
         history.record("渡し", reading: "watashi")
 
         #expect(compositions("watashiha", history)
-            == ["渡しは", "私は", "わたしは"])
+            == ["私は", "渡しは", "わたしは"])
     }
 
     @Test

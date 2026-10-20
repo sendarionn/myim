@@ -4,7 +4,7 @@ import Testing
 @Suite
 struct CandidatePriorityOrdererTests {
     @Test
-    func keepsKanaBeforeDirectAndRecentCandidates() {
+    func movesEstablishedCandidateAheadOfSingleKana() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["き", "キ"],
             direct: ["気", "木"],
@@ -12,7 +12,7 @@ struct CandidatePriorityOrdererTests {
             recencyRanks: ["機会": 9],
             prioritizeKana: true
         )
-        #expect(result == ["き", "キ", "気", "木", "機会", "昨日"])
+        #expect(result == ["機会", "き", "キ", "気", "木", "昨日"])
     }
 
     @Test
@@ -28,7 +28,7 @@ struct CandidatePriorityOrdererTests {
     }
 
     @Test
-    func keepsRecentOtherCandidateInsideOtherGroupForLongInput() {
+    func movesEstablishedOtherCandidateAheadOfGroupsForLongInput() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["きかい", "キカイ"],
             direct: ["機械", "機会"],
@@ -37,7 +37,7 @@ struct CandidatePriorityOrdererTests {
             prioritizeKana: false
         )
         #expect(result == [
-            "機械", "機会", "きかい", "キカイ", "機械的", "期間"
+            "機械的", "機械", "機会", "きかい", "キカイ", "期間"
         ])
     }
 
@@ -66,7 +66,7 @@ struct CandidatePriorityOrdererTests {
     }
 
     @Test
-    func keepsSelectedKanaInsideKanaGroupForLongInput() {
+    func movesEstablishedKanaAheadOfDirectCandidatesForLongInput() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["での", "デノ"],
             direct: ["出野"],
@@ -74,7 +74,7 @@ struct CandidatePriorityOrdererTests {
             recencyRanks: ["での": 12],
             prioritizeKana: false
         )
-        #expect(result == ["出野", "での", "デノ"])
+        #expect(result == ["での", "出野", "デノ"])
     }
 
     @Test
@@ -106,7 +106,7 @@ struct CandidatePriorityOrdererTests {
     }
 
     @Test
-    func keepsRecentCompletionInsideCompletionGroup() {
+    func movesEstablishedCompletionsAheadOfCandidateGroups() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["さい", "サイ"],
             direct: ["再", "際", "歳"],
@@ -115,7 +115,7 @@ struct CandidatePriorityOrdererTests {
             prioritizeKana: false
         )
 
-        #expect(result == ["再", "際", "歳", "さい", "サイ", "再利用", "最愛"])
+        #expect(result == ["再利用", "最愛", "再", "際", "歳", "さい", "サイ"])
     }
 
     @Test
@@ -130,5 +130,60 @@ struct CandidatePriorityOrdererTests {
         )
 
         #expect(result == ["公募を", "候補を", "こうほを", "コウホヲ"])
+    }
+
+    @Test
+    func movesEstablishedSelectionAheadOfCandidateGroups() {
+        let result = CandidatePriorityOrderer.ordered(
+            kana: ["あります", "アリマス"],
+            direct: ["有ります", "在ります"],
+            secondary: ["あります"],
+            others: ["ありました"],
+            recencyRanks: ["あります": 12],
+            secondaryRanks: ["あります": 12],
+            prioritizeKana: false
+        )
+
+        #expect(result == [
+            "あります", "有ります", "在ります", "アリマス", "ありました"
+        ])
+    }
+
+    @Test
+    func keepsDefaultGroupsWhenSelectionIsNotEstablished() {
+        let result = CandidatePriorityOrderer.ordered(
+            kana: ["あります", "アリマス"],
+            direct: ["有ります", "在ります"],
+            secondary: ["あります"],
+            others: [],
+            recencyRanks: [:],
+            secondaryRanks: ["あります": 12],
+            prioritizeKana: false
+        )
+
+        #expect(result == ["有ります", "在ります", "あります", "アリマス"])
+    }
+
+    @Test
+    func mostRecentEstablishedSelectionWinsAcrossCandidateGroups() {
+        let firstGenerated = CandidatePriorityOrderer.ordered(
+            kana: [],
+            direct: ["完全一致"],
+            secondary: ["生成候補"],
+            others: [],
+            recencyRanks: ["完全一致": 4, "生成候補": 5],
+            prioritizeKana: false
+        )
+        let thenExact = CandidatePriorityOrderer.ordered(
+            kana: [],
+            direct: ["完全一致"],
+            secondary: ["生成候補"],
+            others: [],
+            recencyRanks: ["完全一致": 6, "生成候補": 5],
+            prioritizeKana: false
+        )
+
+        #expect(firstGenerated == ["生成候補", "完全一致"])
+        #expect(thenExact == ["完全一致", "生成候補"])
     }
 }

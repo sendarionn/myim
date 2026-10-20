@@ -168,7 +168,7 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
-    func wholeInputExactCandidateOutranksAGeneratedParticleComposition() throws {
+    func learnedParticleCompositionOutranksWholeInputExactCandidate() throws {
         let source = makeSource(basicEntries: [
             DictionaryEntry(reading: "kouho", candidates: ["候補"]),
             DictionaryEntry(reading: "kouhowo", candidates: ["好捕を"])
@@ -188,9 +188,9 @@ struct StandardConversionCandidateSourceTests {
             selectionHistory: history
         ))
 
-        #expect(candidates.map(\.storageText).prefix(2) == ["好捕を", "候補を"])
-        #expect(candidates[1].hasSource(.particleComposition))
-        #expect(candidates[1].hasAttribute(.generated))
+        #expect(candidates.map(\.storageText).prefix(2) == ["候補を", "好捕を"])
+        #expect(candidates[0].hasSource(.particleComposition))
+        #expect(candidates[0].hasAttribute(.generated))
     }
 
     @Test
@@ -211,7 +211,7 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
-    func wholeInputExactCandidateOutranksNumericPrefixComposition() throws {
+    func learnedNumericPrefixCompositionOutranksWholeInputExactCandidate() throws {
         let source = makeSource(basicEntries: [
             DictionaryEntry(reading: "nin", candidates: ["人"]),
             DictionaryEntry(reading: "1nin", candidates: ["一任"])
@@ -228,11 +228,11 @@ struct StandardConversionCandidateSourceTests {
         let exactIndex = try #require(values.firstIndex(of: "一任"))
         let compositionIndex = try #require(values.firstIndex(of: "1人"))
 
-        #expect(exactIndex < compositionIndex)
+        #expect(compositionIndex < exactIndex)
     }
 
     @Test
-    func wholeInputExactCandidateOutranksCompoundVerbInflection() throws {
+    func learnedCompoundVerbInflectionOutranksWholeInputExactCandidate() throws {
         let source = makeSource(
             basicEntries: [DictionaryEntry(
                 reading: "yobaretemo",
@@ -256,7 +256,7 @@ struct StandardConversionCandidateSourceTests {
             values.firstIndex(of: "呼ばれても")
         )
 
-        #expect(exactIndex < compositionIndex)
+        #expect(compositionIndex < exactIndex)
     }
 
     @Test
@@ -569,6 +569,98 @@ struct StandardConversionCandidateSourceTests {
             systemText: "kaku\t書く\n",
             verbText: verbText
         ), "kaite").contains("書いて"))
+    }
+
+    @Test(arguments: [
+        ("arimasu", "アリマス", "あります", "aru\tある\tgodan\t0\n"),
+        ("shite", "シテ", "して", "suru\tする\tsuru\t0\n")
+    ])
+    func repeatedSelectionPromotesAutomaticKanaWithoutReclassifyingIt(
+        input: String,
+        exact: String,
+        generated: String,
+        verbText: String
+    ) throws {
+        let source = makeSource(
+            systemText: "\(input)\t\(exact)\n",
+            verbText: verbText
+        )
+        var history = CandidateSelectionHistory()
+
+        let initial = source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: history
+        ))
+        #expect(initial.first?.storageText == exact)
+
+        history.record(generated, reading: input)
+        let afterOneSelection = source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: history
+        ))
+        #expect(afterOneSelection.first?.storageText == exact)
+
+        history.record(generated, reading: input)
+        let learned = source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: history
+        ))
+        let promoted = try #require(learned.first)
+        #expect(promoted.storageText == generated)
+        #expect(promoted.hasSource(.automaticKana))
+        #expect(!promoted.hasSource(.selectionHistory))
+
+        let saved = try JSONEncoder().encode(history)
+        var restored = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: saved
+        )
+        #expect(source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: restored
+        )).first?.storageText == generated)
+
+        restored.remove([generated])
+        #expect(source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: restored
+        )).first?.storageText == exact)
+
+        restored.record(generated, reading: input)
+        restored.record(generated, reading: input)
+        #expect(source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: restored
+        )).first?.storageText == generated)
+    }
+
+    @Test
+    func repeatedSelectionPromotesVerbInflectionWithoutReclassifyingIt() throws {
+        let input = "arimasu"
+        let generated = "有ります"
+        let source = makeSource(
+            systemText: "arimasu\tアリマス\n",
+            verbText: "aru\t有る\tgodan\t0\n"
+        )
+        var history = CandidateSelectionHistory()
+        history.record(generated, reading: input)
+        history.record(generated, reading: input)
+
+        let promoted = try #require(source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: history
+        )).first)
+
+        #expect(promoted.storageText == generated)
+        #expect(promoted.hasSource(.verbInflection))
+        #expect(!promoted.hasSource(.selectionHistory))
     }
 
     private let madeBasic = [DictionaryEntry(reading: "made", candidates: ["まで"])]

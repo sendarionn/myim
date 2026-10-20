@@ -209,7 +209,7 @@ struct CandidatePipelineTests {
     }
 
     @Test
-    func keepsDirectCandidateAheadOfParticleAndParticleAheadOfGeneratedKana() {
+    func movesLearnedParticleAheadOfDirectAndGeneratedKana() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(
                 kana: ["こうほを", "コウホヲ"],
@@ -221,7 +221,7 @@ struct CandidatePipelineTests {
             )
         )
 
-        #expect(candidates == ["公募を", "候補を", "こうほを", "コウホヲ"])
+        #expect(candidates == ["候補を", "公募を", "こうほを", "コウホヲ"])
     }
 
     @Test

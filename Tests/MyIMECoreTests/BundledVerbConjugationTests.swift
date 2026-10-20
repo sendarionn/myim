@@ -99,6 +99,30 @@ struct BundledVerbConjugationTests {
     }
 
     @Test(arguments: [
+        ("arimasu", "あります"),
+        ("shite", "して")
+    ])
+    func promotesRepeatedlySelectedAutomaticKanaWithBundledDictionaries(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        var history = CandidateSelectionHistory()
+        history.record(expected, reading: input)
+        history.record(expected, reading: input)
+
+        let candidate = try #require(source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: history
+        )).first)
+
+        #expect(candidate.storageText == expected)
+        #expect(candidate.hasSource(.automaticKana))
+        #expect(!candidate.hasSource(.selectionHistory))
+    }
+
+    @Test(arguments: [
         ("yobu", "呼ぶ"),
         ("yonde", "呼んで"),
         ("yobarete", "呼ばれて"),
