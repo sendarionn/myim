@@ -19,56 +19,25 @@ private final class AnalogClockView: NSView {
 
     private var dragTarget: TimeClockHand?
     private var draggedHourRing: TimeHourRing?
+    let layout = TimeDialLayout()
 
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let state else { return }
-        let inset: CGFloat = 8
-        let dial = bounds.insetBy(dx: inset, dy: inset)
-        let center = NSPoint(x: dial.midX, y: dial.midY)
-        let radius = min(dial.width, dial.height) / 2
+        let center = dialCenter
 
-        NSColor.separatorColor.setStroke()
-        let outline = NSBezierPath(ovalIn: NSRect(
-            x: center.x - radius,
-            y: center.y - radius,
-            width: radius * 2,
-            height: radius * 2
-        ))
-        outline.lineWidth = 1
-        outline.stroke()
-
-        for step in 0..<60 {
-            let angle = CGFloat(step) * .pi / 30
-            let outer = point(center: center, radius: radius - 2, angle: angle)
-            let length: CGFloat = step.isMultiple(of: 5) ? 8 : 4
-            let inner = point(
-                center: center,
-                radius: radius - 2 - length,
-                angle: angle
-            )
-            let mark = NSBezierPath()
-            mark.move(to: inner)
-            mark.line(to: outer)
-            mark.lineWidth = step.isMultiple(of: 5) ? 1.5 : 0.5
-            mark.stroke()
-        }
-
+        // The labels mark the hours, so neither ticks nor an outline are drawn
         for step in 0..<12 {
             let angle = CGFloat(step) * .pi / 6
-            for (ring, ringRadius, fontSize) in [
-                (TimeHourRing.outer, radius - 20, CGFloat(11)),
-                (TimeHourRing.inner, radius - 47, CGFloat(10))
-            ] {
+            for ring in [TimeHourRing.outer, .inner] {
                 drawDialNumber(
                     ring.label(atDialStep: step),
                     selected: state.hour == ring.hour(atDialStep: step),
                     center: center,
-                    radius: ringRadius,
-                    angle: angle,
-                    fontSize: fontSize
+                    radius: CGFloat(layout.labelRadius(of: ring)),
+                    angle: angle
                 )
             }
         }
@@ -76,13 +45,13 @@ private final class AnalogClockView: NSView {
         drawHand(
             from: center,
             angleDegrees: state.hourHandAngle,
-            length: radius * 0.48,
+            length: CGFloat(layout.hourHandLength),
             width: 3
         )
         drawHand(
             from: center,
             angleDegrees: state.minuteHandAngle,
-            length: radius * 0.68,
+            length: CGFloat(layout.minuteHandLength),
             width: 1.5
         )
         NSColor.labelColor.setFill()
@@ -106,33 +75,25 @@ private final class AnalogClockView: NSView {
         }
 
         // 数字のクリックでも時を選べるようにする
-        let metrics = dialMetrics
-        let distance = hypot(
-            location.x - metrics.center.x,
-            location.y - metrics.center.y
-        )
-        guard distance >= metrics.radius * 0.45 else { return }
-        let ring: TimeHourRing = distance >= metrics.radius * 0.70
-            ? .outer
-            : .inner
-        hourSelectionAction?(angle(at: location, center: metrics.center), ring)
+        let center = dialCenter
+        guard let ring = layout.labelRing(atDistance: Double(hypot(
+            location.x - center.x,
+            location.y - center.y
+        ))) else { return }
+        hourSelectionAction?(angle(at: location, center: center), ring)
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let dragTarget else { return }
         let location = convert(event.locationInWindow, from: nil)
-        let metrics = dialMetrics
-        let currentAngle = angle(at: location, center: metrics.center)
+        let center = dialCenter
+        let currentAngle = angle(at: location, center: center)
         switch dragTarget {
         case .hour:
-            let distance = hypot(
-                location.x - metrics.center.x,
-                location.y - metrics.center.y
-            )
-            let ratio = distance / metrics.radius
+            let distance = hypot(location.x - center.x, location.y - center.y)
             if let current = draggedHourRing {
-                draggedHourRing = TimeClockInteractionGeometry.hourRing(
-                    distanceRatio: Double(ratio),
+                draggedHourRing = layout.dragRing(
+                    atDistance: Double(distance),
                     current: current
                 )
             }
@@ -149,23 +110,19 @@ private final class AnalogClockView: NSView {
         draggedHourRing = nil
     }
 
-    private var dialMetrics: (center: NSPoint, radius: CGFloat) {
-        let dial = bounds.insetBy(dx: 8, dy: 8)
-        return (
-            NSPoint(x: dial.midX, y: dial.midY),
-            min(dial.width, dial.height) / 2
-        )
+    private var dialCenter: NSPoint {
+        NSPoint(x: bounds.midX, y: bounds.midY)
     }
 
     private func hitTarget(
         at location: NSPoint,
         state: TimeSelectionState
     ) -> TimeClockHand? {
-        let metrics = dialMetrics
+        let center = dialCenter
         return TimeClockInteractionGeometry.dragTarget(
-            x: Double(location.x - metrics.center.x),
-            y: Double(location.y - metrics.center.y),
-            radius: Double(metrics.radius),
+            x: Double(location.x - center.x),
+            y: Double(location.y - center.y),
+            layout: layout,
             state: state
         )
     }
@@ -184,12 +141,14 @@ private final class AnalogClockView: NSView {
         selected: Bool,
         center: NSPoint,
         radius: CGFloat,
-        angle: CGFloat,
-        fontSize: CGFloat
+        angle: CGFloat
     ) {
         let location = point(center: center, radius: radius, angle: angle)
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize),
+            .font: NSFont.monospacedDigitSystemFont(
+                ofSize: CGFloat(layout.labelFontSize),
+                weight: .regular
+            ),
             .foregroundColor: selected
                 ? NSColor.alternateSelectedControlTextColor
                 : NSColor.labelColor
@@ -197,12 +156,13 @@ private final class AnalogClockView: NSView {
         let text = value as NSString
         let size = text.size(withAttributes: attributes)
         if selected {
+            let highlight = CGFloat(layout.labelRadius)
             NSColor.controlAccentColor.setFill()
             NSBezierPath(ovalIn: NSRect(
-                x: location.x - 12,
-                y: location.y - 12,
-                width: 24,
-                height: 24
+                x: location.x - highlight,
+                y: location.y - highlight,
+                width: highlight * 2,
+                height: highlight * 2
             )).fill()
         }
         text.draw(
@@ -316,7 +276,13 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
         minuteField.frame = NSRect(
             x: centerX + 12, y: top, width: fieldWidth, height: fieldHeight
         )
-        clockView.frame = NSRect(x: centerX - 108, y: 28, width: 216, height: 216)
+        let diameter = CGFloat(clockView.layout.dialRadius * 2)
+        clockView.frame = NSRect(
+            x: centerX - diameter / 2,
+            y: 28,
+            width: diameter,
+            height: diameter
+        )
         errorLabel.frame = NSRect(x: 8, y: 5, width: bounds.width - 16, height: 18)
     }
 
@@ -422,7 +388,10 @@ final class TimeWindowController: NSObject {
     private var outsideClickTimer: Timer?
 
     override init() {
-        let size = NSSize(width: 248, height: 308)
+        // The dial plus side margins, the digit fields above, and the error
+        // line below
+        let diameter = CGFloat(TimeDialLayout().dialRadius * 2)
+        let size = NSSize(width: diameter + 32, height: diameter + 92)
         inputView = TimeInputView(frame: NSRect(origin: .zero, size: size))
         panel = TimePanel(
             contentRect: NSRect(origin: .zero, size: size),

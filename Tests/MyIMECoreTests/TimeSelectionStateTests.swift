@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import MyIMECore
 
@@ -70,27 +71,65 @@ struct TimeSelectionStateTests {
     }
 
     @Test func overlappingHandsCanBeGrabbedAtTheirSeparateTips() throws {
+        let layout = TimeDialLayout()
         let state = try #require(TimeSelectionState(hour: 0, minute: 0))
         #expect(TimeClockInteractionGeometry.dragTarget(
-            x: 0, y: 48, radius: 100, state: state
+            x: 0, y: layout.hourHandLength, layout: layout, state: state
         ) == .hour)
         #expect(TimeClockInteractionGeometry.dragTarget(
-            x: 0, y: 68, radius: 100, state: state
+            x: 0, y: layout.minuteHandLength, layout: layout, state: state
         ) == .minute)
         #expect(TimeClockInteractionGeometry.dragTarget(
-            x: 40, y: 40, radius: 100, state: state
+            x: 40, y: 40, layout: layout, state: state
         ) == nil)
     }
 
-    @Test func hourRingUsesSeparateBandsAndRetainsBoundaryChoice() {
-        #expect(TimeClockInteractionGeometry.hourRing(
-            distanceRatio: 0.80, current: .inner
+    @Test func draggedHourKeepsItsRingNearTheBoundary() {
+        let layout = TimeDialLayout()
+        let boundary = (layout.innerLabelRadius + layout.outerLabelRadius) / 2
+
+        #expect(layout.dragRing(
+            atDistance: layout.outerLabelRadius, current: .inner
         ) == .outer)
-        #expect(TimeClockInteractionGeometry.hourRing(
-            distanceRatio: 0.60, current: .outer
+        #expect(layout.dragRing(
+            atDistance: layout.innerLabelRadius, current: .outer
         ) == .inner)
-        #expect(TimeClockInteractionGeometry.hourRing(
-            distanceRatio: 0.70, current: .inner
+        #expect(layout.dragRing(atDistance: boundary, current: .inner) == .inner)
+        #expect(layout.dragRing(atDistance: boundary, current: .outer) == .outer)
+    }
+
+    /// Labels share one size and keep their highlights apart on both rings
+    @Test func labelsFitWithoutTouching() {
+        let layout = TimeDialLayout()
+        let innerSpacing = 2 * layout.innerLabelRadius * sin(.pi / 12)
+
+        #expect(innerSpacing > layout.labelRadius * 2)
+        #expect(layout.ringSpacing > layout.labelRadius * 2)
+        #expect(layout.outerLabelRadius + layout.labelRadius
+            < layout.dialRadius)
+        #expect(layout.hourHandLength
+            < layout.innerLabelRadius - layout.labelRadius)
+        #expect(layout.minuteHandLength
+            < layout.outerLabelRadius - layout.labelRadius)
+    }
+
+    /// A click selects the ring of the label drawn under it, and nothing
+    /// between or beyond the rings
+    @Test func labelClicksMatchWhereLabelsAreDrawn() {
+        let layout = TimeDialLayout()
+
+        #expect(layout.labelRing(atDistance: layout.innerLabelRadius) == .inner)
+        #expect(layout.labelRing(
+            atDistance: layout.innerLabelRadius + layout.labelRadius
         ) == .inner)
+        #expect(layout.labelRing(atDistance: layout.outerLabelRadius) == .outer)
+        #expect(layout.labelRing(
+            atDistance: layout.outerLabelRadius - layout.labelRadius
+        ) == .outer)
+        #expect(layout.labelRing(
+            atDistance: (layout.innerLabelRadius + layout.outerLabelRadius) / 2
+        ) == nil)
+        #expect(layout.labelRing(atDistance: 20) == nil)
+        #expect(layout.labelRing(atDistance: layout.dialRadius) == nil)
     }
 }

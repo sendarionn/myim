@@ -35,22 +35,67 @@ public enum TimeClockHand: Equatable, Sendable {
     case minute
 }
 
+/// Sizes of the 24-hour dial in points; drawing and hit testing both read
+/// them, so a label is chosen where it is drawn
+public struct TimeDialLayout: Equatable, Sendable {
+    /// One size for both rings, so 1 to 12 read as easily as 13 to 24
+    public var labelFontSize: Double = 14
+    /// Radius of a label's highlight and of the area that selects it
+    public var labelRadius: Double = 15
+    /// Wide enough that neighbouring inner labels keep their highlights apart
+    public var innerLabelRadius: Double = 66
+    public var ringSpacing: Double = 34
+    public var margin: Double = 6
+
+    public init() {}
+
+    public var outerLabelRadius: Double { innerLabelRadius + ringSpacing }
+    public var dialRadius: Double { outerLabelRadius + labelRadius + margin }
+    public var hourHandLength: Double { innerLabelRadius - labelRadius - 4 }
+    public var minuteHandLength: Double { outerLabelRadius - labelRadius - 4 }
+
+    public func labelRadius(of ring: TimeHourRing) -> Double {
+        ring == .inner ? innerLabelRadius : outerLabelRadius
+    }
+
+    /// The ring whose labels a click at `distance` from the centre hits
+    public func labelRing(atDistance distance: Double) -> TimeHourRing? {
+        for ring in [TimeHourRing.inner, .outer]
+        where abs(distance - labelRadius(of: ring)) <= labelRadius {
+            return ring
+        }
+        return nil
+    }
+
+    /// The ring followed while the hour hand is dragged; near the middle
+    /// between the rings the previous ring stays, so it does not flicker
+    public func dragRing(
+        atDistance distance: Double,
+        current: TimeHourRing
+    ) -> TimeHourRing {
+        let boundary = (innerLabelRadius + outerLabelRadius) / 2
+        if distance >= boundary + 4 { return .outer }
+        if distance <= boundary - 4 { return .inner }
+        return current
+    }
+}
+
 public enum TimeClockInteractionGeometry {
     public static func dragTarget(
         x: Double,
         y: Double,
-        radius: Double,
+        layout: TimeDialLayout,
         state: TimeSelectionState,
         tolerance: Double = 8
     ) -> TimeClockHand? {
-        guard radius > 0, hypot(x, y) > 9 else { return nil }
+        guard hypot(x, y) > 9 else { return nil }
         let hourEnd = endpoint(
             angleDegrees: state.hourHandAngle,
-            length: radius * 0.48
+            length: layout.hourHandLength
         )
         let minuteEnd = endpoint(
             angleDegrees: state.minuteHandAngle,
-            length: radius * 0.68
+            length: layout.minuteHandLength
         )
         let hourDistance = distanceToSegment(
             x: x,
@@ -77,15 +122,6 @@ public enum TimeClockInteractionGeometry {
         case (false, false):
             return nil
         }
-    }
-
-    public static func hourRing(
-        distanceRatio: Double,
-        current: TimeHourRing
-    ) -> TimeHourRing {
-        if distanceRatio >= 0.74 { return .outer }
-        if (0.56...0.66).contains(distanceRatio) { return .inner }
-        return current
     }
 
     private static func endpoint(
