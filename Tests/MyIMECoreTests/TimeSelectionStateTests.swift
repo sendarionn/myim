@@ -18,16 +18,18 @@ struct TimeSelectionStateTests {
         #expect(abs(state.hourHandAngle - 318.5) < 0.0001)
     }
 
-    @Test func hourDialSelectionRetainsMinuteAndPeriod() throws {
-        var morning = try #require(TimeSelectionState(hour: 9, minute: 37))
-        morning.selectHour(atClockAngle: 300)
-        #expect(morning.hour == 10)
-        #expect(morning.minute == 37)
-
-        var afternoon = try #require(TimeSelectionState(hour: 15, minute: 22))
-        afternoon.selectHour(atClockAngle: 0)
-        #expect(afternoon.hour == 12)
-        #expect(afternoon.minute == 22)
+    @Test func hourDialUsesOuterAndInnerTwentyFourHourRings() throws {
+        var state = try #require(TimeSelectionState(hour: 9, minute: 37))
+        state.selectHour(atClockAngle: 300, ring: .outer)
+        #expect(state.hour == 10)
+        #expect(state.minute == 37)
+        state.selectHour(atClockAngle: 300, ring: .inner)
+        #expect(state.hour == 22)
+        #expect(state.minute == 37)
+        state.selectHour(atClockAngle: 0, ring: .outer)
+        #expect(state.hour == 12)
+        state.selectHour(atClockAngle: 0, ring: .inner)
+        #expect(state.hour == 0)
     }
 
     @Test func minuteDialSelectionSnapsWithoutCarryingHour() throws {
@@ -39,15 +41,36 @@ struct TimeSelectionStateTests {
         #expect(state.minute == 35)
     }
 
-    @Test func amPmSwitchPreservesTheTwelveHourValue() throws {
-        var midnight = try #require(TimeSelectionState(hour: 0, minute: 5))
-        midnight.setPM(true)
-        #expect(midnight.hour == 12)
-        midnight.setPM(false)
-        #expect(midnight.hour == 0)
+    @Test func innerRingDistinguishesTwentyThreeFromMidnight() throws {
+        var state = try #require(TimeSelectionState(hour: 12, minute: 5))
+        state.selectHour(atClockAngle: 330, ring: .inner)
+        #expect(state.hour == 23)
+        state.selectHour(atClockAngle: 0, ring: .inner)
+        #expect(state.hour == 0)
+    }
 
-        var afternoon = try #require(TimeSelectionState(hour: 23, minute: 5))
-        afternoon.setPM(false)
-        #expect(afternoon.hour == 11)
+    @Test func overlappingHandsCanBeGrabbedAtTheirSeparateTips() throws {
+        let state = try #require(TimeSelectionState(hour: 0, minute: 0))
+        #expect(TimeClockInteractionGeometry.dragTarget(
+            x: 0, y: 48, radius: 100, state: state
+        ) == .hour)
+        #expect(TimeClockInteractionGeometry.dragTarget(
+            x: 0, y: 68, radius: 100, state: state
+        ) == .minute)
+        #expect(TimeClockInteractionGeometry.dragTarget(
+            x: 40, y: 40, radius: 100, state: state
+        ) == nil)
+    }
+
+    @Test func hourRingUsesSeparateBandsAndRetainsBoundaryChoice() {
+        #expect(TimeClockInteractionGeometry.hourRing(
+            distanceRatio: 0.80, current: .inner
+        ) == .outer)
+        #expect(TimeClockInteractionGeometry.hourRing(
+            distanceRatio: 0.60, current: .outer
+        ) == .inner)
+        #expect(TimeClockInteractionGeometry.hourRing(
+            distanceRatio: 0.70, current: .inner
+        ) == .inner)
     }
 }

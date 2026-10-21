@@ -10,26 +10,11 @@ function candidates(context) {
     return []
   }
 
-  const formats = ["HH:mm", "H:mm", "H時m分", "HHmm", "h:mm a"]
-  return formats.map(function(template) {
-    return formatTime(hour, minute, template)
-  })
-}
-
-function formatTime(hour, minute, template) {
-  const twelveHour = hour % 12 || 12
-  const values = {
-    HH: pad(hour, 2),
-    H: String(hour),
-    mm: pad(minute, 2),
-    m: String(minute),
-    h: String(twelveHour),
-    a: hour < 12 ? "AM" : "PM"
-  }
-  const tokens = ["HH", "mm", "H", "m", "h", "a"]
-  return tokens.reduce(function(result, token) {
-    return result.split(token).join(values[token])
-  }, template)
+  const HH = pad(hour, 2)
+  const mm = pad(minute, 2)
+  const results = [`${HH}:${mm}`, `${HH}時${mm}分`]
+  if (minute === 30) results.push(`${hour}時半`)
+  return results
 }
 
 function pad(value, length) {

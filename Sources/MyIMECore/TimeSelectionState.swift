@@ -1,24 +1,100 @@
 import Foundation
 
-public enum TimeDialComponent: Equatable, Sendable {
+public enum TimeHourRing: Equatable, Sendable {
+    case outer
+    case inner
+}
+
+public enum TimeClockHand: Equatable, Sendable {
     case hour
     case minute
+}
+
+public enum TimeClockInteractionGeometry {
+    public static func dragTarget(
+        x: Double,
+        y: Double,
+        radius: Double,
+        state: TimeSelectionState,
+        tolerance: Double = 8
+    ) -> TimeClockHand? {
+        guard radius > 0, hypot(x, y) > 9 else { return nil }
+        let hourEnd = endpoint(
+            angleDegrees: state.hourHandAngle,
+            length: radius * 0.48
+        )
+        let minuteEnd = endpoint(
+            angleDegrees: state.minuteHandAngle,
+            length: radius * 0.68
+        )
+        let hourDistance = distanceToSegment(
+            x: x,
+            y: y,
+            endX: hourEnd.x,
+            endY: hourEnd.y
+        )
+        let minuteDistance = distanceToSegment(
+            x: x,
+            y: y,
+            endX: minuteEnd.x,
+            endY: minuteEnd.y
+        )
+        switch (hourDistance <= tolerance, minuteDistance <= tolerance) {
+        case (true, false):
+            return .hour
+        case (false, true):
+            return .minute
+        case (true, true):
+            return hypot(x - hourEnd.x, y - hourEnd.y)
+                <= hypot(x - minuteEnd.x, y - minuteEnd.y)
+                ? .hour
+                : .minute
+        case (false, false):
+            return nil
+        }
+    }
+
+    public static func hourRing(
+        distanceRatio: Double,
+        current: TimeHourRing
+    ) -> TimeHourRing {
+        if distanceRatio >= 0.74 { return .outer }
+        if (0.56...0.66).contains(distanceRatio) { return .inner }
+        return current
+    }
+
+    private static func endpoint(
+        angleDegrees: Double,
+        length: Double
+    ) -> (x: Double, y: Double) {
+        let radians = angleDegrees * .pi / 180
+        return (sin(radians) * length, cos(radians) * length)
+    }
+
+    private static func distanceToSegment(
+        x: Double,
+        y: Double,
+        endX: Double,
+        endY: Double
+    ) -> Double {
+        let lengthSquared = endX * endX + endY * endY
+        guard lengthSquared > 0 else { return hypot(x, y) }
+        let projection = max(
+            0,
+            min(1, (x * endX + y * endY) / lengthSquared)
+        )
+        return hypot(x - projection * endX, y - projection * endY)
+    }
 }
 
 public struct TimeSelectionState: Equatable, Sendable {
     public private(set) var hour: Int
     public private(set) var minute: Int
-    public var dialComponent: TimeDialComponent
 
-    public init?(
-        hour: Int,
-        minute: Int,
-        dialComponent: TimeDialComponent = .hour
-    ) {
+    public init?(hour: Int, minute: Int) {
         guard Self.isValid(hour: hour, minute: minute) else { return nil }
         self.hour = hour
         self.minute = minute
-        self.dialComponent = dialComponent
     }
 
     public static func isValid(hour: Int, minute: Int) -> Bool {
@@ -39,18 +115,21 @@ public struct TimeSelectionState: Equatable, Sendable {
         return true
     }
 
-    public mutating func setPM(_ isPM: Bool) {
-        hour = hour % 12 + (isPM ? 12 : 0)
-    }
-
-    public mutating func selectHour(atClockAngle angle: Double) {
-        let clockHour = Self.nearestDialStep(atClockAngle: angle)
-        let hourInPeriod = clockHour == 12 ? 0 : clockHour
-        hour = hourInPeriod + (hour >= 12 ? 12 : 0)
+    public mutating func selectHour(
+        atClockAngle angle: Double,
+        ring: TimeHourRing
+    ) {
+        let step = Self.nearestDialStep(atClockAngle: angle)
+        switch ring {
+        case .outer:
+            hour = step == 0 ? 12 : step
+        case .inner:
+            hour = step == 0 ? 0 : step + 12
+        }
     }
 
     public mutating func selectMinute(atClockAngle angle: Double) {
-        minute = (Self.nearestDialStep(atClockAngle: angle) % 12) * 5
+        minute = Self.nearestDialStep(atClockAngle: angle) * 5
     }
 
     public var hourHandAngle: Double {
@@ -61,8 +140,6 @@ public struct TimeSelectionState: Equatable, Sendable {
         Double(minute) * 6
     }
 
-    public var isPM: Bool { hour >= 12 }
-
     public var digitalText: String {
         String(format: "%02d:%02d", hour, minute)
     }
@@ -70,7 +147,6 @@ public struct TimeSelectionState: Equatable, Sendable {
     private static func nearestDialStep(atClockAngle angle: Double) -> Int {
         let normalized = angle.truncatingRemainder(dividingBy: 360)
         let positive = normalized < 0 ? normalized + 360 : normalized
-        let step = Int((positive / 30).rounded()) % 12
-        return step == 0 ? 12 : step
+        return Int((positive / 30).rounded()) % 12
     }
 }

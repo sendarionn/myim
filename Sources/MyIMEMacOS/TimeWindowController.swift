@@ -14,7 +14,11 @@ private final class TimePanel: NSPanel {
 
 private final class AnalogClockView: NSView {
     var state: TimeSelectionState? { didSet { needsDisplay = true } }
-    var selectionAction: ((Double) -> Void)?
+    var hourSelectionAction: ((Double, TimeHourRing) -> Void)?
+    var minuteSelectionAction: ((Double) -> Void)?
+
+    private var dragTarget: TimeClockHand?
+    private var draggedHourRing: TimeHourRing?
 
     override var isFlipped: Bool { false }
 
@@ -52,21 +56,23 @@ private final class AnalogClockView: NSView {
             mark.stroke()
         }
 
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.labelColor
-        ]
-        for value in 1...12 {
-            let angle = CGFloat(value) * .pi / 6
-            let location = point(center: center, radius: radius - 20, angle: angle)
-            let text = String(value) as NSString
-            let size = text.size(withAttributes: attributes)
-            text.draw(
-                at: NSPoint(
-                    x: location.x - size.width / 2,
-                    y: location.y - size.height / 2
-                ),
-                withAttributes: attributes
+        for step in 0..<12 {
+            let angle = CGFloat(step) * .pi / 6
+            drawDialNumber(
+                String(step == 0 ? 12 : step),
+                selected: state.hour == (step == 0 ? 12 : step),
+                center: center,
+                radius: radius - 20,
+                angle: angle,
+                fontSize: 11
+            )
+            drawDialNumber(
+                String(format: "%02d", step == 0 ? 0 : step + 12),
+                selected: state.hour == (step == 0 ? 0 : step + 12),
+                center: center,
+                radius: radius - 47,
+                angle: angle,
+                fontSize: 10
             )
         }
 
@@ -91,16 +97,126 @@ private final class AnalogClockView: NSView {
         )).fill()
     }
 
-    override func mouseDown(with event: NSEvent) { select(event) }
-    override func mouseDragged(with event: NSEvent) { select(event) }
-
-    private func select(_ event: NSEvent) {
+    override func mouseDown(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
-        let center = NSPoint(x: bounds.midX, y: bounds.midY)
-        guard hypot(location.x - center.x, location.y - center.y) > 8 else { return }
-        var angle = atan2(location.x - center.x, location.y - center.y) * 180 / .pi
+        guard let state else { return }
+        if let target = hitTarget(at: location, state: state) {
+            dragTarget = target
+            if case .hour = target {
+                draggedHourRing = (state.hour == 0 || state.hour >= 13)
+                    ? .inner
+                    : .outer
+            }
+            return
+        }
+
+        // 数字のクリックでも時を選べるようにする
+        let metrics = dialMetrics
+        let distance = hypot(
+            location.x - metrics.center.x,
+            location.y - metrics.center.y
+        )
+        guard distance >= metrics.radius * 0.45 else { return }
+        let ring: TimeHourRing = distance >= metrics.radius * 0.70
+            ? .outer
+            : .inner
+        hourSelectionAction?(angle(at: location, center: metrics.center), ring)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragTarget else { return }
+        let location = convert(event.locationInWindow, from: nil)
+        let metrics = dialMetrics
+        let currentAngle = angle(at: location, center: metrics.center)
+        switch dragTarget {
+        case .hour:
+            let distance = hypot(
+                location.x - metrics.center.x,
+                location.y - metrics.center.y
+            )
+            let ratio = distance / metrics.radius
+            if let current = draggedHourRing {
+                draggedHourRing = TimeClockInteractionGeometry.hourRing(
+                    distanceRatio: Double(ratio),
+                    current: current
+                )
+            }
+            if let ring = draggedHourRing {
+                hourSelectionAction?(currentAngle, ring)
+            }
+        case .minute:
+            minuteSelectionAction?(currentAngle)
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragTarget = nil
+        draggedHourRing = nil
+    }
+
+    private var dialMetrics: (center: NSPoint, radius: CGFloat) {
+        let dial = bounds.insetBy(dx: 8, dy: 8)
+        return (
+            NSPoint(x: dial.midX, y: dial.midY),
+            min(dial.width, dial.height) / 2
+        )
+    }
+
+    private func hitTarget(
+        at location: NSPoint,
+        state: TimeSelectionState
+    ) -> TimeClockHand? {
+        let metrics = dialMetrics
+        return TimeClockInteractionGeometry.dragTarget(
+            x: Double(location.x - metrics.center.x),
+            y: Double(location.y - metrics.center.y),
+            radius: Double(metrics.radius),
+            state: state
+        )
+    }
+
+    private func angle(at location: NSPoint, center: NSPoint) -> Double {
+        var angle = atan2(
+            location.x - center.x,
+            location.y - center.y
+        ) * 180 / .pi
         if angle < 0 { angle += 360 }
-        selectionAction?(Double(angle))
+        return Double(angle)
+    }
+
+    private func drawDialNumber(
+        _ value: String,
+        selected: Bool,
+        center: NSPoint,
+        radius: CGFloat,
+        angle: CGFloat,
+        fontSize: CGFloat
+    ) {
+        let location = point(center: center, radius: radius, angle: angle)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize),
+            .foregroundColor: selected
+                ? NSColor.alternateSelectedControlTextColor
+                : NSColor.labelColor
+        ]
+        let text = value as NSString
+        let size = text.size(withAttributes: attributes)
+        if selected {
+            NSColor.controlAccentColor.setFill()
+            NSBezierPath(ovalIn: NSRect(
+                x: location.x - 12,
+                y: location.y - 12,
+                width: 24,
+                height: 24
+            )).fill()
+        }
+        text.draw(
+            at: NSPoint(
+                x: location.x - size.width / 2,
+                y: location.y - size.height / 2
+            ),
+            withAttributes: attributes
+        )
     }
 
     private func point(center: NSPoint, radius: CGFloat, angle: CGFloat) -> NSPoint {
@@ -134,18 +250,6 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
     private let hourField = NSTextField()
     private let minuteField = NSTextField()
     private let separatorLabel = NSTextField(labelWithString: ":")
-    private let periodControl = NSSegmentedControl(
-        labels: ["午前", "午後"],
-        trackingMode: .selectOne,
-        target: nil,
-        action: nil
-    )
-    private let modeControl = NSSegmentedControl(
-        labels: ["時", "分"],
-        trackingMode: .selectOne,
-        target: nil,
-        action: nil
-    )
     private let clockView = AnalogClockView()
     private let errorLabel = NSTextField(labelWithString: "")
     private var state = TimeSelectionState(hour: 0, minute: 0)!
@@ -165,23 +269,18 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
         separatorLabel.font = .monospacedDigitSystemFont(ofSize: 24, weight: .medium)
         addSubview(separatorLabel)
 
-        periodControl.target = self
-        periodControl.action = #selector(changePeriod)
-        periodControl.segmentStyle = .texturedSquare
-        addSubview(periodControl)
-
-        modeControl.target = self
-        modeControl.action = #selector(changeDialMode)
-        modeControl.segmentStyle = .texturedSquare
-        addSubview(modeControl)
-
         errorLabel.alignment = .center
         errorLabel.font = .systemFont(ofSize: 11)
         errorLabel.textColor = .systemRed
         addSubview(errorLabel)
 
-        clockView.selectionAction = { [weak self] angle in
-            self?.selectDial(at: angle)
+        clockView.hourSelectionAction = { [weak self] angle, ring in
+            self?.state.selectHour(atClockAngle: angle, ring: ring)
+            self?.syncControls()
+        }
+        clockView.minuteSelectionAction = { [weak self] angle in
+            self?.state.selectMinute(atClockAngle: angle)
+            self?.syncControls()
         }
         addSubview(clockView)
 
@@ -195,7 +294,6 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
         let hour = calendar.component(.hour, from: date)
         let minute = calendar.component(.minute, from: date)
         state = TimeSelectionState(hour: hour, minute: minute)!
-        state.dialComponent = .hour
         syncControls()
     }
 
@@ -219,13 +317,7 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
         minuteField.frame = NSRect(
             x: centerX + 12, y: top, width: fieldWidth, height: fieldHeight
         )
-        periodControl.frame = NSRect(
-            x: centerX - 70, y: top - 32, width: 140, height: 24
-        )
-        modeControl.frame = NSRect(
-            x: centerX - 52, y: top - 62, width: 104, height: 24
-        )
-        clockView.frame = NSRect(x: centerX - 92, y: 28, width: 184, height: 184)
+        clockView.frame = NSRect(x: centerX - 108, y: 28, width: 216, height: 216)
         errorLabel.frame = NSRect(x: 8, y: 5, width: bounds.width - 16, height: 18)
     }
 
@@ -237,14 +329,6 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
             cancelAction?()
         default:
             super.keyDown(with: event)
-        }
-    }
-
-    func controlTextDidBeginEditing(_ notification: Notification) {
-        if notification.object as? NSTextField === hourField {
-            setMode(.hour)
-        } else if notification.object as? NSTextField === minuteField {
-            setMode(.minute)
         }
     }
 
@@ -260,30 +344,6 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
         confirmAction?(state)
     }
 
-    @objc private func changePeriod() {
-        state.setPM(periodControl.selectedSegment == 1)
-        syncControls()
-    }
-
-    @objc private func changeDialMode() {
-        setMode(modeControl.selectedSegment == 0 ? .hour : .minute)
-    }
-
-    private func setMode(_ component: TimeDialComponent) {
-        state.dialComponent = component
-        modeControl.selectedSegment = component == .hour ? 0 : 1
-        clockView.state = state
-    }
-
-    private func selectDial(at angle: Double) {
-        if state.dialComponent == .hour {
-            state.selectHour(atClockAngle: angle)
-        } else {
-            state.selectMinute(atClockAngle: angle)
-        }
-        syncControls()
-    }
-
     @discardableResult
     private func applyDraftsIfValid() -> Bool {
         guard let hour = Int(hourField.stringValue),
@@ -295,7 +355,6 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
         _ = state.set(hour: hour)
         _ = state.set(minute: minute)
         errorLabel.stringValue = ""
-        periodControl.selectedSegment = state.isPM ? 1 : 0
         clockView.state = state
         return true
     }
@@ -303,8 +362,6 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
     private func syncControls() {
         hourField.stringValue = String(format: "%02d", state.hour)
         minuteField.stringValue = String(format: "%02d", state.minute)
-        periodControl.selectedSegment = state.isPM ? 1 : 0
-        modeControl.selectedSegment = state.dialComponent == .hour ? 0 : 1
         errorLabel.stringValue = ""
         clockView.state = state
     }
@@ -366,7 +423,7 @@ final class TimeWindowController: NSObject {
     private var outsideClickTimer: Timer?
 
     override init() {
-        let size = NSSize(width: 224, height: 330)
+        let size = NSSize(width: 248, height: 308)
         inputView = TimeInputView(frame: NSRect(origin: .zero, size: size))
         panel = TimePanel(
             contentRect: NSRect(origin: .zero, size: size),

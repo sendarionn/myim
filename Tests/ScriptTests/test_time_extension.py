@@ -34,15 +34,26 @@ process.stdout.write(JSON.stringify(candidates({{
 
     def test_formats_selected_time_in_definition_order(self):
         self.assertEqual(
-            self.candidates(14, 35),
-            ["14:35", "14:35", "14時35分", "1435", "2:35 PM"],
+            self.candidates(14, 5),
+            ["14:05", "14時05分"],
         )
 
     def test_preserves_midnight_and_one_minute_precision(self):
         self.assertEqual(
             self.candidates(0, 7),
-            ["00:07", "0:07", "0時7分", "0007", "12:07 AM"],
+            ["00:07", "00時07分"],
         )
+
+    def test_adds_half_hour_only_for_thirty_minutes(self):
+        self.assertEqual(
+            self.candidates(14, 30),
+            ["14:30", "14時30分", "14時半"],
+        )
+        self.assertEqual(
+            self.candidates(9, 30),
+            ["09:30", "09時30分", "9時半"],
+        )
+        self.assertNotIn("14時半", self.candidates(14, 25))
 
     def test_rejects_invalid_values(self):
         self.assertEqual(self.candidates(24, 0), [])
