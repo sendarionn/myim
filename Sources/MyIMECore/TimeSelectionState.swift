@@ -120,8 +120,11 @@ public struct TimeSelectionState: Equatable, Sendable {
         hour = page.hour(atDialStep: step)
     }
 
+    /// Follows the dragged minute hand to the nearest minute
     public mutating func selectMinute(atClockAngle angle: Double) {
-        minute = Self.nearestDialStep(atClockAngle: angle) * 5
+        let normalized = angle.truncatingRemainder(dividingBy: 360)
+        let positive = normalized < 0 ? normalized + 360 : normalized
+        minute = Int((positive / 6).rounded()) % 60
     }
 
     public var hourHandAngle: Double {
@@ -134,11 +137,5 @@ public struct TimeSelectionState: Equatable, Sendable {
 
     public var digitalText: String {
         String(format: "%02d:%02d", hour, minute)
-    }
-
-    private static func nearestDialStep(atClockAngle angle: Double) -> Int {
-        let normalized = angle.truncatingRemainder(dividingBy: 360)
-        let positive = normalized < 0 ? normalized + 360 : normalized
-        return Int((positive / 30).rounded()) % 12
     }
 }

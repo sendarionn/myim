@@ -61,13 +61,18 @@ struct TimeSelectionStateTests {
         #expect(state.digitalText == "00:30")
     }
 
-    @Test func minuteDialSelectionSnapsWithoutCarryingHour() throws {
+    @Test func draggedMinuteFollowsEachMinuteWithoutCarryingHour() throws {
         var state = try #require(TimeSelectionState(hour: 10, minute: 55))
-        state.selectMinute(atClockAngle: 0)
+        state.selectMinute(atClockAngle: 357)
         #expect(state.hour == 10)
         #expect(state.minute == 0)
+        state.selectMinute(atClockAngle: 222)
+        #expect(state.minute == 37)
         state.selectMinute(atClockAngle: 217)
-        #expect(state.minute == 35)
+        #expect(state.minute == 36)
+        state.selectMinute(atClockAngle: 354)
+        #expect(state.minute == 59)
+        #expect(state.hour == 10)
     }
 
     /// Labels sit on one ring with highlights apart, inside the dial
