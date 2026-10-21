@@ -1,89 +1,170 @@
 import Foundation
 
-/// The 12 labels the dial shows at a time
-///
-/// The pages split the hours as 1 to 12 and 13 to 24, not as morning and
-/// afternoon: AM holds 1 to 12 o'clock, PM holds 13 to 23 o'clock and 24,
-/// which stands for 0 o'clock since no time is kept as 24:xx
-public enum TimeDialPage: Equatable, Sendable {
-    case am
-    case pm
-
-    /// The page that shows `hour`
-    public init(hour: Int) {
-        self = (1...12).contains(hour) ? .am : .pm
-    }
+/// The 24-hour dial shows 1 to 12 on the inner ring and 13 to 24 on the
+/// outer ring, 24 standing for 0 o'clock since no time is kept as 24:xx
+public enum TimeHourRing: Equatable, Sendable, CaseIterable {
+    case inner
+    case outer
 
     /// The hour of the label at one of the 12 positions, 0 being the top
     public func hour(atDialStep step: Int) -> Int {
         switch self {
-        case .am:
+        case .inner:
             step == 0 ? 12 : step
-        case .pm:
+        case .outer:
             step == 0 ? 0 : step + 12
         }
     }
 
     public func label(atDialStep step: Int) -> String {
         switch self {
-        case .am:
+        case .inner:
             String(step == 0 ? 12 : step)
-        case .pm:
+        case .outer:
             String(step == 0 ? 24 : step + 12)
         }
     }
 }
 
-/// Sizes of the dial in points; drawing and hit testing both read them, so
-/// a label is chosen where it is drawn
+/// Sizes of the round time panel in points, from the centre outwards: the
+/// HH:MM fields, the ring dragged for minutes, then the inner and outer
+/// hour labels; drawing and hit testing both read them, so every input
+/// is judged around the centre it is drawn on
 public struct TimeDialLayout: Equatable, Sendable {
+    /// One size for both rings
     public var labelFontSize: Double = 15
-    /// Radius of a label's highlight and of the area that clicks it
-    public var labelHitRadius: Double = 18
-    public var labelRingRadius: Double = 92
+    /// Radius of the round area that clicks a label; areas of neighbouring
+    /// labels on either ring stay apart
+    public var labelHitRadius: Double = 15
+    /// Half the side of the square marking the selected hour, small enough
+    /// that squares of labels diagonal to each other do not touch
+    public var highlightHalfSide: Double = 11
+    public var innerLabelRadius: Double = 110
+    public var ringSpacing: Double = 36
     public var margin: Double = 8
-    /// How far from the minute hand a press still grabs it
-    public var minuteHandTolerance: Double = 10
+    /// The HH:MM fields in the middle: two digit fields around a colon,
+    /// kept small so the minute ring around them is wide
+    public var digitFieldWidth: Double = 40
+    public var digitSeparatorWidth: Double = 12
+    public var digitFieldHeight: Double = 32
+    /// Space kept between the minute ring and the fields and labels
+    public var minuteRingGap: Double = 6
 
     public init() {}
 
-    public var dialRadius: Double { labelRingRadius + labelHitRadius + margin }
-    /// Ends short of the labels, so grabbing it never competes with them
-    public var minuteHandLength: Double {
-        labelRingRadius - labelHitRadius - 4
+    public var outerLabelRadius: Double { innerLabelRadius + ringSpacing }
+    /// Radius of the round panel itself
+    public var dialRadius: Double {
+        outerLabelRadius + labelHitRadius + margin
     }
-    public var hourHandLength: Double { minuteHandLength * 0.65 }
+
+    /// Distance from the centre to a corner of the HH:MM fields
+    public var digitAreaRadius: Double {
+        hypot(
+            digitFieldWidth + digitSeparatorWidth / 2,
+            digitFieldHeight / 2
+        )
+    }
+
+    /// The ring between the HH:MM fields and the inner labels where a
+    /// press sets the minute
+    public var minuteRingInnerRadius: Double {
+        digitAreaRadius + minuteRingGap
+    }
+    public var minuteRingOuterRadius: Double {
+        innerLabelRadius - labelHitRadius - minuteRingGap
+    }
+
+    public func labelRadius(of ring: TimeHourRing) -> Double {
+        ring == .inner ? innerLabelRadius : outerLabelRadius
+    }
 
     /// Offset of a label's centre from the dial centre, y pointing up
-    public func labelCenter(atDialStep step: Int) -> (x: Double, y: Double) {
+    public func labelCenter(
+        atDialStep step: Int,
+        ring: TimeHourRing
+    ) -> (x: Double, y: Double) {
         let radians = Double(step) * .pi / 6
-        return (sin(radians) * labelRingRadius, cos(radians) * labelRingRadius)
+        let radius = labelRadius(of: ring)
+        return (sin(radians) * radius, cos(radians) * radius)
     }
 
-    /// The label position a press at (x, y) from the centre clicks
-    public func labelStep(atX x: Double, y: Double) -> Int? {
-        (0..<12).first { step in
-            let center = labelCenter(atDialStep: step)
-            return hypot(x - center.x, y - center.y) <= labelHitRadius
+    /// The hour of the label whose click area holds (x, y)
+    public func hour(atX x: Double, y: Double) -> Int? {
+        for ring in TimeHourRing.allCases {
+            for step in 0..<12 {
+                let center = labelCenter(atDialStep: step, ring: ring)
+                if hypot(x - center.x, y - center.y) <= labelHitRadius {
+                    return ring.hour(atDialStep: step)
+                }
+            }
         }
+        return nil
     }
 
-    /// Whether a press at (x, y) grabs the minute hand; labels come first
-    public func grabsMinuteHand(
+    /// The minute pointed at from the centre: 0 at the top, 15 at the right
+    public func minute(atX x: Double, y: Double) -> Int {
+        var degrees = atan2(x, y) * 180 / .pi
+        if degrees < 0 { degrees += 360 }
+        return Int((degrees / 6).rounded()) % 60
+    }
+
+    /// What a press at (x, y) operates
+    public func region(atX x: Double, y: Double) -> TimeDialRegion {
+        if let hour = hour(atX: x, y: y) { return .hourLabel(hour) }
+        let distance = hypot(x, y)
+        if distance < minuteRingInnerRadius { return .digits }
+        if distance <= minuteRingOuterRadius { return .minuteRing }
+        return .none
+    }
+}
+
+public enum TimeDialRegion: Equatable, Sendable {
+    case hourLabel(Int)
+    case minuteRing
+    /// The HH:MM fields, edited with the keyboard
+    case digits
+    case none
+}
+
+/// One press on the dial, its operation fixed by where it started: a
+/// press on the minute ring sets the minute and follows the drag, and a
+/// press on a label selects its hour when released over the same label
+public struct TimeDialPointerGesture: Equatable, Sendable {
+    public enum Release: Equatable, Sendable {
+        case selectHour(Int)
+        case none
+    }
+
+    public let region: TimeDialRegion
+
+    public init(atX x: Double, y: Double, layout: TimeDialLayout) {
+        region = layout.region(atX: x, y: y)
+    }
+
+    /// The minute set by pressing on the minute ring
+    public func minuteOnPress(
         atX x: Double,
         y: Double,
-        state: TimeSelectionState
-    ) -> Bool {
-        guard labelStep(atX: x, y: y) == nil, hypot(x, y) > 6 else {
-            return false
-        }
-        let radians = state.minuteHandAngle * .pi / 180
-        let endX = sin(radians) * minuteHandLength
-        let endY = cos(radians) * minuteHandLength
-        let lengthSquared = endX * endX + endY * endY
-        let projection = max(0, min(1, (x * endX + y * endY) / lengthSquared))
-        return hypot(x - projection * endX, y - projection * endY)
-            <= minuteHandTolerance
+        layout: TimeDialLayout
+    ) -> Int? {
+        region == .minuteRing ? layout.minute(atX: x, y: y) : nil
+    }
+
+    /// The minute while a press that started on the minute ring is dragged,
+    /// wherever the pointer goes
+    public func move(toX x: Double, y: Double, layout: TimeDialLayout) -> Int? {
+        region == .minuteRing ? layout.minute(atX: x, y: y) : nil
+    }
+
+    public func release(
+        atX x: Double,
+        y: Double,
+        layout: TimeDialLayout
+    ) -> Release {
+        guard case let .hourLabel(hour) = region,
+              layout.hour(atX: x, y: y) == hour else { return .none }
+        return .selectHour(hour)
     }
 }
 
@@ -116,23 +197,8 @@ public struct TimeSelectionState: Equatable, Sendable {
     }
 
     /// Selects the hour of a clicked label, keeping the minute
-    public mutating func selectHour(atDialStep step: Int, page: TimeDialPage) {
-        hour = page.hour(atDialStep: step)
-    }
-
-    /// Follows the dragged minute hand to the nearest minute
-    public mutating func selectMinute(atClockAngle angle: Double) {
-        let normalized = angle.truncatingRemainder(dividingBy: 360)
-        let positive = normalized < 0 ? normalized + 360 : normalized
-        minute = Int((positive / 6).rounded()) % 60
-    }
-
-    public var hourHandAngle: Double {
-        (Double(hour % 12) + Double(minute) / 60) * 30
-    }
-
-    public var minuteHandAngle: Double {
-        Double(minute) * 6
+    public mutating func selectHour(_ hour: Int) {
+        _ = set(hour: hour)
     }
 
     public var digitalText: String {
