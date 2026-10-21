@@ -53,6 +53,7 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 | 次入力候補 | 未確定文字列がない状態で、確定済みの文脈から続きを提案する | `NextInputCandidateCoordinator`、`NextInputPredictionModel`、`InputController.recordCommittedInput(...)` | `NextInputCandidateSession` | 第一パネル |
 | 翻訳候補 | 選択中の標準候補または曖昧候補を翻訳先言語ごとに翻訳する | `TranslationCandidateSource.groups(for:translate:)`、`AppleTranslationCandidateSource`、`InputController.updateTranslationCandidates(...)` | `TranslationCandidateSession` | 翻訳パネル |
 | カレンダー書式候補 | カレンダーで選んだ日付を書式へ展開する | `InputController.loadCalendarFormats(for:client:)`、`JavaScriptExtensionClient.calendarCandidates(for:)` | `CalendarFormatSelectionSession` | 第一パネル |
+| 時刻書式候補 | 時刻入力UIで選んだ時刻を書式へ展開する | `InputController.loadTimeFormats(for:client:)`、`JavaScriptExtensionClient.timeCandidates(hour:minute:)` | `TimeFormatSelectionSession` | 第一パネル |
 
 非同期に取得する候補は`CandidateSearchCoordinator`と`CandidateSearchKind`で検索の種類ごとに管理し、古い結果を破棄する
 
@@ -1054,6 +1055,7 @@ ASCII英数字だけ、ひらがなだけ、カタカナだけの候補は、候
 | ファイル | 入力と候補 |
 | --- | --- |
 | `datetime.js` | 相対日付、入力した日付、曜日、現在時刻、カレンダー書式 |
+| `time.js` | 時刻入力UIで選んだ時刻の書式 |
 | `gengou.js` | `gengou`から現在の元号 |
 | `nendo.js` | `nendo`から現在の年度 |
 | `numeric-tools.js` | 計算、二進数、インチ系換算、分数約分 |
@@ -1076,6 +1078,10 @@ ASCII英数字だけ、ひらがなだけ、カタカナだけの候補は、候
 `datetime.js`は「日時候補を表示」が有効な場合に動作する
 
 `calendar`入力はこの設定に関係なく、選択日付の書式候補生成に使用する
+
+Option＋Tは時刻入力UIを開き、キーボードでは1分単位、文字盤では分を5分単位で選択する
+選択した時と分は数値のまま`time.js`へ渡し、日付やタイムゾーンの変換を介さず書式候補を生成する
+`time.js`の候補順はファイル内の`formats`配列で変更する
 
 主な入力
 
@@ -1111,5 +1117,7 @@ ASCII英数字だけ、ひらがなだけ、カタカナだけの候補は、候
 - `mm`、`m` 分
 - `ss`、`s` 秒
 - `E` 曜日
+
+`time.js`では`HH`、`H`、`mm`、`m`に加え、12時間表記の`h`と午前午後の`a`を使用できる
 
 候補生成時にmyimから現在日時とシステムタイムゾーンを渡し、JavaScript側で日付計算と書式適用を行う

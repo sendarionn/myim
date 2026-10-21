@@ -3,6 +3,7 @@ import AppKit
 enum MyIMFeatureShortcut: String, CaseIterable {
     case candidateFilter
     case calendar
+    case time
     case emoji
     case dictionaryRegistration
     case webSearch
@@ -12,6 +13,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         switch self {
         case .candidateFilter: "候補フィルター"
         case .calendar: "カレンダー"
+        case .time: "時刻入力"
         case .emoji: "絵文字パネル"
         case .dictionaryRegistration: "辞書登録"
         case .webSearch: "Web検索"
@@ -23,6 +25,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         switch self {
         case .candidateFilter: MyIMShortcut(modifiers: [.option], key: "f")
         case .calendar: MyIMShortcut(modifiers: [.option], key: "c")
+        case .time: MyIMShortcut(modifiers: [.option], key: "t")
         case .emoji: MyIMShortcut(modifiers: [.option], key: "e")
         case .dictionaryRegistration: MyIMShortcut(modifiers: [.option], key: "d")
         case .webSearch: MyIMShortcut(modifiers: [.option], key: "w")

@@ -3,6 +3,8 @@ public enum InputEscapeCommandAction: Equatable, Sendable {
     case closeEmoji
     case closeCalendar
     case cancelCalendarFormat
+    case closeTime
+    case cancelTimeFormat
     case leaveTranslation
     case leaveFuzzyCandidate
     case cancelStandardInput
@@ -13,6 +15,8 @@ public enum InputEscapeCommandAction: Equatable, Sendable {
         isEmojiVisible: Bool,
         isCalendarVisible: Bool,
         isCalendarFormatSelecting: Bool,
+        isTimeVisible: Bool,
+        isTimeFormatSelecting: Bool,
         isTranslationSelecting: Bool,
         interactionState: InputInteractionState,
         hasNextInputCandidates: Bool
@@ -21,6 +25,8 @@ public enum InputEscapeCommandAction: Equatable, Sendable {
         if isPreviewActive { return .closePreview }
         if isCalendarVisible { return .closeCalendar }
         if isCalendarFormatSelecting { return .cancelCalendarFormat }
+        if isTimeVisible { return .closeTime }
+        if isTimeFormatSelecting { return .cancelTimeFormat }
         if isTranslationSelecting { return .leaveTranslation }
         if interactionState == .selectingFuzzyCandidate {
             return .leaveFuzzyCandidate

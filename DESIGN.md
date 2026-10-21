@@ -274,6 +274,13 @@ ChromiumやElectronのアプリは未確定文字列がないときIMEが処理�
 `CalendarWindowController`は入力位置の近くへ一時表示し、日付グリッドを正方形のセルで操作する
 キー操作を入力先へ漏らさないため一時的にmodal sessionを使うが、Esc、再ショートカット、外側クリック、無関係な入力で終了する
 
+### 時刻入力
+
+`TimeWindowController`は入力位置の近くへ一時表示し、時と分の数値欄、午前午後、アナログ時計を一つの時刻状態へ同期する
+時計の針は表示専用とし、文字盤の操作は選択中の時または分へ離散的に適用する
+時刻選択中は入力先へ挿入せず、確定後に第一パネルで`time.js`の書式候補を選択する
+キー操作を入力先へ漏らさないため一時的にmodal sessionを使い、Esc、再ショートカット、外側クリックで終了する
+
 ### 設定
 
 `InputSourceUIBuilder`と`SettingsWindowPresenter`は標準のsection、checkbox、button、scroll viewを使う

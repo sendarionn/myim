@@ -130,6 +130,7 @@ final class InputController: IMKInputController {
     private var candidateSession = CandidateSession()
     private var candidateFilterCoordinator = CandidateFilterCoordinator()
     private var calendarSelectionSession = CalendarFormatSelectionSession()
+    private var timeSelectionSession = TimeFormatSelectionSession()
     private var fuzzyCandidateSession = FuzzyCandidateSession()
     private let userDictionaryStore: UserDictionaryStore
     private var dictionaryRuntime: ConversionDictionaryRuntime
@@ -189,6 +190,8 @@ final class InputController: IMKInputController {
     private var calendarWindow: CalendarWindowController {
         panelCoordinator.calendar
     }
+
+    private var timeWindow: TimeWindowController { panelCoordinator.time }
 
     private var emojiWindow: EmojiWindowController {
         panelCoordinator.emoji
@@ -541,6 +544,14 @@ final class InputController: IMKInputController {
             return handleCalendarFormatSelection(event, client: sender)
         }
 
+        if timeWindow.isVisible {
+            return timeWindow.handleKeyEvent(event)
+        }
+
+        if timeSelectionSession.isSelectingFormat {
+            return handleTimeFormatSelection(event, client: sender)
+        }
+
         if isCalendarShortcut(event) {
             let anchorFrame = inputLocation(for: sender)
             let returnApplication = NSWorkspace.shared.frontmostApplication
@@ -550,6 +561,14 @@ final class InputController: IMKInputController {
                     anchorFrame: anchorFrame,
                     returnApplication: returnApplication
                 )
+            }
+            return true
+        }
+
+        if isTimeShortcut(event) {
+            let anchorFrame = inputLocation(for: sender)
+            DispatchQueue.main.async { [weak self] in
+                _ = self?.beginTimeSelection(client: sender, anchorFrame: anchorFrame)
             }
             return true
         }
@@ -1095,6 +1114,8 @@ final class InputController: IMKInputController {
             isCalendarVisible: calendarWindow.isVisible,
             isCalendarFormatSelecting:
                 calendarSelectionSession.isSelectingFormat,
+            isTimeVisible: timeWindow.isVisible,
+            isTimeFormatSelecting: timeSelectionSession.isSelectingFormat,
             isTranslationSelecting:
                 translationCandidateSession.selectedCandidate != nil,
             interactionState: interactionState,
@@ -1118,6 +1139,13 @@ final class InputController: IMKInputController {
             return true
         case .cancelCalendarFormat:
             clearCalendarSelection()
+            primaryCandidatePanel.hide()
+            return true
+        case .closeTime:
+            timeWindow.hide()
+            return true
+        case .cancelTimeFormat:
+            clearTimeSelection()
             primaryCandidatePanel.hide()
             return true
         case .leaveTranslation:
@@ -1621,7 +1649,8 @@ final class InputController: IMKInputController {
             )
         let panelPolicy = InputPanelDismissalPolicy.deactivation(
             isExternalInformationInteractionActive: preservesExternalInformation,
-            isCalendarInteractionActive: calendarSelectionSession.isActive
+            isCalendarInteractionActive: calendarSelectionSession.isActive,
+            isTimeInteractionActive: timeSelectionSession.isActive
         )
         dismissInputSessionPanels(using: panelPolicy)
         if preservesExternalInformation {
@@ -1632,7 +1661,7 @@ final class InputController: IMKInputController {
             super.deactivateServer(sender)
             return
         }
-        if calendarSelectionSession.isActive {
+        if calendarSelectionSession.isActive || timeSelectionSession.isActive {
             activeInputClient = nil
             super.deactivateServer(sender)
             return
@@ -2582,6 +2611,10 @@ final class InputController: IMKInputController {
         MyIMFeatureShortcut.calendar.shortcut.matches(event)
     }
 
+    private func isTimeShortcut(_ event: NSEvent) -> Bool {
+        MyIMFeatureShortcut.time.shortcut.matches(event)
+    }
+
     private func isEmojiShortcut(_ event: NSEvent) -> Bool {
         if UserDefaults.standard.object(
             forKey: MyIMFeatureShortcut.emoji.defaultsKey
@@ -2893,6 +2926,151 @@ final class InputController: IMKInputController {
         panelCoordinator.calendarInputLocation(
             fallback: inputLocation(for: sender)
         )
+    }
+
+    private func beginTimeSelection(client sender: Any, anchorFrame: NSRect) -> Bool {
+        guard inputBuffer.isEmpty, dictionaryRegistrationSession == nil else {
+            return true
+        }
+        dismissNextInputCandidates(clearMarkedTextIn: sender)
+        primaryCandidatePanel.hide()
+        emojiWindow.hide()
+        previewWindow.hide()
+        symbolTipsWindow.hide()
+        clearCalendarSelection()
+        candidateSearchCoordinator.cancel(.timeFormat)
+        timeSelectionSession.beginTimeSelection()
+        guard let time = panelCoordinator.beginTimeSelection(near: anchorFrame) else {
+            clearTimeSelection()
+            return true
+        }
+        loadTimeFormats(for: time, client: sender)
+        return true
+    }
+
+    private func loadTimeFormats(
+        for time: TimeSelectionState,
+        client sender: Any
+    ) {
+        candidateSearchCoordinator.cancel(.timeFormat)
+        timeSelectionSession.beginFormatLoading()
+        primaryCandidatePanel.hide()
+        candidateSearchCoordinator.start(
+            .timeFormat,
+            query: time.digitalText,
+            operation: {
+                await Self.javaScriptExtensionClient.timeCandidates(
+                    hour: time.hour,
+                    minute: time.minute
+                )
+            },
+            validate: { [weak self] in
+                self?.timeSelectionSession.isActive == true
+            },
+            apply: { [weak self] candidates in
+                guard let self else { return }
+                self.timeSelectionSession.replaceCandidates(candidates)
+                self.showTimeFormatCandidates(client: sender)
+                guard let ordered = self.timeSelectionSession.candidates,
+                      !ordered.isEmpty else {
+                    self.clearTimeSelection()
+                    return
+                }
+                guard let selectedIndex = self.panelCoordinator.runTimeFormatSelection(
+                    candidateCount: ordered.count,
+                    fallbackLocation: self.inputLocation(for: sender),
+                    directionalSelection: { [weak self] index, direction in
+                        self?.calendarFormatSelectionIndex(
+                            from: index,
+                            direction: direction,
+                            candidateCount: ordered.count
+                        )
+                    },
+                    selectionChanged: { [weak self] index in
+                        guard let self else { return }
+                        self.timeSelectionSession.select(index: index)
+                        self.showTimeFormatCandidates(client: sender)
+                    }
+                ), ordered.indices.contains(selectedIndex) else {
+                    self.clearTimeSelection()
+                    self.primaryCandidatePanel.hide()
+                    return
+                }
+                let value = ordered[selectedIndex]
+                self.recordCandidateSelection(value)
+                self.clearTimeSelection()
+                self.commit(value, to: sender)
+            },
+            retainQueryAfterCompletion: false
+        )
+    }
+
+    private func handleTimeFormatSelection(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        guard let candidates = timeSelectionSession.candidates else { return false }
+        switch event.keyCode {
+        case 48:
+            guard !candidates.isEmpty else { return true }
+            timeSelectionSession.moveSelection(
+                by: event.modifierFlags.contains(.shift) ? -1 : 1
+            )
+            showTimeFormatCandidates(client: sender)
+        case 123, 124, 125, 126:
+            guard !candidates.isEmpty else { return true }
+            let direction: CandidateNavigationDirection = switch event.keyCode {
+            case 123: .left
+            case 124: .right
+            case 125: .down
+            default: .up
+            }
+            timeSelectionSession.select(index: calendarFormatSelectionIndex(
+                from: timeSelectionSession.selectedIndex,
+                direction: direction,
+                candidateCount: candidates.count
+            ))
+            showTimeFormatCandidates(client: sender)
+        case 36, 76:
+            guard let index = timeSelectionSession.selectedIndex,
+                  candidates.indices.contains(index) else { return true }
+            let value = candidates[index]
+            recordCandidateSelection(value)
+            clearTimeSelection()
+            commit(value, to: sender)
+        case 53:
+            clearTimeSelection()
+            primaryCandidatePanel.hide()
+        default:
+            break
+        }
+        return true
+    }
+
+    private func showTimeFormatCandidates(client sender: Any) {
+        guard let candidates = timeSelectionSession.candidates else { return }
+        guard !candidates.isEmpty else {
+            primaryCandidatePanel.hide()
+            return
+        }
+        let pageRange = timeSelectionSession.pageRange(
+            pageSize: Self.maximumCandidateCount
+        )
+        primaryCandidatePanel.show(
+            candidates: Array(candidates[pageRange]),
+            selectedIndex: timeSelectionSession.selectedIndex.map {
+                $0 - pageRange.lowerBound
+            },
+            near: panelCoordinator.timeInputLocation(
+                fallback: inputLocation(for: sender)
+            )
+        )
+    }
+
+    private func clearTimeSelection() {
+        candidateSearchCoordinator.cancel(.timeFormat)
+        timeSelectionSession.reset()
+        panelCoordinator.clearTimePresentation()
     }
 
     private func beginCandidateFilterInput(client sender: Any) -> Bool {
@@ -4951,6 +5129,7 @@ final class InputController: IMKInputController {
         emojiWindow.hide()
         symbolTipsWindow.hide()
         clearCalendarSelection()
+        clearTimeSelection()
         resetCandidateFilters()
         if inputHistoryValue.allSatisfy({ $0.isWhitespace }),
            !inputHistoryValue.isEmpty {
@@ -5009,6 +5188,7 @@ final class InputController: IMKInputController {
         trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
         candidateSearchCoordinator.cancel(.calendarFormat)
+        candidateSearchCoordinator.cancel(.timeFormat)
         let hidesSharedEmoji = shouldDismissSharedEmojiPanel
         panelCoordinator.dismissAll(hidesSharedEmoji: hidesSharedEmoji)
         if hidesSharedEmoji {
@@ -5025,6 +5205,7 @@ final class InputController: IMKInputController {
         cancelInputCandidateSearches()
         candidateSearchCoordinator.cancel(.dictionaryDefinition)
         clearCalendarSelection()
+        clearTimeSelection()
         resetCandidateFilters()
     }
 
@@ -5050,6 +5231,9 @@ final class InputController: IMKInputController {
         if policy.cancelsCalendarWork {
             candidateSearchCoordinator.cancel(.calendarFormat)
         }
+        if policy.cancelsTimeWork {
+            candidateSearchCoordinator.cancel(.timeFormat)
+        }
         candidateSearchCoordinator.cancel(.fuzzy)
         fuzzyCandidateSession.reset()
         selectedFuzzyCandidateIndex = nil
@@ -5073,6 +5257,9 @@ final class InputController: IMKInputController {
         resetCandidateFilters()
         if !policy.preservesCalendar {
             clearCalendarSelection()
+        }
+        if !policy.preservesTime {
+            clearTimeSelection()
         }
         clearNextInputCandidateState()
     }

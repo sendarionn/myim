@@ -8,20 +8,24 @@ public enum InputPanelKind: String, CaseIterable, Hashable, Sendable {
     case candidateFilterDraft
     case candidateFilterConditions
     case calendar
+    case time
 }
 
 public struct InputPanelDismissalPolicy: Equatable, Sendable {
     public let preservesExternalInformation: Bool
     public let preservesCalendar: Bool
+    public let preservesTime: Bool
     public let preservesEmoji: Bool
 
     public init(
         preservesExternalInformation: Bool,
         preservesCalendar: Bool,
+        preservesTime: Bool = false,
         preservesEmoji: Bool = false
     ) {
         self.preservesExternalInformation = preservesExternalInformation
         self.preservesCalendar = preservesCalendar
+        self.preservesTime = preservesTime
         self.preservesEmoji = preservesEmoji
     }
 
@@ -42,6 +46,8 @@ public struct InputPanelDismissalPolicy: Equatable, Sendable {
         !preservesCalendar
     }
 
+    public var cancelsTimeWork: Bool { !preservesTime }
+
     public var panelsToDismiss: Set<InputPanelKind> {
         var panels = Set(InputPanelKind.allCases)
         if preservesExternalInformation {
@@ -51,6 +57,10 @@ public struct InputPanelDismissalPolicy: Equatable, Sendable {
             panels.remove(.primaryCandidatePanel)
             panels.remove(.calendar)
         }
+        if preservesTime {
+            panels.remove(.primaryCandidatePanel)
+            panels.remove(.time)
+        }
         if preservesEmoji {
             panels.remove(.emoji)
         }
@@ -59,11 +69,13 @@ public struct InputPanelDismissalPolicy: Equatable, Sendable {
 
     public static func deactivation(
         isExternalInformationInteractionActive: Bool,
-        isCalendarInteractionActive: Bool
+        isCalendarInteractionActive: Bool,
+        isTimeInteractionActive: Bool = false
     ) -> InputPanelDismissalPolicy {
         InputPanelDismissalPolicy(
             preservesExternalInformation: isExternalInformationInteractionActive,
-            preservesCalendar: isCalendarInteractionActive
+            preservesCalendar: isCalendarInteractionActive,
+            preservesTime: isTimeInteractionActive
         )
     }
 }

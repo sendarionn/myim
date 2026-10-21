@@ -2,6 +2,7 @@ import Foundation
 
 public enum CandidateSearchKind: Hashable, Sendable {
     case calendarFormat
+    case timeFormat
     case dictionaryDefinition
     case fuzzy
     case fuzzyIndexBuild

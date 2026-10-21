@@ -173,6 +173,18 @@ actor JavaScriptExtensionClient {
         await candidates(for: "calendar", timestamp: date, settings: [:])
     }
 
+    func timeCandidates(hour: Int, minute: Int) async -> [String] {
+        await candidates(
+            for: "time",
+            timestamp: Date(),
+            settings: [:],
+            parameters: [
+                "hour": String(hour),
+                "minute": String(minute)
+            ]
+        )
+    }
+
     func nextInputCandidates(after value: String) async -> [String] {
         await candidates(
             for: value,
@@ -186,6 +198,7 @@ actor JavaScriptExtensionClient {
         for input: String,
         timestamp: Date,
         settings: [String: [String]],
+        parameters: [String: String]? = nil,
         functionName: String? = nil
     ) async -> [String] {
         guard !input.isEmpty else { return [] }
@@ -201,6 +214,7 @@ actor JavaScriptExtensionClient {
             extensionDirectories: Self.extensionDirectories,
             disabledFileNames: Self.disabledFileNames.sorted(),
             settings: settings,
+            parameters: parameters,
             functionName: functionName
         )
         guard let data = try? JSONEncoder().encode(request) else { return [] }

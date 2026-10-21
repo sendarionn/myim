@@ -76,7 +76,8 @@ while let line = readLine() {
                 "input": request.input,
                 "timestamp": request.timestamp,
                 "timeZone": request.timeZone,
-                "settings": request.settings
+                "settings": request.settings,
+                "parameters": request.parameters ?? [:]
             ]
             guard let value = function.call(withArguments: [input]),
                   exceptionMessage == nil else {

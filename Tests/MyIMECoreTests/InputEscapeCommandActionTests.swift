@@ -9,6 +9,7 @@ struct InputEscapeCommandActionTests {
         #expect(resolve(preview: true, calendar: true) == .closePreview)
         #expect(resolve(emoji: true, calendar: true) == .closeEmoji)
         #expect(resolve(calendar: true, calendarFormat: true) == .closeCalendar)
+        #expect(resolve(time: true, timeFormat: true) == .closeTime)
         #expect(resolve(
             calendarFormat: true,
             translation: true
@@ -49,6 +50,8 @@ struct InputEscapeCommandActionTests {
         emoji: Bool = false,
         calendar: Bool = false,
         calendarFormat: Bool = false,
+        time: Bool = false,
+        timeFormat: Bool = false,
         translation: Bool = false,
         state: InputInteractionState = .idle,
         hasNextInput: Bool = false
@@ -58,6 +61,8 @@ struct InputEscapeCommandActionTests {
             isEmojiVisible: emoji,
             isCalendarVisible: calendar,
             isCalendarFormatSelecting: calendarFormat,
+            isTimeVisible: time,
+            isTimeFormatSelecting: timeFormat,
             isTranslationSelecting: translation,
             interactionState: state,
             hasNextInputCandidates: hasNextInput

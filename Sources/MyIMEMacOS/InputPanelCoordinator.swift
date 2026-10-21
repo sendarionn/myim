@@ -6,6 +6,7 @@ final class InputPanelCoordinator {
     let candidateFilterDraft = CandidatePanelController()
     private var candidateFilterConditions: [CandidatePanelController] = []
     let calendar = CalendarWindowController()
+    let time = TimeWindowController()
     let emoji = EmojiWindowController.shared
     let secondaryCandidatePanel = SecondaryCandidatePanelController()
     /// One panel per target language with results, nearest to the source
@@ -29,6 +30,7 @@ final class InputPanelCoordinator {
     private var nextInputOutsideGlobalMonitor: Any?
     private var calendarAnchorFrame: NSRect?
     private var calendarReturnApplication: NSRunningApplication?
+    private var timeAnchorFrame: NSRect?
 
     var visiblePanelKinds: Set<InputPanelKind> {
         var result = Set<InputPanelKind>()
@@ -59,6 +61,7 @@ final class InputPanelCoordinator {
         if calendar.isVisible {
             result.insert(.calendar)
         }
+        if time.isVisible { result.insert(.time) }
         return result
     }
 
@@ -163,6 +166,34 @@ final class InputPanelCoordinator {
         calendarAnchorFrame = nil
         calendarReturnApplication = nil
         calendar.hide()
+    }
+
+    func beginTimeSelection(near anchorFrame: NSRect) -> TimeSelectionState? {
+        timeAnchorFrame = anchorFrame == .zero ? nil : anchorFrame
+        return time.runSelection(near: timeAnchorFrame ?? anchorFrame)
+    }
+
+    func runTimeFormatSelection(
+        candidateCount: Int,
+        fallbackLocation: NSRect,
+        directionalSelection: @escaping (Int?, CandidateNavigationDirection) -> Int?,
+        selectionChanged: @escaping (Int?) -> Void
+    ) -> Int? {
+        time.runFormatSelection(
+            candidateCount: candidateCount,
+            near: timeInputLocation(fallback: fallbackLocation),
+            directionalSelection: directionalSelection,
+            selectionChanged: selectionChanged
+        )
+    }
+
+    func timeInputLocation(fallback: NSRect) -> NSRect {
+        timeAnchorFrame ?? fallback
+    }
+
+    func clearTimePresentation() {
+        timeAnchorFrame = nil
+        time.hide()
     }
 
     func showFilterConditions(
@@ -414,6 +445,8 @@ final class InputPanelCoordinator {
                 hideFilterConditions()
             case .calendar:
                 clearCalendarPresentation()
+            case .time:
+                clearTimePresentation()
             }
         }
     }

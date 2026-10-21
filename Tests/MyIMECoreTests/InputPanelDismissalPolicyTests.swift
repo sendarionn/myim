@@ -8,6 +8,7 @@ struct InputPanelDismissalPolicyTests {
         #expect(!InputPanelDismissalPolicy.inputBecameEmpty
             .preservesExternalInformation)
         #expect(!InputPanelDismissalPolicy.inputBecameEmpty.preservesCalendar)
+        #expect(!InputPanelDismissalPolicy.inputBecameEmpty.preservesTime)
         #expect(InputPanelDismissalPolicy.inputBecameEmpty.panelsToDismiss
             == Set(InputPanelKind.allCases))
     }
@@ -33,6 +34,11 @@ struct InputPanelDismissalPolicyTests {
             isExternalInformationInteractionActive: false,
             isCalendarInteractionActive: true
         )
+        let time = InputPanelDismissalPolicy.deactivation(
+            isExternalInformationInteractionActive: false,
+            isCalendarInteractionActive: false,
+            isTimeInteractionActive: true
+        )
 
         #expect(external.preservesExternalInformation)
         #expect(!external.preservesCalendar)
@@ -46,6 +52,10 @@ struct InputPanelDismissalPolicyTests {
         #expect(calendar.panelsToDismiss.contains(.translationCandidates))
         #expect(!calendar.panelsToDismiss.contains(.primaryCandidatePanel))
         #expect(!calendar.panelsToDismiss.contains(.calendar))
+        #expect(time.preservesTime)
+        #expect(!time.cancelsTimeWork)
+        #expect(!time.panelsToDismiss.contains(.time))
+        #expect(!time.panelsToDismiss.contains(.primaryCandidatePanel))
     }
 
     @Test
