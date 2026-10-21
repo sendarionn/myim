@@ -13,7 +13,7 @@ private final class TimePanel: NSPanel {
 }
 
 /// The 24 hour labels on two rings around the minute ring and the HH:MM
-/// fields; a click on a label selects the hour and a press on the minute
+/// display; a click on a label selects the hour and a press on the minute
 /// ring sets the minute, both measured from the view's centre
 private final class TimeDialView: NSView {
     var state: TimeSelectionState? { didSet { needsDisplay = true } }
@@ -30,7 +30,11 @@ private final class TimeDialView: NSView {
         guard let state else { return }
         let center = dialCenter
 
-        // The labels mark the hours; no ticks, hands, or outline are drawn
+        drawTimeDisplay(state.digitalText, at: center)
+        // The labels mark the hours; no ticks, hands, or outline are drawn.
+        // The ring holding the selected hour is darker, and both stay
+        // clickable
+        let selectedRing = TimeHourRing(hour: state.hour)
         for ring in TimeHourRing.allCases {
             for step in 0..<12 {
                 let offset = layout.labelCenter(atDialStep: step, ring: ring)
@@ -41,10 +45,9 @@ private final class TimeDialView: NSView {
                         y: center.y + CGFloat(offset.y)
                     ),
                     selected: state.hour == ring.hour(atDialStep: step),
-                    // The inner 1 to 12 stay quieter than the outer ring
-                    color: ring == .inner
-                        ? .secondaryLabelColor
-                        : .labelColor
+                    color: ring == selectedRing
+                        ? .labelColor
+                        : .secondaryLabelColor
                 )
             }
         }
@@ -99,6 +102,17 @@ private final class TimeDialView: NSView {
         return (Double(location.x - center.x), Double(location.y - center.y))
     }
 
+    /// HH:MM is only shown; it takes no focus, cursor, or typing
+    private func drawTimeDisplay(_ value: String, at center: NSPoint) {
+        drawCentered(value, at: center, attributes: [
+            .font: NSFont.monospacedDigitSystemFont(
+                ofSize: CGFloat(layout.timeDisplayFontSize),
+                weight: .medium
+            ),
+            .foregroundColor: NSColor.labelColor
+        ])
+    }
+
     private func drawLabel(
         _ value: String,
         at location: NSPoint,
@@ -106,25 +120,31 @@ private final class TimeDialView: NSView {
         color: NSColor
     ) {
         if selected {
-            // A plain square, without rounding, marks the selected hour
-            let half = CGFloat(layout.highlightHalfSide)
-            let square = NSBezierPath(rect: NSRect(
-                x: location.x - half,
-                y: location.y - half,
-                width: half * 2,
-                height: half * 2
-            ))
-            square.lineWidth = 1.5
-            NSColor.controlAccentColor.setStroke()
-            square.stroke()
+            // One circle size for one and two digits, drawn over the
+            // ring's shade
+            let radius = CGFloat(layout.highlightRadius)
+            NSColor.controlAccentColor.setFill()
+            NSBezierPath(ovalIn: NSRect(
+                x: location.x - radius,
+                y: location.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )).fill()
         }
-        let attributes: [NSAttributedString.Key: Any] = [
+        drawCentered(value, at: location, attributes: [
             .font: NSFont.monospacedDigitSystemFont(
                 ofSize: CGFloat(layout.labelFontSize),
                 weight: .regular
             ),
-            .foregroundColor: selected ? NSColor.controlAccentColor : color
-        ]
+            .foregroundColor: selected ? NSColor.white : color
+        ])
+    }
+
+    private func drawCentered(
+        _ value: String,
+        at location: NSPoint,
+        attributes: [NSAttributedString.Key: Any]
+    ) {
         let text = value as NSString
         let size = text.size(withAttributes: attributes)
         text.draw(
@@ -137,53 +157,33 @@ private final class TimeDialView: NSView {
     }
 }
 
-private final class TimeInputView: NSView, NSTextFieldDelegate {
+/// The round panel: the dial and HH:MM are only clicked and shown, and
+/// the keyboard confirms with Enter or cancels with Esc
+private final class TimeInputView: NSView {
     var confirmAction: ((TimeSelectionState) -> Void)?
     var cancelAction: (() -> Void)?
 
-    private let hourField = NSTextField()
-    private let minuteField = NSTextField()
-    private let separatorLabel = NSTextField(labelWithString: ":")
     private let dialView = TimeDialView()
     private var state = TimeSelectionState(hour: 0, minute: 0)!
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        // The dial goes below so the HH:MM fields in its middle take clicks
         dialView.hourSelectionAction = { [weak self] hour in
             guard let self else { return }
             state.selectHour(hour)
-            syncControls()
+            dialView.state = state
         }
         dialView.minuteSelectionAction = { [weak self] minute in
             guard let self else { return }
             _ = state.set(minute: minute)
-            syncControls()
+            dialView.state = state
         }
         addSubview(dialView)
-
-        for field in [hourField, minuteField] {
-            field.alignment = .center
-            field.font = .monospacedDigitSystemFont(ofSize: 24, weight: .medium)
-            // Plain digits at the centre of the dial, without a field frame
-            field.isBezeled = false
-            field.drawsBackground = false
-            field.focusRingType = .default
-            field.delegate = self
-            field.target = self
-            field.action = #selector(confirm)
-            addSubview(field)
-        }
-        separatorLabel.alignment = .center
-        separatorLabel.font = .monospacedDigitSystemFont(ofSize: 24, weight: .medium)
-        addSubview(separatorLabel)
-
-
-        hourField.nextKeyView = minuteField
-        minuteField.nextKeyView = hourField
     }
 
     required init?(coder: NSCoder) { nil }
+
+    override var acceptsFirstResponder: Bool { true }
 
     func setInitialTime(_ date: Date, calendar: Calendar = .current) {
         let hour = calendar.component(.hour, from: date)
@@ -193,12 +193,12 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
 
     func setTime(_ time: TimeSelectionState) {
         state = time
-        syncControls()
+        dialView.state = state
     }
 
-    func focusInitialField() {
-        window?.makeFirstResponder(hourField)
-        hourField.selectText(nil)
+    /// Takes the keys itself, since nothing in the panel is edited
+    func takeKeyboard() {
+        window?.makeFirstResponder(self)
     }
 
     /// The panel is the dial: a circle on a clear window
@@ -213,79 +213,20 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
 
     override func layout() {
         super.layout()
-        // The dial fills the panel, so both share one centre with the
-        // fields below and the minute angles
+        // The dial fills the panel, so both share one centre with HH:MM
+        // and the minute angles
         dialView.frame = bounds
-        // HH:MM sits inside the inner ring
-        let layout = dialView.layout
-        let fieldWidth = CGFloat(layout.digitFieldWidth)
-        let fieldHeight = CGFloat(layout.digitFieldHeight)
-        let halfSeparator = CGFloat(layout.digitSeparatorWidth) / 2
-        let center = NSPoint(x: dialView.frame.midX, y: dialView.frame.midY)
-        let y = center.y - fieldHeight / 2
-        hourField.frame = NSRect(
-            x: center.x - halfSeparator - fieldWidth, y: y,
-            width: fieldWidth, height: fieldHeight
-        )
-        separatorLabel.frame = NSRect(
-            x: center.x - halfSeparator, y: y,
-            width: halfSeparator * 2, height: fieldHeight
-        )
-        minuteField.frame = NSRect(
-            x: center.x + halfSeparator, y: y,
-            width: fieldWidth, height: fieldHeight
-        )
     }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 36, 76:
-            confirm()
+            confirmAction?(state)
         case 53:
             cancelAction?()
         default:
-            super.keyDown(with: event)
-        }
-    }
-
-    func controlTextDidChange(_ notification: Notification) {
-        applyDraftsIfValid()
-    }
-
-    @objc private func confirm() {
-        guard applyDraftsIfValid() else {
-            NSSound.beep()
-            return
-        }
-        confirmAction?(state)
-    }
-
-    @discardableResult
-    private func applyDraftsIfValid() -> Bool {
-        guard let hour = Int(hourField.stringValue),
-              let minute = Int(minuteField.stringValue),
-              TimeSelectionState.isValid(hour: hour, minute: minute) else {
-            // Out of 0 to 23 or 0 to 59: the digits turn red
-            showsInvalidDigits(true)
-            return false
-        }
-        _ = state.set(hour: hour)
-        _ = state.set(minute: minute)
-        showsInvalidDigits(false)
-        dialView.state = state
-        return true
-    }
-
-    private func syncControls() {
-        hourField.stringValue = String(format: "%02d", state.hour)
-        minuteField.stringValue = String(format: "%02d", state.minute)
-        showsInvalidDigits(false)
-        dialView.state = state
-    }
-
-    private func showsInvalidDigits(_ invalid: Bool) {
-        for field in [hourField, minuteField] {
-            field.textColor = invalid ? .systemRed : .labelColor
+            // Digits, Tab, and other keys change nothing
+            break
         }
     }
 }
@@ -407,7 +348,7 @@ final class TimeWindowController: NSObject {
             cancelSelection()
             return true
         }
-        (panel.firstResponder ?? inputView).keyDown(with: event)
+        inputView.keyDown(with: event)
         return true
     }
 
@@ -432,7 +373,7 @@ final class TimeWindowController: NSObject {
         panel.makeKeyAndOrderFront(nil)
         // The shadow follows the drawn circle rather than the square window
         panel.invalidateShadow()
-        inputView.focusInitialField()
+        inputView.takeKeyboard()
         startOutsideClickMonitoring()
         let response = NSApp.runModal(for: panel)
         stopOutsideClickMonitoring()

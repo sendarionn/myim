@@ -6,6 +6,11 @@ public enum TimeHourRing: Equatable, Sendable, CaseIterable {
     case inner
     case outer
 
+    /// The ring holding `hour`, shown darker than the other
+    public init(hour: Int) {
+        self = (1...12).contains(hour) ? .inner : .outer
+    }
+
     /// The hour of the label at one of the 12 positions, 0 being the top
     public func hour(atDialStep step: Int) -> Int {
         switch self {
@@ -27,7 +32,7 @@ public enum TimeHourRing: Equatable, Sendable, CaseIterable {
 }
 
 /// Sizes of the round time panel in points, from the centre outwards: the
-/// HH:MM fields, the ring dragged for minutes, then the inner and outer
+/// HH:MM display, the ring dragged for minutes, then the inner and outer
 /// hour labels; drawing and hit testing both read them, so every input
 /// is judged around the centre it is drawn on
 public struct TimeDialLayout: Equatable, Sendable {
@@ -36,18 +41,18 @@ public struct TimeDialLayout: Equatable, Sendable {
     /// Radius of the round area that clicks a label; areas of neighbouring
     /// labels on either ring stay apart
     public var labelHitRadius: Double = 15
-    /// Half the side of the square marking the selected hour, small enough
-    /// that squares of labels diagonal to each other do not touch
-    public var highlightHalfSide: Double = 11
+    /// Radius of the filled circle marking the selected hour, inside the
+    /// label's click area so it never reaches a neighbour or the minute ring
+    public var highlightRadius: Double = 14
     public var innerLabelRadius: Double = 110
     public var ringSpacing: Double = 36
     public var margin: Double = 8
-    /// The HH:MM fields in the middle: two digit fields around a colon,
-    /// kept small so the minute ring around them is wide
-    public var digitFieldWidth: Double = 40
-    public var digitSeparatorWidth: Double = 12
-    public var digitFieldHeight: Double = 32
-    /// Space kept between the minute ring and the fields and labels
+    /// The HH:MM shown in the middle, kept small so the minute ring
+    /// around it is wide; it is only shown, never edited
+    public var timeDisplayFontSize: Double = 24
+    public var timeDisplayWidth: Double = 92
+    public var timeDisplayHeight: Double = 32
+    /// Space kept between the minute ring and the time and labels
     public var minuteRingGap: Double = 6
 
     public init() {}
@@ -58,18 +63,15 @@ public struct TimeDialLayout: Equatable, Sendable {
         outerLabelRadius + labelHitRadius + margin
     }
 
-    /// Distance from the centre to a corner of the HH:MM fields
-    public var digitAreaRadius: Double {
-        hypot(
-            digitFieldWidth + digitSeparatorWidth / 2,
-            digitFieldHeight / 2
-        )
+    /// Distance from the centre to a corner of the HH:MM display
+    public var timeDisplayRadius: Double {
+        hypot(timeDisplayWidth / 2, timeDisplayHeight / 2)
     }
 
-    /// The ring between the HH:MM fields and the inner labels where a
+    /// The ring between the HH:MM display and the inner labels where a
     /// press sets the minute
     public var minuteRingInnerRadius: Double {
-        digitAreaRadius + minuteRingGap
+        timeDisplayRadius + minuteRingGap
     }
     public var minuteRingOuterRadius: Double {
         innerLabelRadius - labelHitRadius - minuteRingGap
@@ -113,7 +115,7 @@ public struct TimeDialLayout: Equatable, Sendable {
     public func region(atX x: Double, y: Double) -> TimeDialRegion {
         if let hour = hour(atX: x, y: y) { return .hourLabel(hour) }
         let distance = hypot(x, y)
-        if distance < minuteRingInnerRadius { return .digits }
+        if distance < minuteRingInnerRadius { return .timeDisplay }
         if distance <= minuteRingOuterRadius { return .minuteRing }
         return .none
     }
@@ -122,8 +124,8 @@ public struct TimeDialLayout: Equatable, Sendable {
 public enum TimeDialRegion: Equatable, Sendable {
     case hourLabel(Int)
     case minuteRing
-    /// The HH:MM fields, edited with the keyboard
-    case digits
+    /// The HH:MM in the middle, which only shows the time
+    case timeDisplay
     case none
 }
 

@@ -51,7 +51,8 @@ struct TimeSelectionStateTests {
         #expect(state.digitalText == "00:37")
     }
 
-    /// Click areas and selection squares stay apart on and across rings
+    /// Click areas, and so the selection circles inside them, stay apart
+    /// on and across rings
     @Test func labelsAndHighlightsDoNotTouch() {
         let centers = TimeHourRing.allCases.flatMap { ring in
             (0..<12).map { layout.labelCenter(atDialStep: $0, ring: ring) }
@@ -61,17 +62,34 @@ struct TimeSelectionStateTests {
                 let dx = abs(first.x - second.x)
                 let dy = abs(first.y - second.y)
                 #expect(hypot(dx, dy) > layout.labelHitRadius * 2)
-                #expect(dx > layout.highlightHalfSide * 2
-                    || dy > layout.highlightHalfSide * 2)
             }
         }
+        #expect(layout.highlightRadius <= layout.labelHitRadius)
         #expect(layout.outerLabelRadius + layout.labelHitRadius
             < layout.dialRadius)
     }
 
-    /// From the centre: the HH:MM fields, a wide minute ring, then labels
+    /// The selection circle fits one and two digit labels alike
+    @Test func highlightHoldsTwoDigitLabels() {
+        let twoDigitWidth = layout.labelFontSize * 1.3
+        #expect(layout.highlightRadius * 2 > twoDigitWidth)
+        #expect(layout.innerLabelRadius - layout.highlightRadius
+            > layout.minuteRingOuterRadius)
+    }
+
+    /// 1 to 12 belong to the inner ring and 13 to 23 and 0 to the outer,
+    /// so the ring of the selected hour is the one shown darker
+    @Test func selectedHourGivesItsRing() {
+        for hour in 0...23 {
+            let ring = TimeHourRing(hour: hour)
+            #expect(ring == ((1...12).contains(hour) ? .inner : .outer))
+            #expect((0..<12).contains { ring.hour(atDialStep: $0) == hour })
+        }
+    }
+
+    /// From the centre: the HH:MM display, a wide minute ring, then labels
     @Test func layersFitInsideEachOther() {
-        #expect(layout.minuteRingInnerRadius > layout.digitAreaRadius)
+        #expect(layout.minuteRingInnerRadius > layout.timeDisplayRadius)
         #expect(layout.minuteRingOuterRadius - layout.minuteRingInnerRadius
             >= 30)
         #expect(layout.minuteRingOuterRadius
@@ -87,8 +105,8 @@ struct TimeSelectionStateTests {
         let outer6 = layout.labelCenter(atDialStep: 6, ring: .outer)
         let between = (layout.innerLabelRadius + layout.outerLabelRadius) / 2
 
-        #expect(layout.region(atX: 0, y: 0) == .digits)
-        #expect(layout.region(atX: layout.digitAreaRadius, y: 0) == .digits)
+        #expect(layout.region(atX: 0, y: 0) == .timeDisplay)
+        #expect(layout.region(atX: layout.timeDisplayRadius, y: 0) == .timeDisplay)
         #expect(layout.region(atX: 0, y: middle) == .minuteRing)
         #expect(layout.region(atX: inner3.x, y: inner3.y) == .hourLabel(3))
         #expect(layout.region(atX: outer6.x, y: outer6.y) == .hourLabel(18))
@@ -151,7 +169,7 @@ struct TimeSelectionStateTests {
         ) == .selectHour(9))
     }
 
-    @Test func pressOnTheDigitsNeitherSetsNorSelects() {
+    @Test func pressOnTheTimeDisplayNeitherSetsNorSelects() {
         let gesture = TimeDialPointerGesture(atX: 5, y: 5, layout: layout)
 
         #expect(gesture.minuteOnPress(atX: 5, y: 5, layout: layout) == nil)
