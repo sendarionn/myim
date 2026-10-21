@@ -58,22 +58,19 @@ private final class AnalogClockView: NSView {
 
         for step in 0..<12 {
             let angle = CGFloat(step) * .pi / 6
-            drawDialNumber(
-                String(step == 0 ? 12 : step),
-                selected: state.hour == (step == 0 ? 12 : step),
-                center: center,
-                radius: radius - 20,
-                angle: angle,
-                fontSize: 11
-            )
-            drawDialNumber(
-                String(format: "%02d", step == 0 ? 0 : step + 12),
-                selected: state.hour == (step == 0 ? 0 : step + 12),
-                center: center,
-                radius: radius - 47,
-                angle: angle,
-                fontSize: 10
-            )
+            for (ring, ringRadius, fontSize) in [
+                (TimeHourRing.outer, radius - 20, CGFloat(11)),
+                (TimeHourRing.inner, radius - 47, CGFloat(10))
+            ] {
+                drawDialNumber(
+                    ring.label(atDialStep: step),
+                    selected: state.hour == ring.hour(atDialStep: step),
+                    center: center,
+                    radius: ringRadius,
+                    angle: angle,
+                    fontSize: fontSize
+                )
+            }
         }
 
         drawHand(
@@ -103,9 +100,7 @@ private final class AnalogClockView: NSView {
         if let target = hitTarget(at: location, state: state) {
             dragTarget = target
             if case .hour = target {
-                draggedHourRing = (state.hour == 0 || state.hour >= 13)
-                    ? .inner
-                    : .outer
+                draggedHourRing = TimeHourRing(hour: state.hour)
             }
             return
         }
@@ -293,7 +288,11 @@ private final class TimeInputView: NSView, NSTextFieldDelegate {
     func setInitialTime(_ date: Date, calendar: Calendar = .current) {
         let hour = calendar.component(.hour, from: date)
         let minute = calendar.component(.minute, from: date)
-        state = TimeSelectionState(hour: hour, minute: minute)!
+        setTime(TimeSelectionState(hour: hour, minute: minute)!)
+    }
+
+    func setTime(_ time: TimeSelectionState) {
+        state = time
         syncControls()
     }
 
@@ -483,12 +482,19 @@ final class TimeWindowController: NSObject {
         return true
     }
 
+    /// `initialTime` reopens the clock at a time chosen before; without it
+    /// the clock starts at the current time
     func runSelection(
         near anchorFrame: NSRect,
+        initialTime: TimeSelectionState? = nil,
         initialDate: Date = Date()
     ) -> TimeSelectionState? {
         selectedTime = nil
-        inputView.setInitialTime(initialDate)
+        if let initialTime {
+            inputView.setTime(initialTime)
+        } else {
+            inputView.setInitialTime(initialDate)
+        }
         position(near: anchorFrame)
         let previousPolicy = NSApp.activationPolicy()
         if previousPolicy == .prohibited {
@@ -511,8 +517,8 @@ final class TimeWindowController: NSObject {
         near anchorFrame: NSRect,
         directionalSelection: @escaping (Int?, CandidateNavigationDirection) -> Int?,
         selectionChanged: @escaping (Int?) -> Void
-    ) -> Int? {
-        guard candidateCount > 0 else { return nil }
+    ) -> TimeFormatSelectionOutcome {
+        guard candidateCount > 0 else { return .closed }
         formatKeyPanel.candidateCount = candidateCount
         formatKeyPanel.selectedIndex = nil
         formatKeyPanel.directionalSelection = directionalSelection
@@ -532,7 +538,14 @@ final class TimeWindowController: NSObject {
         if NSApp.activationPolicy() != previousPolicy {
             _ = NSApp.setActivationPolicy(previousPolicy)
         }
-        return response == .OK ? result : nil
+        switch response {
+        case .OK:
+            return result.map(TimeFormatSelectionOutcome.selected) ?? .closed
+        case .cancel:
+            return .returnToTime
+        default:
+            return .closed
+        }
     }
 
     func hide() {

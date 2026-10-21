@@ -18,18 +18,38 @@ struct TimeSelectionStateTests {
         #expect(abs(state.hourHandAngle - 318.5) < 0.0001)
     }
 
-    @Test func hourDialUsesOuterAndInnerTwentyFourHourRings() throws {
+    /// 1 to 12 on the inner ring and 13 to 24 on the outer ring
+    @Test func hourDialUsesInnerAndOuterTwentyFourHourRings() throws {
         var state = try #require(TimeSelectionState(hour: 9, minute: 37))
-        state.selectHour(atClockAngle: 300, ring: .outer)
+        state.selectHour(atClockAngle: 300, ring: .inner)
         #expect(state.hour == 10)
         #expect(state.minute == 37)
-        state.selectHour(atClockAngle: 300, ring: .inner)
+        state.selectHour(atClockAngle: 300, ring: .outer)
         #expect(state.hour == 22)
         #expect(state.minute == 37)
-        state.selectHour(atClockAngle: 0, ring: .outer)
-        #expect(state.hour == 12)
         state.selectHour(atClockAngle: 0, ring: .inner)
+        #expect(state.hour == 12)
+        state.selectHour(atClockAngle: 0, ring: .outer)
         #expect(state.hour == 0)
+        #expect(state.digitalText == "00:37")
+    }
+
+    @Test func dialLabelsShowTwentyFourForMidnight() {
+        #expect((0..<12).map { TimeHourRing.inner.label(atDialStep: $0) }
+            == ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"])
+        #expect((0..<12).map { TimeHourRing.outer.label(atDialStep: $0) }
+            == ["24", "13", "14", "15", "16", "17", "18", "19", "20", "21",
+                "22", "23"])
+        #expect(TimeHourRing.outer.hour(atDialStep: 0) == 0)
+        #expect(TimeHourRing.inner.hour(atDialStep: 0) == 12)
+    }
+
+    @Test(arguments: [
+        (0, TimeHourRing.outer), (1, .inner), (12, .inner), (13, .outer),
+        (23, .outer)
+    ])
+    func hourBelongsToItsRing(hour: Int, ring: TimeHourRing) {
+        #expect(TimeHourRing(hour: hour) == ring)
     }
 
     @Test func minuteDialSelectionSnapsWithoutCarryingHour() throws {
@@ -41,11 +61,11 @@ struct TimeSelectionStateTests {
         #expect(state.minute == 35)
     }
 
-    @Test func innerRingDistinguishesTwentyThreeFromMidnight() throws {
+    @Test func outerRingDistinguishesTwentyThreeFromMidnight() throws {
         var state = try #require(TimeSelectionState(hour: 12, minute: 5))
-        state.selectHour(atClockAngle: 330, ring: .inner)
+        state.selectHour(atClockAngle: 330, ring: .outer)
         #expect(state.hour == 23)
-        state.selectHour(atClockAngle: 0, ring: .inner)
+        state.selectHour(atClockAngle: 0, ring: .outer)
         #expect(state.hour == 0)
     }
 

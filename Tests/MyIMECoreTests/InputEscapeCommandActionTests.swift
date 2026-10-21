@@ -10,6 +10,7 @@ struct InputEscapeCommandActionTests {
         #expect(resolve(emoji: true, calendar: true) == .closeEmoji)
         #expect(resolve(calendar: true, calendarFormat: true) == .closeCalendar)
         #expect(resolve(time: true, timeFormat: true) == .closeTime)
+        #expect(resolve(timeFormat: true) == .returnToTimeSelection)
         #expect(resolve(
             calendarFormat: true,
             translation: true

@@ -1,8 +1,33 @@
 import Foundation
 
+/// The 24-hour dial shows 1 to 12 on the inner ring and 13 to 24 on the
+/// outer ring, 24 standing for 00 since no time is kept as 24:xx
 public enum TimeHourRing: Equatable, Sendable {
     case outer
     case inner
+
+    public init(hour: Int) {
+        self = hour == 0 || hour >= 13 ? .outer : .inner
+    }
+
+    /// The hour at the 12 dial positions, 0 being the 12 o'clock position
+    public func hour(atDialStep step: Int) -> Int {
+        switch self {
+        case .inner:
+            step == 0 ? 12 : step
+        case .outer:
+            step == 0 ? 0 : step + 12
+        }
+    }
+
+    public func label(atDialStep step: Int) -> String {
+        switch self {
+        case .inner:
+            String(step == 0 ? 12 : step)
+        case .outer:
+            String(step == 0 ? 24 : step + 12)
+        }
+    }
 }
 
 public enum TimeClockHand: Equatable, Sendable {
@@ -119,13 +144,7 @@ public struct TimeSelectionState: Equatable, Sendable {
         atClockAngle angle: Double,
         ring: TimeHourRing
     ) {
-        let step = Self.nearestDialStep(atClockAngle: angle)
-        switch ring {
-        case .outer:
-            hour = step == 0 ? 12 : step
-        case .inner:
-            hour = step == 0 ? 0 : step + 12
-        }
+        hour = ring.hour(atDialStep: Self.nearestDialStep(atClockAngle: angle))
     }
 
     public mutating func selectMinute(atClockAngle angle: Double) {

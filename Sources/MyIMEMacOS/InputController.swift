@@ -1144,9 +1144,10 @@ final class InputController: IMKInputController {
         case .closeTime:
             timeWindow.hide()
             return true
-        case .cancelTimeFormat:
-            clearTimeSelection()
-            primaryCandidatePanel.hide()
+        case .returnToTimeSelection:
+            DispatchQueue.main.async { [weak self] in
+                self?.returnToTimeSelection(client: sender)
+            }
             return true
         case .leaveTranslation:
             return returnFromTranslationCandidates(client: sender)
@@ -2953,7 +2954,7 @@ final class InputController: IMKInputController {
         client sender: Any
     ) {
         candidateSearchCoordinator.cancel(.timeFormat)
-        timeSelectionSession.beginFormatLoading()
+        timeSelectionSession.beginFormatLoading(for: time)
         primaryCandidatePanel.hide()
         candidateSearchCoordinator.start(
             .timeFormat,
@@ -2965,7 +2966,7 @@ final class InputController: IMKInputController {
                 )
             },
             validate: { [weak self] in
-                self?.timeSelectionSession.isActive == true
+                self?.timeSelectionSession.accepts(formatsFor: time) == true
             },
             apply: { [weak self] candidates in
                 guard let self else { return }
@@ -2976,7 +2977,7 @@ final class InputController: IMKInputController {
                     self.clearTimeSelection()
                     return
                 }
-                guard let selectedIndex = self.panelCoordinator.runTimeFormatSelection(
+                let outcome = self.panelCoordinator.runTimeFormatSelection(
                     candidateCount: ordered.count,
                     fallbackLocation: self.inputLocation(for: sender),
                     directionalSelection: { [weak self] index, direction in
@@ -2991,9 +2992,15 @@ final class InputController: IMKInputController {
                         self.timeSelectionSession.select(index: index)
                         self.showTimeFormatCandidates(client: sender)
                     }
-                ), ordered.indices.contains(selectedIndex) else {
-                    self.clearTimeSelection()
-                    self.primaryCandidatePanel.hide()
+                )
+                guard case let .selected(selectedIndex) = outcome,
+                      ordered.indices.contains(selectedIndex) else {
+                    if outcome == .returnToTime {
+                        self.returnToTimeSelection(client: sender)
+                    } else {
+                        self.clearTimeSelection()
+                        self.primaryCandidatePanel.hide()
+                    }
                     return
                 }
                 let value = ordered[selectedIndex]
@@ -3039,12 +3046,34 @@ final class InputController: IMKInputController {
             clearTimeSelection()
             commit(value, to: sender)
         case 53:
-            clearTimeSelection()
-            primaryCandidatePanel.hide()
+            // Esc while the formats load or are shown goes back to the clock
+            DispatchQueue.main.async { [weak self] in
+                self?.returnToTimeSelection(client: sender)
+            }
         default:
             break
         }
         return true
+    }
+
+    /// Goes back from the formats to the clock at the time chosen before;
+    /// formats still loading for it are discarded
+    private func returnToTimeSelection(client sender: Any) {
+        candidateSearchCoordinator.cancel(.timeFormat)
+        primaryCandidatePanel.hide()
+        guard let previous = timeSelectionSession.returnToTimeSelection()
+        else {
+            clearTimeSelection()
+            return
+        }
+        guard let time = panelCoordinator.resumeTimeSelection(
+            at: previous,
+            fallback: inputLocation(for: sender)
+        ) else {
+            clearTimeSelection()
+            return
+        }
+        loadTimeFormats(for: time, client: sender)
     }
 
     private func showTimeFormatCandidates(client sender: Any) {

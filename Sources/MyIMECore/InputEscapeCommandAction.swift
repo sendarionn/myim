@@ -4,7 +4,8 @@ public enum InputEscapeCommandAction: Equatable, Sendable {
     case closeCalendar
     case cancelCalendarFormat
     case closeTime
-    case cancelTimeFormat
+    /// Esc on the time formats goes back to the clock with the same time
+    case returnToTimeSelection
     case leaveTranslation
     case leaveFuzzyCandidate
     case cancelStandardInput
@@ -26,7 +27,7 @@ public enum InputEscapeCommandAction: Equatable, Sendable {
         if isCalendarVisible { return .closeCalendar }
         if isCalendarFormatSelecting { return .cancelCalendarFormat }
         if isTimeVisible { return .closeTime }
-        if isTimeFormatSelecting { return .cancelTimeFormat }
+        if isTimeFormatSelecting { return .returnToTimeSelection }
         if isTranslationSelecting { return .leaveTranslation }
         if interactionState == .selectingFuzzyCandidate {
             return .leaveFuzzyCandidate
