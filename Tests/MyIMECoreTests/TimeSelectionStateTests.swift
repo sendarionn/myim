@@ -19,38 +19,46 @@ struct TimeSelectionStateTests {
         #expect(abs(state.hourHandAngle - 318.5) < 0.0001)
     }
 
-    /// 1 to 12 on the inner ring and 13 to 24 on the outer ring
-    @Test func hourDialUsesInnerAndOuterTwentyFourHourRings() throws {
-        var state = try #require(TimeSelectionState(hour: 9, minute: 37))
-        state.selectHour(atClockAngle: 300, ring: .inner)
-        #expect(state.hour == 10)
-        #expect(state.minute == 37)
-        state.selectHour(atClockAngle: 300, ring: .outer)
-        #expect(state.hour == 22)
-        #expect(state.minute == 37)
-        state.selectHour(atClockAngle: 0, ring: .inner)
-        #expect(state.hour == 12)
-        state.selectHour(atClockAngle: 0, ring: .outer)
-        #expect(state.hour == 0)
-        #expect(state.digitalText == "00:37")
-    }
-
-    @Test func dialLabelsShowTwentyFourForMidnight() {
-        #expect((0..<12).map { TimeHourRing.inner.label(atDialStep: $0) }
+    /// AM shows 1 to 12 and PM shows 13 to 24, 24 standing for 0 o'clock
+    @Test func pagesShowTwelveLabelsEach() {
+        #expect((0..<12).map { TimeDialPage.am.label(atDialStep: $0) }
             == ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"])
-        #expect((0..<12).map { TimeHourRing.outer.label(atDialStep: $0) }
+        #expect((0..<12).map { TimeDialPage.pm.label(atDialStep: $0) }
             == ["24", "13", "14", "15", "16", "17", "18", "19", "20", "21",
                 "22", "23"])
-        #expect(TimeHourRing.outer.hour(atDialStep: 0) == 0)
-        #expect(TimeHourRing.inner.hour(atDialStep: 0) == 12)
+        #expect(TimeDialPage.am.hour(atDialStep: 0) == 12)
+        #expect(TimeDialPage.pm.hour(atDialStep: 0) == 0)
     }
 
     @Test(arguments: [
-        (0, TimeHourRing.outer), (1, .inner), (12, .inner), (13, .outer),
-        (23, .outer)
+        (0, TimeDialPage.pm), (1, .am), (11, .am), (12, .am), (13, .pm),
+        (23, .pm)
     ])
-    func hourBelongsToItsRing(hour: Int, ring: TimeHourRing) {
-        #expect(TimeHourRing(hour: hour) == ring)
+    func hourIsShownOnItsPage(hour: Int, page: TimeDialPage) {
+        #expect(TimeDialPage(hour: hour) == page)
+    }
+
+    @Test(arguments: [
+        (9, TimeDialPage.am, 9), (0, .am, 12), (2, .pm, 14), (0, .pm, 0),
+        (3, .am, 3)
+    ])
+    func clickedLabelSelectsItsHourAndKeepsTheMinute(
+        step: Int,
+        page: TimeDialPage,
+        hour: Int
+    ) throws {
+        var state = try #require(TimeSelectionState(hour: 10, minute: 35))
+
+        state.selectHour(atDialStep: step, page: page)
+
+        #expect(state.hour == hour)
+        #expect(state.minute == 35)
+    }
+
+    @Test func midnightLabelIsWrittenAsZero() throws {
+        var state = try #require(TimeSelectionState(hour: 10, minute: 30))
+        state.selectHour(atDialStep: 0, page: .pm)
+        #expect(state.digitalText == "00:30")
     }
 
     @Test func minuteDialSelectionSnapsWithoutCarryingHour() throws {
@@ -62,74 +70,55 @@ struct TimeSelectionStateTests {
         #expect(state.minute == 35)
     }
 
-    @Test func outerRingDistinguishesTwentyThreeFromMidnight() throws {
-        var state = try #require(TimeSelectionState(hour: 12, minute: 5))
-        state.selectHour(atClockAngle: 330, ring: .outer)
-        #expect(state.hour == 23)
-        state.selectHour(atClockAngle: 0, ring: .outer)
-        #expect(state.hour == 0)
-    }
-
-    @Test func overlappingHandsCanBeGrabbedAtTheirSeparateTips() throws {
-        let layout = TimeDialLayout()
-        let state = try #require(TimeSelectionState(hour: 0, minute: 0))
-        #expect(TimeClockInteractionGeometry.dragTarget(
-            x: 0, y: layout.hourHandLength, layout: layout, state: state
-        ) == .hour)
-        #expect(TimeClockInteractionGeometry.dragTarget(
-            x: 0, y: layout.minuteHandLength, layout: layout, state: state
-        ) == .minute)
-        #expect(TimeClockInteractionGeometry.dragTarget(
-            x: 40, y: 40, layout: layout, state: state
-        ) == nil)
-    }
-
-    @Test func draggedHourKeepsItsRingNearTheBoundary() {
-        let layout = TimeDialLayout()
-        let boundary = (layout.innerLabelRadius + layout.outerLabelRadius) / 2
-
-        #expect(layout.dragRing(
-            atDistance: layout.outerLabelRadius, current: .inner
-        ) == .outer)
-        #expect(layout.dragRing(
-            atDistance: layout.innerLabelRadius, current: .outer
-        ) == .inner)
-        #expect(layout.dragRing(atDistance: boundary, current: .inner) == .inner)
-        #expect(layout.dragRing(atDistance: boundary, current: .outer) == .outer)
-    }
-
-    /// Labels share one size and keep their highlights apart on both rings
+    /// Labels sit on one ring with highlights apart, inside the dial
     @Test func labelsFitWithoutTouching() {
         let layout = TimeDialLayout()
-        let innerSpacing = 2 * layout.innerLabelRadius * sin(.pi / 12)
+        let spacing = 2 * layout.labelRingRadius * sin(.pi / 12)
 
-        #expect(innerSpacing > layout.labelRadius * 2)
-        #expect(layout.ringSpacing > layout.labelRadius * 2)
-        #expect(layout.outerLabelRadius + layout.labelRadius
+        #expect(spacing > layout.labelHitRadius * 2)
+        #expect(layout.labelRingRadius + layout.labelHitRadius
             < layout.dialRadius)
-        #expect(layout.hourHandLength
-            < layout.innerLabelRadius - layout.labelRadius)
+        // The hand ends before the labels; where its grab area reaches a
+        // label, the label is chosen first
         #expect(layout.minuteHandLength
-            < layout.outerLabelRadius - layout.labelRadius)
+            < layout.labelRingRadius - layout.labelHitRadius)
+        #expect(layout.hourHandLength < layout.minuteHandLength)
     }
 
-    /// A click selects the ring of the label drawn under it, and nothing
-    /// between or beyond the rings
+    /// A click selects the label drawn under it, around its text too
     @Test func labelClicksMatchWhereLabelsAreDrawn() {
         let layout = TimeDialLayout()
+        for step in 0..<12 {
+            let center = layout.labelCenter(atDialStep: step)
+            #expect(layout.labelStep(atX: center.x, y: center.y) == step)
+            #expect(layout.labelStep(
+                atX: center.x + layout.labelHitRadius - 1,
+                y: center.y
+            ) == step)
+        }
+        #expect(layout.labelStep(atX: 0, y: 0) == nil)
+        #expect(layout.labelStep(atX: 0, y: layout.dialRadius) == nil)
+    }
 
-        #expect(layout.labelRing(atDistance: layout.innerLabelRadius) == .inner)
-        #expect(layout.labelRing(
-            atDistance: layout.innerLabelRadius + layout.labelRadius
-        ) == .inner)
-        #expect(layout.labelRing(atDistance: layout.outerLabelRadius) == .outer)
-        #expect(layout.labelRing(
-            atDistance: layout.outerLabelRadius - layout.labelRadius
-        ) == .outer)
-        #expect(layout.labelRing(
-            atDistance: (layout.innerLabelRadius + layout.outerLabelRadius) / 2
-        ) == nil)
-        #expect(layout.labelRing(atDistance: 20) == nil)
-        #expect(layout.labelRing(atDistance: layout.dialRadius) == nil)
+    @Test func minuteHandIsGrabbedAlongItsLengthButNotOnLabels() throws {
+        let layout = TimeDialLayout()
+        let state = try #require(TimeSelectionState(hour: 3, minute: 0))
+
+        #expect(layout.grabsMinuteHand(
+            atX: 0, y: layout.minuteHandLength, state: state
+        ))
+        #expect(layout.grabsMinuteHand(
+            atX: layout.minuteHandTolerance - 1,
+            y: layout.minuteHandLength / 2,
+            state: state
+        ))
+        // The 12 label sits beyond the hand's tip
+        #expect(!layout.grabsMinuteHand(
+            atX: 0, y: layout.labelRingRadius, state: state
+        ))
+        // The hour hand points at 3 and cannot be grabbed
+        #expect(!layout.grabsMinuteHand(
+            atX: layout.hourHandLength, y: 0, state: state
+        ))
     }
 }
