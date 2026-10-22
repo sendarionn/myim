@@ -68,6 +68,22 @@ public struct SequentialConversionSplit: Equatable, Sendable {
         )
     }
 
+    /// What Return commits and what is left for the next step: the
+    /// selected candidate or, with none selected, the unit as typed, so
+    /// `123+456` goes on to `+` either way. Input of one unit is committed
+    /// whole as before
+    public static func returnCommit(
+        input: String,
+        split: Self?,
+        selectedValue: String?
+    ) -> (text: String, remainder: String) {
+        if let selectedValue {
+            return (selectedValue, split?.remainder ?? "")
+        }
+        guard let split else { return (input, "") }
+        return (split.unit, split.remainder)
+    }
+
     /// Symbols left first after a committed unit convert together when
     /// they have candidates as a group, and otherwise one at a time
     private static func splitLeadingSymbols(

@@ -267,4 +267,54 @@ struct SequentialConversionSplitTests {
         units.append(rest)
         return units
     }
+
+    /// Return without a candidate commits each unit as typed in turn
+    @Test(arguments: [
+        ("123+456", ["123", "+", "456"]),
+        ("watashiha,100!", ["watashiha", ",", "100", "!"]),
+        ("watashiha!?", ["watashiha", "!", "?"])
+    ])
+    func returnWithoutACandidateCommitsOneUnitAsTyped(
+        input: String,
+        steps: [String]
+    ) {
+        var session = InputSession()
+        session.setInput(input)
+        var committed: [String] = []
+
+        while !session.input.isEmpty, committed.count < steps.count {
+            let step = SequentialConversionSplit.returnCommit(
+                input: session.input,
+                split: SequentialConversionSplit.split(
+                    session.input,
+                    isCarried: session.carriesRemainder
+                ),
+                selectedValue: nil
+            )
+            committed.append(step.text)
+            session.clear()
+            if !step.remainder.isEmpty {
+                session.carryRemainder(step.remainder)
+            }
+        }
+
+        #expect(committed == steps)
+        #expect(session.input.isEmpty)
+    }
+
+    @Test
+    func returnKeepsWholeInputAndSelectedCandidatesAsBefore() {
+        let split = SequentialConversionSplit.split("123+456")
+
+        #expect(SequentialConversionSplit.returnCommit(
+            input: "kana",
+            split: nil,
+            selectedValue: nil
+        ) == ("kana", ""))
+        #expect(SequentialConversionSplit.returnCommit(
+            input: "123+456",
+            split: split,
+            selectedValue: "１２３"
+        ) == ("１２３", "+456"))
+    }
 }

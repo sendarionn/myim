@@ -805,6 +805,9 @@ final class InputController: IMKInputController {
     }
 
     private func handleReturnKey(client sender: Any) -> Bool {
+        Self.lifecycleLogger.notice(
+            "SEQRETURN key inputLength=\(self.inputBuffer.count, privacy: .public) carried=\(self.inputSession.carriesRemainder, privacy: .public) split=\(self.sequentialConversionSplit != nil, privacy: .public) filtered=\(self.candidateSession.unfilteredCandidates != nil, privacy: .public) candidates=\(self.currentCandidates.count, privacy: .public)"
+        )
         if inputBuffer.isEmpty, nextInputCandidateCoordinator.hasCandidates {
             if let selectedNextInput = nextInputCandidateCoordinator
                 .selectedCandidate {
@@ -4761,7 +4764,6 @@ final class InputController: IMKInputController {
         let selectedCandidate = selectedCandidateIndex.flatMap {
             currentCandidates.indices.contains($0) ? currentCandidates[$0] : nil
         }
-        let value = selectedCandidateValue ?? inputBuffer
         let calculatorNextInputCandidates = selectedCandidateIndex == nil
             ? cachedJavaScriptCalculationCandidates
             : []
@@ -4772,17 +4774,26 @@ final class InputController: IMKInputController {
                 generatedCandidates: cachedJavaScriptCalculationCandidates
             )
         }
-        let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
-            originalInput: inputBuffer,
-            hasSelectedCandidate: selectedCandidateValue != nil,
-            remainder: compositionSuffix
+        // Without a candidate selected, only the unit converted now is
+        // committed as typed and the rest goes on to the next step
+        let step = SequentialConversionSplit.returnCommit(
+            input: inputBuffer,
+            split: sequentialConversionSplit,
+            selectedValue: selectedCandidateValue
         )
-        let punctuation = selectedCandidateValue == nil
-            ? ""
-            : compositionSuffix
+        // Temporary diagnostics for Return during sequential conversion;
+        // lengths only, no typed text
+        Self.lifecycleLogger.notice(
+            "SEQRETURN inputLength=\(self.inputBuffer.count, privacy: .public) carried=\(self.inputSession.carriesRemainder, privacy: .public) split=\(self.sequentialConversionSplit != nil, privacy: .public) unitLength=\(self.conversionInput.count, privacy: .public) remainderLength=\(self.compositionSuffix.count, privacy: .public) selected=\(self.selectedCandidateIndex.map(String.init) ?? "none", privacy: .public) committedLength=\(step.text.count, privacy: .public) nextLength=\(step.remainder.count, privacy: .public)"
+        )
+        let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
+            originalInput: step.text,
+            hasSelectedCandidate: selectedCandidateValue != nil
+        )
+        let punctuation = step.remainder
         recordSelectedCandidate()
         commit(
-            value,
+            step.text,
             to: sender,
             historyValue: historyValue,
             preferredNextInputCandidates: calculatorNextInputCandidates
