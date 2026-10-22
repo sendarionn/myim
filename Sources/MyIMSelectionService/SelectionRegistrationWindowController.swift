@@ -20,10 +20,10 @@ final class SelectionRegistrationWindowController: NSObject,
 
     func show(
         prefilledInsertedText: String,
-        sourceProcessIdentifier: pid_t?
+        sourceProcessIdentifiers: [pid_t?]
     ) {
         returnTarget.begin(
-            frontmostProcessIdentifier: sourceProcessIdentifier,
+            candidateProcessIdentifiers: sourceProcessIdentifiers,
             ownProcessIdentifier: ProcessInfo.processInfo.processIdentifier
         )
         readingField.stringValue = ""
@@ -95,7 +95,9 @@ final class SelectionRegistrationWindowController: NSObject,
                 processIdentifier: processIdentifier
               ),
               !application.isTerminated else {
-            Self.logger.notice("return to source skipped")
+            Self.logger.notice(
+                "return to source skipped recorded=\(processIdentifier != nil, privacy: .public)"
+            )
             return
         }
         let activated: Bool

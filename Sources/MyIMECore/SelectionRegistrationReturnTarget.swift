@@ -6,20 +6,19 @@ public struct SelectionRegistrationReturnTarget: Equatable, Sendable {
 
     public init() {}
 
-    /// Records the frontmost application when the service is called,
-    /// before the registration window comes forward; myim itself or an
+    /// Records the application the service was called from, before the
+    /// registration window comes forward. The service is already the
+    /// frontmost application when it is called, so the candidates are
+    /// tried in order, such as the frontmost application, the menu bar
+    /// owner, and the owner of the frontmost window; myim itself or an
     /// unknown application is not returned to
     public mutating func begin(
-        frontmostProcessIdentifier: Int32?,
+        candidateProcessIdentifiers: [Int32?],
         ownProcessIdentifier: Int32
     ) {
-        guard let frontmostProcessIdentifier,
-              frontmostProcessIdentifier > 0,
-              frontmostProcessIdentifier != ownProcessIdentifier else {
-            processIdentifier = nil
-            return
-        }
-        processIdentifier = frontmostProcessIdentifier
+        processIdentifier = candidateProcessIdentifiers.lazy
+            .compactMap { $0 }
+            .first { $0 > 0 && $0 != ownProcessIdentifier }
     }
 
     /// The application to return to after a successful registration,
