@@ -8,6 +8,13 @@ public enum RomajiKeyboardTypoGenerator {
         var corrections: [String] = []
         for index in characters.indices {
             let source = characters[index]
+            // A symbol on or beside the long-vowel key stands for `-`; other
+            // symbols and digits are only corrected to nearby letters
+            if RomajiKeyboardGeometry.longVowelKeyNeighbors.contains(source) {
+                var corrected = characters
+                corrected[index] = "-"
+                corrections.append(String(corrected))
+            }
             let neighbors = correctionTargets.compactMap { target -> (
                 Character,
                 Double
@@ -71,6 +78,6 @@ public enum RomajiKeyboardTypoGenerator {
         from source: Character,
         to target: Character
     ) -> Double? {
-        RomajiKeyboardGeometry.minimumDistance(from: source, to: target)
+        RomajiKeyboardGeometry.typoDistance(from: source, to: target)
     }
 }

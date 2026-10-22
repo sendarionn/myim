@@ -18,7 +18,7 @@ struct RomajiTypoScorerTests {
         #expect(aggressive < ordinary)
     }
 
-    @Test(arguments: ["=", "_", "0", ")", "^"])
+    @Test(arguments: ["=", "_", "0", ")", "+"])
     func scoresKeysNearTheLongVowelKeyAsVowelPlaceholders(
         _ key: Character
     ) {
@@ -28,6 +28,13 @@ struct RomajiTypoScorerTests {
             from: source,
             to: "deeta"
         ) < RomajiTypoScorer.cost(from: source, to: "deeta"))
+    }
+
+    /// `^` is beside `-` only on JIS; on the US layout it is on the 6 key
+    @Test
+    func doesNotScoreJISOnlyNeighborsAsVowelPlaceholders() {
+        #expect(RomajiTypoScorer.aggressiveCost(from: "d^ta", to: "deeta")
+            == RomajiTypoScorer.cost(from: "d^ta", to: "deeta"))
     }
 
     @Test

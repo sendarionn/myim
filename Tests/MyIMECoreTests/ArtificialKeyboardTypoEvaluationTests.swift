@@ -6,7 +6,7 @@ struct ArtificialKeyboardTypoEvaluationTests {
     private let cases: [(reading: String, typo: String)] = [
         ("de-tabe-su", "de=tab0su"),
         ("de-tabe-su", "de_tab0su"),
-        ("de-tabe-su", "de^tab0su"),
+        ("de-tabe-su", "de+tab0su"),
         ("konnichiha", "jonnichiga"),
         ("konnichiha", "konncihia"),
         ("hitsuyou", "htsuyuo"),
@@ -35,6 +35,8 @@ struct ArtificialKeyboardTypoEvaluationTests {
 
         #expect(engine.matches(for: "qx-zvbnm").isEmpty)
         #expect(engine.matches(for: "12345678").isEmpty)
+        // `^` is beside `-` only on JIS, which typos are not judged on
+        #expect(engine.matches(for: "de^tab0su").isEmpty)
     }
 
     @Test

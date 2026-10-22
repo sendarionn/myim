@@ -3505,14 +3505,14 @@ final class InputController: IMKInputController {
     private func updateFuzzyCandidatesIfNeeded() {
         guard Self.diagnosticConfiguration.enables(.fuzzyCandidate),
               Self.featureSettings.isFuzzyCandidatesEnabled,
-              !conversionReading.isEmpty else {
+              !fuzzyQuery.isEmpty else {
             candidateSearchCoordinator.cancel(.fuzzy)
             secondaryCandidatePanel.hide()
             fuzzyCandidateSession.reset()
             selectedFuzzyCandidateIndex = nil
             return
         }
-        let query = conversionReading
+        let query = fuzzyQuery
         guard candidateSearchCoordinator.query(for: .fuzzy) != query else {
             return
         }
@@ -3562,7 +3562,7 @@ final class InputController: IMKInputController {
             },
             validate: { [weak self] in
                 guard let self else { return false }
-                return self.conversionReading == query
+                return self.fuzzyQuery == query
                     && Self.featureSettings.isFuzzyCandidatesEnabled
                     && self.acceptsAsyncResult(
                         asyncSnapshot,
@@ -3597,7 +3597,7 @@ final class InputController: IMKInputController {
     ) {
         let changed = fuzzyCandidateSession.replace(
             matchTiers: matchTiers,
-            recencyRanks: candidateSelectionRanks(for: conversionReading),
+            recencyRanks: candidateSelectionRanks(for: fuzzyQuery),
             preserveSelectionWhenUnchanged: secondaryCandidatePanel.isVisible
         )
         updateCandidateDeletionShortcutCapture()
@@ -3819,10 +3819,10 @@ final class InputController: IMKInputController {
         if fuzzyCandidate.isLearnable {
             candidateSelectionHistoryStore.record(
                 fuzzyCandidate.storageText,
-                readings: [conversionReading, fuzzyCandidate.reading]
+                readings: [fuzzyQuery, fuzzyCandidate.reading]
             )
         }
-        let value = fuzzyCandidate.storageText + conversionSuffix
+        let value = fuzzyCandidate.storageText + fuzzySuffix
         let punctuation = compositionSuffix
         let sourceTokens = fuzzyCandidate.sourceTokens.isEmpty
             ? nil
@@ -3830,7 +3830,7 @@ final class InputController: IMKInputController {
         // The space committed with the candidate is part of what was typed,
         // as with the standard candidates; text after the candidate keeps
         // it from following the candidate directly
-        let learnedSeparator = conversionSuffix.isEmpty ? suffix : ""
+        let learnedSeparator = fuzzySuffix.isEmpty ? suffix : ""
         let historyTokens = learnedSeparator.isEmpty
             ? sourceTokens
             : NextInputLearningToken.texts(
@@ -3927,7 +3927,7 @@ final class InputController: IMKInputController {
         )
         updateCandidateDeletionShortcutCapture()
         primaryCandidatePanel.clearSelection()
-        let displayValue = fuzzyCandidate.storageText + conversionSuffix
+        let displayValue = fuzzyCandidate.storageText + fuzzySuffix
             + compositionSuffix
         setMarkedText(
             displayValue,
@@ -6164,6 +6164,23 @@ final class InputController: IMKInputController {
 
     private var conversionReading: String {
         ConversionReadingResolver.resolve(conversionInput)
+    }
+
+    /// The "もしかして" search covers the whole input when its symbols are
+    /// long-vowel key typos, as `a=to` is, and the reading otherwise
+    private var fuzzyQuery: String {
+        FuzzyQueryResolver.resolve(
+            input: conversionInput,
+            conversionReading: conversionReading
+        )
+    }
+
+    /// Text after the part a fuzzy candidate replaces; none when the whole
+    /// input was searched, so `=to` is not left after アート
+    private var fuzzySuffix: String {
+        fuzzyQuery == conversionReading
+            ? conversionSuffix
+            : String(conversionInput.dropFirst(fuzzyQuery.count))
     }
 
     private var interactionState: InputInteractionState {

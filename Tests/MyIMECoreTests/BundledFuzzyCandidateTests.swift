@@ -239,6 +239,41 @@ struct BundledFuzzyCandidateTests {
         #expect(ConversionReadingResolver.resolve(input) == reading)
     }
 
+    /// `=`, `+`, and `_` sit on or beside the `-` key on the US layout,
+    /// so the whole input is searched and the long vowel restored
+    @Test(arguments: [
+        ("a=to", "アート"), ("a_to", "アート"), ("a+to", "アート"),
+        ("de=tab0su", "データベース"), ("de_tab0su", "データベース")
+    ])
+    func correctsSymbolsAroundTheLongVowelKey(
+        input: String,
+        expected: String
+    ) async throws {
+        let query = FuzzyQueryResolver.resolve(
+            input: input,
+            conversionReading: ConversionReadingResolver.resolve(input)
+        )
+        let fuzzyCandidates = try await fuzzyCandidates(for: query)
+
+        #expect(query == input)
+        #expect(fuzzyCandidates.prefix(3).contains(expected))
+    }
+
+    /// Symbols typed on purpose keep the reading before them, and nothing
+    /// is suggested from the symbol alone
+    @Test(arguments: ["a=b", "foo=bar", "x+y"])
+    func doesNotCorrectIntendedSymbols(input: String) async throws {
+        let reading = ConversionReadingResolver.resolve(input)
+        let query = FuzzyQueryResolver.resolve(
+            input: input,
+            conversionReading: reading
+        )
+        let fuzzyCandidates = try await fuzzyCandidates(for: input)
+
+        #expect(query == reading)
+        #expect(fuzzyCandidates.isEmpty)
+    }
+
     private func fuzzyCandidates(
         for query: String,
         visibleCandidates: Set<String> = []

@@ -354,7 +354,7 @@ public struct FuzzyConversionEngine: Sendable {
             sourceCharacter in
             target.contains { targetCharacter in
                 guard targetCharacter.isLetter,
-                      let distance = RomajiKeyboardGeometry.minimumDistance(
+                      let distance = RomajiKeyboardGeometry.typoDistance(
                         from: sourceCharacter,
                         to: targetCharacter
                       ) else {
@@ -364,6 +364,12 @@ public struct FuzzyConversionEngine: Sendable {
             }
         }
         if hasDirectPhysicalNeighbor {
+            return true
+        }
+        // `=` or `_` typed where the reading has the long-vowel mark
+        if target.contains("-"), specialCharacters.allSatisfy({
+            RomajiKeyboardGeometry.longVowelKeyNeighbors.contains($0)
+        }) {
             return true
         }
         return RomajiTypoScorer.aggressiveCost(from: source, to: target)
