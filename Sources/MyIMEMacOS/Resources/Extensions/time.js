@@ -18,7 +18,8 @@ function parseTime(context) {
     hour = Number(parameters.hour)
     minute = Number(parameters.minute)
   } else {
-    const match = context.input.match(/^(\d{2}):(\d{2})$/)
+    // HH:MM or HHMM, as typed without the colon
+    const match = context.input.match(/^(\d{2}):?(\d{2})$/)
     if (!match) return null
     hour = Number(match[1])
     minute = Number(match[2])

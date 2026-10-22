@@ -72,6 +72,16 @@ public struct StandardConversionCandidateSource: Sendable {
     public func candidates(
         for context: StandardConversionCandidateContext
     ) -> [Candidate] {
+        let candidates = assembledCandidates(for: context)
+        // A time is committed as typed without choosing a candidate, so
+        // only its formats are offered
+        guard TimeShapedInput.matches(context.input) else { return candidates }
+        return candidates.filter { $0.storageText != context.input }
+    }
+
+    private func assembledCandidates(
+        for context: StandardConversionCandidateContext
+    ) -> [Candidate] {
         let lookupReadings = RomajiCanonicalizer.dictionaryLookupInputs(
             from: context.conversionReading
         )

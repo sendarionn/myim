@@ -86,6 +86,22 @@ struct UserDictionaryEditorTests {
     }
 
     @Test
+    func doesNotLearnATimeCommittedAsTyped() {
+        for input in ["13:00", "1300", "09:30"] {
+            #expect(UnselectedInputLearningPolicy.entry(
+                originalInput: input,
+                hasSelectedCandidate: false
+            ) == nil)
+        }
+        for input in ["130", "13000", "13:0", "E06S"] {
+            #expect(UnselectedInputLearningPolicy.entry(
+                originalInput: input,
+                hasSelectedCandidate: false
+            )?.candidate == input)
+        }
+    }
+
+    @Test
     func preservesTheConfirmedInputExactly() throws {
         let learned = try #require(UnselectedInputLearningPolicy.entry(
             originalInput: " Wi-Fi ",

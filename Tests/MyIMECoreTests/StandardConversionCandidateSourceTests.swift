@@ -105,6 +105,21 @@ struct StandardConversionCandidateSourceTests {
         #expect(!candidates.contains("14:30"))
     }
 
+    /// A time learned or registered as typed is not offered again, since
+    /// committing without a candidate already gives it
+    @Test(arguments: ["13:00", "0930"])
+    func hidesTheTypedTimeItself(input: String) {
+        let candidates = makeSource(
+            userEntries: [DictionaryEntry(reading: input, candidates: [input])]
+        ).candidates(for: .init(
+            input: input,
+            conversionReading: ConversionReadingResolver.resolve(input),
+            javaScriptCandidates: ["13時00分"]
+        )).map(\.storageText)
+
+        #expect(candidates == ["13時00分"])
+    }
+
     @Test
     func keepsLearnedLongVowelCandidateDuringPrefixCompletion() throws {
         let source = makeSource()
@@ -750,5 +765,21 @@ struct StandardConversionCandidateSourceTests {
             deferredSystemCandidates: DeferredSystemCandidates(text: deferred),
             verbConjugations: VerbConjugationDictionary(text: verbText)
         )
+    }
+}
+
+@Suite
+struct DirectTimeSpecialConversionTests {
+    /// 1300 is also a number, so its time formats join the numeric ones
+    @Test
+    func joinsTimeFormatsToNumericCandidates() throws {
+        let result = try #require(SpecialConversionCandidateSource().result(
+            for: .init(input: "1300", javaScriptCandidates: ["13時00分"])
+        ))
+        let candidates = result.candidates.map(\.storageText)
+
+        #expect(candidates.contains("13時00分"))
+        #expect(candidates.contains("1,300"))
+        #expect(!candidates.contains("1300"))
     }
 }

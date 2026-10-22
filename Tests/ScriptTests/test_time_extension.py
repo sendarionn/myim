@@ -90,10 +90,22 @@ process.stdout.write(JSON.stringify(candidates({{
                 self.assertEqual(self.direct_candidates(value), candidates)
                 self.assertNotIn(value, candidates)
 
+    def test_formats_direct_time_typed_without_the_colon(self):
+        expected = {
+            "0000": ["00時00分"],
+            "0930": ["09時30分", "9時半"],
+            "1300": ["13時00分"],
+            "2359": ["23時59分"],
+        }
+        for value, candidates in expected.items():
+            with self.subTest(value=value):
+                self.assertEqual(self.direct_candidates(value), candidates)
+
     def test_rejects_invalid_or_partial_direct_time(self):
         for value in [
             "24:00", "12:60", "99:99", "9:30", "14:3",
             "14:", "abc14:30", "14:30abc",
+            "2400", "1260", "930", "13000", "14::30", "1430abc",
         ]:
             with self.subTest(value=value):
                 self.assertEqual(self.direct_candidates(value), [])

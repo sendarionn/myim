@@ -71,7 +71,10 @@ public enum UnselectedInputLearningPolicy {
         guard !trimmedInput.isEmpty,
               !originalInput.contains("\t"),
               !originalInput.contains("\n"),
-              !isSingleEnglishLetterOrSymbol(originalInput) else {
+              !isSingleEnglishLetterOrSymbol(originalInput),
+              // A time stays as typed when no format is chosen, so
+              // learning it would only repeat the input as a candidate
+              !TimeShapedInput.matches(trimmedInput) else {
             return nil
         }
         return UnselectedInputLearningEntry(
