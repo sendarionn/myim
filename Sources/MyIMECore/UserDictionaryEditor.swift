@@ -60,11 +60,14 @@ public struct UnselectedInputLearningEntry: Equatable, Sendable {
 }
 
 public enum UnselectedInputLearningPolicy {
+    /// - Parameter remainder: Input after the unit converted now; input of
+    ///   several units, such as `123+456`, is not learned as one word
     public static func entry(
         originalInput: String,
-        hasSelectedCandidate: Bool
+        hasSelectedCandidate: Bool,
+        remainder: String = ""
     ) -> UnselectedInputLearningEntry? {
-        guard !hasSelectedCandidate else { return nil }
+        guard !hasSelectedCandidate, remainder.isEmpty else { return nil }
         let trimmedInput = originalInput.trimmingCharacters(
             in: .whitespacesAndNewlines
         )

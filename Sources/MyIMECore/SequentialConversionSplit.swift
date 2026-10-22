@@ -1,47 +1,137 @@
-/// Punctuation typed right after text is converted after the text, so
-/// `watashiha,` becomes 私は and then 、 without retyping the comma
-public struct TrailingPunctuationSplit: Equatable, Sendable {
-    public static let characters: Set<Character> = [",", ".", "!", "?"]
+/// Input converted one unit at a time from the front: `watashiha,`
+/// becomes 私は and then 、, and `123+456` becomes 123, then +, then 456,
+/// without retyping the rest
+///
+/// Only symbols are split at, and only where the symbol cannot belong to
+/// the words around it, so `example.com`, `3.14`, `14:30`, `a-to`, and
+/// `hello,world` stay whole. Input the existing conversions take as a whole,
+/// such as `1,000`, `100cm`, or `1+2=`, is not split either
+public struct SequentialConversionSplit: Equatable, Sendable {
+    /// Punctuation split off the end of a word
+    public static let trailingPunctuation: Set<Character> = [
+        ",", ".", "!", "?"
+    ]
+    /// Symbols joining the words around them, as in domains, times, dates,
+    /// decimals, mail addresses, paths, and long vowels
+    static let connectors: Set<Character> = [
+        ".", ":", "/", "@", "_", "'", "-", "\\"
+    ]
 
-    public let body: String
-    public let punctuation: String
+    /// The unit converted now
+    public let unit: String
+    /// Input after the unit, carried over once the unit is committed
+    public let remainder: String
 
-    public init(body: String, punctuation: String) {
-        self.body = body
-        self.punctuation = punctuation
+    public init(unit: String, remainder: String) {
+        self.unit = unit
+        self.remainder = remainder
     }
 
-    /// Splits only punctuation at the end that follows a word, so
-    /// `example.com`, `3.14` and `hello,world` stay whole
-    public static func split(_ input: String) -> Self? {
-        let punctuation = String(
-            input.reversed().prefix { characters.contains($0) }.reversed()
-        )
-        guard !punctuation.isEmpty else { return nil }
-        let body = String(input.dropLast(punctuation.count))
-        guard let last = body.last,
-              (last.isASCII && last.isLetter) || last == "-",
-              body.contains(where: { $0.isASCII && $0.isLetter }) else {
+    /// - Parameters:
+    ///   - isCarried: The input is the remainder left after a committed
+    ///     unit, so it is split again without checking it as a whole
+    ///   - convertsAsWhole: Typed input an existing conversion takes as a
+    ///     whole, such as a dictionary word, a number, or a calculation
+    ///   - convertsAsGroup: Symbols converted together, such as `!?`
+    public static func split(
+        _ input: String,
+        isCarried: Bool = false,
+        convertsAsWhole: (String) -> Bool = { _ in false },
+        convertsAsGroup: (String) -> Bool = { _ in false }
+    ) -> Self? {
+        let characters = Array(input)
+        guard characters.count > 1,
+              !characters.contains(where: \.isWhitespace) else {
             return nil
         }
-        return Self(body: body, punctuation: punctuation)
-    }
-
-    /// Punctuation left after the text was committed converts as one group
-    /// when the group has symbol candidates, and otherwise one character
-    /// at a time in the order typed
-    public static func splitCarried(
-        _ input: String,
-        convertsAsGroup: Bool
-    ) -> Self? {
-        guard input.count > 1,
-              input.allSatisfy(characters.contains),
-              !convertsAsGroup else {
+        if isCarried, isSymbol(characters[0]) {
+            return splitLeadingSymbols(
+                characters,
+                convertsAsGroup: convertsAsGroup
+            )
+        }
+        guard !isSymbol(characters[0]),
+              let index = firstBoundary(in: characters) else {
             return nil
+        }
+        if !isCarried {
+            // A calculation, mail address, or whole conversion stays one unit
+            guard characters.last != "=",
+                  !characters.contains("@"),
+                  !convertsAsWhole(input) else {
+                return nil
+            }
         }
         return Self(
-            body: String(input.prefix(1)),
-            punctuation: String(input.dropFirst())
+            unit: String(characters[..<index]),
+            remainder: String(characters[index...])
         )
+    }
+
+    /// Symbols left first after a committed unit convert together when
+    /// they have candidates as a group, and otherwise one at a time
+    private static func splitLeadingSymbols(
+        _ characters: [Character],
+        convertsAsGroup: (String) -> Bool
+    ) -> Self? {
+        let run = characters.prefix(while: isSymbol)
+        let unitLength: Int
+        if run.count > 1, convertsAsGroup(String(run)) {
+            unitLength = run.count
+        } else {
+            unitLength = 1
+        }
+        guard unitLength < characters.count else { return nil }
+        return Self(
+            unit: String(characters.prefix(unitLength)),
+            remainder: String(characters.dropFirst(unitLength))
+        )
+    }
+
+    private static func firstBoundary(in characters: [Character]) -> Int? {
+        for index in 1..<characters.count {
+            let character = characters[index]
+            let previous = characters[index - 1]
+            // A run of symbols is split at its start; a long vowel or
+            // apostrophe before it belongs to the word
+            guard isSymbol(character),
+                  !isSymbol(previous) || connectors.contains(previous) else {
+                continue
+            }
+            if characters[index...].allSatisfy(trailingPunctuation.contains) {
+                // Punctuation ending a word, or ! and ? after a number;
+                // `100.` and `1,` may still become `100.5` and `1,000`
+                if isWordCharacter(previous)
+                    || previous.isNumber && "!?".contains(character) {
+                    return index
+                }
+                return nil
+            }
+            guard !connectors.contains(character) else { continue }
+            let next = index + 1 < characters.count
+                ? characters[index + 1]
+                : nil
+            // `1,0` may still become `1,000`
+            if character == ",", previous.isNumber, next?.isNumber == true {
+                continue
+            }
+            // A symbol between letters may be a word or a typo such as
+            // `a=to`, so only one beside a number is split at
+            if previous.isNumber || next?.isNumber == true {
+                return index
+            }
+        }
+        return nil
+    }
+
+    private static func isWordCharacter(_ character: Character) -> Bool {
+        character.isASCII && character.isLetter || character == "-"
+    }
+
+    static func isSymbol(_ character: Character) -> Bool {
+        character.isASCII
+            && !character.isLetter
+            && !character.isNumber
+            && !character.isWhitespace
     }
 }

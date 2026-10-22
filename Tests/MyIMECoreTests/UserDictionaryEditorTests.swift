@@ -401,3 +401,26 @@ struct UserDictionaryEditorTests {
         ).isEmpty)
     }
 }
+
+@Suite
+struct SequentialInputLearningTests {
+    /// `123+456` committed as typed is several units, not one word
+    @Test
+    func doesNotLearnInputOfSeveralUnits() {
+        #expect(UnselectedInputLearningPolicy.entry(
+            originalInput: "123+456",
+            hasSelectedCandidate: false,
+            remainder: "+456"
+        ) == nil)
+        #expect(SystemCompositionCommitPlan.resolve(
+            originalInput: "123+456",
+            selectedCandidate: nil,
+            compositionSuffix: "+456"
+        ).unselectedInputLearningEntry == nil)
+        #expect(SystemCompositionCommitPlan.resolve(
+            originalInput: "123+456",
+            selectedCandidate: nil,
+            compositionSuffix: "+456"
+        ).committedText == "123+456")
+    }
+}

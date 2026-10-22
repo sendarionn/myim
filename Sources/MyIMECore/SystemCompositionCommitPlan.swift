@@ -32,7 +32,8 @@ public struct SystemCompositionCommitPlan: Equatable, Sendable {
             selectedCandidate: nil,
             unselectedInputLearningEntry: UnselectedInputLearningPolicy.entry(
                 originalInput: originalInput,
-                hasSelectedCandidate: false
+                hasSelectedCandidate: false,
+                remainder: compositionSuffix
             )
         )
     }

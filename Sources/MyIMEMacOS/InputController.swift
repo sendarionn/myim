@@ -1511,7 +1511,7 @@ final class InputController: IMKInputController {
             historyValue: historyValue
         )
         if let sender = client() {
-            continueWithTrailingPunctuation(punctuation, client: sender)
+            continueWithRemainder(punctuation, client: sender)
         }
     }
 
@@ -2030,7 +2030,8 @@ final class InputController: IMKInputController {
         }
         let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
             originalInput: inputBuffer,
-            hasSelectedCandidate: selectedCandidateValue != nil
+            hasSelectedCandidate: selectedCandidateValue != nil,
+            remainder: compositionSuffix
         )
         let value = selectedCandidateValue ?? inputBuffer
         let punctuation = selectedCandidateValue == nil
@@ -2045,7 +2046,7 @@ final class InputController: IMKInputController {
             historyValue: committedValue
         )
         learnUnselectedInput(unselectedInputLearningEntry)
-        continueWithTrailingPunctuation(punctuation, client: sender)
+        continueWithRemainder(punctuation, client: sender)
         return true
     }
 
@@ -3850,7 +3851,7 @@ final class InputController: IMKInputController {
                 ? .directInput
                 : .acceptedCandidate
         )
-        continueWithTrailingPunctuation(punctuation, client: sender)
+        continueWithRemainder(punctuation, client: sender)
         return true
     }
 
@@ -4773,7 +4774,8 @@ final class InputController: IMKInputController {
         }
         let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
             originalInput: inputBuffer,
-            hasSelectedCandidate: selectedCandidateValue != nil
+            hasSelectedCandidate: selectedCandidateValue != nil,
+            remainder: compositionSuffix
         )
         let punctuation = selectedCandidateValue == nil
             ? ""
@@ -4786,7 +4788,7 @@ final class InputController: IMKInputController {
             preferredNextInputCandidates: calculatorNextInputCandidates
         )
         learnUnselectedInput(unselectedInputLearningEntry)
-        continueWithTrailingPunctuation(punctuation, client: sender)
+        continueWithRemainder(punctuation, client: sender)
         return true
     }
 
@@ -5643,51 +5645,56 @@ final class InputController: IMKInputController {
         return ""
     }
 
-    /// Trailing punctuation shown after the converted text and converted
-    /// once the text is committed
+    /// The rest of the input after the unit converted now, shown after it
+    /// and converted once the unit is committed
     private var compositionSuffix: String {
-        trailingPunctuationSplit?.punctuation ?? ""
+        sequentialConversionSplit?.remainder ?? ""
     }
 
-    /// Input converted now; trailing punctuation waits for the next step
+    /// Input converted now; the rest waits for the next step
     private var conversionInput: String {
-        trailingPunctuationSplit?.body ?? inputBuffer
+        sequentialConversionSplit?.unit ?? inputBuffer
     }
 
-    private var trailingPunctuationSplit: TrailingPunctuationSplit? {
+    private var sequentialConversionSplit: SequentialConversionSplit? {
         guard dictionaryRegistrationSession == nil else { return nil }
-        if inputSession.carriesTrailingPunctuation {
-            return TrailingPunctuationSplit.splitCarried(
-                inputBuffer,
-                convertsAsGroup: !JapaneseSymbolConverter.candidates(
-                    for: inputBuffer
-                ).isEmpty
-                    || !Self.sharedSymbolConversionEngine.candidates(
-                        for: inputBuffer
-                    ).isEmpty
-            )
-        }
-        // A registered word that includes the punctuation stays whole
-        guard dictionaryRuntime.userDictionaryEngine.candidates(
-                for: inputBuffer
-              ).isEmpty,
-              dictionaryRuntime.importedEngine.candidates(
-                for: inputBuffer
-              ).isEmpty else {
-            return nil
-        }
-        return TrailingPunctuationSplit.split(inputBuffer)
+        return SequentialConversionSplit.split(
+            inputBuffer,
+            isCarried: inputSession.carriesRemainder,
+            convertsAsWhole: { [unowned self] in convertsAsWhole($0) },
+            convertsAsGroup: { [unowned self] in hasSymbolCandidates($0) }
+        )
     }
 
-    /// After the text before trailing punctuation is committed, the
-    /// punctuation becomes the next input with its symbol candidates
-    private func continueWithTrailingPunctuation(
+    /// Typed input an existing conversion takes as a whole, such as a
+    /// registered word, a number with its unit, a time, or a calculation
+    /// with its history
+    private func convertsAsWhole(_ input: String) -> Bool {
+        !dictionaryRuntime.userDictionaryEngine.candidates(for: input).isEmpty
+            || !dictionaryRuntime.importedEngine.candidates(for: input).isEmpty
+            || hasSymbolCandidates(input)
+            || TimeShapedInput.matches(input)
+            || specialConversionCandidateSource.result(for: .init(
+                input: input,
+                calculationHistoryCandidates: candidateSelectionHistoryStore
+                    .completions(for: input)
+            )) != nil
+    }
+
+    private func hasSymbolCandidates(_ input: String) -> Bool {
+        !JapaneseSymbolConverter.candidates(for: input).isEmpty
+            || !Self.sharedSymbolConversionEngine.candidates(for: input).isEmpty
+    }
+
+    /// After a unit is committed, the rest of the input becomes the next
+    /// input with its own candidates
+    private func continueWithRemainder(
         _ punctuation: String,
         client sender: Any
     ) {
         guard !punctuation.isEmpty else { return }
         dismissNextInputCandidates(clearMarkedTextIn: nil)
-        inputSession.carryTrailingPunctuation(punctuation)
+        inputSession.carryRemainder(punctuation)
         selectedCandidateIndex = nil
         updateMarkedText(in: sender)
         refreshCandidates(client: sender)
