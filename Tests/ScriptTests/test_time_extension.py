@@ -92,10 +92,11 @@ process.stdout.write(JSON.stringify(candidates({{
 
     def test_formats_direct_time_typed_without_the_colon(self):
         expected = {
-            "0000": ["00時00分"],
-            "0930": ["09時30分", "9時半"],
-            "1300": ["13時00分"],
-            "2359": ["23時59分"],
+            "0000": ["00:00", "00時00分"],
+            "0930": ["09:30", "09時30分", "9時半"],
+            "1100": ["11:00", "11時00分"],
+            "1300": ["13:00", "13時00分"],
+            "2359": ["23:59", "23時59分"],
         }
         for value, candidates in expected.items():
             with self.subTest(value=value):

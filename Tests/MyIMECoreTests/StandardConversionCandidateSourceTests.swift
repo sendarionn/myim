@@ -774,10 +774,14 @@ struct DirectTimeSpecialConversionTests {
     @Test
     func joinsTimeFormatsToNumericCandidates() throws {
         let result = try #require(SpecialConversionCandidateSource().result(
-            for: .init(input: "1300", javaScriptCandidates: ["13時00分"])
+            for: .init(
+                input: "1300",
+                javaScriptCandidates: ["13:00", "13時00分"]
+            )
         ))
         let candidates = result.candidates.map(\.storageText)
 
+        #expect(candidates.contains("13:00"))
         #expect(candidates.contains("13時00分"))
         #expect(candidates.contains("1,300"))
         #expect(!candidates.contains("1300"))

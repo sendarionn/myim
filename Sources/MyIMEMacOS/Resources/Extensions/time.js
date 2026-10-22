@@ -7,7 +7,8 @@ function candidates(context) {
   const time = parseTime(context)
   if (!time) return []
 
-  return formatTime(time.hour, time.minute, context.input === "time")
+  // HH:MM is offered unless it is exactly what was typed
+  return formatTime(time.hour, time.minute, !context.input.includes(":"))
 }
 
 function parseTime(context) {
