@@ -366,16 +366,10 @@ actor JavaScriptExtensionClient {
     }
 
     private nonisolated static func prefixMetadata(in source: String) -> String? {
-        let marker = "// @myim-prefix "
-        return source.split(separator: "\n", omittingEmptySubsequences: false)
-            .prefix(20)
-            .compactMap { line -> String? in
-                let text = String(line)
-                guard text.hasPrefix(marker) else { return nil }
-                let value = String(text.dropFirst(marker.count))
-                    .trimmingCharacters(in: .whitespaces)
-                return value.isEmpty ? nil : value
-            }
-            .first
+        let prefixes = JavaScriptExtensionMetadata.values(
+            "myim-prefix",
+            in: source
+        )
+        return prefixes.isEmpty ? nil : prefixes.joined(separator: ", ")
     }
 }

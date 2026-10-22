@@ -32,6 +32,23 @@ process.stdout.write(JSON.stringify(candidates({{
         )
         return json.loads(completed.stdout)
 
+    def direct_candidates(self, value):
+        runner = f"""
+const fs = require("fs")
+eval(fs.readFileSync({json.dumps(str(SCRIPT))}, "utf8"))
+process.stdout.write(JSON.stringify(candidates({{
+  input: {json.dumps(value)},
+  parameters: {{}}
+}})))
+"""
+        completed = subprocess.run(
+            ["node", "-e", runner],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(completed.stdout)
+
     def test_formats_selected_time_in_definition_order(self):
         self.assertEqual(
             self.candidates(14, 5),
@@ -58,6 +75,36 @@ process.stdout.write(JSON.stringify(candidates({{
     def test_rejects_invalid_values(self):
         self.assertEqual(self.candidates(24, 0), [])
         self.assertEqual(self.candidates(10, 60), [])
+
+    def test_formats_direct_time_without_repeating_the_input(self):
+        expected = {
+            "00:00": ["00時00分"],
+            "00:30": ["00時30分", "0時半"],
+            "09:05": ["09時05分"],
+            "09:30": ["09時30分", "9時半"],
+            "14:30": ["14時30分", "14時半"],
+            "23:59": ["23時59分"],
+        }
+        for value, candidates in expected.items():
+            with self.subTest(value=value):
+                self.assertEqual(self.direct_candidates(value), candidates)
+                self.assertNotIn(value, candidates)
+
+    def test_rejects_invalid_or_partial_direct_time(self):
+        for value in [
+            "24:00", "12:60", "99:99", "9:30", "14:3",
+            "14:", "abc14:30", "14:30abc",
+        ]:
+            with self.subTest(value=value):
+                self.assertEqual(self.direct_candidates(value), [])
+
+    def test_declares_only_relevant_direct_input_prefixes(self):
+        source = SCRIPT.read_text()
+
+        self.assertIn("// @myim-prefix time", source)
+        self.assertIn("// @myim-prefix 0", source)
+        self.assertIn("// @myim-prefix 1", source)
+        self.assertIn("// @myim-prefix 2", source)
 
 
 if __name__ == "__main__":

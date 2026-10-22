@@ -94,6 +94,18 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
+    func keepsDirectTimeFormatsInStandardCandidates() {
+        let candidates = makeSource().candidates(for: .init(
+            input: "14:30",
+            conversionReading: "",
+            javaScriptCandidates: ["14時30分", "14時半"]
+        )).map(\.storageText)
+
+        #expect(candidates.prefix(2) == ["14時30分", "14時半"])
+        #expect(!candidates.contains("14:30"))
+    }
+
+    @Test
     func keepsLearnedLongVowelCandidateDuringPrefixCompletion() throws {
         let source = makeSource()
         var history = CandidateSelectionHistory()

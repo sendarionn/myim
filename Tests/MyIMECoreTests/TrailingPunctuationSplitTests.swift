@@ -23,7 +23,7 @@ struct TrailingPunctuationSplitTests {
 
     @Test(arguments: [
         "example.com", "3.14", "hello,world", "yu-za-", ",", "!?",
-        "100.", "e.g", "watashiha"
+        "100.", "e.g", "watashiha", "14:30"
     ])
     func keepsInputWithoutTrailingTextPunctuation(input: String) {
         #expect(TrailingPunctuationSplit.split(input) == nil)

@@ -43,8 +43,14 @@ while let line = readLine() {
                 statuses.append(.init(fileName: fileName, state: .error, message: message))
                 continue
             }
-            if let prefix = metadataValue("myim-prefix", in: source),
-               !request.input.hasPrefix(prefix) {
+            let prefixes = JavaScriptExtensionMetadata.values(
+                "myim-prefix",
+                in: source
+            )
+            if !JavaScriptExtensionMetadata.matches(
+                input: request.input,
+                prefixes: prefixes
+            ) {
                 statuses.append(.init(fileName: fileName, state: .ready))
                 continue
             }
@@ -107,20 +113,6 @@ while let line = readLine() {
         FileHandle.standardOutput.write(output)
         FileHandle.standardOutput.write(Data([0x0A]))
     }
-}
-
-private func metadataValue(_ name: String, in source: String) -> String? {
-    let marker = "// @\(name) "
-    return source.split(separator: "\n", omittingEmptySubsequences: false)
-        .prefix(20)
-        .compactMap { line -> String? in
-            let text = String(line)
-            guard text.hasPrefix(marker) else { return nil }
-            let value = String(text.dropFirst(marker.count))
-                .trimmingCharacters(in: .whitespaces)
-            return value.isEmpty ? nil : value
-        }
-        .first
 }
 
 private func candidateStrings(from value: JSValue) -> [String] {
