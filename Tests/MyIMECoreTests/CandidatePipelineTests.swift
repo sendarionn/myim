@@ -67,6 +67,23 @@ struct CandidatePipelineTests {
     }
 
     @Test
+    func keepsSingleHiraganaAheadOfLearnedAndContextualCandidates() {
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.Input(
+                kana: ["き", "キ"],
+                direct: ["気", "木"],
+                other: ["機会"],
+                recencyRanks: ["機会": 100, "木": 50],
+                contextualCandidates: ["気"],
+                prioritizeKana: true
+            )
+        )
+
+        #expect(candidates.first == "き")
+        #expect(candidates.dropFirst().prefix(2) == ["機会", "木"])
+    }
+
+    @Test
     func keepsRiHiraganaBeforeMozcKatakanaCandidate() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(

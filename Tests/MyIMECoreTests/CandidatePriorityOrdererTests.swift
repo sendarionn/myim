@@ -4,7 +4,7 @@ import Testing
 @Suite
 struct CandidatePriorityOrdererTests {
     @Test
-    func movesEstablishedCandidateAheadOfSingleKana() {
+    func keepsSingleHiraganaAheadOfEstablishedCandidate() {
         let result = CandidatePriorityOrderer.ordered(
             kana: ["き", "キ"],
             direct: ["気", "木"],
@@ -12,7 +12,7 @@ struct CandidatePriorityOrdererTests {
             recencyRanks: ["機会": 9],
             prioritizeKana: true
         )
-        #expect(result == ["機会", "き", "キ", "気", "木", "昨日"])
+        #expect(result == ["き", "機会", "キ", "気", "木", "昨日"])
     }
 
     @Test

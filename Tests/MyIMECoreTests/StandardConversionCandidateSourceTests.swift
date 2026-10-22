@@ -24,6 +24,30 @@ struct StandardConversionCandidateSourceTests {
     }
 
     @Test
+    func singleHiraganaRemainsFirstThroughStandardCandidateGeneration() {
+        let source = makeSource(
+            userEntries: [DictionaryEntry(reading: "ki", candidates: ["木"])],
+            basicEntries: [DictionaryEntry(reading: "ki", candidates: ["気"])]
+        )
+        var history = CandidateSelectionHistory()
+        history.record("機会", reading: "ki")
+        history.record("機会", reading: "ki")
+
+        let candidates = source.candidates(for: .init(
+            input: "ki",
+            conversionReading: "ki",
+            selectionHistory: history,
+            contextualCandidates: ["気"]
+        ))
+
+        #expect(candidates.first?.storageText == "き")
+        #expect(candidates.contains { $0.storageText == "キ" })
+        #expect(candidates.contains { $0.storageText == "木" })
+        #expect(candidates.contains { $0.storageText == "気" })
+        #expect(candidates.contains { $0.storageText == "機会" })
+    }
+
+    @Test
     func generatesNumericPrefixCandidatesInsideTheSource() {
         let source = makeSource(
             basicEntries: [DictionaryEntry(reading: "nin", candidates: ["人"])]

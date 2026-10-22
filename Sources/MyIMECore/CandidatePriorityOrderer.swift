@@ -36,6 +36,10 @@ public enum CandidatePriorityOrderer {
             }
         }
 
+        if prioritizeKana, let firstKana = kana.first {
+            appendUnique([firstKana])
+        }
+
         let learned = CandidateRecencyOrderer.ordered(
             kana + direct + secondary + others,
             ranks: recencyRanks
