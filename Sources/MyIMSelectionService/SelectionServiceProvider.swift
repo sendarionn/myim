@@ -28,11 +28,17 @@ final class SelectionServiceProvider: NSObject {
             return
         }
 
+        // Recorded before the registration window comes forward
+        let source = NSWorkspace.shared.frontmostApplication?
+            .processIdentifier
         Self.logger.notice(
-            "capture succeeded source=macos-service length=\(text.count, privacy: .public)"
+            "capture succeeded source=macos-service length=\(text.count, privacy: .public) sourceRecorded=\(source != nil, privacy: .public)"
         )
         DispatchQueue.main.async { [registrationWindow] in
-            registrationWindow.show(prefilledInsertedText: text)
+            registrationWindow.show(
+                prefilledInsertedText: text,
+                sourceProcessIdentifier: source
+            )
         }
     }
 }

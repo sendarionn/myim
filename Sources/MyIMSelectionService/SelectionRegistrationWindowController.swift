@@ -16,8 +16,16 @@ final class SelectionRegistrationWindowController: NSObject,
     private let insertedTextView = NSTextView()
     private let registerButton = NSButton()
     private lazy var window = makeWindow()
+    private var returnTarget = SelectionRegistrationReturnTarget()
 
-    func show(prefilledInsertedText: String) {
+    func show(
+        prefilledInsertedText: String,
+        sourceProcessIdentifier: pid_t?
+    ) {
+        returnTarget.begin(
+            frontmostProcessIdentifier: sourceProcessIdentifier,
+            ownProcessIdentifier: ProcessInfo.processInfo.processIdentifier
+        )
         readingField.stringValue = ""
         displayField.stringValue = ""
         insertedTextView.string = prefilledInsertedText
@@ -39,6 +47,7 @@ final class SelectionRegistrationWindowController: NSObject,
 
     func windowWillClose(_ notification: Notification) {
         clearFields()
+        returnTarget.clear()
     }
 
     @objc
@@ -66,13 +75,39 @@ final class SelectionRegistrationWindowController: NSObject,
                 display: completion.display
             )
             Self.logger.notice("dictionary registration succeeded")
+            let source = returnTarget.takeAfterRegistration()
             window.close()
+            returnToSource(source)
         } catch {
             Self.logger.error(
                 "dictionary registration failed reason=\(error.localizedDescription, privacy: .public)"
             )
             presentSaveError(error)
         }
+    }
+
+    /// Brings the application the selection came from forward again; its
+    /// own key window and text field take the focus back. A terminated
+    /// application is not relaunched
+    private func returnToSource(_ processIdentifier: pid_t?) {
+        guard let processIdentifier,
+              let application = NSRunningApplication(
+                processIdentifier: processIdentifier
+              ),
+              !application.isTerminated else {
+            Self.logger.notice("return to source skipped")
+            return
+        }
+        let activated: Bool
+        if #available(macOS 14.0, *) {
+            NSApp.yieldActivation(to: application)
+            activated = application.activate()
+        } else {
+            activated = application.activate(options: [])
+        }
+        Self.logger.notice(
+            "return to source activated=\(activated, privacy: .public)"
+        )
     }
 
     @objc
