@@ -16,6 +16,31 @@ public enum FuzzyQueryResolver {
         return input
     }
 
+    /// Standard candidates a fuzzy candidate would only repeat. When the
+    /// whole input is searched, the standard candidates are for the reading
+    /// before the symbol, so アート completing `a` commits `アート=to` while
+    /// アート correcting `a=to` commits アート; both stay
+    public static func duplicateCandidates(
+        standardCandidates: [String],
+        query: String,
+        conversionReading: String
+    ) -> Set<String> {
+        query == conversionReading ? Set(standardCandidates) : []
+    }
+
+    /// Text left after a fuzzy candidate: none when the whole input was
+    /// searched, so `=to` is not left after アート
+    public static func suffix(
+        input: String,
+        query: String,
+        conversionReading: String,
+        conversionSuffix: String
+    ) -> String {
+        query == conversionReading
+            ? conversionSuffix
+            : String(input.dropFirst(query.count))
+    }
+
     private static func isLongVowelKeyTypo(_ input: String) -> Bool {
         let characters = Array(input.lowercased())
         let neighbors = RomajiKeyboardGeometry.longVowelKeyNeighbors

@@ -274,6 +274,78 @@ struct BundledFuzzyCandidateTests {
         #expect(fuzzyCandidates.isEmpty)
     }
 
+    /// Mirrors InputController: the standard candidates come from the
+    /// reading `a`, which completes to アート among thousands of words, and
+    /// must not hide アート corrected from the whole input
+    @Test(arguments: [("a=to", "アート"), ("a_to", "アート")])
+    func showsTheWholeInputCorrectionBesideStandardCompletions(
+        input: String,
+        expected: String
+    ) async throws {
+        let fixture = try #require(Self.fixture)
+        let reading = ConversionReadingResolver.resolve(input)
+        let query = FuzzyQueryResolver.resolve(
+            input: input,
+            conversionReading: reading
+        )
+        // Committed as typed once, as the unselected input learning does
+        let userDictionary = LayeredConversionEngine(engines: [
+            ConversionEngine(entries: [
+                DictionaryEntry(reading: input, candidates: [input])
+            ])
+        ])
+        let standard = StandardConversionCandidateSource(
+            userEngine: userDictionary,
+            importedEngine: Self.importedSKK,
+            basicEngine: fixture.basic,
+            symbolEngine: ConversionEngine(entries: []),
+            systemEngine: fixture.system,
+            verbInflectionGenerator: VerbInflectionCandidateGenerator(
+                entries: []
+            )
+        ).candidates(for: .init(input: input, conversionReading: reading))
+            .map(\.storageText)
+
+        let fuzzyCandidates = try await fuzzyCandidates(
+            for: query,
+            visibleCandidates: FuzzyQueryResolver.duplicateCandidates(
+                standardCandidates: standard,
+                query: query,
+                conversionReading: reading
+            )
+        )
+        let suffix = FuzzyQueryResolver.suffix(
+            input: input,
+            query: query,
+            conversionReading: reading,
+            conversionSuffix: ConversionReadingSuffix.resolve(
+                conversionReading: reading,
+                originalInput: input
+            )
+        )
+
+        #expect(standard.contains(expected))
+        #expect(fuzzyCandidates.prefix(3).contains(expected))
+        #expect(suffix.isEmpty)
+    }
+
+    /// When the reading itself is searched, standard candidates are still
+    /// not repeated as fuzzy candidates
+    @Test
+    func stillExcludesStandardCandidatesForTheSameReading() {
+        #expect(FuzzyQueryResolver.duplicateCandidates(
+            standardCandidates: ["データベース"],
+            query: "de-tsb-su",
+            conversionReading: "de-tsb-su"
+        ) == ["データベース"])
+        #expect(FuzzyQueryResolver.suffix(
+            input: "watashiha=",
+            query: "watashiha",
+            conversionReading: "watashiha",
+            conversionSuffix: "="
+        ) == "=")
+    }
+
     private func fuzzyCandidates(
         for query: String,
         visibleCandidates: Set<String> = []

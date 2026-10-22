@@ -3521,7 +3521,11 @@ final class InputController: IMKInputController {
             return
         }
         candidateSearchCoordinator.cancel(.fuzzy)
-        let visibleCandidates = Set(currentCandidates)
+        let visibleCandidates = FuzzyQueryResolver.duplicateCandidates(
+            standardCandidates: currentCandidates,
+            query: query,
+            conversionReading: conversionReading
+        )
         let learnedCompounds = nextInputCandidateCoordinator
             .learnedCompoundPredictions(
                 matchingPrefix: query,
@@ -6196,9 +6200,12 @@ final class InputController: IMKInputController {
     /// Text after the part a fuzzy candidate replaces; none when the whole
     /// input was searched, so `=to` is not left after アート
     private var fuzzySuffix: String {
-        fuzzyQuery == conversionReading
-            ? conversionSuffix
-            : String(conversionInput.dropFirst(fuzzyQuery.count))
+        FuzzyQueryResolver.suffix(
+            input: conversionInput,
+            query: fuzzyQuery,
+            conversionReading: conversionReading,
+            conversionSuffix: conversionSuffix
+        )
     }
 
     private var interactionState: InputInteractionState {
