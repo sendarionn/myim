@@ -259,8 +259,8 @@ struct BundledFuzzyCandidateTests {
         #expect(fuzzyCandidates.prefix(3).contains(expected))
     }
 
-    /// Symbols typed on purpose keep the reading before them, and nothing
-    /// is suggested from the symbol alone
+    /// Symbols typed on purpose are not corrected into words: `a=b` is too
+    /// short to be searched whole, and `foo=bar` and `x+y` reach no word
     @Test(arguments: ["a=b", "foo=bar", "x+y"])
     func doesNotCorrectIntendedSymbols(input: String) async throws {
         let reading = ConversionReadingResolver.resolve(input)
@@ -270,7 +270,7 @@ struct BundledFuzzyCandidateTests {
         )
         let fuzzyCandidates = try await fuzzyCandidates(for: input)
 
-        #expect(query == reading)
+        #expect(query == reading || query == input)
         #expect(fuzzyCandidates.isEmpty)
     }
 
@@ -344,6 +344,66 @@ struct BundledFuzzyCandidateTests {
             conversionReading: "watashiha",
             conversionSuffix: "="
         ) == "=")
+    }
+
+    /// Three keys beside the intended ones, `z`, `=`, and `p` for `a`,
+    /// `-`, and `o`, still reach the word when nothing closer is found
+    @Test
+    func correctsSeveralAdjacentKeysWhenNothingCloserIsFound() async throws {
+        let input = "z=tp"
+        let reading = ConversionReadingResolver.resolve(input)
+        let query = FuzzyQueryResolver.resolve(
+            input: input,
+            conversionReading: reading
+        )
+        let fixture = try #require(Self.fixture)
+        let tiers = await FuzzyCandidateSource(
+            query: query,
+            visibleCandidates: [],
+            userDictionary: LayeredConversionEngine(engines: []),
+            importedDictionary: Self.importedSKK,
+            basicDictionary: fixture.basic,
+            mozcDictionary: fixture.system,
+            fuzzyRepository: fixture.repository
+        ).matchTiers()
+
+        #expect(query == input)
+        #expect(tiers.dropLast().allSatisfy { $0.isEmpty })
+        #expect(tiers.last?.first?.candidates.contains("アート") == true)
+        let candidates = try await fuzzyCandidates(for: query)
+        #expect(candidates.prefix(3).contains("アート"))
+        #expect(FuzzyQueryResolver.suffix(
+            input: input,
+            query: query,
+            conversionReading: reading,
+            conversionSuffix: ""
+        ).isEmpty)
+    }
+
+    /// Inputs the ordinary search corrects keep their candidates and order,
+    /// and gather no corrections of several keys
+    @Test(arguments: [
+        ("kaigii", "会議"), ("denwq", "電話"), ("keisna", "計算"),
+        ("hiruyou", "必要"), ("konncihia", "こんにちは"), ("susmete", "進めて")
+    ])
+    func keepsOrdinaryCorrectionsWithoutSeveralKeyCorrections(
+        query: String,
+        expected: String
+    ) async throws {
+        let fixture = try #require(Self.fixture)
+        let tiers = await FuzzyCandidateSource(
+            query: query,
+            visibleCandidates: [],
+            userDictionary: LayeredConversionEngine(engines: []),
+            importedDictionary: Self.importedSKK,
+            basicDictionary: fixture.basic,
+            mozcDictionary: fixture.system,
+            fuzzyRepository: fixture.repository
+        ).matchTiers()
+
+        #expect(tiers.last?.isEmpty == true)
+        let candidates = try await fuzzyCandidates(for: query)
+        #expect(candidates.prefix(4).contains(expected))
     }
 
     private func fuzzyCandidates(

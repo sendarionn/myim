@@ -2,8 +2,9 @@
 ///
 /// The reading for standard candidates stops at a symbol, so `a=to` is
 /// read as `a`. When the symbols are only ones on or beside the long-vowel
-/// key on the US layout and putting `-` in their place gives a whole
-/// romaji reading, as `a-to` is, the whole input is searched instead
+/// key on the US layout, each between letters, the whole input is searched
+/// instead, so `a=to` and `z=tp` can both reach `a-to`. Only corrections
+/// that are dictionary words are offered, which keeps `foo=bar` uncorrected
 public enum FuzzyQueryResolver {
     public static func resolve(
         input: String,
@@ -50,10 +51,12 @@ public enum FuzzyQueryResolver {
                 || character == "-" || character == "'" {
                 continue
             }
-            // Only between a vowel and the next letter, where `-` makes a
-            // long vowel; `a=b`, `x+y`, and a trailing `=` stay as typed
+            // Only between letters, where `-` makes a long vowel; a
+            // trailing `=` and symbols next to each other stay as typed
             guard neighbors.contains(character),
-                  index > 0, "aeiou".contains(characters[index - 1]),
+                  index > 0,
+                  characters[index - 1].isASCII,
+                  characters[index - 1].isLetter,
                   index + 1 < characters.count,
                   characters[index + 1].isASCII,
                   characters[index + 1].isLetter else {
@@ -61,14 +64,8 @@ public enum FuzzyQueryResolver {
             }
             hasTypo = true
         }
-        guard hasTypo else { return false }
-        let corrected = String(characters.map {
-            neighbors.contains($0) ? "-" : $0
-        })
-        // Every letter has to become kana, so `foo=bar` is not a reading
-        guard let kana = RomajiConverter().hiragana(from: corrected) else {
-            return false
-        }
-        return !kana.contains { $0.isASCII && $0.isLetter }
+        // Too short to be a word typed with a typo, such as `a=b`
+        return hasTypo
+            && characters.filter({ $0.isASCII && $0.isLetter }).count >= 3
     }
 }

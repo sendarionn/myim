@@ -72,8 +72,26 @@ public struct FuzzyCandidateSource: Sendable {
                 for: query,
                 excluding: visibleCandidates
             ))
+            // Several replaced keys are tried only when the ordinary search
+            // found nothing, as for `z=tp`, so inputs it already corrects,
+            // such as `denwq`, do not gather far corrections
+            let multipleKeyMatches = filtered.isEmpty
+                ? FuzzyConversionMatchFilter.filtered(
+                    RomajiKeyboardTypoGenerator.multipleKeyDictionaryMatches(
+                        for: query,
+                        excludingReadings: seenReadings
+                    ) { reading in
+                        userCandidates(for: reading)
+                            + basicDictionary.candidates(for: reading)
+                            + mozcDictionary.candidates(for: reading)
+                    },
+                    for: query,
+                    excluding: visibleCandidates
+                )
+                : []
             return [learnedMatches] + FuzzyCandidateTierBuilder.build(
-                directTypoMatches: filtered
+                directTypoMatches: filtered,
+                multipleKeyMatches: multipleKeyMatches
             )
         }.value
     }
