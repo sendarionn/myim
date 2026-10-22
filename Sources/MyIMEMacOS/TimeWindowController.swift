@@ -12,16 +12,12 @@ private final class TimePanel: NSPanel {
     }
 }
 
-/// The 24 hour labels on two rings around the minute ring and the HH:MM
-/// display; a click on a label selects the hour and a press on the minute
-/// ring sets the minute, both measured from the view's centre
+/// The fixed 24 hour and five-minute labels on three equal-width rings
 private final class TimeDialView: NSView {
     var state: TimeSelectionState? { didSet { needsDisplay = true } }
     var hourSelectionAction: ((Int) -> Void)?
     var minuteSelectionAction: ((Int) -> Void)?
     let layout = TimeDialLayout()
-
-    private var gesture: TimeDialPointerGesture?
 
     override var isFlipped: Bool { false }
 
@@ -30,65 +26,33 @@ private final class TimeDialView: NSView {
         guard let state else { return }
         let center = dialCenter
 
-        drawTimeDisplay(state.digitalText, at: center)
-        // The labels mark the hours; no ticks, hands, or outline are drawn.
-        // The ring holding the selected hour is darker, and both stay
-        // clickable
-        let selectedRing = TimeHourRing(hour: state.hour)
-        for ring in TimeHourRing.allCases {
+        drawRingBackgrounds(at: center)
+        for ring in TimeDialRing.allCases {
             for step in 0..<12 {
                 let offset = layout.labelCenter(atDialStep: step, ring: ring)
+                let selection = ring.selection(atDialStep: step)
                 drawLabel(
                     ring.label(atDialStep: step),
                     at: NSPoint(
                         x: center.x + CGFloat(offset.x),
                         y: center.y + CGFloat(offset.y)
                     ),
-                    selected: state.hour == ring.hour(atDialStep: step),
-                    color: ring == selectedRing
-                        ? .labelColor
-                        : .secondaryLabelColor
+                    selected: isSelected(selection, in: state)
                 )
             }
         }
+        drawTimeDisplay(state.digitalText, at: center)
     }
 
     override func mouseDown(with event: NSEvent) {
         let offset = offsetFromCenter(of: event)
-        let pressed = TimeDialPointerGesture(
-            atX: offset.x,
-            y: offset.y,
-            layout: layout
-        )
-        gesture = pressed
-        if let minute = pressed.minuteOnPress(
-            atX: offset.x,
-            y: offset.y,
-            layout: layout
-        ) {
-            minuteSelectionAction?(minute)
-        }
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        let offset = offsetFromCenter(of: event)
-        guard let minute = gesture?.move(
-            toX: offset.x,
-            y: offset.y,
-            layout: layout
-        ) else { return }
-        minuteSelectionAction?(minute)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        defer { gesture = nil }
-        let offset = offsetFromCenter(of: event)
-        if case let .selectHour(hour) = gesture?.release(
-            atX: offset.x,
-            y: offset.y,
-            layout: layout
-        ) {
+        switch layout.selection(atX: offset.x, y: offset.y) {
+        case let .hour(hour):
             hourSelectionAction?(hour)
+        case let .minute(minute):
+            minuteSelectionAction?(minute)
+        case nil:
+            break
         }
     }
 
@@ -100,6 +64,61 @@ private final class TimeDialView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         let center = dialCenter
         return (Double(location.x - center.x), Double(location.y - center.y))
+    }
+
+    private func drawRingBackgrounds(at center: NSPoint) {
+        let fills: [(TimeDialRing, NSColor)] = [
+            (.outerHour, NSColor.systemBlue.withAlphaComponent(0.07)),
+            (.middleHour, NSColor.systemPurple.withAlphaComponent(0.07)),
+            (.minute, NSColor.systemGreen.withAlphaComponent(0.07))
+        ]
+        for (ring, color) in fills {
+            let radius = CGFloat(layout.outerRadius(of: ring))
+            color.setFill()
+            NSBezierPath(ovalIn: NSRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            )).fill()
+        }
+
+        let centerRadius = CGFloat(layout.centerRadius)
+        NSColor.windowBackgroundColor.setFill()
+        NSBezierPath(ovalIn: NSRect(
+            x: center.x - centerRadius,
+            y: center.y - centerRadius,
+            width: centerRadius * 2,
+            height: centerRadius * 2
+        )).fill()
+
+        NSColor.separatorColor.setStroke()
+        for radiusValue in [
+            layout.outerRadius,
+            layout.outerRadius - layout.ringWidth,
+            layout.outerRadius - layout.ringWidth * 2,
+            layout.centerRadius
+        ] {
+            let radius = CGFloat(radiusValue)
+            let path = NSBezierPath(ovalIn: NSRect(
+                x: center.x - radius,
+                y: center.y - radius,
+                width: radius * 2,
+                height: radius * 2
+            ))
+            path.lineWidth = 0.5
+            path.stroke()
+        }
+    }
+
+    private func isSelected(
+        _ selection: TimeDialSelection,
+        in state: TimeSelectionState
+    ) -> Bool {
+        switch selection {
+        case let .hour(hour): state.hour == hour
+        case let .minute(minute): state.minute == minute
+        }
     }
 
     /// HH:MM is only shown; it takes no focus, cursor, or typing
@@ -116,8 +135,7 @@ private final class TimeDialView: NSView {
     private func drawLabel(
         _ value: String,
         at location: NSPoint,
-        selected: Bool,
-        color: NSColor
+        selected: Bool
     ) {
         if selected {
             // One circle size for one and two digits, drawn over the
@@ -136,7 +154,7 @@ private final class TimeDialView: NSView {
                 ofSize: CGFloat(layout.labelFontSize),
                 weight: .regular
             ),
-            .foregroundColor: selected ? NSColor.white : color
+            .foregroundColor: selected ? NSColor.white : NSColor.labelColor
         ])
     }
 
@@ -175,7 +193,7 @@ private final class TimeInputView: NSView {
         }
         dialView.minuteSelectionAction = { [weak self] minute in
             guard let self else { return }
-            _ = state.set(minute: minute)
+            state.selectMinute(minute)
             dialView.state = state
         }
         addSubview(dialView)
@@ -188,7 +206,8 @@ private final class TimeInputView: NSView {
     func setInitialTime(_ date: Date, calendar: Calendar = .current) {
         let hour = calendar.component(.hour, from: date)
         let minute = calendar.component(.minute, from: date)
-        setTime(TimeSelectionState(hour: hour, minute: minute)!)
+        setTime(TimeSelectionState(hour: hour, minute: minute)!
+            .roundedToNearestFiveMinutes())
     }
 
     func setTime(_ time: TimeSelectionState) {
@@ -239,6 +258,10 @@ private final class TimeFormatKeyPanel: NSPanel {
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func cancelOperation(_ sender: Any?) {
+        NSApp.stopModal(withCode: .cancel)
+    }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
