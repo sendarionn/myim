@@ -97,6 +97,76 @@ struct NextInputCandidateCoordinatorTests {
     }
 
     @Test
+    func limitsInitialCandidatesToOneFourItemPage() {
+        let fixture = makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let coordinator = fixture.coordinator
+
+        let hasCandidates = coordinator.beginCandidates(
+            context: "候補",
+            preferredCandidates: ["優先"],
+            learnedCandidates: ["A", "B", "C", "D"],
+            dictionaryCandidates: ["E"]
+        )
+
+        #expect(hasCandidates)
+        #expect(coordinator.candidates == ["優先", "A", "B", "C"])
+        #expect(coordinator.pageRange(pageSize: 4) == 0..<4)
+        #expect(coordinator.wrappedSelectionIndex(offset: 1) == 0)
+        _ = coordinator.select(index: 3)
+        #expect(coordinator.wrappedSelectionIndex(offset: 1) == 0)
+    }
+
+    @Test
+    func cyclesTabAndArrowsWithinOnlyTwoCandidates() {
+        let fixture = makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let coordinator = fixture.coordinator
+        coordinator.beginCandidates(
+            context: "候補",
+            preferredCandidates: [],
+            learnedCandidates: ["A", "B"],
+            dictionaryCandidates: []
+        )
+
+        #expect(coordinator.wrappedSelectionIndex(offset: 1) == 0)
+        _ = coordinator.select(index: 0)
+        #expect(coordinator.wrappedSelectionIndex(offset: 1) == 1)
+        #expect(coordinator.linearSelectionIndex(offset: -1) == 1)
+        _ = coordinator.select(index: 1)
+        #expect(coordinator.wrappedSelectionIndex(offset: 1) == 0)
+        #expect(coordinator.linearSelectionIndex(offset: 1) == 0)
+    }
+
+    @Test
+    func fillsOnlyEmptySlotsWithAsyncCandidatesAndKeepsSelection() {
+        let fixture = makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+        let coordinator = fixture.coordinator
+        coordinator.beginCandidates(
+            context: "候補",
+            preferredCandidates: [],
+            learnedCandidates: ["A", "B"],
+            dictionaryCandidates: []
+        )
+        _ = coordinator.select(index: 1)
+
+        let changed = coordinator.appendGeneratedCandidates(
+            ["C", "D", "E"],
+            after: "候補"
+        )
+
+        #expect(changed)
+        #expect(coordinator.candidates == ["A", "B", "C", "D"])
+        #expect(coordinator.selectedCandidate == "B")
+        #expect(coordinator.selectedIndex == 1)
+        #expect(!coordinator.appendGeneratedCandidates(
+            ["F"],
+            after: "候補"
+        ))
+    }
+
+    @Test
     func beginningAnEmptyCandidateSetReportsNoVisibleCandidates() {
         let fixture = makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.directory) }
@@ -110,6 +180,25 @@ struct NextInputCandidateCoordinatorTests {
 
         #expect(!hasCandidates)
         #expect(!fixture.coordinator.hasCandidates)
+    }
+
+    @Test
+    func exposesAtMostFourCandidatesForEveryInputSize() {
+        let fixture = makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.directory) }
+
+        for count in [1, 3, 4, 5, 16] {
+            let candidates = (0..<count).map { "候補\($0)" }
+            fixture.coordinator.beginCandidates(
+                context: "件数\(count)",
+                preferredCandidates: [],
+                learnedCandidates: candidates,
+                dictionaryCandidates: []
+            )
+
+            #expect(fixture.coordinator.candidates
+                == Array(candidates.prefix(4)))
+        }
     }
 
     @Test

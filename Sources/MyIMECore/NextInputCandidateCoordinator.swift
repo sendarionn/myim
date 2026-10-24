@@ -5,6 +5,8 @@ import Foundation
 /// The candidate session and typing cursor belong to this client, while
 /// learned knowledge lives in the shared `NextInputLearningStore`
 public final class NextInputCandidateCoordinator {
+    private static let maximumVisibleCandidateCount = 4
+
     private let store: NextInputLearningStore
     private var cursor = NextInputSequenceCursor()
     private var session = NextInputCandidateSession()
@@ -196,9 +198,7 @@ public final class NextInputCandidateCoordinator {
         let candidates = NextInputCandidateMerger.merged(
             preferred: visiblePreferredCandidates,
             learned: learnedCandidates + visibleDictionaryCandidates,
-            limit: visiblePreferredCandidates.count
-                + learnedCandidates.count
-                + visibleDictionaryCandidates.count
+            limit: Self.maximumVisibleCandidateCount
         )
         session.begin(context: context, candidates: candidates)
         return !candidates.isEmpty
@@ -215,7 +215,7 @@ public final class NextInputCandidateCoordinator {
         let merged = NextInputCandidateMerger.merged(
             preferred: session.candidateModels,
             learned: visibleGenerated,
-            limit: session.candidates.count + visibleGenerated.count
+            limit: Self.maximumVisibleCandidateCount
         )
         guard merged != session.candidateModels else { return false }
         session.updateCandidates(merged)
