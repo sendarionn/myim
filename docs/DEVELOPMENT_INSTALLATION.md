@@ -47,51 +47,39 @@ git pull
 
 入力先アプリの強制終了はインストール処理から行わない
 
-## 旧名称アプリの退避
+## 旧名称アプリのクリーンアップ
 
 旧名称`my-ime.app`は現行myimと識別子が異なるため直接競合しない
 ただしLaunch Servicesへの登録とアプリ本体が残り、再登録や旧版起動の経路になり得る
 
-現行myimの動作を確認してから次の順序で整理する
+`install-macos-im.sh`は、次の条件をすべて確認できた旧アプリだけを自動削除する
 
-1. 入力ソースをABCまたは現行myimへ切り替える
-2. 診断結果を保存する
-3. 旧名称アプリを削除せずシステム領域内の退避先へ移動する
-4. ログアウトとログインを手動で行う
-5. 現行myimを選択して入力する
-6. 診断結果を再取得して比較する
+- 配置先が`~/Library/Input Methods/my-ime.app`または`/Library/Input Methods/my-ime.app`
+- Bundle Identifierが`io.github.sendarionn.my-ime`
+- 実行ファイル名が`my-ime`
+- 現行`myim.app`と異なるパス
+- 旧入力ソースが選択されていない
+- 旧`my-ime`プロセスが動作していない
 
-作業前の記録
+条件を確認できない場合は削除せず、`LEGACY_CLEANUP=skipped`と理由を表示する
+システム領域からの削除だけは管理者認証を求める
 
-```sh
-./Scripts/diagnose-installation.sh > "$HOME/myim-diagnosis-before-login.txt"
-```
+削除時は旧入力ソースを無効化し、Launch Servicesの登録を解除してからアプリ本体を削除する
+macOSには登録済み入力ソースを直接削除する公開APIがないため、アプリ削除後に入力ソース一覧から消えたことも確認する
 
-旧名称アプリの退避例
-
-```sh
-sudo mkdir -p "/Library/Input Methods Disabled"
-sudo mv "/Library/Input Methods/my-ime.app" \
-  "/Library/Input Methods Disabled/my-ime.app"
-```
-
-ログイン後の記録
+クリーンアップ後の確認
 
 ```sh
-./Scripts/diagnose-installation.sh > "$HOME/myim-diagnosis-after-login.txt"
-diff -u \
-  "$HOME/myim-diagnosis-before-login.txt" \
-  "$HOME/myim-diagnosis-after-login.txt"
+./Scripts/diagnose-installation.sh
 ```
 
-問題が発生した場合の復元例
+次を確認する
 
-```sh
-sudo mv "/Library/Input Methods Disabled/my-ime.app" \
-  "/Library/Input Methods/my-ime.app"
-```
-
-旧名称アプリの登録解除や削除は自動実行しない
+- `LEGACY_STATE=not-installed`
+- `LEGACY_PROCESS_COUNT=0`
+- `LEGACY_REGISTERED=0`
+- `LEGACY_ENABLED=0`
+- `LEGACY_SELECTED=0`
 
 ## ログアウトとログイン後の判定
 

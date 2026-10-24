@@ -143,6 +143,137 @@ class InstallMacOSIMTests(unittest.TestCase):
         self.assertIn("legacy-selected", self.script)
         self.assertIn("RESULT=legacy-input-source-selected", self.script)
 
+    def test_legacy_cleanup_requires_every_safety_condition(self):
+        assessment = self.script[
+            self.script.index("assess_legacy_application()") :
+            self.script.index("cleanup_legacy_application()")
+        ]
+        self.assertIn("io.github.sendarionn.my-ime", assessment)
+        self.assertIn("bundle_executable", assessment)
+        self.assertIn("legacy-selected", assessment)
+        self.assertIn("pgrep -x my-ime", assessment)
+        self.assertIn("app_destination", assessment)
+        self.assertIn("system_destination", assessment)
+
+    def test_legacy_cleanup_unregisters_before_removing_the_bundle(self):
+        cleanup = self.script[
+            self.script.index("cleanup_legacy_application()") :
+            self.script.index("finish_installation()")
+        ]
+        unregister = cleanup.index('"$launch_services_register" -u')
+        remove = cleanup.index('remove_legacy_application "$application"')
+        self.assertLess(unregister, remove)
+        self.assertIn("--disable-legacy-input-source", cleanup)
+
+    def test_legacy_cleanup_is_assessed_before_old_processes_are_stopped(self):
+        assessment = self.script.index(
+            'assess_legacy_application "$legacy_destination"'
+        )
+        stop = self.script.index("stop_process my-ime")
+        self.assertLess(assessment, stop)
+
+    def test_legacy_cleanup_removes_only_a_verified_inactive_bundle(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            legacy = root / "my-ime.app"
+            contents = legacy / "Contents"
+            contents.mkdir(parents=True)
+            (contents / "Info.plist").write_text(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>io.github.sendarionn.my-ime</string>
+<key>CFBundleExecutable</key><string>my-ime</string>
+</dict></plist>
+""",
+                encoding="utf-8",
+            )
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_pgrep = fake_bin / "pgrep"
+            fake_pgrep.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            fake_pgrep.chmod(0o755)
+            status = root / "status"
+            status.write_text(
+                """#!/bin/sh
+if [ "$1" = "--input-source-status" ]; then
+  printf 'legacy-selected=0\\nlegacy-enabled=0\\nlegacy-registered=0\\n'
+fi
+""",
+                encoding="utf-8",
+            )
+            status.chmod(0o755)
+
+            command = r'''
+source "$1"
+legacy_destination="$2/my-ime.app"
+system_legacy_destination="$2/system-my-ime.app"
+app_destination="$2/myim.app"
+system_destination="$2/system-myim.app"
+launch_services_register=/usr/bin/true
+PATH="$2/bin:/usr/bin:/bin"
+cleanup_legacy_application "$legacy_destination" "$2/status"
+'''
+            result = subprocess.run(
+                ["zsh", "-c", command, "cleanup-test", str(SCRIPT), str(root)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("LEGACY_CLEANUP=removed", result.stdout)
+            self.assertFalse(legacy.exists())
+
+    def test_legacy_cleanup_keeps_a_bundle_with_an_unexpected_identifier(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            legacy = root / "my-ime.app"
+            contents = legacy / "Contents"
+            contents.mkdir(parents=True)
+            (contents / "Info.plist").write_text(
+                """<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>example.other</string>
+<key>CFBundleExecutable</key><string>my-ime</string>
+</dict></plist>
+""",
+                encoding="utf-8",
+            )
+            fake_bin = root / "bin"
+            fake_bin.mkdir()
+            fake_pgrep = fake_bin / "pgrep"
+            fake_pgrep.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            fake_pgrep.chmod(0o755)
+            status = root / "status"
+            status.write_text(
+                """#!/bin/sh
+printf 'legacy-selected=0\\nlegacy-enabled=0\\nlegacy-registered=0\\n'
+""",
+                encoding="utf-8",
+            )
+            status.chmod(0o755)
+
+            command = r'''
+source "$1"
+legacy_destination="$2/my-ime.app"
+system_legacy_destination="$2/system-my-ime.app"
+app_destination="$2/myim.app"
+system_destination="$2/system-myim.app"
+launch_services_register=/usr/bin/true
+PATH="$2/bin:/usr/bin:/bin"
+cleanup_legacy_application "$legacy_destination" "$2/status"
+'''
+            result = subprocess.run(
+                ["zsh", "-c", command, "cleanup-test", str(SCRIPT), str(root)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("bundle-identifier-mismatch", result.stdout)
+            self.assertTrue(legacy.exists())
+
     def test_uses_checksums_for_replacement_and_rollback(self):
         self.assertIn("rsync -aE --checksum --delete", self.script)
 

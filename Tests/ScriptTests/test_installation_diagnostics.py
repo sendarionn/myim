@@ -97,6 +97,8 @@ class InstallationDiagnosticsTests(unittest.TestCase):
         self.assertIn("legacy-registered", main)
         self.assertIn("legacy-enabled", main)
         self.assertIn("legacy-selected", main)
+        self.assertIn("--disable-legacy-input-source", main)
+        self.assertIn("disableLegacyMyIM", manager)
 
     def test_pkg_stops_every_bundled_process(self):
         script = (ROOT / "packaging/scripts/preinstall").read_text(

@@ -23,6 +23,8 @@ if let command = CommandLine.arguments.dropFirst().first {
             )
         case "--enable-input-source":
             try InputSourceRegistrationManager.enableMyIM()
+        case "--disable-legacy-input-source":
+            try InputSourceRegistrationManager.disableLegacyMyIM()
         case "--select-input-source":
             try InputSourceRegistrationManager.selectMyIM()
         case "--select-fallback-input-source":

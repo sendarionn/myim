@@ -63,6 +63,22 @@ enum InputSourceRegistrationManager {
         try validate(TISEnableInputSource(source), operation: "入力ソースの有効化")
     }
 
+    static func disableLegacyMyIM() throws {
+        guard !isLegacySelected else {
+            throw RegistrationError.legacySourceSelected
+        }
+        guard let source = source(
+            identifier: legacyMyIMIdentifier,
+            includeAllInstalled: true
+        ) else {
+            return
+        }
+        try validate(
+            TISDisableInputSource(source),
+            operation: "旧入力ソースの無効化"
+        )
+    }
+
     static func selectMyIM() throws {
         try select(identifier: myIMIdentifier, includeAllInstalled: true)
     }
@@ -132,6 +148,7 @@ private enum RegistrationError: LocalizedError {
     case sourceNotFound
     case sourceNotFoundAfterRegistration
     case operationFailed(String, OSStatus)
+    case legacySourceSelected
 
     var errorDescription: String? {
         switch self {
@@ -141,6 +158,8 @@ private enum RegistrationError: LocalizedError {
             return "登録後の入力ソースが見つかりません"
         case let .operationFailed(operation, status):
             return "\(operation)に失敗しました: \(status)"
+        case .legacySourceSelected:
+            return "選択中の旧入力ソースは無効化できません"
         }
     }
 }

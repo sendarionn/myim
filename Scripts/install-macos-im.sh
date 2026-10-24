@@ -22,10 +22,19 @@ launch_services_register="/System/Library/Frameworks/CoreServices.framework/Fram
 rollback_required=0
 had_previous_application=0
 had_previous_selection_service=0
+legacy_destination_cleanup_eligible=0
+system_legacy_destination_cleanup_eligible=0
+legacy_cleanup_reason=""
 
 bundle_identifier() {
     local application=$1
     /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+        "$application/Contents/Info.plist" 2>/dev/null || true
+}
+
+bundle_executable() {
+    local application=$1
+    /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' \
         "$application/Contents/Info.plist" 2>/dev/null || true
 }
 
@@ -182,6 +191,98 @@ cleanup_staging() {
         || rm -rf "$staged_selection_service"
 }
 
+assess_legacy_application() {
+    local application=$1
+    local status_executable=$2
+    local process_status
+    legacy_cleanup_reason=""
+
+    if [[ ! -d "$application" ]]; then
+        legacy_cleanup_reason="not-installed"
+        return 1
+    fi
+    if [[ -L "$application" ]]; then
+        legacy_cleanup_reason="symbolic-link"
+        return 1
+    fi
+    if [[ "${application:A}" != "${legacy_destination:A}" \
+        && "${application:A}" != "${system_legacy_destination:A}" ]]; then
+        legacy_cleanup_reason="unexpected-path"
+        return 1
+    fi
+    if [[ "${application:A}" == "${app_destination:A}" \
+        || "${application:A}" == "${system_destination:A}" ]]; then
+        legacy_cleanup_reason="current-application-path"
+        return 1
+    fi
+    if [[ "$(bundle_identifier "$application")" \
+        != "io.github.sendarionn.my-ime" ]]; then
+        legacy_cleanup_reason="bundle-identifier-mismatch"
+        return 1
+    fi
+    if [[ "$(bundle_executable "$application")" != "my-ime" ]]; then
+        legacy_cleanup_reason="bundle-executable-mismatch"
+        return 1
+    fi
+    if [[ "$(status_value "$status_executable" legacy-selected)" != "0" ]]; then
+        legacy_cleanup_reason="selected-or-status-unavailable"
+        return 1
+    fi
+    if pgrep -x my-ime >/dev/null 2>&1; then
+        legacy_cleanup_reason="process-running"
+        return 1
+    else
+        process_status=$?
+        if (( process_status != 1 )); then
+            legacy_cleanup_reason="process-status-unavailable"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+remove_legacy_application() {
+    local application=$1
+    if [[ -w "${application:h}" ]]; then
+        rm -rf "$application"
+    else
+        echo "旧名称アプリの削除に管理者権限が必要です: $application"
+        /usr/bin/sudo /bin/rm -rf "$application"
+    fi
+}
+
+cleanup_legacy_application() {
+    local application=$1
+    local status_executable=$2
+    local legacy_enabled
+
+    if ! assess_legacy_application "$application" "$status_executable"; then
+        echo "LEGACY_CLEANUP=skipped:$legacy_cleanup_reason:$application"
+        return 1
+    fi
+
+    legacy_enabled=$(status_value "$status_executable" legacy-enabled)
+    if [[ "$legacy_enabled" == "1" ]]; then
+        "$status_executable" --disable-legacy-input-source
+        wait_for_status "$status_executable" legacy-enabled 0
+    elif [[ "$legacy_enabled" != "0" ]]; then
+        echo "LEGACY_CLEANUP=skipped:enabled-status-unavailable:$application"
+        return 1
+    fi
+
+    "$launch_services_register" -u "$application"
+    remove_legacy_application "$application"
+    if [[ -e "$application" ]]; then
+        echo "LEGACY_CLEANUP=failed:remove:$application" >&2
+        return 1
+    fi
+    if ! wait_for_status "$status_executable" legacy-registered 0; then
+        echo "LEGACY_CLEANUP=removed-registration-cache-remains:$application" >&2
+        return 1
+    fi
+    echo "LEGACY_CLEANUP=removed:$application"
+}
+
 finish_installation() {
     local exit_code=$?
     trap - EXIT
@@ -327,6 +428,21 @@ if [[ "$legacy_selected" == "1" ]]; then
     exit 1
 fi
 
+if assess_legacy_application "$legacy_destination" "$source_executable"; then
+    legacy_destination_cleanup_eligible=1
+elif [[ "$legacy_cleanup_reason" != "not-installed" ]]; then
+    echo "旧名称アプリを自動削除しません: $legacy_destination"
+    echo "LEGACY_CLEANUP=skipped:$legacy_cleanup_reason:$legacy_destination"
+fi
+if assess_legacy_application \
+    "$system_legacy_destination" \
+    "$source_executable"; then
+    system_legacy_destination_cleanup_eligible=1
+elif [[ "$legacy_cleanup_reason" != "not-installed" ]]; then
+    echo "旧名称アプリを自動削除しません: $system_legacy_destination"
+    echo "LEGACY_CLEANUP=skipped:$legacy_cleanup_reason:$system_legacy_destination"
+fi
+
 if [[ "$was_selected" == "1" ]]; then
     "$source_executable" --select-fallback-input-source
     wait_for_status "$source_executable" fallback-selected 1
@@ -456,6 +572,17 @@ fi
 "$installed_executable" --enable-input-source
 wait_for_status "$installed_executable" registered 1
 wait_for_status "$installed_executable" enabled 1
+
+if (( legacy_destination_cleanup_eligible == 1 )); then
+    cleanup_legacy_application \
+        "$legacy_destination" \
+        "$installed_executable" || true
+fi
+if (( system_legacy_destination_cleanup_eligible == 1 )); then
+    cleanup_legacy_application \
+        "$system_legacy_destination" \
+        "$installed_executable" || true
+fi
 
 if [[ "$was_selected" == "1" || "$was_registered" != "1" ]]; then
     "$installed_executable" --select-input-source
