@@ -109,6 +109,36 @@ class InstallMacOSIMTests(unittest.TestCase):
         self.assertIn("RESULT=installed-launch-unverified", self.script)
         self.assertIn("exit 2", self.script)
 
+    def test_reports_install_process_and_session_stages_separately(self):
+        self.assertIn('echo "INSTALL_STAGE=verified"', self.script)
+        self.assertIn('echo "PROCESS_STAGE=$process_stage"', self.script)
+        self.assertIn('echo "SESSION_STAGE=$session_stage"', self.script)
+        self.assertIn("RESULT=installed-verified", self.script)
+        self.assertIn("RESULT=installed-session-unverified", self.script)
+
+    def test_session_unverified_result_is_not_an_installation_failure(self):
+        result = self.script.index("RESULT=installed-session-unverified")
+        selected_branch_end = self.script.index(
+            'else\n    echo "RESULT=installed-not-selected"',
+            result,
+        )
+        self.assertNotIn("exit 2", self.script[result:selected_branch_end])
+        self.assertIn("入力ソースを一度切り替えて", self.script)
+        self.assertIn("入力欄へフォーカスし直して", self.script)
+        self.assertIn("入力先アプリを再起動", self.script)
+
+    def test_clears_old_session_records_before_starting_new_server(self):
+        clear = self.script.index('name \'*.json\'')
+        enable = self.script.index(
+            '"$installed_executable" --enable-input-source'
+        )
+        select = self.script.index(
+            '"$installed_executable" --select-input-source',
+            clear,
+        )
+        self.assertLess(clear, enable)
+        self.assertLess(clear, select)
+
     def test_refuses_to_update_while_the_legacy_input_source_is_selected(self):
         self.assertIn("legacy-selected", self.script)
         self.assertIn("RESULT=legacy-input-source-selected", self.script)

@@ -5,6 +5,7 @@ set -u
 repository_root=${0:A:h:h}
 bundle_identifier="io.github.sendarionn.inputmethod.myime"
 runtime_status="$HOME/Library/Caches/myim/runtime-status.json"
+input_session_status_directory="$HOME/Library/Caches/myim/input-sessions"
 build_application="$repository_root/.build/myim.app"
 build_selection_service="$repository_root/.build/myim-selection.service"
 user_application="$HOME/Library/Input Methods/myim.app"
@@ -16,6 +17,25 @@ install_state="diagnostic-unavailable"
 run_state="diagnostic-unavailable"
 history_state="missing"
 legacy_state="not-installed"
+session_state="unverified"
+target_client_bundle_identifier=""
+
+while (( $# > 0 )); do
+    case "$1" in
+        --client-bundle-id)
+            if (( $# < 2 )); then
+                echo "--client-bundle-idにはBundle IDが必要です" >&2
+                exit 2
+            fi
+            target_client_bundle_identifier=$2
+            shift 2
+            ;;
+        *)
+            echo "不明な引数です: $1" >&2
+            exit 2
+            ;;
+    esac
+done
 
 sha256() {
     shasum -a 256 "$1" | awk '{ print $1 }'
@@ -36,6 +56,11 @@ json_value() {
 
 inspect_application() {
     local application=$1
+    case "${application:t}" in
+        .myim.*)
+            return 0
+            ;;
+    esac
     local plist="$application/Contents/Info.plist"
     local executable="$application/Contents/MacOS/myim"
     [[ -f "$plist" ]] || return 0
@@ -347,6 +372,80 @@ else
     fi
 fi
 
+echo "[入力セッション]"
+if [[ -n "$target_client_bundle_identifier" ]]; then
+    echo "SESSION_TARGET=$target_client_bundle_identifier"
+else
+    echo "SESSION_TARGET=observed-apps"
+fi
+current_session_count=0
+target_session_verified=0
+session_file_count=0
+if [[ -d "$input_session_status_directory" ]]; then
+    for session_file in "$input_session_status_directory"/*.json(N); do
+        session_file_count=$((session_file_count + 1))
+        echo "SESSION_STATUS=$session_file"
+        if ! plutil -p "$session_file" >/dev/null 2>&1; then
+            echo "  STATUS=invalid"
+            echo "  WARNING=入力セッション記録を読み取れません"
+            continue
+        fi
+        session_client=$(json_value "$session_file" client-bundle-id)
+        session_pid=$(json_value "$session_file" pid)
+        session_executable=$(json_value "$session_file" executable-path)
+        session_build=$(json_value "$session_file" build)
+        session_commit=$(json_value "$session_file" git-commit)
+        session_controller=$(json_value "$session_file" controller-id)
+        session_generation=$(json_value "$session_file" session-generation)
+        echo "  CLIENT_BUNDLE_ID=$session_client"
+        echo "  PID=$session_pid"
+        echo "  BUILD=$session_build"
+        echo "  GIT_COMMIT=$session_commit"
+        echo "  CONTROLLER_ID=$session_controller"
+        echo "  SESSION_GENERATION=$session_generation"
+        echo "  ACTIVATED_AT=$(json_value "$session_file" activated-at)"
+
+        session_is_current=0
+        if [[ -n "$current_process_pid" ]] \
+            && [[ "$session_pid" == "$current_process_pid" ]] \
+            && [[ "$session_executable" == "$current_process_path" ]] \
+            && (( ${#found_applications[@]} == 1 )); then
+            session_installed_application=${found_applications[1]}
+            session_installed_plist="$session_installed_application/Contents/Info.plist"
+            if [[ "$session_build" \
+                    == "$(plist_value "$session_installed_plist" CFBundleVersion)" \
+                && "$session_commit" \
+                    == "$(plist_value "$session_installed_plist" MyIMGitCommit)" \
+                && "$session_controller" != unknown \
+                && "$session_generation" == <-> ]]; then
+                session_is_current=1
+            fi
+        fi
+        if (( session_is_current == 1 )); then
+            echo "  STATUS=current"
+            current_session_count=$((current_session_count + 1))
+            if [[ -z "$target_client_bundle_identifier" \
+                || "$session_client" == "$target_client_bundle_identifier" ]]; then
+                target_session_verified=1
+            fi
+        else
+            echo "  STATUS=stale"
+        fi
+    done
+fi
+if (( session_file_count == 0 )); then
+    echo "SESSION_STATUS=none"
+fi
+if (( target_session_verified == 1 )); then
+    if [[ -n "$target_client_bundle_identifier" ]]; then
+        session_state="verified"
+    else
+        session_state="current-observed"
+    fi
+else
+    echo "SESSION_GUIDANCE=入力ソース切替後に入力欄へ再フォーカスし、未確認なら入力先アプリを再起動してください"
+fi
+
 echo "[入力ソース]"
 status_executable=""
 if [[ -n "$expected_running_path" ]]; then
@@ -400,10 +499,16 @@ echo "[判定]"
 echo "INSTALL_STATE=$install_state"
 echo "RUN_STATE=$run_state"
 echo "HISTORY_STATE=$history_state"
+echo "SESSION_STATE=$session_state"
 echo "LEGACY_STATE=$legacy_state"
 
 if (( problems == 0 )); then
-    echo "RESULT=healthy"
+    if [[ "$session_state" == "verified" \
+        || "$session_state" == "current-observed" ]]; then
+        echo "RESULT=installed-verified"
+    else
+        echo "RESULT=installed-session-unverified"
+    fi
     exit 0
 fi
 

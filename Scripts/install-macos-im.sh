@@ -17,6 +17,7 @@ legacy_destination="$input_methods_directory/my-ime.app"
 system_destination="/Library/Input Methods/myim.app"
 system_legacy_destination="/Library/Input Methods/my-ime.app"
 runtime_status="$HOME/Library/Caches/myim/runtime-status.json"
+input_session_status_directory="$HOME/Library/Caches/myim/input-sessions"
 launch_services_register="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 rollback_required=0
 had_previous_application=0
@@ -39,6 +40,52 @@ json_value() {
     local key=$1
     plutil -extract "$key" raw -o - "$runtime_status" 2>/dev/null \
         || true
+}
+
+session_json_value() {
+    local file=$1
+    local key=$2
+    plutil -extract "$key" raw -o - "$file" 2>/dev/null || true
+}
+
+session_status_matches() {
+    local file=$1
+    local expected_pid=$2
+    local expected_executable=$3
+    local expected_build=$4
+    local expected_commit=$5
+    [[ "$(session_json_value "$file" pid)" == "$expected_pid" ]] \
+        && [[ "$(session_json_value "$file" executable-path)" \
+            == "$expected_executable" ]] \
+        && [[ "$(session_json_value "$file" build)" == "$expected_build" ]] \
+        && [[ "$(session_json_value "$file" git-commit)" \
+            == "$expected_commit" ]] \
+        && [[ -n "$(session_json_value "$file" client-bundle-id)" ]] \
+        && [[ -n "$(session_json_value "$file" controller-id)" ]] \
+        && [[ "$(session_json_value "$file" session-generation)" == <-> ]]
+}
+
+wait_for_current_input_session() {
+    local expected_pid=$1
+    local expected_executable=$2
+    local expected_build=$3
+    local expected_commit=$4
+    local attempt
+    local file
+    for attempt in {1..20}; do
+        for file in "$input_session_status_directory"/*.json(N); do
+            if session_status_matches \
+                "$file" \
+                "$expected_pid" \
+                "$expected_executable" \
+                "$expected_build" \
+                "$expected_commit"; then
+                return 0
+            fi
+        done
+        sleep 0.1
+    done
+    return 1
 }
 
 status_value() {
@@ -391,6 +438,13 @@ if [[ "$installed_selection_service_build_number" != "$next_build_number" ]]; th
     echo "myim-selection.service のビルド番号が更新されていません" >&2
     exit 1
 fi
+rm -f "$runtime_status"
+if [[ -d "$input_session_status_directory" ]]; then
+    find "$input_session_status_directory" \
+        -type f \
+        -name '*.json' \
+        -delete
+fi
 "$installed_executable" --install-default-extensions
 "$launch_services_register" -u "$app_source" 2>/dev/null || true
 "$launch_services_register" -u "$selection_service_source" 2>/dev/null \
@@ -403,13 +457,14 @@ fi
 wait_for_status "$installed_executable" registered 1
 wait_for_status "$installed_executable" enabled 1
 
-rm -f "$runtime_status"
-
 if [[ "$was_selected" == "1" || "$was_registered" != "1" ]]; then
     "$installed_executable" --select-input-source
     wait_for_status "$installed_executable" selected 1
 fi
 
+process_stage="not-selected"
+session_stage="unverified"
+running_process_id=""
 if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
     expected_commit=$(build_info_value "$installed_executable" git-commit)
     if ! wait_for_running_server \
@@ -424,6 +479,15 @@ if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
         echo "RESULT=installed-launch-unverified"
         exit 2
     fi
+    process_stage="verified"
+    running_process_id=$(json_value pid)
+    if wait_for_current_input_session \
+        "$running_process_id" \
+        "$installed_executable" \
+        "$installed_build_number" \
+        "$expected_commit"; then
+        session_stage="verified"
+    fi
 fi
 
 rollback_required=0
@@ -434,8 +498,30 @@ echo "インストールしました: $app_destination"
 echo "BUILD=$installed_build_number"
 echo "GIT_COMMIT=$(build_info_value "$installed_executable" git-commit)"
 echo "SHA256=$(shasum -a 256 "$installed_executable" | awk '{ print $1 }')"
+echo "INSTALL_STAGE=verified"
+echo "PROCESS_STAGE=$process_stage"
+echo "SESSION_STAGE=$session_stage"
 if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
-    echo "RESULT=installed-running"
+    if [[ "$session_stage" == "verified" ]]; then
+        for file in "$input_session_status_directory"/*.json(N); do
+            if session_status_matches \
+                "$file" \
+                "$running_process_id" \
+                "$installed_executable" \
+                "$installed_build_number" \
+                "$(build_info_value "$installed_executable" git-commit)"; then
+                echo "SESSION_CLIENT_BUNDLE_ID=$(session_json_value "$file" client-bundle-id)"
+            fi
+        done
+        echo "RESULT=installed-verified"
+    else
+        echo "入力先アプリの新しい入力セッションは未確認です"
+        echo "1. 入力ソースを一度切り替えてmyimへ戻してください"
+        echo "2. 入力欄へフォーカスし直してください"
+        echo "3. 未確認のままなら入力先アプリを再起動してください"
+        echo "その後にScripts/diagnose-installation.sh --client-bundle-id <Bundle ID>を実行してください"
+        echo "RESULT=installed-session-unverified"
+    fi
 else
     echo "RESULT=installed-not-selected"
 fi

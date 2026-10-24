@@ -1622,8 +1622,22 @@ final class InputController: IMKInputController {
         updateCandidateDeletionShortcutCapture()
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
+        if let clientBundleIdentifier = lifecycleCoordinator
+            .clientBundleIdentifier {
+            BuildIdentityReporter.writeInputSessionStatus(
+                clientBundleIdentifier: clientBundleIdentifier,
+                controllerID: controllerID,
+                sessionGeneration: activation.globalGeneration
+            )
+        }
+        let build = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleVersion"
+        ) as? String ?? "unknown"
+        let commit = Bundle.main.object(
+            forInfoDictionaryKey: "MyIMGitCommit"
+        ) as? String ?? "unknown"
         Self.lifecycleLogger.notice(
-            "activated bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(activation.deactivationDuration ?? -1, privacy: .public) client=\(self.lifecycleCoordinator.clientBundleIdentifier ?? "unknown", privacy: .public) appGeneration=\(self.lifecycleCoordinator.applicationGeneration ?? 0, privacy: .public) globalGeneration=\(activation.globalGeneration, privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public)"
+            "activated client=\(self.lifecycleCoordinator.clientBundleIdentifier ?? "unknown", privacy: .public) pid=\(ProcessInfo.processInfo.processIdentifier, privacy: .public) build=\(build, privacy: .public) commit=\(commit, privacy: .public) controller=\(self.controllerID, privacy: .public) sessionGeneration=\(activation.globalGeneration, privacy: .public) bufferLength=\(self.inputBuffer.count, privacy: .public) resumed=\(resumesTransientDeactivation, privacy: .public) deactivationDuration=\(activation.deactivationDuration ?? -1, privacy: .public) appGeneration=\(self.lifecycleCoordinator.applicationGeneration ?? 0, privacy: .public)"
         )
         trace("activateServer", sender: sender)
     }

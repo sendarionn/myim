@@ -28,12 +28,46 @@ class InstallationDiagnosticsTests(unittest.TestCase):
         self.assertIn("INSTALL_STATE", script)
         self.assertIn("RUN_STATE", script)
         self.assertIn("HISTORY_STATE", script)
+        self.assertIn("SESSION_STATE", script)
         self.assertIn("LEGACY_STATE", script)
         self.assertIn(
             "起動履歴がインストール済みアプリと一致しません",
             script,
         )
         self.assertIn("RESULT=attention", script)
+
+    def test_input_session_identity_is_recorded_per_client_application(self):
+        reporter = (
+            ROOT / "Sources/MyIMEMacOS/BuildIdentityReporter.swift"
+        ).read_text(encoding="utf-8")
+        controller = (
+            ROOT / "Sources/MyIMEMacOS/InputController.swift"
+        ).read_text(encoding="utf-8")
+        for field in [
+            'identity["client-bundle-id"]',
+            'identity["pid"]',
+            'identity["controller-id"]',
+            'identity["session-generation"]',
+            'identity["activated-at"]',
+        ]:
+            self.assertIn(field, reporter)
+        self.assertIn('"build": info["CFBundleVersion"]', reporter)
+        self.assertIn('"git-commit": info["MyIMGitCommit"]', reporter)
+        self.assertIn("input-sessions", reporter)
+        self.assertIn("writeInputSessionStatus", controller)
+        self.assertIn("activation.globalGeneration", controller)
+
+    def test_diagnostic_verifies_only_the_requested_client_session(self):
+        script = (ROOT / "Scripts/diagnose-installation.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("--client-bundle-id", script)
+        self.assertIn("SESSION_TARGET", script)
+        self.assertIn("CLIENT_BUNDLE_ID", script)
+        self.assertIn('session_state="verified"', script)
+        self.assertIn("RESULT=installed-verified", script)
+        self.assertIn("RESULT=installed-session-unverified", script)
+        self.assertIn("SESSION_GUIDANCE", script)
 
     def test_diagnostic_does_not_treat_history_as_a_running_process(self):
         script = (ROOT / "Scripts/diagnose-installation.sh").read_text(
@@ -44,6 +78,13 @@ class InstallationDiagnosticsTests(unittest.TestCase):
         self.assertIn('run_state="running-current"', script)
         self.assertIn('run_state="old-running"', script)
         self.assertIn('run_state="diagnostic-unavailable"', script)
+
+    def test_diagnostic_ignores_internal_installation_backups(self):
+        script = (ROOT / "Scripts/diagnose-installation.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('case "${application:t}"', script)
+        self.assertIn(".myim.*)", script)
 
     def test_input_source_status_includes_the_legacy_identifier(self):
         manager = (
