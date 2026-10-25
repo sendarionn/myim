@@ -114,10 +114,10 @@ struct StandardConversionCandidateSourceTests {
         ).candidates(for: .init(
             input: input,
             conversionReading: ConversionReadingResolver.resolve(input),
-            javaScriptCandidates: ["13時00分"]
+            javaScriptCandidates: ["13時0分"]
         )).map(\.storageText)
 
-        #expect(candidates == ["13時00分"])
+        #expect(candidates == ["13時0分"])
     }
 
     @Test
@@ -776,13 +776,13 @@ struct DirectTimeSpecialConversionTests {
         let result = try #require(SpecialConversionCandidateSource().result(
             for: .init(
                 input: "1300",
-                javaScriptCandidates: ["13:00", "13時00分"]
+                javaScriptCandidates: ["13時0分", "13:00"]
             )
         ))
         let candidates = result.candidates.map(\.storageText)
 
         #expect(candidates.contains("13:00"))
-        #expect(candidates.contains("13時00分"))
+        #expect(candidates.contains("13時0分"))
         #expect(candidates.contains("1,300"))
         #expect(!candidates.contains("1300"))
     }

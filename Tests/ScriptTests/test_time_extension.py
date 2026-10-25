@@ -52,23 +52,23 @@ process.stdout.write(JSON.stringify(candidates({{
     def test_formats_selected_time_in_definition_order(self):
         self.assertEqual(
             self.candidates(14, 5),
-            ["14:05", "14時05分"],
+            ["14時5分", "14:05"],
         )
 
     def test_preserves_midnight_and_one_minute_precision(self):
         self.assertEqual(
             self.candidates(0, 7),
-            ["00:07", "00時07分"],
+            ["0時7分", "00:07"],
         )
 
     def test_adds_half_hour_only_for_thirty_minutes(self):
         self.assertEqual(
             self.candidates(14, 30),
-            ["14:30", "14時30分", "14時半"],
+            ["14時30分", "14:30", "14時半"],
         )
         self.assertEqual(
             self.candidates(9, 30),
-            ["09:30", "09時30分", "9時半"],
+            ["9時30分", "09:30", "9時半"],
         )
         self.assertNotIn("14時半", self.candidates(14, 25))
 
@@ -78,10 +78,10 @@ process.stdout.write(JSON.stringify(candidates({{
 
     def test_formats_direct_time_without_repeating_the_input(self):
         expected = {
-            "00:00": ["00時00分"],
-            "00:30": ["00時30分", "0時半"],
-            "09:05": ["09時05分"],
-            "09:30": ["09時30分", "9時半"],
+            "00:00": ["0時0分"],
+            "00:30": ["0時30分", "0時半"],
+            "09:05": ["9時5分"],
+            "09:30": ["9時30分", "9時半"],
             "14:30": ["14時30分", "14時半"],
             "23:59": ["23時59分"],
         }
@@ -92,11 +92,11 @@ process.stdout.write(JSON.stringify(candidates({{
 
     def test_formats_direct_time_typed_without_the_colon(self):
         expected = {
-            "0000": ["00:00", "00時00分"],
-            "0930": ["09:30", "09時30分", "9時半"],
-            "1100": ["11:00", "11時00分"],
-            "1300": ["13:00", "13時00分"],
-            "2359": ["23:59", "23時59分"],
+            "0000": ["0時0分", "00:00"],
+            "0930": ["9時30分", "09:30", "9時半"],
+            "1100": ["11時0分", "11:00"],
+            "1300": ["13時0分", "13:00"],
+            "2359": ["23時59分", "23:59"],
         }
         for value, candidates in expected.items():
             with self.subTest(value=value):

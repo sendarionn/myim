@@ -142,6 +142,101 @@ struct TimeSelectionStateTests {
         #expect(flow.time == selected)
     }
 
+    @Test func periodArrowsSelectAnAbsolutePeriodUntilEnter() throws {
+        let initial = try #require(TimeSelectionState(hour: 15, minute: 30))
+        var flow = TimeInputFlow(time: initial)
+
+        let movedLeft = flow.moveSelection(.left)
+        #expect(movedLeft)
+        #expect(flow.time.period == .am)
+        let movedUp = flow.moveSelection(.up)
+        #expect(!movedUp)
+        #expect(flow.time.period == .am)
+        let movedRight = flow.moveSelection(.right)
+        #expect(movedRight)
+        #expect(flow.time.period == .pm)
+        let movedDown = flow.moveSelection(.down)
+        #expect(!movedDown)
+        #expect(flow.stage == .period)
+        let confirmed = flow.confirmCurrentSelection()
+        #expect(confirmed == nil)
+        #expect(flow.stage == .hour)
+    }
+
+    @Test func everyHourPositionUsesUnambiguousArrowVectors() throws {
+        for step in 0..<12 {
+            for direction in TimeDialArrowDirection.allCases {
+                let initialHour = step == 0 ? 0 : step
+                var flow = TimeInputFlow(
+                    time: try #require(TimeSelectionState(
+                        hour: initialHour,
+                        minute: 0
+                    )),
+                    stage: .hour
+                )
+                let expected = expectedAdjacentStep(
+                    from: step,
+                    direction: direction
+                )
+
+                let moved = flow.moveSelection(direction)
+                #expect(moved == (expected != nil))
+                #expect(flow.time.twelveHour == ((expected ?? step) == 0
+                    ? 12
+                    : expected ?? step))
+                #expect(flow.stage == .hour)
+            }
+        }
+    }
+
+    @Test func everyMinutePositionUsesUnambiguousArrowVectors() throws {
+        for step in 0..<12 {
+            for direction in TimeDialArrowDirection.allCases {
+                var flow = TimeInputFlow(
+                    time: try #require(TimeSelectionState(
+                        hour: 0,
+                        minute: step * 5
+                    )),
+                    stage: .minute
+                )
+                let expected = expectedAdjacentStep(
+                    from: step,
+                    direction: direction
+                )
+
+                let moved = flow.moveSelection(direction)
+                #expect(moved == (expected != nil))
+                #expect(flow.time.minute == (expected ?? step) * 5)
+                #expect(flow.stage == .minute)
+            }
+        }
+    }
+
+    @Test func enterAdvancesHourAndCompletesMinute() throws {
+        let initial = try #require(TimeSelectionState(hour: 15, minute: 30))
+        var flow = TimeInputFlow(time: initial, stage: .hour)
+
+        let confirmedHour = flow.confirmCurrentSelection()
+        #expect(confirmedHour == nil)
+        #expect(flow.stage == .minute)
+        let confirmedMinute = flow.confirmCurrentSelection()
+        #expect(confirmedMinute == initial)
+        #expect(flow.stage == .minute)
+    }
+
+    @Test func repeatedArrowEventsMoveOneAdjacentStepAtATime() throws {
+        var flow = TimeInputFlow(
+            time: try #require(TimeSelectionState(hour: 1, minute: 0)),
+            stage: .hour
+        )
+
+        for expectedHour in 2...5 {
+            let moved = flow.moveSelection(.down)
+            #expect(moved)
+            #expect(flow.time.twelveHour == expectedHour)
+        }
+    }
+
     @Test(arguments: [
         (14, 32, "14:30"),
         (14, 33, "14:35"),
@@ -156,5 +251,28 @@ struct TimeSelectionStateTests {
     ) throws {
         let state = try #require(TimeSelectionState(hour: hour, minute: minute))
         #expect(state.roundedToNearestFiveMinutes().digitalText == expected)
+    }
+
+    private func expectedAdjacentStep(
+        from step: Int,
+        direction: TimeDialArrowDirection
+    ) -> Int? {
+        let delta: Int?
+        switch (step, direction) {
+        case (0, .right), (1...2, .right), (1...2, .down),
+             (3, .down), (4...5, .down), (4...5, .left),
+             (6, .left), (7...8, .left), (7...8, .up),
+             (9, .up), (10...11, .up), (10...11, .right):
+            delta = 1
+        case (0, .left), (1...2, .left), (1...2, .up),
+             (3, .up), (4...5, .up), (4...5, .right),
+             (6, .right), (7...8, .right), (7...8, .down),
+             (9, .down), (10...11, .down), (10...11, .left):
+            delta = -1
+        default:
+            delta = nil
+        }
+        guard let delta else { return nil }
+        return (step + delta + 12) % 12
     }
 }
