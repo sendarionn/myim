@@ -35,9 +35,9 @@ function parseTime(context) {
 function formatTime(hour, minute, includesNumericFormat) {
   const HH = pad(hour, 2)
   const mm = pad(minute, 2)
-  const results = [`${HH}時${mm}分`]
+  const results = [`${hour}時${minute}分`]
+  if (includesNumericFormat) results.push(`${HH}:${mm}`)
   if (minute === 30) results.push(`${hour}時半`)
-  if (includesNumericFormat) results.unshift(`${HH}:${mm}`)
   return results
 }
 

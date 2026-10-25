@@ -76,10 +76,10 @@ macOSには登録済み入力ソースを直接削除する公開APIがないた
 次を確認する
 
 - `LEGACY_STATE=not-installed`
-- `LEGACY_PROCESS_COUNT=0`
-- `LEGACY_REGISTERED=0`
-- `LEGACY_ENABLED=0`
-- `LEGACY_SELECTED=0`
+- 実行中プロセスに`my-ime`がない
+- `legacy-registered=0`
+- `legacy-enabled=0`
+- `legacy-selected=0`
 
 ## ログアウトとログイン後の判定
 

@@ -14,76 +14,132 @@ struct TimeSelectionStateTests {
         #expect(TimeSelectionState(hour: 0, minute: 60) == nil)
     }
 
-    @Test func ringsShowAllHoursAndFiveMinuteValues() {
-        #expect((0..<12).map { TimeDialRing.outerHour.label(atDialStep: $0) }
-            == ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"])
-        #expect((0..<12).map { TimeDialRing.middleHour.label(atDialStep: $0) }
-            == ["24", "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23"])
-        #expect((0..<12).map { TimeDialRing.minute.label(atDialStep: $0) }
-            == ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"])
-        #expect(TimeDialRing.outerHour.selection(atDialStep: 0) == .hour(12))
-        #expect(TimeDialRing.middleHour.selection(atDialStep: 0) == .hour(0))
+    @Test func eachStageShowsOnlyItsOwnChoices() {
+        #expect([0, 1].map {
+            layout.label(atDialStep: $0, stage: .period)
+        } == ["AM", "PM"])
+        #expect((0..<12).map {
+            layout.label(atDialStep: $0, stage: .hour)
+        } == ["12", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"])
+        #expect((0..<12).map {
+            layout.label(atDialStep: $0, stage: .minute)
+        } == ["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"])
     }
 
-    @Test func allThirtySixLabelsSelectTheirDisplayedValue() {
-        var selections: [TimeDialSelection] = []
-        for ring in TimeDialRing.allCases {
-            for step in 0..<12 {
-                let center = layout.labelCenter(atDialStep: step, ring: ring)
-                let selection = layout.selection(atX: center.x, y: center.y)
-                #expect(selection == ring.selection(atDialStep: step))
-                selections.append(selection!)
-            }
+    @Test func compactLayoutKeepsReadableLabelsAndSeparatedHitAreas() {
+        #expect(layout.panelWidth == 332)
+        #expect(layout.panelHeight == 430)
+        #expect(layout.dialRadius * 2 == 260)
+        #expect(layout.labelFontSize >= 16)
+        #expect(layout.periodFontSize >= 20)
+        #expect(layout.headingFontSize >= 14)
+        #expect(layout.innerHitRadius < layout.labelRadius)
+        #expect(layout.labelRadius < layout.outerRadius)
+    }
+
+    @Test func oneRingSelectsHoursAndFiveMinuteValues() {
+        for step in 0..<12 {
+            let hour = layout.labelCenter(atDialStep: step, stage: .hour)
+            #expect(layout.selection(
+                atX: hour.x,
+                y: hour.y,
+                stage: .hour
+            ) == .hour(step == 0 ? 12 : step))
+            let minute = layout.labelCenter(atDialStep: step, stage: .minute)
+            #expect(layout.selection(
+                atX: minute.x,
+                y: minute.y,
+                stage: .minute
+            ) == .minute(step * 5))
         }
-        #expect(Set(selections.compactMap {
-            if case let .hour(value) = $0 { value } else { nil }
-        }) == Set(0...23))
-        #expect(Set(selections.compactMap {
-            if case let .minute(value) = $0 { value } else { nil }
-        }) == Set(stride(from: 0, through: 55, by: 5)))
+        #expect(layout.selection(atX: 0, y: 48, stage: .period)
+            == .period(.am))
+        #expect(layout.selection(atX: 0, y: -48, stage: .period)
+            == .period(.pm))
     }
 
-    @Test func ringsHaveEqualWidthsAndOrderedRadii() {
-        for ring in TimeDialRing.allCases {
-            #expect(layout.outerRadius(of: ring) - layout.innerRadius(of: ring)
-                == layout.ringWidth)
-        }
-        #expect(layout.innerRadius(of: .outerHour)
-            == layout.outerRadius(of: .middleHour))
-        #expect(layout.innerRadius(of: .middleHour)
-            == layout.outerRadius(of: .minute))
-        #expect(layout.innerRadius(of: .minute) == layout.centerRadius)
+    @Test func centreOnlyBelongsToTheSplitPeriodDial() {
+        #expect(layout.selection(atX: 0, y: 0, stage: .period)
+            == .period(.am))
+        #expect(layout.selection(atX: 0, y: 0, stage: .hour) == nil)
+        #expect(layout.selection(atX: 0, y: 0, stage: .minute) == nil)
+        #expect(layout.selection(
+            atX: 0,
+            y: layout.outerRadius + 0.1,
+            stage: .minute
+        ) == nil)
     }
 
-    @Test func annularClickAreasDoNotOverlap() {
-        let outerBoundary = layout.innerRadius(of: .outerHour)
-        let middleBoundary = layout.innerRadius(of: .middleHour)
-        let innerBoundary = layout.innerRadius(of: .minute)
+    @Test func stagedSelectionConvertsToTwentyFourHourTime() throws {
+        let initial = try #require(TimeSelectionState(hour: 9, minute: 5))
+        var flow = TimeInputFlow(time: initial)
 
-        #expect(layout.selection(atX: 0, y: outerBoundary + 0.1) == .hour(12))
-        #expect(layout.selection(atX: 0, y: outerBoundary) == .hour(0))
-        #expect(layout.selection(atX: 0, y: middleBoundary) == .minute(0))
-        #expect(layout.selection(atX: 0, y: innerBoundary) == nil)
-        #expect(layout.selection(atX: 0, y: layout.outerRadius + 0.1) == nil)
+        #expect(flow.select(.period(.pm)) == nil)
+        #expect(flow.stage == .hour)
+        #expect(flow.select(.hour(3)) == nil)
+        #expect(flow.stage == .minute)
+        #expect(flow.select(.minute(30))?.digitalText == "15:30")
     }
 
-    @Test func highlightFitsEveryRing() {
-        #expect(layout.highlightRadius * 2 < layout.ringWidth)
-        #expect(layout.labelFontSize * 1.3 < layout.highlightRadius * 2)
+    @Test(arguments: [
+        (TimePeriod.am, 3, "03:00"),
+        (TimePeriod.pm, 3, "15:00"),
+        (TimePeriod.am, 12, "00:00"),
+        (TimePeriod.pm, 12, "12:00"),
+        (TimePeriod.pm, 11, "23:55")
+    ])
+    func periodAndHourMapping(
+        period: TimePeriod,
+        hour: Int,
+        expected: String
+    ) throws {
+        let initial = try #require(TimeSelectionState(hour: 0, minute: 0))
+        var flow = TimeInputFlow(time: initial)
+        _ = flow.select(.period(period))
+        _ = flow.select(.hour(hour))
+        let minute = expected.hasSuffix(":55") ? 55 : 0
+        #expect(flow.select(.minute(minute))?.digitalText == expected)
     }
 
-    @Test func clickedHourKeepsTheMinute() throws {
-        var state = try #require(TimeSelectionState(hour: 10, minute: 35))
-        state.selectHour(15)
-        #expect(state.digitalText == "15:35")
-        state.selectHour(0)
-        #expect(state.digitalText == "00:35")
+    @Test func escapeMovesBackOneStageAndKeepsTheTime() throws {
+        let selected = try #require(TimeSelectionState(hour: 15, minute: 30))
+        var flow = TimeInputFlow(time: selected, stage: .minute)
+
+        let movedToHour = flow.moveBack()
+        #expect(movedToHour)
+        #expect(flow.stage == .hour)
+        #expect(flow.time == selected)
+        let movedToPeriod = flow.moveBack()
+        #expect(movedToPeriod)
+        #expect(flow.stage == .period)
+        #expect(flow.time == selected)
+        let movedBeforePeriod = flow.moveBack()
+        #expect(!movedBeforePeriod)
     }
 
-    @Test func clickedMinuteKeepsTheHour() throws {
-        var state = try #require(TimeSelectionState(hour: 14, minute: 30))
-        state.selectMinute(55)
-        #expect(state.digitalText == "14:55")
+    @Test func invalidValuesDoNotAdvanceTheFlow() throws {
+        let initial = try #require(TimeSelectionState(hour: 9, minute: 5))
+        var flow = TimeInputFlow(time: initial)
+
+        #expect(flow.select(.hour(3)) == nil)
+        #expect(flow.stage == .period)
+        #expect(flow.select(.period(.pm)) == nil)
+        #expect(flow.select(.hour(0)) == nil)
+        #expect(flow.stage == .hour)
+        #expect(flow.select(.hour(3)) == nil)
+        #expect(flow.select(.minute(3)) == nil)
+        #expect(flow.stage == .minute)
+        #expect(flow.time.digitalText == "15:05")
+    }
+
+    @Test func restartReturnsToPeriodAndKeepsTheTime() throws {
+        let selected = try #require(TimeSelectionState(hour: 15, minute: 30))
+        var flow = TimeInputFlow(time: selected, stage: .minute)
+
+        flow.restart()
+
+        #expect(flow.stage == .period)
+        #expect(flow.time == selected)
     }
 
     @Test(arguments: [
@@ -100,10 +156,5 @@ struct TimeSelectionStateTests {
     ) throws {
         let state = try #require(TimeSelectionState(hour: hour, minute: minute))
         #expect(state.roundedToNearestFiveMinutes().digitalText == expected)
-    }
-
-    @Test func returningTimeIsNotRoundedAgain() throws {
-        let selected = try #require(TimeSelectionState(hour: 10, minute: 37))
-        #expect(selected.digitalText == "10:37")
     }
 }

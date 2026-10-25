@@ -1145,7 +1145,7 @@ final class InputController: IMKInputController {
             primaryCandidatePanel.hide()
             return true
         case .closeTime:
-            timeWindow.hide()
+            timeWindow.handleEscape()
             return true
         case .returnToTimeSelection:
             DispatchQueue.main.async { [weak self] in
@@ -2989,14 +2989,13 @@ final class InputController: IMKInputController {
             apply: { [weak self] candidates in
                 guard let self else { return }
                 self.timeSelectionSession.replaceCandidates(candidates)
-                self.showTimeFormatCandidates(client: sender)
                 guard let ordered = self.timeSelectionSession.candidates,
                       !ordered.isEmpty else {
                     self.clearTimeSelection()
                     return
                 }
                 let outcome = self.panelCoordinator.runTimeFormatSelection(
-                    candidateCount: ordered.count,
+                    candidates: ordered,
                     fallbackLocation: self.inputLocation(for: sender),
                     directionalSelection: { [weak self] index, direction in
                         self?.calendarFormatSelectionIndex(
@@ -3008,13 +3007,14 @@ final class InputController: IMKInputController {
                     selectionChanged: { [weak self] index in
                         guard let self else { return }
                         self.timeSelectionSession.select(index: index)
-                        self.showTimeFormatCandidates(client: sender)
                     }
                 )
                 guard case let .selected(selectedIndex) = outcome,
                       ordered.indices.contains(selectedIndex) else {
                     if outcome == .returnToTime {
-                        self.returnToTimeSelection(client: sender)
+                        self.returnToTimeSelection(client: sender, stage: .minute)
+                    } else if outcome == .restartTime {
+                        self.returnToTimeSelection(client: sender, stage: .period)
                     } else {
                         self.clearTimeSelection()
                         self.primaryCandidatePanel.hide()
@@ -3041,7 +3041,6 @@ final class InputController: IMKInputController {
             timeSelectionSession.moveSelection(
                 by: event.modifierFlags.contains(.shift) ? -1 : 1
             )
-            showTimeFormatCandidates(client: sender)
         case 123, 124, 125, 126:
             guard !candidates.isEmpty else { return true }
             let direction: CandidateNavigationDirection = switch event.keyCode {
@@ -3055,7 +3054,6 @@ final class InputController: IMKInputController {
                 direction: direction,
                 candidateCount: candidates.count
             ))
-            showTimeFormatCandidates(client: sender)
         case 36, 76:
             guard let index = timeSelectionSession.selectedIndex,
                   candidates.indices.contains(index) else { return true }
@@ -3076,7 +3074,10 @@ final class InputController: IMKInputController {
 
     /// Goes back from the formats to the clock at the time chosen before;
     /// formats still loading for it are discarded
-    private func returnToTimeSelection(client sender: Any) {
+    private func returnToTimeSelection(
+        client sender: Any,
+        stage: TimeInputStage = .minute
+    ) {
         candidateSearchCoordinator.cancel(.timeFormat)
         primaryCandidatePanel.hide()
         guard let previous = timeSelectionSession.returnToTimeSelection()
@@ -3086,32 +3087,13 @@ final class InputController: IMKInputController {
         }
         guard let time = panelCoordinator.resumeTimeSelection(
             at: previous,
-            fallback: inputLocation(for: sender)
+            fallback: inputLocation(for: sender),
+            stage: stage
         ) else {
             clearTimeSelection()
             return
         }
         loadTimeFormats(for: time, client: sender)
-    }
-
-    private func showTimeFormatCandidates(client sender: Any) {
-        guard let candidates = timeSelectionSession.candidates else { return }
-        guard !candidates.isEmpty else {
-            primaryCandidatePanel.hide()
-            return
-        }
-        let pageRange = timeSelectionSession.pageRange(
-            pageSize: Self.maximumCandidateCount
-        )
-        primaryCandidatePanel.show(
-            candidates: Array(candidates[pageRange]),
-            selectedIndex: timeSelectionSession.selectedIndex.map {
-                $0 - pageRange.lowerBound
-            },
-            near: panelCoordinator.timeInputLocation(
-                fallback: inputLocation(for: sender)
-            )
-        )
     }
 
     private func clearTimeSelection() {

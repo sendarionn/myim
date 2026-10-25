@@ -176,22 +176,24 @@ final class InputPanelCoordinator {
     /// Reopens the clock where it was, at the time chosen before
     func resumeTimeSelection(
         at initialTime: TimeSelectionState,
-        fallback: NSRect
+        fallback: NSRect,
+        stage: TimeInputStage = .minute
     ) -> TimeSelectionState? {
         time.runSelection(
             near: timeAnchorFrame ?? fallback,
-            initialTime: initialTime
+            initialTime: initialTime,
+            initialStage: stage
         )
     }
 
     func runTimeFormatSelection(
-        candidateCount: Int,
+        candidates: [String],
         fallbackLocation: NSRect,
         directionalSelection: @escaping (Int?, CandidateNavigationDirection) -> Int?,
         selectionChanged: @escaping (Int?) -> Void
     ) -> TimeFormatSelectionOutcome {
         time.runFormatSelection(
-            candidateCount: candidateCount,
+            candidates: candidates,
             near: timeInputLocation(fallback: fallbackLocation),
             directionalSelection: directionalSelection,
             selectionChanged: selectionChanged
