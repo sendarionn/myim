@@ -224,17 +224,161 @@ struct TimeSelectionStateTests {
         #expect(flow.stage == .minute)
     }
 
-    @Test func repeatedArrowEventsMoveOneAdjacentStepAtATime() throws {
+    @Test(arguments: [
+        (TimeDialArrowDirection.right, 0, TimeDialRotation.clockwise),
+        (TimeDialArrowDirection.right, 4, TimeDialRotation.counterclockwise),
+        (TimeDialArrowDirection.left, 4, TimeDialRotation.clockwise),
+        (TimeDialArrowDirection.left, 0, TimeDialRotation.counterclockwise),
+        (TimeDialArrowDirection.up, 7, TimeDialRotation.clockwise),
+        (TimeDialArrowDirection.up, 1, TimeDialRotation.counterclockwise),
+        (TimeDialArrowDirection.down, 1, TimeDialRotation.clockwise),
+        (TimeDialArrowDirection.down, 7, TimeDialRotation.counterclockwise)
+    ])
+    func repeatedArrowKeepsItsRotationForAWholeLap(
+        direction: TimeDialArrowDirection,
+        start: Int,
+        rotation: TimeDialRotation
+    ) throws {
         var flow = TimeInputFlow(
-            time: try #require(TimeSelectionState(hour: 1, minute: 0)),
+            time: try #require(TimeSelectionState(
+                hour: start == 0 ? 12 : start,
+                minute: 0
+            )),
             stage: .hour
         )
+        var sequence = TimeDialArrowSequence()
 
-        for expectedHour in 2...5 {
-            let moved = flow.moveSelection(.down)
+        for offset in 0..<12 {
+            let moved = flow.moveSelection(
+                direction,
+                sequence: &sequence,
+                at: Double(offset) * 0.05
+            )
             #expect(moved)
-            #expect(flow.time.twelveHour == expectedHour)
+            let delta = rotation == .clockwise ? offset + 1 : -(offset + 1)
+            let expected = (start + delta % 12 + 12) % 12
+            #expect(flow.time.twelveHour == (expected == 0 ? 12 : expected))
+            #expect(sequence.rotation == rotation)
         }
+        #expect(flow.time.twelveHour == (start == 0 ? 12 : start))
+    }
+
+    @Test func repeatedArrowKeepsRotationForMinuteDial() throws {
+        var flow = TimeInputFlow(
+            time: try #require(TimeSelectionState(hour: 0, minute: 20)),
+            stage: .minute
+        )
+        var sequence = TimeDialArrowSequence()
+
+        for offset in 0..<12 {
+            let moved = flow.moveSelection(
+                .left,
+                sequence: &sequence,
+                at: Double(offset) * 0.05
+            )
+            #expect(moved)
+            #expect(flow.time.minute == ((5 + offset) % 12) * 5)
+            #expect(sequence.rotation == .clockwise)
+        }
+        #expect(flow.time.minute == 20)
+    }
+
+    @Test func sameArrowAfterOneSecondReevaluatesItsDirection() throws {
+        var flow = TimeInputFlow(
+            time: try #require(TimeSelectionState(hour: 4, minute: 0)),
+            stage: .hour
+        )
+        var sequence = TimeDialArrowSequence()
+        for offset in 0..<6 {
+            _ = flow.moveSelection(
+                .left,
+                sequence: &sequence,
+                at: Double(offset) * 0.1
+            )
+        }
+        #expect(flow.time.twelveHour == 10)
+        #expect(sequence.rotation == .clockwise)
+
+        let moved = flow.moveSelection(
+            .left,
+            sequence: &sequence,
+            at: 1.6
+        )
+
+        #expect(moved)
+        #expect(flow.time.twelveHour == 9)
+        #expect(sequence.rotation == .counterclockwise)
+    }
+
+    @Test func changingArrowReevaluatesItsDirection() throws {
+        var flow = TimeInputFlow(
+            time: try #require(TimeSelectionState(hour: 4, minute: 0)),
+            stage: .hour
+        )
+        var sequence = TimeDialArrowSequence()
+        _ = flow.moveSelection(.left, sequence: &sequence, at: 0)
+        #expect(flow.time.twelveHour == 5)
+        #expect(sequence.rotation == .clockwise)
+
+        let moved = flow.moveSelection(.right, sequence: &sequence, at: 0.1)
+
+        #expect(moved)
+        #expect(flow.time.twelveHour == 4)
+        #expect(sequence.lastArrowKey == .right)
+        #expect(sequence.rotation == .counterclockwise)
+    }
+
+    @Test func invalidArrowClearsTheRetainedRotation() throws {
+        var flow = TimeInputFlow(
+            time: try #require(TimeSelectionState(hour: 4, minute: 0)),
+            stage: .hour
+        )
+        var sequence = TimeDialArrowSequence()
+        for offset in 0..<5 {
+            _ = flow.moveSelection(
+                .left,
+                sequence: &sequence,
+                at: Double(offset) * 0.1
+            )
+        }
+        #expect(flow.time.twelveHour == 9)
+        #expect(sequence.rotation == .clockwise)
+
+        let moved = flow.moveSelection(
+            .right,
+            sequence: &sequence,
+            at: 0.5
+        )
+
+        #expect(!moved)
+        #expect(flow.time.twelveHour == 9)
+        #expect(sequence.lastArrowKey == nil)
+        #expect(sequence.rotation == nil)
+        #expect(sequence.lastInputTime == nil)
+    }
+
+    @Test func sequenceResetPreventsReuseAcrossStages() throws {
+        var flow = TimeInputFlow(
+            time: try #require(TimeSelectionState(hour: 4, minute: 20)),
+            stage: .hour
+        )
+        var sequence = TimeDialArrowSequence()
+        _ = flow.moveSelection(.left, sequence: &sequence, at: 0)
+        #expect(sequence.rotation == .clockwise)
+
+        sequence.reset()
+        let confirmed = flow.confirmCurrentSelection()
+        #expect(confirmed == nil)
+        #expect(flow.stage == .minute)
+        let moved = flow.moveSelection(
+            .left,
+            sequence: &sequence,
+            at: 0.1
+        )
+
+        #expect(moved)
+        #expect(flow.time.minute == 25)
+        #expect(sequence.rotation == .clockwise)
     }
 
     @Test(arguments: [

@@ -320,6 +320,7 @@ private final class TimeInputView: NSView {
     private var formatCandidates: [String]?
     private var selectedFormatIndex: Int?
     private var directionalSelection: ((Int?, CandidateNavigationDirection) -> Int?)?
+    private var arrowSequence = TimeDialArrowSequence()
 
     private let panelLayout = TimeDialLayout()
     private let footerHeight: CGFloat = 52
@@ -329,6 +330,7 @@ private final class TimeInputView: NSView {
         super.init(frame: frameRect)
         dialView.selectionAction = { [weak self] selection in
             guard let self else { return }
+            arrowSequence.reset()
             if let completed = flow.select(selection) {
                 confirmAction?(completed)
             } else {
@@ -357,6 +359,7 @@ private final class TimeInputView: NSView {
         _ time: TimeSelectionState,
         stage: TimeInputStage = .period
     ) {
+        arrowSequence.reset()
         flow = TimeInputFlow(time: time, stage: stage)
         formatCandidates = nil
         selectedFormatIndex = nil
@@ -371,6 +374,7 @@ private final class TimeInputView: NSView {
             Int?, CandidateNavigationDirection
         ) -> Int?
     ) {
+        arrowSequence.reset()
         formatCandidates = candidates
         selectedFormatIndex = nil
         self.directionalSelection = directionalSelection
@@ -379,6 +383,7 @@ private final class TimeInputView: NSView {
     }
 
     func clearFormats() {
+        arrowSequence.reset()
         formatCandidates = nil
         selectedFormatIndex = nil
         directionalSelection = nil
@@ -408,6 +413,7 @@ private final class TimeInputView: NSView {
 
     /// Returns false when Esc should close the whole time panel
     func moveBack() -> Bool {
+        arrowSequence.reset()
         guard flow.moveBack() else { return false }
         dialView.flow = flow
         needsDisplay = true
@@ -415,6 +421,7 @@ private final class TimeInputView: NSView {
     }
 
     func restart() {
+        arrowSequence.reset()
         flow.restart()
         dialView.flow = flow
         needsDisplay = true
@@ -467,10 +474,15 @@ private final class TimeInputView: NSView {
             case 125: .down
             default: .up
             }
-            _ = flow.moveSelection(direction)
+            _ = flow.moveSelection(
+                direction,
+                sequence: &arrowSequence,
+                at: event.timestamp
+            )
             dialView.flow = flow
             needsDisplay = true
         case 36, 76:
+            arrowSequence.reset()
             if let completed = flow.confirmCurrentSelection() {
                 confirmAction?(completed)
             } else {

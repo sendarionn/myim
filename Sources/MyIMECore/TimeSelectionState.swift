@@ -33,6 +33,72 @@ public enum TimeDialArrowDirection: CaseIterable, Equatable, Sendable {
     }
 }
 
+public enum TimeDialRotation: Equatable, Sendable {
+    case clockwise
+    case counterclockwise
+}
+
+/// Keeps the rotation chosen by the first arrow while the same arrow is
+/// repeated within a short interval
+public struct TimeDialArrowSequence: Equatable, Sendable {
+    public static let continuationInterval: TimeInterval = 1
+
+    public private(set) var lastArrowKey: TimeDialArrowDirection?
+    public private(set) var rotation: TimeDialRotation?
+    public private(set) var lastInputTime: TimeInterval?
+
+    public init() {}
+
+    public mutating func reset() {
+        lastArrowKey = nil
+        rotation = nil
+        lastInputTime = nil
+    }
+
+    public mutating func nextStep(
+        from step: Int,
+        direction: TimeDialArrowDirection,
+        at inputTime: TimeInterval,
+        layout: TimeDialLayout = TimeDialLayout()
+    ) -> Int? {
+        guard (0..<12).contains(step) else {
+            reset()
+            return nil
+        }
+        if lastArrowKey == direction,
+           let rotation,
+           let lastInputTime,
+           inputTime >= lastInputTime,
+           inputTime - lastInputTime <= Self.continuationInterval {
+            self.lastInputTime = inputTime
+            return Self.step(after: step, rotating: rotation)
+        }
+
+        reset()
+        guard let next = layout.adjacentStep(
+            from: step,
+            direction: direction
+        ) else { return nil }
+        let rotation: TimeDialRotation = next == (step + 1) % 12
+            ? .clockwise
+            : .counterclockwise
+        lastArrowKey = direction
+        self.rotation = rotation
+        lastInputTime = inputTime
+        return next
+    }
+
+    private static func step(
+        after step: Int,
+        rotating rotation: TimeDialRotation
+    ) -> Int {
+        switch rotation {
+        case .clockwise: (step + 1) % 12
+        case .counterclockwise: (step + 11) % 12
+        }
+    }
+}
+
 /// Sizes of the compact, single-circle time panel in points
 public struct TimeDialLayout: Equatable, Sendable {
     public var panelWidth: Double = 332
@@ -280,6 +346,41 @@ public struct TimeInputFlow: Equatable, Sendable {
             time.selectMinute(step * 5)
             return true
         }
+    }
+
+    /// Applies the retained direction used by repeated key events to the
+    /// hour and minute dials; AM/PM always uses absolute arrow meanings
+    @discardableResult
+    public mutating func moveSelection(
+        _ direction: TimeDialArrowDirection,
+        sequence: inout TimeDialArrowSequence,
+        at inputTime: TimeInterval,
+        layout: TimeDialLayout = TimeDialLayout()
+    ) -> Bool {
+        guard stage != .period else {
+            sequence.reset()
+            return moveSelection(direction, layout: layout)
+        }
+        let currentStep = switch stage {
+        case .period: 0
+        case .hour: time.twelveHour % 12
+        case .minute: time.minute / 5
+        }
+        guard let step = sequence.nextStep(
+            from: currentStep,
+            direction: direction,
+            at: inputTime,
+            layout: layout
+        ) else { return false }
+        switch stage {
+        case .period:
+            return false
+        case .hour:
+            time.selectTwelveHour(step == 0 ? 12 : step)
+        case .minute:
+            time.selectMinute(step * 5)
+        }
+        return true
     }
 
     /// Confirms the value already highlighted by keyboard navigation
