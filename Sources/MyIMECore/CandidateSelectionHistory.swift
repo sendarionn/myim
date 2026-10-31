@@ -126,22 +126,7 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
     }
 
     public func ranks(for readings: [String]) -> [String: Int] {
-        var combinedStats: [String: Stat] = [:]
-        for reading in Set(readings.lazy.map { $0.lowercased() }) {
-            for (candidate, stat) in statsByReading[reading] ?? [:] {
-                if let existing = combinedStats[candidate] {
-                    combinedStats[candidate] = Stat(
-                        count: max(existing.count, stat.count),
-                        lastUsed: max(existing.lastUsed, stat.lastUsed)
-                    )
-                } else {
-                    combinedStats[candidate] = stat
-                }
-            }
-        }
-        combinedStats = combinedStats.filter {
-            Self.isEstablished($0.key, count: $0.value.count)
-        }
+        let combinedStats = establishedStats(for: readings)
         guard !combinedStats.isEmpty else {
             return [:]
         }
@@ -154,6 +139,13 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         return Dictionary(uniqueKeysWithValues: ordered.enumerated().map {
             ($0.element.key, ordered.count - $0.offset)
         })
+    }
+
+    /// Returns the original selection sequence values without renumbering
+    /// them per reading, so ordinary candidates and stable preference IDs
+    /// can be compared on the same recency scale
+    public func lastUsedRanks(for readings: [String]) -> [String: Int] {
+        establishedStats(for: readings).mapValues(\.lastUsed)
     }
 
     public func candidates(for readings: [String]) -> [String] {
@@ -193,6 +185,27 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
             || !UnselectedInputLearningPolicy.requiresRepeatedConfirmation(
                 candidate
             )
+    }
+
+    private func establishedStats(
+        for readings: [String]
+    ) -> [String: Stat] {
+        var combinedStats: [String: Stat] = [:]
+        for reading in Set(readings.lazy.map { $0.lowercased() }) {
+            for (candidate, stat) in statsByReading[reading] ?? [:] {
+                if let existing = combinedStats[candidate] {
+                    combinedStats[candidate] = Stat(
+                        count: max(existing.count, stat.count),
+                        lastUsed: max(existing.lastUsed, stat.lastUsed)
+                    )
+                } else {
+                    combinedStats[candidate] = stat
+                }
+            }
+        }
+        return combinedStats.filter {
+            Self.isEstablished($0.key, count: $0.value.count)
+        }
     }
 
     private static func compacted(

@@ -69,6 +69,21 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
+    func exposesComparableLastUsedRanksForAReading() {
+        var history = CandidateSelectionHistory()
+        history.record("今日", reading: "kyou")
+        history.record("dynamic_date:kyou:YYYYMMDD", readings: [])
+        history.record("今日", reading: "kyou")
+
+        let ranks = history.lastUsedRanks(for: ["kyou"])
+
+        #expect(
+            ranks["今日"]!
+                > history.ranks["dynamic_date:kyou:YYYYMMDD"]!
+        )
+    }
+
+    @Test
     func recordsOneSelectionForOriginalAndCorrectedReadings() {
         var history = CandidateSelectionHistory()
         history.record(

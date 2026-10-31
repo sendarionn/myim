@@ -415,7 +415,7 @@ public struct StandardConversionCandidateSource: Sendable {
         learningEnabled: Bool
     ) -> [String: Int] {
         guard learningEnabled else { return [:] }
-        return history.ranks(
+        return history.lastUsedRanks(
             for: RomajiCanonicalizer.dictionaryLookupInputs(from: reading)
         )
     }

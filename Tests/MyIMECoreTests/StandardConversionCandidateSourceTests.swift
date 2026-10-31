@@ -191,6 +191,53 @@ struct StandardConversionCandidateSourceTests {
         #expect(!candidates.contains { $0.storageText == "10/31(土)" })
     }
 
+    @Test
+    func ordersNormalAndDynamicCandidatesByTheirSharedLastUse() throws {
+        var history = CandidateSelectionHistory()
+        history.record("今日", reading: "kyou")
+        history.record("今日", reading: "kyou")
+        history.record(
+            "dynamic_date:kyou:YYYYMMDD",
+            readings: []
+        )
+        history = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: JSONEncoder().encode(history)
+        )
+
+        let source = makeSource(
+            basicEntries: [DictionaryEntry(
+                reading: "kyou",
+                candidates: ["今日"]
+            )]
+        )
+        let javaScriptCandidates = [
+            JavaScriptExtensionCandidate(
+                value: "20261101",
+                kind: .dynamicDateTime,
+                preferenceID: "dynamic_date:kyou:YYYYMMDD"
+            )
+        ]
+        func candidates() -> [String] {
+            source.candidates(for: .init(
+                input: "kyou",
+                conversionReading: "kyou",
+                javaScriptCandidates: javaScriptCandidates,
+                selectionHistory: history
+            )).map(\.storageText)
+        }
+
+        #expect(candidates().prefix(2) == ["20261101", "今日"])
+
+        history.record("今日", reading: "kyou")
+        history = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: JSONEncoder().encode(history)
+        )
+
+        #expect(candidates().prefix(2) == ["今日", "20261101"])
+    }
+
     /// A time learned or registered as typed is not offered again, since
     /// committing without a candidate already gives it
     @Test(arguments: ["13:00", "0930"])
