@@ -47,6 +47,48 @@ struct BundledCopulaCompositionTests {
         )
     }()
 
+    /// Mirrors InputController from the typed romaji to the candidate
+    /// panel: the reading is resolved, the standard candidates generated,
+    /// and the panel state filled; the composition is on the first page
+    @Test(arguments: [
+        ("kireina", "綺麗な"), ("benrina", "便利な"), ("shizukana", "静かな"),
+        ("yuumeina", "有名な"), ("kantanna", "簡単な"), ("kireini", "綺麗に"),
+        ("benrini", "便利に"), ("gakuseitoshite", "学生として"),
+        ("kyoushitoshiteno", "教師としての"), ("watashinitotte", "私にとって"),
+        ("kenkyuunitsuite", "研究について")
+    ])
+    func showsCompositionsOnTheFirstPageFromTypedRomaji(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        let reading = ConversionReadingResolver.resolve(input)
+        var session = CandidateSession()
+
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: reading
+            )),
+            input: input,
+            reading: reading
+        )
+
+        #expect(session.candidateTexts.prefix(4).contains(expected))
+    }
+
+    /// 学生 is a noun, not a na-adjective stem
+    @Test
+    func doesNotShowNaAfterANounFromTypedRomaji() throws {
+        let source = try #require(Self.source)
+        let candidates = source.candidates(for: .init(
+            input: "gakuseina",
+            conversionReading: ConversionReadingResolver.resolve("gakuseina")
+        )).map(\.storageText)
+
+        #expect(!candidates.contains("学生な"))
+    }
+
     @Test(arguments: [
         ("kouhodesu", "候補です"),
         ("kouhodeshita", "候補でした"),
