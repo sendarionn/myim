@@ -25,6 +25,100 @@ had_previous_selection_service=0
 legacy_destination_cleanup_eligible=0
 system_legacy_destination_cleanup_eligible=0
 legacy_cleanup_reason=""
+install_log="$HOME/Library/Caches/myim/install.log"
+install_log_maximum_lines=2000
+install_lock="$HOME/Library/Caches/myim/install.lock"
+# Attempts to replace a myim process still running the replaced executable
+process_update_attempts=3
+process_retry_interval=1
+stale_process_ids=()
+
+source "$repository_root/Scripts/lib/myim-process-identity.sh"
+
+log_install() {
+    mkdir -p "${install_log:h}"
+    print -r -- "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" >> "$install_log"
+}
+
+trim_install_log() {
+    [[ -f "$install_log" ]] || return 0
+    local kept
+    kept=$(tail -n "$install_log_maximum_lines" "$install_log")
+    print -r -- "$kept" > "$install_log"
+}
+
+# One installation at a time; a lock left by a finished run is taken over
+acquire_install_lock() {
+    mkdir -p "${install_lock:h}"
+    if ! mkdir "$install_lock" 2>/dev/null; then
+        local owner
+        owner=$(cat "$install_lock/pid" 2>/dev/null)
+        if [[ "$owner" == <-> ]] && kill -0 "$owner" 2>/dev/null; then
+            echo "別のインストールが実行中です: PID $owner" >&2
+            echo "RESULT=install-already-running" >&2
+            exit 1
+        fi
+        rm -rf "$install_lock"
+        mkdir "$install_lock"
+    fi
+    print -r -- "$$" > "$install_lock/pid"
+}
+
+release_install_lock() {
+    [[ "$(cat "$install_lock/pid" 2>/dev/null)" == "$$" ]] \
+        && rm -rf "$install_lock"
+}
+
+# Runs on an ordinary exit; finish_installation releases the lock itself
+zshexit() {
+    release_install_lock 2>/dev/null || true
+}
+
+# Stops myim processes started from the installed path that still run the
+# replaced executable, such as one macOS relaunched while the files were
+# being replaced; processes running the installed file are left alone
+terminate_stale_processes() {
+    local installed=$1
+    local pid state attempt remaining
+    stale_process_ids=()
+    for pid in ${(f)"$(myim_running_process_ids)"}; do
+        [[ -n "$pid" ]] || continue
+        state=$(myim_process_executable_state "$pid" "$installed")
+        log_install "process pid=$pid state=$state"
+        [[ "$state" == "stale-executable" ]] || continue
+        stale_process_ids+=("$pid")
+    done
+    (( ${#stale_process_ids} > 0 )) || return 0
+    for pid in "${stale_process_ids[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || true
+    done
+    for attempt in {1..30}; do
+        remaining=0
+        for pid in "${stale_process_ids[@]}"; do
+            kill -0 "$pid" 2>/dev/null && remaining=1
+        done
+        if (( remaining == 0 )); then
+            log_install "stale processes terminated pids=${stale_process_ids[*]}"
+            return 0
+        fi
+        sleep 0.1
+    done
+    log_install "stale processes did not exit pids=${stale_process_ids[*]}"
+    return 1
+}
+
+# Prints the running myim processes for a failure report
+report_running_processes() {
+    local installed=$1
+    local line
+    local fields
+    for line in ${(f)"$(myim_describe_processes "$installed")"}; do
+        [[ -n "$line" ]] || continue
+        fields=(${=line})
+        echo "RUNNING_PROCESS pid=${fields[1]} state=${fields[2]} loaded-inode=${fields[3]} installed-inode=${fields[4]} recorded-build=$(plutil -extract build raw -o - "$runtime_status" 2>/dev/null || echo unknown)" >&2
+        log_install "running pid=${fields[1]} state=${fields[2]} loaded=${fields[3]} installed=${fields[4]}"
+    done
+}
 
 bundle_identifier() {
     local application=$1
@@ -146,7 +240,15 @@ wait_for_running_server() {
             return 1
         fi
         process_id=$matching_process_id
+        # A process running the replaced executable never becomes current
         if [[ -n "$process_id" ]] \
+            && [[ "$(myim_process_executable_state "$process_id" "$expected_executable")" \
+                == "stale-executable" ]]; then
+            return 1
+        fi
+        if [[ -n "$process_id" ]] \
+            && [[ "$(myim_process_executable_state "$process_id" "$expected_executable")" \
+                == "current" ]] \
             && [[ -f "$runtime_status" ]] \
             && [[ "$(json_value pid)" == "$process_id" ]] \
             && [[ "$(json_value executable-path)" == "$expected_executable" ]] \
@@ -287,6 +389,9 @@ finish_installation() {
     local exit_code=$?
     trap - EXIT
     set +e
+    (( exit_code == 0 )) || log_install "install failed exit=$exit_code"
+    # zshexit does not run for an exit from this trap
+    release_install_lock 2>/dev/null
     cleanup_staging
     if (( exit_code != 0 && rollback_required == 1 )); then
         local rollback_failed=0
@@ -413,6 +518,9 @@ base_build_number=$((
         : source_build_number
 ))
 next_build_number=$((base_build_number + 1))
+acquire_install_lock
+trim_install_log
+log_install "install start build=$next_build_number installed-build=$installed_build_number"
 MYIM_BUILD_NUMBER="$next_build_number" \
     "$repository_root/Scripts/build-macos-ime.sh"
 
@@ -448,8 +556,10 @@ if [[ "$was_selected" == "1" ]]; then
     wait_for_status "$source_executable" fallback-selected 1
 fi
 
+log_install "existing processes $(myim_running_process_ids | tr '\n' ' ')"
 stop_process myim
 stop_process my-ime
+log_install "existing processes stopped"
 stop_process myim-external-browser
 stop_process myim-extension-host
 stop_process myim-selection-service
@@ -554,6 +664,13 @@ if [[ "$installed_selection_service_build_number" != "$next_build_number" ]]; th
     echo "myim-selection.service のビルド番号が更新されていません" >&2
     exit 1
 fi
+log_install "files placed build=$installed_build_number commit=$(build_info_value "$installed_executable" git-commit) inode=$(myim_file_inode "$installed_executable")"
+# macOS may relaunch myim from the old files between stopping it and
+# replacing them; that process keeps the replaced executable
+if ! terminate_stale_processes "$installed_executable"; then
+    echo "置き換え前のmyimプロセスを終了できません: ${stale_process_ids[*]}" >&2
+    exit 1
+fi
 rm -f "$runtime_status"
 if [[ -d "$input_session_status_directory" ]]; then
     find "$input_session_status_directory" \
@@ -592,22 +709,55 @@ fi
 process_stage="not-selected"
 session_stage="unverified"
 running_process_id=""
+expected_commit=$(build_info_value "$installed_executable" git-commit)
 if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
-    expected_commit=$(build_info_value "$installed_executable" git-commit)
-    if ! wait_for_running_server \
-        "$installed_executable" \
-        "$installed_build_number" \
-        "$expected_commit"; then
+    process_failure=""
+    for attempt in {1..$process_update_attempts}; do
+        if wait_for_running_server \
+            "$installed_executable" \
+            "$installed_build_number" \
+            "$expected_commit"; then
+            process_failure=""
+            break
+        fi
+        # A process still running the replaced executable is replaced;
+        # selecting the input source again starts the installed one
+        if ! terminate_stale_processes "$installed_executable"; then
+            process_failure="stale-process-remains"
+            break
+        fi
+        if (( ${#stale_process_ids} > 0 )); then
+            process_failure="stale-process"
+        else
+            process_failure="not-started"
+        fi
+        log_install "process verification attempt=$attempt failed reason=$process_failure"
+        sleep "$process_retry_interval"
+        "$installed_executable" --select-input-source 2>/dev/null || true
+    done
+    if [[ -n "$process_failure" ]]; then
+        report_running_processes "$installed_executable"
         rollback_required=0
         [[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
         [[ ! -e "$previous_selection_service" ]] || rm -rf "$previous_selection_service"
-        echo "インストールは完了しましたが、新しいmyimの起動は未確認です" >&2
-        echo "入力欄へフォーカスした後にScripts/diagnose-installation.shを実行してください" >&2
-        echo "RESULT=installed-launch-unverified"
-        exit 2
+        log_install "install incomplete reason=$process_failure"
+        echo "ファイルは更新しましたが、インストールは未完了です" >&2
+        if [[ "$process_failure" == "not-started" ]]; then
+            echo "新しいmyimの起動を確認できませんでした" >&2
+            echo "入力欄へフォーカスした後にScripts/diagnose-installation.shを実行してください" >&2
+            echo "RESULT=installed-launch-unverified"
+            exit 2
+        fi
+        echo "置き換え前のビルドのmyimが動作し続けています" >&2
+        echo "1. 別の入力ソースへ切り替えてください" >&2
+        echo "2. pkill -x myim を実行してください" >&2
+        echo "3. myimへ切り替えてScripts/diagnose-installation.shを実行してください" >&2
+        echo "RESULT=process-update-failed"
+        exit 4
     fi
     process_stage="verified"
     running_process_id=$(json_value pid)
+    log_install "process verified pid=$running_process_id build=$installed_build_number inode=$(myim_loaded_executable_inode "$running_process_id" "$installed_executable")"
     if wait_for_current_input_session \
         "$running_process_id" \
         "$installed_executable" \
@@ -615,6 +765,15 @@ if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
         "$expected_commit"; then
         session_stage="verified"
     fi
+elif ! terminate_stale_processes "$installed_executable"; then
+    report_running_processes "$installed_executable"
+    rollback_required=0
+    [[ ! -e "$previous_destination" ]] || rm -rf "$previous_destination"
+    [[ ! -e "$previous_selection_service" ]] || rm -rf "$previous_selection_service"
+    log_install "install incomplete reason=stale-process-remains"
+    echo "置き換え前のビルドのmyimが動作し続けています" >&2
+    echo "RESULT=process-update-failed"
+    exit 4
 fi
 
 rollback_required=0
@@ -640,6 +799,7 @@ if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
                 echo "SESSION_CLIENT_BUNDLE_ID=$(session_json_value "$file" client-bundle-id)"
             fi
         done
+        log_install "install finished result=installed-verified"
         echo "RESULT=installed-verified"
     else
         echo "入力先アプリの新しい入力セッションは未確認です"
@@ -647,8 +807,10 @@ if [[ "$(status_value "$installed_executable" selected)" == "1" ]]; then
         echo "2. 入力欄へフォーカスし直してください"
         echo "3. 未確認のままなら入力先アプリを再起動してください"
         echo "その後にScripts/diagnose-installation.sh --client-bundle-id <Bundle ID>を実行してください"
+        log_install "install finished result=installed-session-unverified"
         echo "RESULT=installed-session-unverified"
     fi
 else
+    log_install "install finished result=installed-not-selected"
     echo "RESULT=installed-not-selected"
 fi

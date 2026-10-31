@@ -1,3 +1,4 @@
+import os
 import subprocess
 import tempfile
 import unittest
@@ -5,6 +6,27 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).parents[2] / "Scripts" / "install-macos-im.sh"
+
+
+_original_home = None
+_temporary_home = None
+
+
+def setUpModule():
+    # The installer writes its log and lock under HOME; tests must not
+    # touch the user's files
+    global _original_home, _temporary_home
+    _original_home = os.environ.get("HOME")
+    _temporary_home = tempfile.TemporaryDirectory()
+    os.environ["HOME"] = _temporary_home.name
+
+
+def tearDownModule():
+    if _original_home is None:
+        os.environ.pop("HOME", None)
+    else:
+        os.environ["HOME"] = _original_home
+    _temporary_home.cleanup()
 
 
 class InstallMacOSIMTests(unittest.TestCase):
@@ -77,7 +99,7 @@ class InstallMacOSIMTests(unittest.TestCase):
             '"$installed_executable" --select-input-source'
         )
         wait_for_server = self.script.index(
-            "if ! wait_for_running_server \\\n"
+            "        if wait_for_running_server \\\n"
         )
         success = self.script.index(
             'echo "インストールしました: $app_destination"'
@@ -119,7 +141,7 @@ class InstallMacOSIMTests(unittest.TestCase):
     def test_session_unverified_result_is_not_an_installation_failure(self):
         result = self.script.index("RESULT=installed-session-unverified")
         selected_branch_end = self.script.index(
-            'else\n    echo "RESULT=installed-not-selected"',
+            'else\n    log_install "install finished result=installed-not-selected"',
             result,
         )
         self.assertNotIn("exit 2", self.script[result:selected_branch_end])

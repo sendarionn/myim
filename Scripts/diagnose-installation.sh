@@ -19,6 +19,11 @@ history_state="missing"
 legacy_state="not-installed"
 session_state="unverified"
 target_client_bundle_identifier=""
+expected_build=""
+stale_main_process=0
+current_process_executable_state=""
+
+source "$repository_root/Scripts/lib/myim-process-identity.sh"
 
 while (( $# > 0 )); do
     case "$1" in
@@ -28,6 +33,14 @@ while (( $# > 0 )); do
                 exit 2
             fi
             target_client_bundle_identifier=$2
+            shift 2
+            ;;
+        --expected-build)
+            if (( $# < 2 )) || [[ "$2" != <-> ]]; then
+                echo "--expected-buildにはビルド番号が必要です" >&2
+                exit 2
+            fi
+            expected_build=$2
             shift 2
             ;;
         *)
@@ -152,6 +165,18 @@ for application in \
 done
 (( legacy_found == 1 )) || echo "LEGACY_APPLICATION=none"
 
+if [[ -n "$expected_build" ]]; then
+    for application in "${found_applications[@]}"; do
+        found_build=$(plist_value "$application/Contents/Info.plist" CFBundleVersion)
+        if [[ "$found_build" == "$expected_build" ]]; then
+            echo "EXPECTED_BUILD_MATCH[$application]=yes"
+        else
+            echo "EXPECTED_BUILD_MATCH[$application]=no"
+            echo "  ERROR=インストール対象のビルド$expected_buildではありません: $found_build"
+            problems=$((problems + 1))
+        fi
+    done
+fi
 echo "[ビルド成果物との比較]"
 if [[ -f "$build_application/Contents/MacOS/myim" ]]; then
     build_sha=$(sha256 "$build_application/Contents/MacOS/myim")
@@ -269,6 +294,18 @@ for process_name in "${process_names[@]}"; do
                         expected_running_path="$command_path"
                         current_process_pid=$process_id
                         current_process_path=$command_path
+                        current_process_executable_state=$(
+                            myim_process_executable_state \
+                                "$process_id" \
+                                "$command_path"
+                        )
+                        echo "  PROCESS_EXECUTABLE=$current_process_executable_state"
+                        if [[ "$current_process_executable_state" \
+                            == "stale-executable" ]]; then
+                            stale_main_process=1
+                            echo "  ERROR=置き換え前の実行ファイルで動作中です"
+                            problems=$((problems + 1))
+                        fi
                         break
                     fi
                 done
@@ -290,6 +327,8 @@ elif (( main_process_count > 1 )); then
     problems=$((problems + 1))
 elif (( old_main_process == 1 )); then
     run_state="old-running"
+elif (( stale_main_process == 1 )); then
+    run_state="stale-executable"
 else
     run_state="running-identity-unverified"
 fi
@@ -321,7 +360,8 @@ if [[ -f "$runtime_status" ]]; then
         runtime_is_current=0
         if [[ "$runtime_pid" == <-> ]] \
             && [[ "$runtime_pid" == "$current_process_pid" ]] \
-            && [[ "$runtime_executable" == "$current_process_path" ]]; then
+            && [[ "$runtime_executable" == "$current_process_path" ]] \
+            && [[ "$current_process_executable_state" == "current" ]]; then
             runtime_is_current=1
         fi
 

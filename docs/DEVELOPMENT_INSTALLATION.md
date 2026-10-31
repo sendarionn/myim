@@ -19,6 +19,8 @@ git pull
 - `SESSION_STATE=unverified`は入力先アプリの入力セッションが未確認
 - `RUN_STATE=installed-not-running`はインストール済みだが現在は未起動
 - `RUN_STATE=old-running`は現行のインストール先以外の入力メソッドが稼働中
+- `RUN_STATE=stale-executable`はインストール先から起動したプロセスが、置き換え前の実行ファイルで稼働中
+- `PROCESS_EXECUTABLE`は実行中プロセスが読み込んだ実行ファイルとインストール済みファイルの一致（`current`、`stale-executable`、`unknown`）
 - `HISTORY_STATE=current-matches-installed`は起動記録が現在のプロセスと一致
 - `HISTORY_STATE=last-launch-matches-installed`は最後に起動したビルドがインストール内容と一致
 - `LEGACY_STATE=selected`は旧名称の入力ソースが選択中
@@ -46,6 +48,34 @@ git pull
 4. 対象のBundle IDを指定して診断を再実行する
 
 入力先アプリの強制終了はインストール処理から行わない
+
+## 実行中プロセスの更新の確認
+
+インストールの成功は、ファイルの配置だけでなく、実行中のmyimがインストールしたビルドへ切り替わったことまで確認して判定する
+
+- 実行中プロセスは、実行パス、起動記録のPID・ビルド番号・コミット、読み込んだ実行ファイルのinodeとインストール済みファイルのinodeを組み合わせて照合する
+- 照合処理は`Scripts/lib/myim-process-identity.sh`にまとめ、インストーラーと診断スクリプトで共通に使う
+- ファイルの置き換え後に、置き換え前の実行ファイルで動くmyimだけを終了させる（終了と置き換えの間にmacOSが旧ファイルから再起動した場合）
+- myimが選択中の場合、新しいプロセスの照合に失敗すると、古いプロセスの終了と入力ソースの再選択を最大3回まで繰り返す
+
+インストーラーの結果
+
+- `RESULT=installed-verified`は実行中プロセスと入力セッションまで一致
+- `RESULT=installed-session-unverified`は実行中プロセスまで一致し、入力セッションが未確認
+- `RESULT=installed-not-selected`はmyimが選択されておらず、置き換え前のプロセスも残っていない
+- `RESULT=installed-launch-unverified`（終了コード2）はファイルは更新済みだが新しいプロセスの起動が未確認で、インストールは未完了
+- `RESULT=process-update-failed`（終了コード4）は置き換え前のビルドのプロセスが残り、インストールは未完了
+- `RESULT=install-already-running`は別のインストールが実行中
+
+`process-update-failed`の場合は、表示された`RUNNING_PROCESS`を確認し、別の入力ソースへ切り替えてから`pkill -x myim`を実行し、myimへ戻して診断を再実行する
+
+インストールの経過は`~/Library/Caches/myim/install.log`へ追記し、最新2,000行だけを残す
+
+インストール対象のビルド番号を指定して診断する場合
+
+```sh
+./Scripts/diagnose-installation.sh --expected-build 543
+```
 
 ## 旧名称アプリのクリーンアップ
 
