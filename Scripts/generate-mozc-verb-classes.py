@@ -3,6 +3,9 @@
 
 myimのmozc-dictionary.tsvは品詞を持たないため、`知る`(五段)と`見る`(一段)の
 ように語尾だけでは区別できない活用型を、変換時に参照できるようにする。
+
+Mozcが`名詞,サ変接続`とする`記録`などの名詞は、「する」を付けたサ変動詞
+`記録する`として出力し、動詞と同じ活用処理で`記録して`などを生成できるようにする。
 """
 
 import argparse
@@ -50,6 +53,21 @@ def verb_class(part_of_speech: str, reading: str, surface: str) -> str | None:
     return None
 
 
+def suru_noun_verb(
+    part_of_speech: str, reading: str, surface: str
+) -> tuple[str, str] | None:
+    """`名詞,サ変接続`の語を「する」を付けた読みと表記で返す
+
+    `名詞,接尾,サ変接続`のような接尾語や一般の名詞は対象にしない
+    """
+    fields = part_of_speech.split(",")
+    if len(fields) < 2 or fields[0] != "名詞" or fields[1] != "サ変接続":
+        return None
+    if reading.endswith("する") or surface.endswith("する"):
+        return None
+    return reading + "する", surface + "する"
+
+
 def collect(source: Path, maximum_cost: int) -> list[tuple[str, str, str, int]]:
     parts_of_speech: dict[int, str] = {}
     for line in (source / "id.def").read_text(encoding="utf-8").splitlines():
@@ -71,13 +89,14 @@ def collect(source: Path, maximum_cost: int) -> list[tuple[str, str, str, int]]:
                 cost = int(cost_text)
                 if cost > maximum_cost:
                     continue
-                conjugation = verb_class(
-                    parts_of_speech.get(int(left_id), ""),
-                    reading,
-                    surface,
-                )
+                part_of_speech = parts_of_speech.get(int(left_id), "")
+                conjugation = verb_class(part_of_speech, reading, surface)
                 if conjugation is None:
-                    continue
+                    suru_verb = suru_noun_verb(part_of_speech, reading, surface)
+                    if suru_verb is None:
+                        continue
+                    reading, surface = suru_verb
+                    conjugation = "suru"
                 key = (CONVERTER.kana_to_romaji(reading), surface, conjugation)
                 costs[key] = min(cost, costs.get(key, cost))
     return [

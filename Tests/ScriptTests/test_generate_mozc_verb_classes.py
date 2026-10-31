@@ -22,7 +22,9 @@ class GenerateMozcVerbClassesTests(unittest.TestCase):
                 "5 動詞,自立,*,*,五段・カ行促音便,基本形,行く\n"
                 "6 動詞,自立,*,*,五段動詞,連用形,*\n"
                 "7 動詞,非自立,*,*,一段,基本形,*\n"
-                "8 名詞,一般,*,*,*,*,*\n",
+                "8 名詞,一般,*,*,*,*,*\n"
+                "9 名詞,サ変接続,*,*,*,*,*\n"
+                "10 名詞,接尾,サ変接続,*,*,*,*\n",
                 encoding="utf-8",
             )
             (source / "dictionary00.txt").write_text(lines, encoding="utf-8")
@@ -58,6 +60,20 @@ class GenerateMozcVerbClassesTests(unittest.TestCase):
                 "しる\t1\t1\t8000\t痴る\n"
             ),
             [],
+        )
+
+
+    def test_adds_suru_nouns_as_suru_verbs(self):
+        # 記録 is a サ変接続 noun in Mozc; 学生 is an ordinary noun and
+        # 化 a suffix, so neither takes する
+        self.assertEqual(
+            self.collect(
+                "きろく\t9\t9\t3000\t記録\n"
+                "がくせい\t8\t8\t3000\t学生\n"
+                "か\t10\t10\t3000\t化\n"
+                "きろく\t9\t9\t9000\t記禄\n"
+            ),
+            [("kirokusuru", "記録する", "suru", 3000)],
         )
 
 

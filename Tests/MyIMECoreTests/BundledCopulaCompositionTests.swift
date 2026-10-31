@@ -47,6 +47,80 @@ struct BundledCopulaCompositionTests {
         )
     }()
 
+    /// Nouns Mozc marks as taking する conjugate as する verbs, from the
+    /// typed romaji to the first page of the candidate panel, without any
+    /// selection history
+    @Test(arguments: [
+        ("kirokushi", "記録し"), ("kirokushite", "記録して"),
+        ("kirokushita", "記録した"), ("kirokushimasu", "記録します"),
+        ("kirokusuru", "記録する"), ("kirokushimashita", "記録しました"),
+        ("kirokushinai", "記録しない"), ("kirokushimasen", "記録しません"),
+        ("kirokusureba", "記録すれば"), ("kirokushiyou", "記録しよう"),
+        ("kirokushiro", "記録しろ"), ("kirokuseyo", "記録せよ"),
+        ("kakuninshi", "確認し"), ("kakuninsuru", "確認する"),
+        ("benkyoushite", "勉強して"), ("kenkyuushita", "研究した"),
+        ("setsumeishimasu", "説明します"), ("setteisuru", "設定する"),
+        ("sousashite", "操作して")
+    ])
+    func showsSuruNounConjugationsOnTheFirstPage(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        let reading = ConversionReadingResolver.resolve(input)
+        var session = CandidateSession()
+
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: reading
+            )),
+            input: input,
+            reading: reading
+        )
+
+        #expect(session.candidateTexts.prefix(4).contains(expected))
+        #expect(Set(session.candidateTexts).count
+            == session.candidateTexts.count)
+    }
+
+    /// 机 and 林檎 are not nouns that take する; りんごした itself is only
+    /// the hiragana of the input
+    @Test(arguments: [
+        ("gakuseshi", "学生し"), ("tsukueshite", "机して"),
+        ("ringoshita", "林檎した")
+    ])
+    func doesNotConjugateNounsThatDoNotTakeSuru(
+        input: String,
+        unexpected: String
+    ) throws {
+        let source = try #require(Self.source)
+        let candidates = source.candidates(for: .init(
+            input: input,
+            conversionReading: ConversionReadingResolver.resolve(input)
+        )).map(\.storageText)
+
+        #expect(!candidates.contains(unexpected))
+    }
+
+    /// Ordinary words ending like a form of する keep their first candidate
+    @Test(arguments: [
+        ("watashi", "私"), ("ashita", "明日"), ("kesshite", "決して"),
+        ("toshite", "として"), ("kashi", "菓子"), ("kaishi", "開始")
+    ])
+    func keepsTheFirstCandidateOfOrdinaryWords(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        let candidates = source.candidates(for: .init(
+            input: input,
+            conversionReading: ConversionReadingResolver.resolve(input)
+        )).map(\.storageText)
+
+        #expect(candidates.first == expected)
+    }
+
     /// Mirrors InputController from the typed romaji to the candidate
     /// panel: the reading is resolved, the standard candidates generated,
     /// and the panel state filled; the composition is on the first page

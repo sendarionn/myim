@@ -119,23 +119,28 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         /// Readings such as `-sou` and `-you` are also common nouns, so
         /// these forms are offered for common verbs only
         let maximumCost: Int?
+        /// The verb classes the expression joins; nil joins every class
+        let classes: Set<VerbConjugationClass>?
 
         init(
             _ readingSuffix: String,
             _ surfaceSuffix: String,
             requiring requiredVerbForm: VerbConjugationForm,
             derivedOnly: Bool = false,
-            maximumCost: Int? = nil
+            maximumCost: Int? = nil,
+            classes: Set<VerbConjugationClass>? = nil
         ) {
             self.requiredVerbForm = requiredVerbForm
             self.readingSuffix = readingSuffix
             self.surfaceSuffix = surfaceSuffix
             self.derivedOnly = derivedOnly
             self.maximumCost = maximumCost
+            self.classes = classes
         }
 
         func allows(_ entry: VerbConjugationDictionary.Entry) -> Bool {
-            maximumCost.map { entry.cost < $0 } ?? true
+            (maximumCost.map { entry.cost < $0 } ?? true)
+                && (classes?.contains(entry.conjugationClass) ?? true)
         }
 
         var isBareContinuative: Bool {
@@ -162,6 +167,14 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
     private static let otherFollowings: [FollowingExpression] = [
         FollowingExpression("", "", requiring: .continuative, derivedOnly: true),
+        // 記録し and 記録する of a noun taking する are no dictionary words
+        // of their own
+        FollowingExpression("", "", requiring: .continuative, classes: [.suru]),
+        FollowingExpression("", "", requiring: .terminal, classes: [.suru]),
+        // 命令形 of する: しろ after the 未然形 し and せよ after せ; other
+        // classes form their imperative differently
+        FollowingExpression("ro", "ろ", requiring: .negative, classes: [.suru]),
+        FollowingExpression("yo", "よ", requiring: .beforeZu, classes: [.suru]),
         FollowingExpression("", "", requiring: .terminal, derivedOnly: true),
         FollowingExpression("", "", requiring: .te),
         FollowingExpression("", "", requiring: .past),
