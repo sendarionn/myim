@@ -100,6 +100,12 @@ public struct Candidate: Equatable, Sendable {
         origins.contains(where: \.isLearnable)
     }
 
+    /// Dynamic date/time values are regenerated for the current clock and
+    /// must not become historical candidates on their own
+    public var allowsSelectionHistory: Bool {
+        origins.contains { $0.source != .dateTime }
+    }
+
     public func hasSource(_ source: CandidateSourceKind) -> Bool {
         origins.contains { $0.source == source }
     }

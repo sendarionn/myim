@@ -40,6 +40,21 @@ struct CandidateTests {
     }
 
     @Test
+    func excludesOnlyDynamicDateTimeOnlyCandidatesFromSelectionHistory() {
+        let dynamic = Candidate(
+            storageText: "20261031",
+            source: .dateTime
+        )
+        let dictionary = Candidate(
+            storageText: "20261031",
+            source: .userDictionary
+        )
+
+        #expect(!dynamic.allowsSelectionHistory)
+        #expect(dynamic.mergingOrigins(from: dictionary).allowsSelectionHistory)
+    }
+
+    @Test
     func alternateCommitIndicatorDependsOnlyOnDisplayAndCommitText() throws {
         let normal = Candidate(
             storageText: "知る",

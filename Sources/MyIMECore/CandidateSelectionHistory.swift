@@ -79,6 +79,38 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         }
     }
 
+    public func recordedCandidates(for reading: String) -> Set<String> {
+        guard let stats = statsByReading[reading.lowercased()] else { return [] }
+        return Set(stats.keys)
+    }
+
+    @discardableResult
+    public mutating func remove(
+        _ candidates: Set<String>,
+        forReading reading: String
+    ) -> Int {
+        guard !candidates.isEmpty else { return 0 }
+        let normalizedReading = reading.lowercased()
+        guard var stats = statsByReading[normalizedReading] else { return 0 }
+        let previousCount = stats.count
+        for candidate in candidates {
+            stats.removeValue(forKey: candidate)
+        }
+        let removedCount = previousCount - stats.count
+        guard removedCount > 0 else { return 0 }
+        if stats.isEmpty {
+            statsByReading.removeValue(forKey: normalizedReading)
+        } else {
+            statsByReading[normalizedReading] = stats
+        }
+        for candidate in candidates where !statsByReading.values.contains(
+            where: { $0[candidate] != nil }
+        ) {
+            ranks.removeValue(forKey: candidate)
+        }
+        return removedCount
+    }
+
     public func ranks(for reading: String) -> [String: Int] {
         ranks(for: [reading])
     }

@@ -1,7 +1,7 @@
 public struct StandardConversionCandidateContext: Sendable {
     public let input: String
     public let conversionReading: String
-    public let javaScriptCandidates: [String]
+    public let javaScriptCandidates: [JavaScriptExtensionCandidate]
     public let englishCandidates: [String]
     public let selectionHistory: CandidateSelectionHistory
     public let contextualCandidates: [String]
@@ -10,7 +10,7 @@ public struct StandardConversionCandidateContext: Sendable {
     public init(
         input: String,
         conversionReading: String,
-        javaScriptCandidates: [String] = [],
+        javaScriptCandidates: [JavaScriptExtensionCandidate] = [],
         englishCandidates: [String] = [],
         selectionHistory: CandidateSelectionHistory =
             CandidateSelectionHistory(),
@@ -245,9 +245,13 @@ public struct StandardConversionCandidateSource: Sendable {
             kana: kana,
             userExact: user.exact,
             learnedExact: learnedExact,
-            dateTime: [],
+            dateTime: context.javaScriptCandidates.filter {
+                $0.kind == .dynamicDateTime
+            }.map(\.value),
             numericPrefix: numericPrefixes,
-            javaScript: context.javaScriptCandidates,
+            javaScript: context.javaScriptCandidates.filter {
+                $0.kind == .staticValue
+            }.map(\.value),
             symbolExact: symbols.exact,
             basicExact: basic.exact,
             systemExact: system.exact.filter {

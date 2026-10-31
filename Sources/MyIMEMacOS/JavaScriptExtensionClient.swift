@@ -157,7 +157,7 @@ actor JavaScriptExtensionClient {
     func candidates(
         for input: String,
         dateTimeCandidatesEnabled: Bool
-    ) async -> [String] {
+    ) async -> [JavaScriptExtensionCandidate] {
         await candidates(
             for: input,
             timestamp: Date(),
@@ -171,6 +171,7 @@ actor JavaScriptExtensionClient {
 
     func calendarCandidates(for date: Date) async -> [String] {
         await candidates(for: "calendar", timestamp: date, settings: [:])
+            .map(\.value)
     }
 
     func timeCandidates(hour: Int, minute: Int) async -> [String] {
@@ -182,7 +183,7 @@ actor JavaScriptExtensionClient {
                 "hour": String(hour),
                 "minute": String(minute)
             ]
-        )
+        ).map(\.value)
     }
 
     func nextInputCandidates(after value: String) async -> [String] {
@@ -191,7 +192,7 @@ actor JavaScriptExtensionClient {
             timestamp: Date(),
             settings: [:],
             functionName: "nextInputCandidates"
-        )
+        ).map(\.value)
     }
 
     private func candidates(
@@ -200,7 +201,7 @@ actor JavaScriptExtensionClient {
         settings: [String: [String]],
         parameters: [String: String]? = nil,
         functionName: String? = nil
-    ) async -> [String] {
+    ) async -> [JavaScriptExtensionCandidate] {
         guard !input.isEmpty else { return [] }
         let wasRunning = process?.isRunning == true
         guard startIfNeeded() else { return [] }

@@ -55,15 +55,21 @@ function candidates(context) {
   }
   if (Object.prototype.hasOwnProperty.call(dayOffsets, input)) {
     now.setDate(now.getDate() + dayOffsets[input])
-    return format(now, dateFormats)
+    return dynamicDateTimeCandidates(format(now, dateFormats))
   }
   if (timeReadings.indexOf(input) >= 0) {
-    return format(now, timeFormats)
+    return dynamicDateTimeCandidates(format(now, timeFormats))
   }
   if (Object.prototype.hasOwnProperty.call(weekdayReadings, input)) {
     return ["(" + weekdayReadings[input] + ")"]
   }
   return []
+}
+
+function dynamicDateTimeCandidates(values) {
+  return values.map(function(value) {
+    return { value: value, kind: "dynamic_date_time" }
+  })
 }
 
 function parseEnteredDate(input, currentYear) {

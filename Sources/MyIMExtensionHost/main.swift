@@ -14,10 +14,10 @@ while let line = readLine() {
         continue
     }
 
-    var candidates: [String] = []
+    var candidates: [JavaScriptExtensionCandidate] = []
     var errors: [String] = []
     var statuses: [JavaScriptExtensionStatus] = []
-    var seen = Set<String>()
+    var seen = Set<JavaScriptExtensionCandidate>()
     let disabledFileNames = Set(request.disabledFileNames)
 
     for directory in request.extensionDirectories {
@@ -92,11 +92,17 @@ while let line = readLine() {
                 statuses.append(.init(fileName: fileName, state: .error, message: message))
                 continue
             }
-            for candidate in candidateStrings(from: value) {
-                let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            for candidate in extensionCandidates(from: value) {
+                let trimmed = candidate.value.trimmingCharacters(
+                    in: .whitespacesAndNewlines
+                )
+                let normalized = JavaScriptExtensionCandidate(
+                    value: trimmed,
+                    kind: candidate.kind
+                )
                 if !trimmed.isEmpty, trimmed.count <= 256,
-                   seen.insert(trimmed).inserted, candidates.count < 32 {
-                    candidates.append(trimmed)
+                   seen.insert(normalized).inserted, candidates.count < 32 {
+                    candidates.append(normalized)
                 }
             }
             statuses.append(.init(fileName: fileName, state: .ready))
@@ -115,14 +121,20 @@ while let line = readLine() {
     }
 }
 
-private func candidateStrings(from value: JSValue) -> [String] {
+private func extensionCandidates(
+    from value: JSValue
+) -> [JavaScriptExtensionCandidate] {
     guard let array = value.toArray() else { return [] }
     return array.compactMap { element in
         if let string = element as? String {
-            return string
+            return JavaScriptExtensionCandidate(value: string)
         }
         if let object = element as? [String: Any] {
-            return object["value"] as? String
+            guard let value = object["value"] as? String else { return nil }
+            let kind = (object["kind"] as? String)
+                .flatMap(JavaScriptExtensionCandidateKind.init(rawValue:))
+                ?? .staticValue
+            return JavaScriptExtensionCandidate(value: value, kind: kind)
         }
         return nil
     }

@@ -10,13 +10,13 @@ public enum SpecialConversionCandidateOrdering: Equatable, Sendable {
 
 public struct SpecialConversionCandidateContext: Equatable, Sendable {
     public let input: String
-    public let javaScriptCandidates: [String]
+    public let javaScriptCandidates: [JavaScriptExtensionCandidate]
     public let calculationHistoryCandidates: [String]
     public let postalAddressCandidates: [String]
 
     public init(
         input: String,
-        javaScriptCandidates: [String] = [],
+        javaScriptCandidates: [JavaScriptExtensionCandidate] = [],
         calculationHistoryCandidates: [String] = [],
         postalAddressCandidates: [String] = []
     ) {
@@ -71,20 +71,24 @@ public struct SpecialConversionCandidateSource: Sendable {
         for context: SpecialConversionCandidateContext
     ) -> SpecialConversionCandidateResult? {
         let input = context.input
-        let javaScript = makeCandidates(
-            context.javaScriptCandidates,
-            source: .javaScriptExtension,
-            reading: input
-        )
+        let javaScript = context.javaScriptCandidates.map {
+            Candidate(
+                storageText: $0.value,
+                source: $0.kind == .dynamicDateTime
+                    ? .dateTime
+                    : .javaScriptExtension,
+                reading: input
+            )
+        }
         if input.trimmingCharacters(in: .whitespaces).hasSuffix("="),
            !context.javaScriptCandidates.isEmpty {
             return SpecialConversionCandidateResult(
                 candidates: makeCandidates(
                     CalculationCandidateSet.visible(
-                        generatedCandidates: context.javaScriptCandidates,
+                        generatedCandidates: context.javaScriptCandidates.map(\.value),
                         input: input
                     ),
-                    source: .javaScriptExtension,
+                    source: { _ in .javaScriptExtension },
                     reading: input
                 ),
                 ordering: .selectionHistory
@@ -100,7 +104,7 @@ public struct SpecialConversionCandidateSource: Sendable {
             return SpecialConversionCandidateResult(
                 candidates: makeCandidates(
                     calculationHistory,
-                    source: .selectionHistory,
+                    source: { _ in .selectionHistory },
                     reading: input
                 ),
                 ordering: .selectionHistory
@@ -114,7 +118,7 @@ public struct SpecialConversionCandidateSource: Sendable {
             return SpecialConversionCandidateResult(
                 candidates: makeCandidates(
                     unitConversion,
-                    source: .specialConversion,
+                    source: { _ in .specialConversion },
                     reading: input
                 ) + javaScript,
                 ordering: .selectionHistory
@@ -135,7 +139,7 @@ public struct SpecialConversionCandidateSource: Sendable {
             return SpecialConversionCandidateResult(
                 candidates: makeCandidates(
                     numericFormats,
-                    source: .specialConversion,
+                    source: { _ in .specialConversion },
                     reading: input
                 ) + javaScript,
                 ordering: .selectionHistory
@@ -147,7 +151,7 @@ public struct SpecialConversionCandidateSource: Sendable {
             return SpecialConversionCandidateResult(
                 candidates: makeCandidates(
                     japaneseNumbers,
-                    source: .specialConversion,
+                    source: { _ in .specialConversion },
                     reading: input
                 ) + javaScript,
                 ordering: .selectionHistory
@@ -159,7 +163,7 @@ public struct SpecialConversionCandidateSource: Sendable {
             return SpecialConversionCandidateResult(
                 candidates: makeCandidates(
                     symbols,
-                    source: .specialConversion,
+                    source: { _ in .specialConversion },
                     reading: input
                 ) + javaScript,
                 ordering: .selectionHistoryAfterFirst,
@@ -172,13 +176,13 @@ public struct SpecialConversionCandidateSource: Sendable {
 
     private func makeCandidates(
         _ values: [String],
-        source: CandidateSourceKind,
+        source: (String) -> CandidateSourceKind,
         reading: String
     ) -> [Candidate] {
         values.map {
             Candidate(
                 storageText: $0,
-                source: source,
+                source: source($0),
                 reading: reading
             )
         }

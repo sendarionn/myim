@@ -52,15 +52,33 @@ public struct JavaScriptExtensionStatus: Codable, Equatable, Sendable {
     }
 }
 
+public enum JavaScriptExtensionCandidateKind: String, Codable, Sendable {
+    case staticValue = "static"
+    case dynamicDateTime = "dynamic_date_time"
+}
+
+public struct JavaScriptExtensionCandidate: Codable, Equatable, Hashable, Sendable {
+    public let value: String
+    public let kind: JavaScriptExtensionCandidateKind
+
+    public init(
+        value: String,
+        kind: JavaScriptExtensionCandidateKind = .staticValue
+    ) {
+        self.value = value
+        self.kind = kind
+    }
+}
+
 public struct JavaScriptExtensionResponse: Codable, Sendable {
     public let id: UUID
-    public let candidates: [String]
+    public let candidates: [JavaScriptExtensionCandidate]
     public let errors: [String]
     public let statuses: [JavaScriptExtensionStatus]
 
     public init(
         id: UUID,
-        candidates: [String],
+        candidates: [JavaScriptExtensionCandidate],
         errors: [String] = [],
         statuses: [JavaScriptExtensionStatus] = []
     ) {

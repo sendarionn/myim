@@ -44,19 +44,7 @@ final class InputController: IMKInputController {
     // Learning shared by every InputController; each controller only keeps
     // its own candidate session and typing context
     private static let sharedCandidateSelectionHistoryStore =
-        CandidateSelectionHistoryStore(
-            history: loadCandidateSelectionHistory(),
-            writer: DeferredJSONFileWriter(
-                fileURL: candidateSelectionHistoryURL(),
-                queueLabel: "myim.candidate-selection-history",
-                errorHandler: {
-                    NSLog(
-                        "候補選択履歴の保存に失敗: %@",
-                        $0.localizedDescription
-                    )
-                }
-            )
-        )
+        makeCandidateSelectionHistoryStore()
     private static let sharedUnselectedInputLearningStore =
         UnselectedInputLearningStore(
             history: loadUnselectedInputLearningHistory(),
@@ -147,7 +135,7 @@ final class InputController: IMKInputController {
     private let candidateSearchCoordinator = CandidateSearchCoordinator()
     private let specialConversionCandidateSource =
         SpecialConversionCandidateSource()
-    private var javaScriptExtensionCandidates: [String] = []
+    private var javaScriptExtensionCandidates: [JavaScriptExtensionCandidate] = []
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
     private var dictionaryRegistrationSession: DictionaryRegistrationSession?
@@ -4850,7 +4838,8 @@ final class InputController: IMKInputController {
     private func recordCandidateSelectionForCurrentInput(
         _ candidate: Candidate
     ) {
-        guard !candidate.hasSource(.translation),
+        guard candidate.allowsSelectionHistory,
+              !candidate.hasSource(.translation),
               !translationCandidateSession.contains(
                 candidate.storageText,
                 in: .standard
@@ -6248,7 +6237,7 @@ final class InputController: IMKInputController {
                 == inputBuffer else {
             return []
         }
-        return javaScriptExtensionCandidates
+        return javaScriptExtensionCandidates.map(\.value)
     }
 
     private var selectedCandidateValue: String? {
@@ -6568,6 +6557,62 @@ final class InputController: IMKInputController {
             return CandidateSelectionHistory(ranks: legacyRanks)
         }
         return CandidateSelectionHistory()
+    }
+
+    private static func makeCandidateSelectionHistoryStore()
+        -> CandidateSelectionHistoryStore {
+        let historyURL = candidateSelectionHistoryURL()
+        if FileManager.default.fileExists(atPath: historyURL.path) {
+            let protectedEntries = Set(loadUserEntries().flatMap { entry in
+                entry.candidates.map {
+                    DynamicDateTimeHistoryMigration.ProtectedEntry(
+                        reading: entry.reading,
+                        candidate: DictionaryCandidateRepresentation.value(
+                            from: $0
+                        )
+                    )
+                }
+            })
+            do {
+                if let report = try DynamicDateTimeHistoryMigrationRunner
+                    .migrateIfNeeded(
+                        historyURL: historyURL,
+                        backupURL: userDataURL(
+                            fileName: "candidate-selection-history.dynamic-date-migration-v1.backup.json"
+                        ),
+                        markerURL: userDataURL(
+                            fileName: "dynamic-date-history-migration-v1.json"
+                        ),
+                        protecting: protectedEntries
+                    ) {
+                    NSLog(
+                        "動的日時履歴の移行: removed=%d candidates=%d protected=%d unclassified=%d",
+                        report.removedAssociationCount,
+                        report.removedCandidateCount,
+                        report.retainedProtectedCount,
+                        report.unclassifiedAssociationCount
+                    )
+                }
+            } catch {
+                NSLog(
+                    "動的日時履歴の移行に失敗: %@",
+                    error.localizedDescription
+                )
+            }
+        }
+        return CandidateSelectionHistoryStore(
+            history: loadCandidateSelectionHistory(),
+            writer: DeferredJSONFileWriter(
+                fileURL: historyURL,
+                queueLabel: "myim.candidate-selection-history",
+                errorHandler: {
+                    NSLog(
+                        "候補選択履歴の保存に失敗: %@",
+                        $0.localizedDescription
+                    )
+                }
+            )
+        )
     }
 
     private static func candidateSelectionHistoryURL() -> URL {

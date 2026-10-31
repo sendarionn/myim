@@ -9,7 +9,11 @@ struct SpecialConversionCandidateSourceTests {
     func prioritizesCalculationResults() throws {
         let result = try #require(source.result(for: .init(
             input: "1+2=",
-            javaScriptCandidates: ["1+2=", "3", "3"]
+            javaScriptCandidates: [
+                .init(value: "1+2="),
+                .init(value: "3"),
+                .init(value: "3")
+            ]
         )))
 
         #expect(result.candidates.map(\.storageText) == ["3"])
@@ -34,7 +38,7 @@ struct SpecialConversionCandidateSourceTests {
     func keepsSpecialSourcePrecedence() throws {
         let result = try #require(source.result(for: .init(
             input: "100cm",
-            javaScriptCandidates: ["script"]
+            javaScriptCandidates: [.init(value: "script")]
         )))
 
         #expect(result.candidates.map(\.storageText)
@@ -42,6 +46,22 @@ struct SpecialConversionCandidateSourceTests {
                 + ["script"])
         #expect(result.candidates.last?.hasSource(.javaScriptExtension) == true)
         #expect(result.ordering == .selectionHistory)
+    }
+
+    @Test
+    func keepsDynamicDateTimeOriginWhenMergedWithSpecialCandidates() throws {
+        let result = try #require(source.result(for: .init(
+            input: "1000",
+            javaScriptCandidates: [
+                .init(value: "20261031", kind: .dynamicDateTime)
+            ]
+        )))
+        let dynamic = try #require(result.candidates.first {
+            $0.storageText == "20261031"
+        })
+
+        #expect(dynamic.hasSource(.dateTime))
+        #expect(!dynamic.allowsSelectionHistory)
     }
 
     @Test

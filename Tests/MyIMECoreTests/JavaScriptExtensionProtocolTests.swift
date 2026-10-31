@@ -40,4 +40,25 @@ struct JavaScriptExtensionProtocolTests {
         )
         #expect(decoded.parameters == nil)
     }
+
+    @Test func preservesDynamicDateTimeCandidateMetadata() throws {
+        let response = JavaScriptExtensionResponse(
+            id: UUID(),
+            candidates: [
+                JavaScriptExtensionCandidate(
+                    value: "20261031",
+                    kind: .dynamicDateTime
+                ),
+                JavaScriptExtensionCandidate(value: "今日")
+            ]
+        )
+
+        let decoded = try JSONDecoder().decode(
+            JavaScriptExtensionResponse.self,
+            from: JSONEncoder().encode(response)
+        )
+
+        #expect(decoded.candidates[0].kind == .dynamicDateTime)
+        #expect(decoded.candidates[1].kind == .staticValue)
+    }
 }

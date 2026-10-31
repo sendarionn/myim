@@ -98,11 +98,55 @@ struct StandardConversionCandidateSourceTests {
         let candidates = makeSource().candidates(for: .init(
             input: "14:30",
             conversionReading: "",
-            javaScriptCandidates: ["14時30分", "14時半"]
+            javaScriptCandidates: [
+                .init(value: "14時30分"),
+                .init(value: "14時半")
+            ]
         )).map(\.storageText)
 
         #expect(candidates.prefix(2) == ["14時30分", "14時半"])
         #expect(!candidates.contains("14:30"))
+    }
+
+    @Test
+    func marksDynamicDateTimeCandidatesWithoutChangingStaticDuplicates() throws {
+        let dynamicOnly = try #require(makeSource().candidates(for: .init(
+            input: "kyou",
+            conversionReading: "kyou",
+            javaScriptCandidates: [
+                .init(value: "20261031", kind: .dynamicDateTime)
+            ]
+        )).first { $0.storageText == "20261031" })
+        #expect(dynamicOnly.hasSource(.dateTime))
+        #expect(!dynamicOnly.allowsSelectionHistory)
+
+        let scriptDuplicate = try #require(makeSource().candidates(for: .init(
+            input: "kyou",
+            conversionReading: "kyou",
+            javaScriptCandidates: [
+                .init(value: "20261031", kind: .dynamicDateTime),
+                .init(value: "20261031")
+            ]
+        )).first { $0.storageText == "20261031" })
+        #expect(scriptDuplicate.sources.contains(.dateTime))
+        #expect(scriptDuplicate.sources.contains(.javaScriptExtension))
+        #expect(scriptDuplicate.allowsSelectionHistory)
+
+        let merged = try #require(makeSource(
+            userEntries: [DictionaryEntry(
+                reading: "kyou",
+                candidates: ["20261031"]
+            )]
+        ).candidates(for: .init(
+            input: "kyou",
+            conversionReading: "kyou",
+            javaScriptCandidates: [
+                .init(value: "20261031", kind: .dynamicDateTime)
+            ]
+        )).first { $0.storageText == "20261031" })
+        #expect(merged.sources.contains(.dateTime))
+        #expect(merged.sources.contains(.userDictionary))
+        #expect(merged.allowsSelectionHistory)
     }
 
     /// A time learned or registered as typed is not offered again, since
@@ -114,7 +158,7 @@ struct StandardConversionCandidateSourceTests {
         ).candidates(for: .init(
             input: input,
             conversionReading: ConversionReadingResolver.resolve(input),
-            javaScriptCandidates: ["13時0分"]
+            javaScriptCandidates: [.init(value: "13時0分")]
         )).map(\.storageText)
 
         #expect(candidates == ["13時0分"])
@@ -776,7 +820,10 @@ struct DirectTimeSpecialConversionTests {
         let result = try #require(SpecialConversionCandidateSource().result(
             for: .init(
                 input: "1300",
-                javaScriptCandidates: ["13時0分", "13:00"]
+                javaScriptCandidates: [
+                    .init(value: "13時0分"),
+                    .init(value: "13:00")
+                ]
             )
         ))
         let candidates = result.candidates.map(\.storageText)
