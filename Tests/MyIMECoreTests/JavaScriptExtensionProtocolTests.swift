@@ -47,7 +47,8 @@ struct JavaScriptExtensionProtocolTests {
             candidates: [
                 JavaScriptExtensionCandidate(
                     value: "20261031",
-                    kind: .dynamicDateTime
+                    kind: .dynamicDateTime,
+                    preferenceID: "dynamic_date:kyou:YYYYMMDD"
                 ),
                 JavaScriptExtensionCandidate(value: "今日")
             ]
@@ -59,6 +60,11 @@ struct JavaScriptExtensionProtocolTests {
         )
 
         #expect(decoded.candidates[0].kind == .dynamicDateTime)
+        #expect(
+            decoded.candidates[0].preferenceID
+                == "dynamic_date:kyou:YYYYMMDD"
+        )
         #expect(decoded.candidates[1].kind == .staticValue)
+        #expect(decoded.candidates[1].preferenceID == nil)
     }
 }

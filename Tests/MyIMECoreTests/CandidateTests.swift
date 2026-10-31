@@ -43,7 +43,11 @@ struct CandidateTests {
     func excludesOnlyDynamicDateTimeOnlyCandidatesFromSelectionHistory() {
         let dynamic = Candidate(
             storageText: "20261031",
-            source: .dateTime
+            source: .dateTime,
+            contextualMetadata: [
+                Candidate.dynamicPreferenceIDMetadataKey:
+                    "dynamic_date:kyou:YYYYMMDD"
+            ]
         )
         let dictionary = Candidate(
             storageText: "20261031",
@@ -51,7 +55,16 @@ struct CandidateTests {
         )
 
         #expect(!dynamic.allowsSelectionHistory)
+        #expect(
+            dynamic.selectionHistoryValue
+                == "dynamic_date:kyou:YYYYMMDD"
+        )
+        #expect(dynamic.selectionHistoryValue != dynamic.storageText)
         #expect(dynamic.mergingOrigins(from: dictionary).allowsSelectionHistory)
+        #expect(
+            dynamic.mergingOrigins(from: dictionary).selectionHistoryValue
+                == "20261031"
+        )
     }
 
     @Test

@@ -61,6 +61,16 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         compactReadingsIfNeeded()
     }
 
+    public mutating func preserveRank(_ rank: Int, for candidate: String) {
+        guard !candidate.isEmpty, rank > 0 else { return }
+        ranks[candidate] = max(ranks[candidate] ?? 0, rank)
+        nextRank = max(nextRank, rank + 1)
+        if let maximumEntryCount, ranks.count > maximumEntryCount {
+            ranks = Self.compacted(ranks, limit: maximumEntryCount)
+            nextRank = (ranks.values.max() ?? 0) + 1
+        }
+    }
+
     public mutating func remove(_ candidates: Set<String>) {
         guard !candidates.isEmpty else { return }
         for candidate in candidates {

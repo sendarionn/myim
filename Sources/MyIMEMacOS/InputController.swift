@@ -4838,13 +4838,25 @@ final class InputController: IMKInputController {
     private func recordCandidateSelectionForCurrentInput(
         _ candidate: Candidate
     ) {
-        guard candidate.allowsSelectionHistory,
-              !candidate.hasSource(.translation),
+        guard !candidate.hasSource(.translation),
               !translationCandidateSession.contains(
                 candidate.storageText,
                 in: .standard
               )
         else {
+            return
+        }
+        guard let selectionHistoryValue = candidate.selectionHistoryValue else {
+            return
+        }
+        if !candidate.allowsSelectionHistory {
+            guard Self.diagnosticConfiguration.enables(.learning) else {
+                return
+            }
+            candidateSelectionHistoryStore.record(
+                selectionHistoryValue,
+                readings: []
+            )
             return
         }
         if let expression = CalculationInputHistory.value(
@@ -6578,17 +6590,21 @@ final class InputController: IMKInputController {
                     .migrateIfNeeded(
                         historyURL: historyURL,
                         backupURL: userDataURL(
-                            fileName: "candidate-selection-history.dynamic-date-migration-v1.backup.json"
+                            fileName: "candidate-selection-history.dynamic-date-migration-v2.backup.json"
                         ),
                         markerURL: userDataURL(
-                            fileName: "dynamic-date-history-migration-v1.json"
+                            fileName: "dynamic-date-history-migration-v2.json"
+                        ),
+                        legacySourceURL: userDataURL(
+                            fileName: "candidate-selection-history.dynamic-date-migration-v1.backup.json"
                         ),
                         protecting: protectedEntries
                     ) {
                     NSLog(
-                        "動的日時履歴の移行: removed=%d candidates=%d protected=%d unclassified=%d",
+                        "動的日時履歴の移行: removed=%d candidates=%d preferences=%d protected=%d unclassified=%d",
                         report.removedAssociationCount,
                         report.removedCandidateCount,
+                        report.migratedPreferenceCount,
                         report.retainedProtectedCount,
                         report.unclassifiedAssociationCount
                     )

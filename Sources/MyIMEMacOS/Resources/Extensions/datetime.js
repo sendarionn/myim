@@ -55,10 +55,18 @@ function candidates(context) {
   }
   if (Object.prototype.hasOwnProperty.call(dayOffsets, input)) {
     now.setDate(now.getDate() + dayOffsets[input])
-    return dynamicDateTimeCandidates(format(now, dateFormats))
+    return dynamicDateTimeCandidates(
+      format(now, dateFormats),
+      "dynamic_date:" + input + ":",
+      dateFormats
+    )
   }
   if (timeReadings.indexOf(input) >= 0) {
-    return dynamicDateTimeCandidates(format(now, timeFormats))
+    return dynamicDateTimeCandidates(
+      format(now, timeFormats),
+      "dynamic_time:" + input + ":",
+      timeFormats
+    )
   }
   if (Object.prototype.hasOwnProperty.call(weekdayReadings, input)) {
     return ["(" + weekdayReadings[input] + ")"]
@@ -66,9 +74,13 @@ function candidates(context) {
   return []
 }
 
-function dynamicDateTimeCandidates(values) {
-  return values.map(function(value) {
-    return { value: value, kind: "dynamic_date_time" }
+function dynamicDateTimeCandidates(values, preferencePrefix, formats) {
+  return values.map(function(value, index) {
+    return {
+      value: value,
+      kind: "dynamic_date_time",
+      preferenceID: preferencePrefix + formats[index]
+    }
   })
 }
 

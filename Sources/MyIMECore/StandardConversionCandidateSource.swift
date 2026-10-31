@@ -176,6 +176,23 @@ public struct StandardConversionCandidateSource: Sendable {
             history: context.selectionHistory,
             learningEnabled: context.learningEnabled
         )
+        var dynamicPreferenceRanks: [String: Int] = [:]
+        if context.learningEnabled {
+            for candidate in context.javaScriptCandidates {
+                guard candidate.kind == .dynamicDateTime,
+                      let preferenceID = candidate.preferenceID,
+                      let rank = context.selectionHistory.ranks[preferenceID]
+                else { continue }
+                dynamicPreferenceRanks[candidate.value] = max(
+                    dynamicPreferenceRanks[candidate.value] ?? 0,
+                    rank
+                )
+            }
+        }
+        let combinedDirectRanks = fullReadingRanks.merging(
+            dynamicPreferenceRanks,
+            uniquingKeysWith: max
+        )
         let kana = [
             romajiConverter.hiragana(from: context.conversionReading),
             romajiConverter.katakana(from: context.conversionReading)
@@ -247,7 +264,7 @@ public struct StandardConversionCandidateSource: Sendable {
             learnedExact: learnedExact,
             dateTime: context.javaScriptCandidates.filter {
                 $0.kind == .dynamicDateTime
-            }.map(\.value),
+            },
             numericPrefix: numericPrefixes,
             javaScript: context.javaScriptCandidates.filter {
                 $0.kind == .staticValue
@@ -274,7 +291,7 @@ public struct StandardConversionCandidateSource: Sendable {
             importedPrefix: imported.reading.prefix + imported.spelling.prefix,
             english: context.englishCandidates,
             uppercase: caseCandidates,
-            recencyRanks: fullReadingRanks,
+            recencyRanks: combinedDirectRanks,
             secondaryRanks: secondaryRanks,
             contextualCandidates: context.contextualCandidates,
             prioritizeKana: kana.first?.count == 1,

@@ -60,13 +60,16 @@ public enum JavaScriptExtensionCandidateKind: String, Codable, Sendable {
 public struct JavaScriptExtensionCandidate: Codable, Equatable, Hashable, Sendable {
     public let value: String
     public let kind: JavaScriptExtensionCandidateKind
+    public let preferenceID: String?
 
     public init(
         value: String,
-        kind: JavaScriptExtensionCandidateKind = .staticValue
+        kind: JavaScriptExtensionCandidateKind = .staticValue,
+        preferenceID: String? = nil
     ) {
         self.value = value
         self.kind = kind
+        self.preferenceID = preferenceID
     }
 }
 

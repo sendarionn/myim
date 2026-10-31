@@ -98,7 +98,8 @@ while let line = readLine() {
                 )
                 let normalized = JavaScriptExtensionCandidate(
                     value: trimmed,
-                    kind: candidate.kind
+                    kind: candidate.kind,
+                    preferenceID: candidate.preferenceID
                 )
                 if !trimmed.isEmpty, trimmed.count <= 256,
                    seen.insert(normalized).inserted, candidates.count < 32 {
@@ -134,7 +135,11 @@ private func extensionCandidates(
             let kind = (object["kind"] as? String)
                 .flatMap(JavaScriptExtensionCandidateKind.init(rawValue:))
                 ?? .staticValue
-            return JavaScriptExtensionCandidate(value: value, kind: kind)
+            return JavaScriptExtensionCandidate(
+                value: value,
+                kind: kind,
+                preferenceID: object["preferenceID"] as? String
+            )
         }
         return nil
     }

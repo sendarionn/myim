@@ -51,6 +51,8 @@ public struct CandidateOrigin: Equatable, Sendable {
 }
 
 public struct Candidate: Equatable, Sendable {
+    public static let dynamicPreferenceIDMetadataKey = "dynamicPreferenceID"
+
     public let storageText: String
     public private(set) var origins: [CandidateOrigin]
     public let priority: Int?
@@ -104,6 +106,14 @@ public struct Candidate: Equatable, Sendable {
     /// must not become historical candidates on their own
     public var allowsSelectionHistory: Bool {
         origins.contains { $0.source != .dateTime }
+    }
+
+    public var dynamicPreferenceID: String? {
+        contextualMetadata[Self.dynamicPreferenceIDMetadataKey]
+    }
+
+    public var selectionHistoryValue: String? {
+        allowsSelectionHistory ? storageText : dynamicPreferenceID
     }
 
     public func hasSource(_ source: CandidateSourceKind) -> Bool {

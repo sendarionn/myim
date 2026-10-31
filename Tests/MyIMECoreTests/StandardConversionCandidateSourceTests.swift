@@ -114,11 +114,19 @@ struct StandardConversionCandidateSourceTests {
             input: "kyou",
             conversionReading: "kyou",
             javaScriptCandidates: [
-                .init(value: "20261031", kind: .dynamicDateTime)
+                .init(
+                    value: "20261031",
+                    kind: .dynamicDateTime,
+                    preferenceID: "dynamic_date:kyou:YYYYMMDD"
+                )
             ]
         )).first { $0.storageText == "20261031" })
         #expect(dynamicOnly.hasSource(.dateTime))
         #expect(!dynamicOnly.allowsSelectionHistory)
+        #expect(
+            dynamicOnly.dynamicPreferenceID
+                == "dynamic_date:kyou:YYYYMMDD"
+        )
 
         let scriptDuplicate = try #require(makeSource().candidates(for: .init(
             input: "kyou",
@@ -147,6 +155,40 @@ struct StandardConversionCandidateSourceTests {
         #expect(merged.sources.contains(.dateTime))
         #expect(merged.sources.contains(.userDictionary))
         #expect(merged.allowsSelectionHistory)
+    }
+
+    @Test
+    func keepsLearnedDynamicFormatFirstAfterTheDateChanges() throws {
+        var history = CandidateSelectionHistory()
+        history.record(
+            "dynamic_date:kyou:M/D(E)",
+            readings: []
+        )
+        let restored = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: JSONEncoder().encode(history)
+        )
+
+        let candidates = makeSource().candidates(for: .init(
+            input: "kyou",
+            conversionReading: "kyou",
+            javaScriptCandidates: [
+                .init(
+                    value: "20261101",
+                    kind: .dynamicDateTime,
+                    preferenceID: "dynamic_date:kyou:YYYYMMDD"
+                ),
+                .init(
+                    value: "11/1(日)",
+                    kind: .dynamicDateTime,
+                    preferenceID: "dynamic_date:kyou:M/D(E)"
+                )
+            ],
+            selectionHistory: restored
+        ))
+
+        #expect(candidates.first?.storageText == "11/1(日)")
+        #expect(!candidates.contains { $0.storageText == "10/31(土)" })
     }
 
     /// A time learned or registered as typed is not offered again, since

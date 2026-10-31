@@ -77,7 +77,10 @@ public struct SpecialConversionCandidateSource: Sendable {
                 source: $0.kind == .dynamicDateTime
                     ? .dateTime
                     : .javaScriptExtension,
-                reading: input
+                reading: input,
+                contextualMetadata: $0.preferenceID.map {
+                    [Candidate.dynamicPreferenceIDMetadataKey: $0]
+                } ?? [:]
             )
         }
         if input.trimmingCharacters(in: .whitespaces).hasSuffix("="),

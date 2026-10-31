@@ -53,7 +53,11 @@ struct SpecialConversionCandidateSourceTests {
         let result = try #require(source.result(for: .init(
             input: "1000",
             javaScriptCandidates: [
-                .init(value: "20261031", kind: .dynamicDateTime)
+                .init(
+                    value: "20261031",
+                    kind: .dynamicDateTime,
+                    preferenceID: "dynamic_date:kyou:YYYYMMDD"
+                )
             ]
         )))
         let dynamic = try #require(result.candidates.first {
@@ -62,6 +66,10 @@ struct SpecialConversionCandidateSourceTests {
 
         #expect(dynamic.hasSource(.dateTime))
         #expect(!dynamic.allowsSelectionHistory)
+        #expect(
+            dynamic.dynamicPreferenceID
+                == "dynamic_date:kyou:YYYYMMDD"
+        )
     }
 
     @Test

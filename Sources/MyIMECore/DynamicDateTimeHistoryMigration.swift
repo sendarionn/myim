@@ -1,7 +1,7 @@
 import Foundation
 
 public enum DynamicDateTimeHistoryMigration {
-    public static let version = 1
+    public static let version = 2
 
     public struct ProtectedEntry: Hashable, Sendable {
         public let reading: String
@@ -18,6 +18,7 @@ public enum DynamicDateTimeHistoryMigration {
         public let examinedAssociationCount: Int
         public let removedAssociationCount: Int
         public let removedCandidateCount: Int
+        public let migratedPreferenceCount: Int
         public let retainedProtectedCount: Int
         public let unclassifiedAssociationCount: Int
 
@@ -25,6 +26,7 @@ public enum DynamicDateTimeHistoryMigration {
             examinedAssociationCount: Int,
             removedAssociationCount: Int,
             removedCandidateCount: Int,
+            migratedPreferenceCount: Int,
             retainedProtectedCount: Int,
             unclassifiedAssociationCount: Int
         ) {
@@ -32,6 +34,7 @@ public enum DynamicDateTimeHistoryMigration {
             self.examinedAssociationCount = examinedAssociationCount
             self.removedAssociationCount = removedAssociationCount
             self.removedCandidateCount = removedCandidateCount
+            self.migratedPreferenceCount = migratedPreferenceCount
             self.retainedProtectedCount = retainedProtectedCount
             self.unclassifiedAssociationCount = unclassifiedAssociationCount
         }
@@ -54,20 +57,26 @@ public enum DynamicDateTimeHistoryMigration {
 
     public static func migrate(
         _ history: CandidateSelectionHistory,
+        recoveringPreferencesFrom legacyHistory: CandidateSelectionHistory? = nil,
         protecting protectedEntries: Set<ProtectedEntry> = []
     ) -> Result {
         var migrated = history
+        let preferenceSource = legacyHistory ?? history
         var examined = 0
         var removedAssociations = 0
         var protectedCount = 0
         var unclassified = 0
         var removedCandidates = Set<String>()
+        var migratedPreferences = Set<String>()
 
         for reading in (dateReadings.union(timeReadings).union(dateTimeReadings)).sorted() {
-            let candidates = history.recordedCandidates(for: reading)
+            let candidates = preferenceSource.recordedCandidates(for: reading)
             examined += candidates.count
             for candidate in candidates {
-                guard isKnownDynamicOutput(candidate, for: reading) else {
+                guard let preferenceID = preferenceID(
+                    candidate,
+                    reading: reading
+                ) else {
                     unclassified += 1
                     continue
                 }
@@ -77,6 +86,10 @@ public enum DynamicDateTimeHistoryMigration {
                 )) else {
                     protectedCount += 1
                     continue
+                }
+                if let rank = preferenceSource.ranks[candidate] {
+                    migrated.preserveRank(rank, for: preferenceID)
+                    migratedPreferences.insert(preferenceID)
                 }
                 let removed = migrated.remove([candidate], forReading: reading)
                 if removed > 0 {
@@ -91,39 +104,50 @@ public enum DynamicDateTimeHistoryMigration {
                 examinedAssociationCount: examined,
                 removedAssociationCount: removedAssociations,
                 removedCandidateCount: removedCandidates.count,
+                migratedPreferenceCount: migratedPreferences.count,
                 retainedProtectedCount: protectedCount,
                 unclassifiedAssociationCount: unclassified
             )
         )
     }
 
-    private static func isKnownDynamicOutput(
+    private static func preferenceID(
         _ candidate: String,
-        for reading: String
-    ) -> Bool {
+        reading: String
+    ) -> String? {
         if dateReadings.contains(reading) {
-            return isDate(candidate)
+            return dateFormat(of: candidate).map {
+                "dynamic_date:\(reading):\($0)"
+            }
         }
         if timeReadings.contains(reading) {
-            return isTime(candidate)
+            return timeFormat(of: candidate).map {
+                "dynamic_time:\(reading):\($0)"
+            }
         }
         if dateTimeReadings.contains(reading) {
-            return isDateTime(candidate)
+            return dateTimeFormat(of: candidate).map {
+                "dynamic_datetime:\(reading):\($0)"
+            }
         }
-        return false
+        return nil
     }
 
-    private static func isDate(_ value: String) -> Bool {
+    private static func dateFormat(of value: String) -> String? {
         if value.count == 8, let number = Int(value) {
             return validDate(
                 year: number / 10_000,
                 month: number / 100 % 100,
                 day: number % 100
-            )
+            ) ? "YYYYMMDD" : nil
         }
-        if let parts = dateParts(value, separator: "-")
-            ?? dateParts(value, separator: "/") {
+        if let parts = dateParts(value, separator: "-") {
             return validDate(year: parts.0, month: parts.1, day: parts.2)
+                ? "YYYY-MM-DD" : nil
+        }
+        if let parts = dateParts(value, separator: "/") {
+            return validDate(year: parts.0, month: parts.1, day: parts.2)
+                ? "YYYY/MM/DD" : nil
         }
         if value.hasSuffix("日"),
            let yearEnd = value.firstIndex(of: "年"),
@@ -133,41 +157,56 @@ public enum DynamicDateTimeHistoryMigration {
            let month = Int(value[value.index(after: yearEnd)..<monthEnd]),
            let day = Int(value[value.index(after: monthEnd)..<value.index(before: value.endIndex)]) {
             return validDate(year: year, month: month, day: day)
+                ? "YYYY年M月D日" : nil
         }
         guard value.hasSuffix(")"),
               let open = value.lastIndex(of: "("),
               value.distance(from: open, to: value.index(before: value.endIndex)) == 2,
               let parts = monthDayParts(String(value[..<open])) else {
-            return false
+            return nil
         }
         return validMonthDay(month: parts.0, day: parts.1)
+            ? "M/D(E)" : nil
     }
 
-    private static func isTime(_ value: String) -> Bool {
+    private static func timeFormat(of value: String) -> String? {
         if let parts = clockParts(value, separator: ":") {
-            return validTime(hour: parts.0, minute: parts.1, second: parts.2)
+            guard validTime(
+                hour: parts.hour,
+                minute: parts.minute,
+                second: parts.second
+            ) else { return nil }
+            let hourToken = parts.hourWidth == 2 ? "HH" : "H"
+            let minuteToken = parts.minuteWidth == 2 ? "mm" : "m"
+            if let secondWidth = parts.secondWidth {
+                return "\(hourToken):\(minuteToken):\(secondWidth == 2 ? "ss" : "s")"
+            }
+            return "\(hourToken):\(minuteToken)"
         }
         if value.hasSuffix("秒"), let parts = japaneseTimeParts(value) {
             return validTime(hour: parts.0, minute: parts.1, second: parts.2)
+                ? "H時m分s秒" : nil
         }
         if value.hasSuffix("分"), let parts = japaneseTimeParts(value) {
             return validTime(hour: parts.0, minute: parts.1, second: nil)
+                ? "H時m分" : nil
         }
         guard value.allSatisfy(\.isNumber), value.count == 4 || value.count == 6,
-              let number = Int(value) else { return false }
+              let number = Int(value) else { return nil }
         if value.count == 4 {
             return validTime(hour: number / 100, minute: number % 100, second: nil)
+                ? "HHmm" : nil
         }
         return validTime(
             hour: number / 10_000,
             minute: number / 100 % 100,
             second: number % 100
-        )
+        ) ? "HHmmss" : nil
     }
 
-    private static func isDateTime(_ value: String) -> Bool {
+    private static func dateTimeFormat(of value: String) -> String? {
         if value.count == 14, value.allSatisfy(\.isNumber), let number = Int(value) {
-            return validDate(
+            let valid = validDate(
                 year: number / 10_000_000_000,
                 month: number / 100_000_000 % 100,
                 day: number / 1_000_000 % 100
@@ -176,11 +215,13 @@ public enum DynamicDateTimeHistoryMigration {
                 minute: number / 100 % 100,
                 second: number % 100
             )
+            return valid ? "YYYYMMDDHHmmss" : nil
         }
         let components = value.split(separator: " ", maxSplits: 1).map(String.init)
-        return components.count == 2
-            && isDate(components[0])
-            && isTime(components[1])
+        guard components.count == 2,
+              let date = dateFormat(of: components[0]),
+              let time = timeFormat(of: components[1]) else { return nil }
+        return "\(date) \(time)"
     }
 
     private static func dateParts(
@@ -207,14 +248,28 @@ public enum DynamicDateTimeHistoryMigration {
     private static func clockParts(
         _ value: String,
         separator: Character
-    ) -> (Int, Int, Int?)? {
+    ) -> (
+        hour: Int,
+        minute: Int,
+        second: Int?,
+        hourWidth: Int,
+        minuteWidth: Int,
+        secondWidth: Int?
+    )? {
         let parts = value.split(separator: separator, omittingEmptySubsequences: false)
         guard parts.count == 2 || parts.count == 3,
               let hour = Int(parts[0]),
               let minute = Int(parts[1]) else { return nil }
         let second = parts.count == 3 ? Int(parts[2]) : nil
         guard parts.count == 2 || second != nil else { return nil }
-        return (hour, minute, second)
+        return (
+            hour,
+            minute,
+            second,
+            parts[0].count,
+            parts[1].count,
+            parts.count == 3 ? parts[2].count : nil
+        )
     }
 
     private static func japaneseTimeParts(_ value: String) -> (Int, Int, Int?)? {
@@ -262,29 +317,32 @@ public enum DynamicDateTimeHistoryMigrationRunner {
         historyURL: URL,
         backupURL: URL,
         markerURL: URL,
+        legacySourceURL: URL? = nil,
         protecting protectedEntries: Set<DynamicDateTimeHistoryMigration.ProtectedEntry> = [],
         fileManager: FileManager = .default
     ) throws -> DynamicDateTimeHistoryMigration.Report? {
         guard !fileManager.fileExists(atPath: markerURL.path) else { return nil }
         let data = try Data(contentsOf: historyURL)
-        let decoder = JSONDecoder()
-        let history: CandidateSelectionHistory
-        if let decoded = try? decoder.decode(CandidateSelectionHistory.self, from: data) {
-            history = decoded
-        } else if let ranks = try? decoder.decode([String: Int].self, from: data) {
-            history = CandidateSelectionHistory(ranks: ranks)
+        let history = try decodeHistory(data)
+        let legacyHistory: CandidateSelectionHistory?
+        if let legacySourceURL,
+           fileManager.fileExists(atPath: legacySourceURL.path) {
+            legacyHistory = try decodeHistory(
+                Data(contentsOf: legacySourceURL)
+            )
         } else {
-            throw CocoaError(.fileReadCorruptFile)
+            legacyHistory = nil
         }
         let result = DynamicDateTimeHistoryMigration.migrate(
             history,
+            recoveringPreferencesFrom: legacyHistory,
             protecting: protectedEntries
         )
         try fileManager.createDirectory(
             at: historyURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        if result.report.removedAssociationCount > 0 {
+        if result.history != history {
             if !fileManager.fileExists(atPath: backupURL.path) {
                 try data.write(to: backupURL, options: .atomic)
                 try fileManager.setAttributes(
@@ -309,5 +367,21 @@ public enum DynamicDateTimeHistoryMigrationRunner {
             ofItemAtPath: markerURL.path
         )
         return result.report
+    }
+
+    private static func decodeHistory(
+        _ data: Data
+    ) throws -> CandidateSelectionHistory {
+        let decoder = JSONDecoder()
+        if let history = try? decoder.decode(
+            CandidateSelectionHistory.self,
+            from: data
+        ) {
+            return history
+        }
+        if let ranks = try? decoder.decode([String: Int].self, from: data) {
+            return CandidateSelectionHistory(ranks: ranks)
+        }
+        throw CocoaError(.fileReadCorruptFile)
     }
 }

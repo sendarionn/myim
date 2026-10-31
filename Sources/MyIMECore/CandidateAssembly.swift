@@ -4,7 +4,7 @@ public struct CandidateAssembly: Sendable {
         public let kana: [String]
         public let userExact: [String]
         public let learnedExact: [String]
-        public let dateTime: [String]
+        public let dateTime: [JavaScriptExtensionCandidate]
         public let numericPrefix: [String]
         public let javaScript: [String]
         public let symbolExact: [String]
@@ -38,7 +38,7 @@ public struct CandidateAssembly: Sendable {
             kana: [String],
             userExact: [String],
             learnedExact: [String],
-            dateTime: [String],
+            dateTime: [JavaScriptExtensionCandidate],
             numericPrefix: [String],
             javaScript: [String],
             symbolExact: [String],
@@ -112,11 +112,16 @@ public struct CandidateAssembly: Sendable {
             input.learnedExact,
             source: .selectionHistory,
             reading: input.reading
-        ) + makeCandidates(
-            input.dateTime,
-            source: .dateTime,
-            reading: input.reading
-        ) + makeCandidates(
+        ) + input.dateTime.map {
+            Candidate(
+                storageText: $0.value,
+                source: .dateTime,
+                reading: input.reading,
+                contextualMetadata: $0.preferenceID.map {
+                    [Candidate.dynamicPreferenceIDMetadataKey: $0]
+                } ?? [:]
+            )
+        } + makeCandidates(
             input.javaScript,
             source: .javaScriptExtension,
             reading: input.reading

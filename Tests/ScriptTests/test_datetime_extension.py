@@ -83,6 +83,37 @@ process.stdout.write(JSON.stringify(candidates({{
                     candidate["kind"] == "dynamic_date_time"
                     for candidate in candidates
                 ))
+                self.assertTrue(all(
+                    candidate["preferenceID"].startswith("dynamic_")
+                    for candidate in candidates
+                ))
+
+    def test_dynamic_candidate_ids_depend_on_reading_and_format_not_value(self):
+        october = self.candidates(
+            "kyou",
+            timestamp="2026-10-31T12:00:00+09:00",
+        )
+        november = self.candidates(
+            "kyou",
+            timestamp="2026-11-01T12:00:00+09:00",
+        )
+        tomorrow = self.candidates(
+            "ashita",
+            timestamp="2026-10-31T12:00:00+09:00",
+        )
+
+        self.assertNotEqual(
+            [candidate["value"] for candidate in october],
+            [candidate["value"] for candidate in november],
+        )
+        self.assertEqual(
+            [candidate["preferenceID"] for candidate in october],
+            [candidate["preferenceID"] for candidate in november],
+        )
+        self.assertNotEqual(
+            [candidate["preferenceID"] for candidate in october],
+            [candidate["preferenceID"] for candidate in tomorrow],
+        )
 
     def test_relative_dates_follow_local_calendar_boundaries(self):
         cases = (
