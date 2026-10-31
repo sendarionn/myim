@@ -24,6 +24,10 @@ public enum JapaneseParticleCandidateGenerator {
         /// i-adjectives such as 美しい; verbs end in an u-row kana and kana
         /// words cannot be told apart, so neither is joined
         case copulaStemByScript
+        /// Nouns and pronouns, excluding words known to be adjectives
+        case nounPhraseByScript
+        case naAdjectiveStem
+        case iAdjective
     }
 
     private struct Particle: Sendable {
@@ -97,12 +101,29 @@ public enum JapaneseParticleCandidateGenerator {
         Particle(reading: "nitaisite", text: "に対して"),
         Particle(reading: "nitsurete", text: "につれて"),
         Particle(reading: "womegutte", text: "をめぐって"),
-        Particle(reading: "nitsuite", text: "について"),
+        Particle(
+            reading: "toshiteno",
+            text: "としての",
+            trailingConnection: .nounPhraseByScript
+        ),
+        Particle(
+            reading: "nitsuite",
+            text: "について",
+            trailingConnection: .nounPhraseByScript
+        ),
         Particle(reading: "notameni", text: "のために"),
         Particle(reading: "niyotte", text: "によって"),
         Particle(reading: "nioite", text: "において"),
-        Particle(reading: "nitotte", text: "にとって"),
-        Particle(reading: "toshite", text: "として"),
+        Particle(
+            reading: "nitotte",
+            text: "にとって",
+            trailingConnection: .nounPhraseByScript
+        ),
+        Particle(
+            reading: "toshite",
+            text: "として",
+            trailingConnection: .nounPhraseByScript
+        ),
         Particle(reading: "woukete", text: "を受けて"),
         Particle(reading: "nitsuki", text: "につき"),
         Particle(reading: "niyoru", text: "による"),
@@ -137,17 +158,29 @@ public enum JapaneseParticleCandidateGenerator {
         Particle(reading: "ya", text: "や"),
         Particle(reading: "ka", text: "か"),
         Particle(reading: "ne", text: "ね"),
-        Particle(reading: "yo", text: "よ")
+        Particle(reading: "yo", text: "よ"),
+        Particle(
+            reading: "na",
+            text: "な",
+            trailingConnection: .naAdjectiveStem
+        ),
+        Particle(
+            reading: "na",
+            text: "な",
+            trailingConnection: .iAdjective
+        )
     ]
 
     public static func candidates(
         for input: String,
         limit: Int = 16,
+        adjectiveDictionary: JapaneseAdjectiveDictionary = .init(),
         exactCandidates: (String) -> [String]
     ) -> [String] {
         compositions(
             for: input,
             limit: limit,
+            adjectiveDictionary: adjectiveDictionary,
             exactCandidates: exactCandidates
         ).map(\.text)
     }
@@ -155,6 +188,7 @@ public enum JapaneseParticleCandidateGenerator {
     public static func compositions(
         for input: String,
         limit: Int = 16,
+        adjectiveDictionary: JapaneseAdjectiveDictionary = .init(),
         exactCandidates: (String) -> [String]
     ) -> [ParticleComposition] {
         guard limit > 0 else { return [] }
@@ -168,7 +202,12 @@ public enum JapaneseParticleCandidateGenerator {
             guard stem.count >= particle.minimumStemLength else { return }
             for candidate in exactCandidates(stem) where !candidate.isEmpty
                 && particle.trailingConnection.map({
-                    allowsConnection(candidate, rule: $0)
+                    allowsConnection(
+                        candidate,
+                        reading: stem,
+                        rule: $0,
+                        adjectiveDictionary: adjectiveDictionary
+                    )
                 }) ?? true {
                 let combined = candidate + particle.text
                 if seen.insert(combined).inserted {
@@ -186,7 +225,12 @@ public enum JapaneseParticleCandidateGenerator {
             guard stem.count >= 2,
                   let rule = particle.leadingConnection else { return }
             for candidate in exactCandidates(stem)
-            where allowsConnection(candidate, rule: rule) {
+            where allowsConnection(
+                candidate,
+                reading: stem,
+                rule: rule,
+                adjectiveDictionary: adjectiveDictionary
+            ) {
                 let combined = particle.text + candidate
                 if seen.insert(combined).inserted {
                     results.append(ParticleComposition(
@@ -225,7 +269,9 @@ public enum JapaneseParticleCandidateGenerator {
 
     private static func allowsConnection(
         _ candidate: String,
-        rule: ConnectionRule
+        reading: String,
+        rule: ConnectionRule,
+        adjectiveDictionary: JapaneseAdjectiveDictionary
     ) -> Bool {
         guard !candidate.isEmpty else { return false }
         let nounLike = candidate.allSatisfy {
@@ -236,6 +282,23 @@ public enum JapaneseParticleCandidateGenerator {
             return nounLike
         case .copulaStemByScript:
             return nounLike || isIAdjectiveLike(candidate)
+        case .nounPhraseByScript:
+            return nounLike && !adjectiveDictionary.containsAny(
+                reading: reading,
+                surface: candidate
+            )
+        case .naAdjectiveStem:
+            return adjectiveDictionary.contains(
+                reading: reading,
+                surface: candidate,
+                class: .naAdjectiveStem
+            )
+        case .iAdjective:
+            return adjectiveDictionary.contains(
+                reading: reading,
+                surface: candidate,
+                class: .iAdjective
+            )
         }
     }
 

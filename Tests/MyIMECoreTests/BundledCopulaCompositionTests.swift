@@ -23,6 +23,12 @@ struct BundledCopulaCompositionTests {
               let verbs = try? String(
                 contentsOf: resources.appendingPathComponent("mozc-verb-classes.tsv"),
                 encoding: .utf8
+              ),
+              let adjectives = try? String(
+                contentsOf: resources.appendingPathComponent(
+                    "mozc-adjective-classes.tsv"
+                ),
+                encoding: .utf8
               ) else {
             return nil
         }
@@ -36,7 +42,8 @@ struct BundledCopulaCompositionTests {
                 entries: basicEntries
             ),
             verbConjugations: VerbConjugationDictionary(text: verbs)
-                .addingSuruVerbs(from: basicEntries)
+                .addingSuruVerbs(from: basicEntries),
+            adjectiveDictionary: JapaneseAdjectiveDictionary(text: adjectives)
         )
     }()
 
@@ -97,6 +104,43 @@ struct BundledCopulaCompositionTests {
         #expect(try !visible("taberudearu").contains("食べるである"))
         #expect(try !visible("kouhoshiyou").contains("候補しよう"))
         #expect(try !visible("kouhoshitai").contains("候補したい"))
+    }
+
+    @Test(arguments: [
+        ("benrina", "便利な"),
+        ("kireina", "綺麗な"),
+        ("sugoina", "すごいな"),
+        ("gakuseitoshite", "学生として"),
+        ("kyoushitoshiteno", "教師としての"),
+        ("watashinitotte", "私にとって"),
+        ("riyoushanitotte", "利用者にとって"),
+        ("kenkyuunitsuite", "研究について"),
+        ("nihonnitsuite", "日本について")
+    ])
+    func generatesGrammaticalConnectionsFromBundledWordClasses(
+        input: String,
+        expected: String
+    ) throws {
+        let compositions = try #require(Self.source).candidates(for: .init(
+            input: input,
+            conversionReading: input
+        )).filter { $0.hasSource(.particleComposition) }
+
+        #expect(compositions.contains { $0.storageText == expected })
+    }
+
+    @Test(arguments: [
+        "gakuseina", "ikuna", "taberuna", "benritoshite"
+    ])
+    func suppressesConnectionsRejectedByBundledWordClasses(
+        input: String
+    ) throws {
+        let compositions = try #require(Self.source).candidates(for: .init(
+            input: input,
+            conversionReading: input
+        )).filter { $0.hasSource(.particleComposition) }
+
+        #expect(compositions.isEmpty)
     }
 
     @Test(arguments: ["kouhodes", "kouhode", "desu", "deshita"])

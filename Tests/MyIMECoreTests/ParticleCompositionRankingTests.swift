@@ -64,6 +64,32 @@ struct ParticleCompositionRankingTests {
     }
 
     @Test
+    func compoundConnectionsUseTheSameSelectionHistory() {
+        let compoundSource = StandardConversionCandidateSource(
+            userEngine: LayeredConversionEngine(engines: []),
+            importedEngine: LayeredConversionEngine(engines: []),
+            basicEngine: ConversionEngine(entries: [
+                DictionaryEntry(reading: "gakusei", candidates: ["学生", "学政"])
+            ]),
+            symbolEngine: ConversionEngine(entries: []),
+            systemEngine: IndexedDictionaryEngine(),
+            verbInflectionGenerator: VerbInflectionCandidateGenerator(
+                entries: []
+            )
+        )
+        var history = CandidateSelectionHistory()
+        history.record("学政として", reading: "gakuseitoshite")
+
+        let candidates = compoundSource.candidates(for: .init(
+            input: "gakuseitoshite",
+            conversionReading: "gakuseitoshite",
+            selectionHistory: history
+        )).filter { $0.hasSource(.particleComposition) }.map(\.storageText)
+
+        #expect(candidates == ["学政として", "学生として"])
+    }
+
+    @Test
     func kanaBaseCountsFromItsSecondSelection() {
         var history = CandidateSelectionHistory()
         history.record("わたし", reading: "watashi")

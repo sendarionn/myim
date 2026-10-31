@@ -35,6 +35,7 @@ public struct StandardConversionCandidateSource: Sendable {
     private let systemEngine: IndexedDictionaryEngine
     private let deferredSystemCandidates: DeferredSystemCandidates
     private let verbConjugations: VerbConjugationDictionary
+    private let adjectiveDictionary: JapaneseAdjectiveDictionary
     private let verbConjugationGenerator: VerbConjugationCandidateGenerator
     private let verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let maximumSystemPrefixCandidates: Int
@@ -53,6 +54,8 @@ public struct StandardConversionCandidateSource: Sendable {
             DeferredSystemCandidates(),
         verbConjugations: VerbConjugationDictionary =
             VerbConjugationDictionary(),
+        adjectiveDictionary: JapaneseAdjectiveDictionary =
+            JapaneseAdjectiveDictionary(),
         maximumSystemPrefixCandidates: Int = 2048
     ) {
         self.userEngine = userEngine
@@ -62,6 +65,7 @@ public struct StandardConversionCandidateSource: Sendable {
         self.systemEngine = systemEngine
         self.deferredSystemCandidates = deferredSystemCandidates
         self.verbConjugations = verbConjugations
+        self.adjectiveDictionary = adjectiveDictionary
         verbConjugationGenerator = VerbConjugationCandidateGenerator(
             dictionary: verbConjugations
         )
@@ -349,7 +353,10 @@ public struct StandardConversionCandidateSource: Sendable {
     private func particleCompositions(
         for input: String
     ) -> [ParticleComposition] {
-        JapaneseParticleCandidateGenerator.compositions(for: input) { reading in
+        JapaneseParticleCandidateGenerator.compositions(
+            for: input,
+            adjectiveDictionary: adjectiveDictionary
+        ) { reading in
             let readings = RomajiCanonicalizer.dictionaryLookupInputs(
                 from: reading
             )

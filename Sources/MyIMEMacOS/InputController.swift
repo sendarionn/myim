@@ -79,6 +79,9 @@ final class InputController: IMKInputController {
     private static let sharedVerbConjugations = VerbConjugationDictionary(
         text: loadBundledText(resource: "mozc-verb-classes") ?? ""
     ).addingSuruVerbs(from: sharedBasicEntries)
+    private static let sharedAdjectiveDictionary = JapaneseAdjectiveDictionary(
+        text: loadBundledText(resource: "mozc-adjective-classes") ?? ""
+    )
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
     private static let sharedBasicFuzzyEntries = sharedBasicEntries
@@ -3430,6 +3433,7 @@ final class InputController: IMKInputController {
             verbInflectionGenerator: dictionaryRuntime.verbInflectionGenerator,
             deferredSystemCandidates: Self.sharedDeferredSystemCandidates,
             verbConjugations: Self.sharedVerbConjugations,
+            adjectiveDictionary: Self.sharedAdjectiveDictionary,
             maximumSystemPrefixCandidates:
                 Self.maximumMozcDictionaryPrefixCandidates
         )

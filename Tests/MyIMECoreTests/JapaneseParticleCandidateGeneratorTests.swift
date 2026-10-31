@@ -18,12 +18,25 @@ struct JapaneseParticleCandidateGeneratorTests {
         "eibun": ["ABC"],
         "kigou": ["データ・ベース"],
         "gakusei": ["学生"],
+        "kyoushi": ["教師"],
+        "watashi": ["私"],
+        "riyousha": ["利用者"],
+        "kenkyuu": ["研究"],
+        "nihon": ["日本"],
         "benri": ["便利"],
         "kirei": ["綺麗", "きれい"],
+        "sugoi": ["すごい"],
         "utsukushii": ["美しい"],
         "iku": ["行く"],
         "taberu": ["食べる"]
     ]
+    private let adjectiveClasses = JapaneseAdjectiveDictionary(text: """
+        benri\t便利\tna-adjective-stem\t1000
+        kirei\tきれい\tna-adjective-stem\t1000
+        kirei\t綺麗\tna-adjective-stem\t1000
+        sugoi\tすごい\ti-adjective\t1000
+        utsukushii\t美しい\ti-adjective\t1000
+        """)
 
     @Test(arguments: [
         ("kouhodesu", ["候補です"]),
@@ -108,6 +121,62 @@ struct JapaneseParticleCandidateGeneratorTests {
         #expect(candidates(for: "kouhonikanshite") == ["候補に関して"])
     }
 
+    @Test(arguments: [
+        ("benrina", "便利な"),
+        ("kireina", "きれいな"),
+        ("sugoina", "すごいな"),
+        ("utsukushiina", "美しいな")
+    ])
+    func joinsNaOnlyToTheMatchingAdjectiveClass(
+        input: String,
+        expected: String
+    ) {
+        #expect(candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: ["gakuseina", "ikuna", "taberuna"])
+    func doesNotJoinNaToNounsOrVerbs(_ input: String) {
+        #expect(candidates(for: input).isEmpty)
+    }
+
+    @Test(arguments: [
+        ("gakuseitoshite", "学生として"),
+        ("kyoushitoshiteno", "教師としての"),
+        ("watashinitotte", "私にとって"),
+        ("riyoushanitotte", "利用者にとって"),
+        ("kenkyuunitsuite", "研究について"),
+        ("nihonnitsuite", "日本について")
+    ])
+    func joinsCompoundConnectionsOnlyToNounLikeCandidates(
+        input: String,
+        expected: String
+    ) {
+        #expect(candidates(for: input) == [expected])
+    }
+
+    @Test(arguments: [
+        "benritoshite", "utsukushinitotte", "sugoinitsuite"
+    ])
+    func doesNotJoinNounConnectionsToKnownAdjectives(_ input: String) {
+        #expect(candidates(for: input).isEmpty)
+    }
+
+    @Test
+    func keepsTheExistingCandidateLimitForCompoundConnections() {
+        let candidates = JapaneseParticleCandidateGenerator.candidates(
+            for: "stemnitsuite",
+            limit: 4
+        ) { reading in
+            reading == "stem"
+                ? ["第一", "第二", "第三", "第四", "第五", "第六"]
+                : []
+        }
+
+        #expect(candidates == [
+            "第一について", "第二について", "第三について", "第四について"
+        ])
+    }
+
     @Test
     func doesNotSplitParticleInsideInput() {
         #expect(candidates(for: "kouhowosentaku").isEmpty)
@@ -155,8 +224,9 @@ struct JapaneseParticleCandidateGeneratorTests {
     }
 
     private func candidates(for input: String) -> [String] {
-        JapaneseParticleCandidateGenerator.candidates(for: input) {
-            dictionary[$0] ?? []
-        }
+        JapaneseParticleCandidateGenerator.candidates(
+            for: input,
+            adjectiveDictionary: adjectiveClasses
+        ) { dictionary[$0] ?? [] }
     }
 }

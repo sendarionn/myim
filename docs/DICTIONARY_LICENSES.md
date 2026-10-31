@@ -5,7 +5,7 @@
 
 ## Mozc OSS辞書
 
-- 用途: 日本語のかな漢字変換候補
+- 用途: 日本語のかな漢字変換候補と形容詞の接続クラス判定
 - 出典: `google/mozc`の`src/data/dictionary_oss`
 - 取得元: https://github.com/google/mozc
 - 変換元リビジョン: `Sources/MyIMEMacOS/Resources/mozc-dictionary-source.json`
