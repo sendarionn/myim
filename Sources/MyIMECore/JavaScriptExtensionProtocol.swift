@@ -55,6 +55,9 @@ public struct JavaScriptExtensionStatus: Codable, Equatable, Sendable {
 public enum JavaScriptExtensionCandidateKind: String, Codable, Sendable {
     case staticValue = "static"
     case dynamicDateTime = "dynamic_date_time"
+    /// Offered after the dictionary words of the same reading, such as 丑
+    /// for `ushi` after 牛, so it never pushes a common word down
+    case supplementary
 }
 
 public struct JavaScriptExtensionCandidate: Codable, Equatable, Hashable, Sendable {

@@ -121,6 +121,167 @@ struct BundledCopulaCompositionTests {
         #expect(candidates.first == expected)
     }
 
+    /// The candidates eto.js gives for a year: kanji and emoji learned by
+    /// kind, so the choice carries over to another year
+    private static func etoYearCandidates(
+        kanji: String,
+        emoji: String,
+        mode: String
+    ) -> [JavaScriptExtensionCandidate] {
+        [
+            .init(
+                value: kanji,
+                kind: .dynamicDateTime,
+                preferenceID: "dynamic_eto:\(mode):kanji"
+            ),
+            .init(
+                value: emoji,
+                kind: .dynamicDateTime,
+                preferenceID: "dynamic_eto:\(mode):emoji"
+            )
+        ]
+    }
+
+    private func panel(
+        _ input: String,
+        javaScriptCandidates: [JavaScriptExtensionCandidate],
+        history: CandidateSelectionHistory = CandidateSelectionHistory()
+    ) throws -> [String] {
+        let source = try #require(Self.source)
+        let reading = ConversionReadingResolver.resolve(input)
+        var session = CandidateSession()
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: reading,
+                javaScriptCandidates: javaScriptCandidates,
+                selectionHistory: history
+            )),
+            input: input,
+            reading: reading
+        )
+        return session.candidateTexts
+    }
+
+    @Test
+    func showsTheBranchOfAGivenYearOnTheFirstPage() throws {
+        let candidates = try panel(
+            "eto2026",
+            javaScriptCandidates: Self.etoYearCandidates(
+                kanji: "午",
+                emoji: "🐴",
+                mode: "year"
+            )
+        )
+
+        #expect(candidates.prefix(4).contains("午"))
+        #expect(candidates.prefix(4).contains("🐴"))
+        #expect(Set(candidates).count == candidates.count)
+    }
+
+    /// The emoji chosen for 2026 is preferred for 2027, and 🐴 is not
+    /// offered again for a year it does not belong to
+    @Test
+    func carriesTheChosenKindToAnotherYear() throws {
+        var history = CandidateSelectionHistory()
+        history.record("dynamic_eto:year:emoji", readings: [])
+        history = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: JSONEncoder().encode(history)
+        )
+
+        let candidates = try panel(
+            "eto2027",
+            javaScriptCandidates: Self.etoYearCandidates(
+                kanji: "未",
+                emoji: "🐑",
+                mode: "year"
+            ),
+            history: history
+        )
+
+        #expect(candidates.first == "🐑")
+        #expect(candidates.contains("未"))
+        #expect(!candidates.contains("🐴"))
+    }
+
+    /// `eto` keeps 干支 from the dictionary beside this year's branch and
+    /// the fixed eto candidates
+    @Test
+    func showsThisYearBesideTheDictionaryCandidates() throws {
+        let candidates = try panel(
+            "eto",
+            javaScriptCandidates: Self.etoYearCandidates(
+                kanji: "午",
+                emoji: "🐴",
+                mode: "current"
+            ) + [
+                "十二支",
+                "子丑寅卯辰巳午未申酉戌亥",
+                "🐭🐂🐯🐰🐉🐍🐴🐑🐒🐓🐕🐗"
+            ].map {
+                JavaScriptExtensionCandidate(value: $0, kind: .supplementary)
+            }
+        )
+
+        for expected in [
+            "干支", "午", "🐴", "十二支", "子丑寅卯辰巳午未申酉戌亥",
+            "🐭🐂🐯🐰🐉🐍🐴🐑🐒🐓🐕🐗"
+        ] {
+            #expect(candidates.contains(expected))
+        }
+        #expect(candidates.prefix(4).contains("干支"))
+        #expect(Set(candidates).count == candidates.count)
+    }
+
+    /// A branch reading keeps its dictionary words and learns the branch
+    /// characters as text
+    @Test
+    func addsTheBranchToTheDictionaryCandidatesOfItsReading() throws {
+        let branch = ["丑", "🐂"].map {
+            JavaScriptExtensionCandidate(value: $0, kind: .supplementary)
+        }
+        let first = try panel("ushi", javaScriptCandidates: branch)
+
+        var history = CandidateSelectionHistory()
+        history.record("🐂", reading: "ushi")
+        let learned = try panel(
+            "ushi",
+            javaScriptCandidates: branch,
+            history: history
+        )
+
+        #expect(first.first == "牛")
+        #expect(first.contains("丑"))
+        #expect(first.contains("🐂"))
+        #expect(learned.first == "🐂")
+    }
+
+    /// Branch readings are everyday words too; their first candidate is
+    /// the same with the branch added after the dictionary words
+    @Test(arguments: [
+        ("tori", "酉", "🐓"), ("inu", "戌", "🐕"), ("ne", "子", "🐭"),
+        ("mi", "巳", "🐍"), ("u", "卯", "🐰"), ("i", "亥", "🐗"),
+        ("uma", "午", "🐴"), ("saru", "申", "🐒")
+    ])
+    func keepsTheFirstCandidateOfBranchReadings(
+        input: String,
+        kanji: String,
+        emoji: String
+    ) throws {
+        let without = try panel(input, javaScriptCandidates: [])
+        let with = try panel(
+            input,
+            javaScriptCandidates: [kanji, emoji].map {
+                JavaScriptExtensionCandidate(value: $0, kind: .supplementary)
+            }
+        )
+
+        #expect(with.first == without.first)
+        #expect(with.contains(kanji))
+        #expect(with.contains(emoji))
+    }
+
     /// Mirrors InputController from the typed romaji to the candidate
     /// panel: the reading is resolved, the standard candidates generated,
     /// and the panel state filled; the composition is on the first page

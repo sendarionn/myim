@@ -273,6 +273,9 @@ public struct StandardConversionCandidateSource: Sendable {
             javaScript: context.javaScriptCandidates.filter {
                 $0.kind == .staticValue
             }.map(\.value),
+            supplementaryJavaScript: context.javaScriptCandidates.filter {
+                $0.kind == .supplementary
+            }.map(\.value),
             symbolExact: symbols.exact,
             basicExact: basic.exact,
             systemExact: system.exact.filter {

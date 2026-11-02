@@ -24,4 +24,14 @@ struct SingleLetterDictionaryCandidateFilterTests {
             for: "b"
         ) == candidates)
     }
+
+    /// 🐰 is what an extension gives for `u` on purpose; Å from a
+    /// dictionary is still dropped
+    @Test func keepsSymbolsAnExtensionGivesForTheLetter() {
+        #expect(SingleLetterDictionaryCandidateFilter.candidates(
+            ["う", "卯", "🐰", "Å"],
+            for: "u",
+            keeping: ["🐰"]
+        ) == ["う", "卯", "🐰"])
+    }
 }

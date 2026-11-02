@@ -1,10 +1,16 @@
 public enum SingleLetterDictionaryCandidateFilter {
+    /// - Parameter kept: Candidates an extension returns for the input on
+    ///   purpose, such as 🐰 for `u`, which stay; only dictionary symbols
+    ///   such as Å for `a` are dropped
     public static func candidates(
         _ candidates: [String],
-        for input: String
+        for input: String,
+        keeping kept: Set<String> = []
     ) -> [String] {
         guard isSingleASCIILetter(input) else { return candidates }
-        return candidates.filter(isNaturalSingleLetterCandidate)
+        return candidates.filter {
+            kept.contains($0) || isNaturalSingleLetterCandidate($0)
+        }
     }
 
     private static func isSingleASCIILetter(_ input: String) -> Bool {

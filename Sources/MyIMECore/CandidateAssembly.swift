@@ -7,6 +7,7 @@ public struct CandidateAssembly: Sendable {
         public let dateTime: [JavaScriptExtensionCandidate]
         public let numericPrefix: [String]
         public let javaScript: [String]
+        public let supplementaryJavaScript: [String]
         public let symbolExact: [String]
         public let basicExact: [String]
         public let systemExact: [String]
@@ -41,6 +42,7 @@ public struct CandidateAssembly: Sendable {
             dateTime: [JavaScriptExtensionCandidate],
             numericPrefix: [String],
             javaScript: [String],
+            supplementaryJavaScript: [String] = [],
             symbolExact: [String],
             basicExact: [String],
             systemExact: [String],
@@ -72,6 +74,7 @@ public struct CandidateAssembly: Sendable {
             self.dateTime = dateTime
             self.numericPrefix = numericPrefix
             self.javaScript = javaScript
+            self.supplementaryJavaScript = supplementaryJavaScript
             self.symbolExact = symbolExact
             self.basicExact = basicExact
             self.systemExact = systemExact
@@ -159,6 +162,10 @@ public struct CandidateAssembly: Sendable {
             input.importedSpelling,
             source: .importedDictionary,
             reading: input.reading
+        ) + makeCandidates(
+            input.supplementaryJavaScript,
+            source: .javaScriptExtension,
+            reading: input.reading
         )
         let other = makeCandidates(
             input.userPrefix,
@@ -236,7 +243,10 @@ public struct CandidateAssembly: Sendable {
         )
         let visibleTexts = SingleLetterDictionaryCandidateFilter.candidates(
             ordered.map(\.storageText),
-            for: input.reading
+            for: input.reading,
+            keeping: Set(ordered.filter {
+                $0.hasSource(.javaScriptExtension) || $0.hasSource(.dateTime)
+            }.map(\.storageText))
         )
         let byText = Dictionary(
             ordered.map { ($0.storageText, $0) },
