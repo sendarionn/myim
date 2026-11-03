@@ -68,6 +68,9 @@ guard let server = IMKServer(
 
 NSLog("myim: IMKServer initialized bundle=%@ connection=%@", bundleIdentifier, connectionName)
 
-withExtendedLifetime(server) {
+let passwordInputSourceRecovery = PasswordInputSourceRecoveryController.shared
+passwordInputSourceRecovery.start()
+
+withExtendedLifetime((server, passwordInputSourceRecovery)) {
     application.run()
 }

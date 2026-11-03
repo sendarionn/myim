@@ -13,6 +13,8 @@ public struct InputFeatureSettings {
         static let systemDictionaryNames = "SystemDictionaryNames"
         static let fuzzyCandidates = "FuzzySuggestionsEnabled"
         static let dateTimeCandidates = "DateTimeCandidatesEnabled"
+        static let passwordInputSourceRecovery =
+            "PasswordInputSourceRecoveryEnabled"
         static let disabledImportedDictionaries = "DisabledImportedDictionaries"
     }
 
@@ -60,6 +62,13 @@ public struct InputFeatureSettings {
     public var isDateTimeCandidatesEnabled: Bool {
         get { flag(Key.dateTimeCandidates, default: false) }
         nonmutating set { setFlag(Key.dateTimeCandidates, newValue) }
+    }
+
+    public var isPasswordInputSourceRecoveryEnabled: Bool {
+        get { flag(Key.passwordInputSourceRecovery, default: true) }
+        nonmutating set {
+            setFlag(Key.passwordInputSourceRecovery, newValue)
+        }
     }
 
     public var translationLanguageIdentifiers: Set<String> {

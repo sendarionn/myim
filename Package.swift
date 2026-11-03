@@ -35,6 +35,7 @@ let package = Package(
                 .swiftLanguageMode(.v5)
             ],
             linkerSettings: [
+                .linkedFramework("ApplicationServices"),
                 .linkedFramework("Carbon"),
                 .linkedFramework("CoreServices"),
                 .linkedFramework("InputMethodKit"),

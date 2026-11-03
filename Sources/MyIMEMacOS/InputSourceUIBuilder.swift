@@ -80,6 +80,9 @@ enum SettingsWindowBuilder {
         let nextInputPrediction: Bool
         let fuzzyCandidates: Bool
         let dateTimeCandidates: Bool
+        let passwordInputSourceRecovery: Bool
+        let passwordInputSourceRecoveryStatus: String
+        let passwordInputSourceRecoveryNeedsPermission: Bool
         let externalInformationPanel: Bool
         let systemDictionaryPreview: Bool
         let webSearch: Bool
@@ -93,6 +96,8 @@ enum SettingsWindowBuilder {
         let toggleNextInputPrediction: Selector
         let toggleFuzzyCandidates: Selector
         let toggleDateTimeCandidates: Selector
+        let togglePasswordInputSourceRecovery: Selector
+        let requestAccessibilityPermission: Selector
         let clearNextInputHistory: Selector
         let toggleExternalInformationPanel: Selector
         let toggleSystemDictionaryPreview: Selector
@@ -156,6 +161,29 @@ enum SettingsWindowBuilder {
         addButtons([
             ("次入力履歴を削除", actions.clearNextInputHistory)
         ], target: target, to: stack)
+
+        addSection("入力ソース", to: stack)
+        addCheckboxes([
+            (
+                "パスワード入力後にmyimへ自動復帰",
+                actions.togglePasswordInputSourceRecovery,
+                states.passwordInputSourceRecovery
+            )
+        ], target: target, to: stack)
+        let recoveryStatus = NSTextField(
+            labelWithString:
+                "状態: \(states.passwordInputSourceRecoveryStatus)"
+        )
+        recoveryStatus.textColor = .secondaryLabelColor
+        stack.addArrangedSubview(recoveryStatus)
+        if states.passwordInputSourceRecoveryNeedsPermission {
+            addButtons([
+                (
+                    "Accessibility権限を許可",
+                    actions.requestAccessibilityPermission
+                )
+            ], target: target, to: stack)
+        }
 
         addSection("外部情報", to: stack)
         addCheckboxes([

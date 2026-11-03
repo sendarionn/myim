@@ -1194,6 +1194,13 @@ final class InputController: IMKInputController {
             nextInputPrediction: Self.featureSettings.isNextInputPredictionEnabled,
             fuzzyCandidates: Self.featureSettings.isFuzzyCandidatesEnabled,
             dateTimeCandidates: Self.featureSettings.isDateTimeCandidatesEnabled,
+            passwordInputSourceRecovery:
+                Self.featureSettings.isPasswordInputSourceRecoveryEnabled,
+            passwordInputSourceRecoveryStatus:
+                PasswordInputSourceRecoveryController.shared.status.description,
+            passwordInputSourceRecoveryNeedsPermission:
+                PasswordInputSourceRecoveryController.shared.status
+                    == .accessibilityPermissionRequired,
             externalInformationPanel: Self.featureSettings.isExternalInformationPanelEnabled,
             systemDictionaryPreview: Self.featureSettings.isSystemDictionaryPreviewEnabled,
             webSearch: Self.featureSettings.isWebSearchEnabled,
@@ -1220,6 +1227,12 @@ final class InputController: IMKInputController {
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzyCandidates: #selector(toggleFuzzyCandidates(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
+            togglePasswordInputSourceRecovery: #selector(
+                togglePasswordInputSourceRecovery(_:)
+            ),
+            requestAccessibilityPermission: #selector(
+                requestPasswordRecoveryAccessibilityPermission(_:)
+            ),
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
             toggleExternalInformationPanel: #selector(toggleExternalInformationPanel(_:)),
             toggleSystemDictionaryPreview: #selector(toggleSystemDictionaryPreview(_:)),
@@ -1431,7 +1444,8 @@ final class InputController: IMKInputController {
         alert.informativeText = [
             "ユーザー辞書: \(userDictionaryStore.count)読み",
             "TKGJE更新: \(basicDictionaryStatus.description)",
-            "保護入力: \(secureInputStatusDescription)"
+            "保護入力: \(secureInputStatusDescription)",
+            "パスワード後の復帰: \(PasswordInputSourceRecoveryController.shared.status.description)"
         ].joined(separator: "\n")
         alert.addButton(withTitle: "閉じる")
         alert.window.level = .floating
@@ -1610,6 +1624,7 @@ final class InputController: IMKInputController {
         activeInputClient = sender
         inputSession.activate(sessionGeneration: activation.globalGeneration)
         Self.activeController = self
+        PasswordInputSourceRecoveryController.shared.refreshConfiguration()
         updateCandidateDeletionShortcutCapture()
         EmojiGlobalHotKey.shared.activate()
         super.activateServer(sender)
@@ -1808,6 +1823,39 @@ final class InputController: IMKInputController {
             return
         }
         refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func togglePasswordInputSourceRecovery(_ sender: Any?) {
+        let enabled = checkboxValue(
+            sender,
+            current: Self.featureSettings
+                .isPasswordInputSourceRecoveryEnabled
+        )
+        Self.featureSettings.isPasswordInputSourceRecoveryEnabled = enabled
+        PasswordInputSourceRecoveryController.shared.refreshConfiguration(
+            promptForAuthorization: enabled
+        )
+        refreshSettingsWindow()
+    }
+
+    @objc
+    private func requestPasswordRecoveryAccessibilityPermission(
+        _ sender: Any?
+    ) {
+        PasswordInputSourceRecoveryController.shared
+            .requestAccessibilityAuthorization()
+        refreshSettingsWindow()
+    }
+
+    private func refreshSettingsWindow() {
+        settingsWindowPresenter.refreshIfPresented {
+            SettingsWindowBuilder.make(
+                target: self,
+                states: self.settingsFeatureStates,
+                actions: self.settingsActions
+            )
+        }
     }
 
     @objc

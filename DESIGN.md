@@ -302,6 +302,10 @@ Escは書式候補から分、分から時、時からAM/PMへ戻り、AM/PMで�
 `InputSourceUIBuilder`と`SettingsWindowPresenter`は標準のsection、checkbox、button、scroll viewを使う
 設定内容の更新時も既存ウィンドウを維持し、位置、サイズ、スクロール位置を失わない
 
+パスワード入力後のmyim復帰は設定の入力ソースsectionで有効・無効とAccessibility権限状態を表示する
+
+パスワードの文字列やキー入力は取得せず、フォーカス要素のroleとsubroleだけを判定に使う
+
 ## 実装と検証
 
 UI変更では見た目だけでなく、次を確認する

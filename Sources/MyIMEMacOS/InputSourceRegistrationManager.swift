@@ -1,6 +1,11 @@
 import Carbon
 import Foundation
 
+struct KeyboardInputSourceSnapshot: Equatable {
+    let identifier: String
+    let isASCIICapableKeyboardLayout: Bool
+}
+
 enum InputSourceRegistrationManager {
     static let myIMIdentifier =
         "io.github.sendarionn.inputmethod.myime.Japanese"
@@ -43,6 +48,10 @@ enum InputSourceRegistrationManager {
             includeAllInstalled: true
         ) else { return false }
         return booleanProperty(source, key: kTISPropertyInputSourceIsEnabled)
+    }
+
+    static var currentSource: KeyboardInputSourceSnapshot? {
+        snapshot(TISCopyCurrentKeyboardInputSource().takeRetainedValue())
     }
 
     static func register(bundleURL: URL) throws {
@@ -111,14 +120,42 @@ enum InputSourceRegistrationManager {
         }
     }
 
-    private static func selectedSourceIdentifier() -> String? {
-        sourceIdentifier(TISCopyCurrentKeyboardInputSource().takeRetainedValue())
+    static func selectedSourceIdentifier() -> String? {
+        currentSource?.identifier
+    }
+
+    private static func snapshot(
+        _ source: TISInputSource
+    ) -> KeyboardInputSourceSnapshot? {
+        guard let identifier = sourceIdentifier(source) else { return nil }
+        let category = stringProperty(
+            source,
+            key: kTISPropertyInputSourceCategory
+        )
+        let type = stringProperty(source, key: kTISPropertyInputSourceType)
+        return KeyboardInputSourceSnapshot(
+            identifier: identifier,
+            isASCIICapableKeyboardLayout:
+                category == kTISCategoryKeyboardInputSource as String
+                && type == kTISTypeKeyboardLayout as String
+                && booleanProperty(
+                    source,
+                    key: kTISPropertyInputSourceIsASCIICapable
+                )
+        )
     }
 
     private static func sourceIdentifier(_ source: TISInputSource) -> String? {
+        stringProperty(source, key: kTISPropertyInputSourceID)
+    }
+
+    private static func stringProperty(
+        _ source: TISInputSource,
+        key: CFString
+    ) -> String? {
         guard let pointer = TISGetInputSourceProperty(
             source,
-            kTISPropertyInputSourceID
+            key
         ) else { return nil }
         return Unmanaged<CFString>
             .fromOpaque(pointer)

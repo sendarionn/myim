@@ -16,6 +16,7 @@ struct InputFeatureSettingsTests {
         #expect(!settings.isWebSearchEnabled)
         #expect(!settings.isFuzzyCandidatesEnabled)
         #expect(!settings.isDateTimeCandidatesEnabled)
+        #expect(settings.isPasswordInputSourceRecoveryEnabled)
     }
 
     @Test
@@ -37,11 +38,16 @@ struct InputFeatureSettingsTests {
 
         settings.isNextInputPredictionEnabled = false
         settings.isWebSearchEnabled = true
+        settings.isPasswordInputSourceRecoveryEnabled = false
 
         #expect(defaults.object(forKey: "NextInputPredictionEnabled") as? Bool == false)
         #expect(defaults.object(forKey: "WebSearchEnabled") as? Bool == true)
+        #expect(defaults.object(
+            forKey: "PasswordInputSourceRecoveryEnabled"
+        ) as? Bool == false)
         #expect(!settings.isNextInputPredictionEnabled)
         #expect(settings.isWebSearchEnabled)
+        #expect(!settings.isPasswordInputSourceRecoveryEnabled)
     }
 
     @Test
