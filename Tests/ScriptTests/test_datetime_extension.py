@@ -140,13 +140,39 @@ process.stdout.write(JSON.stringify(candidates({{
                 ]
                 self.assertEqual(values[0], expected)
 
-    def test_keeps_entered_dates_weekdays_and_calendar_formats_static(self):
-        for reading in ("9/1", "nichi", "calendar"):
+    def test_keeps_entered_dates_and_weekdays_static(self):
+        for reading in ("9/1", "nichi"):
             with self.subTest(reading=reading):
                 self.assertTrue(all(
                     isinstance(candidate, str)
                     for candidate in self.candidates(reading)
                 ))
+
+    def test_calendar_formats_have_value_independent_preference_ids(self):
+        october = self.candidates(
+            "calendar",
+            timestamp="2026-10-31T12:00:00+09:00",
+        )
+        november = self.candidates(
+            "calendar",
+            timestamp="2026-11-01T12:00:00+09:00",
+        )
+
+        self.assertEqual(
+            [candidate["preferenceID"] for candidate in october],
+            [
+                "dynamic_calendar:YYYYMMDD",
+                "dynamic_calendar:M/D(E)",
+            ],
+        )
+        self.assertEqual(
+            [candidate["preferenceID"] for candidate in october],
+            [candidate["preferenceID"] for candidate in november],
+        )
+        self.assertNotEqual(
+            [candidate["value"] for candidate in october],
+            [candidate["value"] for candidate in november],
+        )
 
     def test_date_formats_are_defined_only_in_datetime_extension(self):
         datetime_source = (EXTENSIONS / "datetime.js").read_text()

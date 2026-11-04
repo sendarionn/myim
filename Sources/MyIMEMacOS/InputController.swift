@@ -2840,7 +2840,8 @@ final class InputController: IMKInputController {
                     detail: "count=\(candidates.count)"
                 )
                 self.calendarSelectionSession.replaceCandidates(
-                    self.candidatesOrderedByRecency(candidates)
+                    candidates,
+                    ranks: self.candidateSelectionHistoryStore.snapshot.ranks
                 )
                 self.showCalendarFormatCandidates(client: sender)
                 guard let orderedCandidates = self.calendarSelectionSession
@@ -2869,10 +2870,10 @@ final class InputController: IMKInputController {
                     self.primaryCandidatePanel.hide()
                     return
                 }
-                let value = orderedCandidates[selectedIndex]
-                self.recordCandidateSelection(value)
+                let candidate = orderedCandidates[selectedIndex]
+                self.recordCalendarFormatSelection(candidate)
                 self.clearCalendarSelection()
-                self.commit(value, to: sender)
+                self.commit(candidate.value, to: sender)
             },
             retainQueryAfterCompletion: false
         )
@@ -2910,10 +2911,10 @@ final class InputController: IMKInputController {
                   candidates.indices.contains(index) else {
                 return true
             }
-            let value = candidates[index]
-            recordCandidateSelection(value)
+            let candidate = candidates[index]
+            recordCalendarFormatSelection(candidate)
             clearCalendarSelection()
-            commit(value, to: sender)
+            commit(candidate.value, to: sender)
         case 53:
             clearCalendarSelection()
             primaryCandidatePanel.hide()
@@ -2963,7 +2964,7 @@ final class InputController: IMKInputController {
             pageSize: Self.maximumCandidateCount
         )
         primaryCandidatePanel.show(
-            candidates: Array(candidates[pageRange]),
+            candidates: candidates[pageRange].map(\.value),
             selectedIndex: calendarSelectionSession.selectedIndex.map {
                 $0 - pageRange.lowerBound
             },
@@ -2978,6 +2979,16 @@ final class InputController: IMKInputController {
         candidateSearchCoordinator.cancel(.calendarFormat)
         calendarSelectionSession.reset()
         panelCoordinator.clearCalendarPresentation()
+    }
+
+    private func recordCalendarFormatSelection(
+        _ candidate: CalendarFormatCandidate
+    ) {
+        guard Self.diagnosticConfiguration.enables(.learning),
+              let preferenceID = candidate.preferenceID else {
+            return
+        }
+        candidateSelectionHistoryStore.record(preferenceID, readings: [])
     }
 
     private func calendarInputLocation(for sender: Any) -> NSRect {

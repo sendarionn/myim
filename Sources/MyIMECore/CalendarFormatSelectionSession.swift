@@ -1,5 +1,15 @@
+public struct CalendarFormatCandidate: Equatable, Sendable {
+    public let value: String
+    public let preferenceID: String?
+
+    public init(value: String, preferenceID: String? = nil) {
+        self.value = value
+        self.preferenceID = preferenceID
+    }
+}
+
 public struct CalendarFormatSelectionSession: Equatable, Sendable {
-    public private(set) var candidates: [String]?
+    public private(set) var candidates: [CalendarFormatCandidate]?
     public private(set) var selectedIndex: Int?
     public private(set) var isActive = false
 
@@ -9,7 +19,7 @@ public struct CalendarFormatSelectionSession: Equatable, Sendable {
         candidates != nil
     }
 
-    public var selectedCandidate: String? {
+    public var selectedCandidate: CalendarFormatCandidate? {
         guard let candidates, let selectedIndex,
               candidates.indices.contains(selectedIndex) else {
             return nil
@@ -28,8 +38,15 @@ public struct CalendarFormatSelectionSession: Equatable, Sendable {
         selectedIndex = nil
     }
 
-    public mutating func replaceCandidates(_ candidates: [String]) {
-        self.candidates = candidates
+    public mutating func replaceCandidates(
+        _ candidates: [CalendarFormatCandidate],
+        ranks: [String: Int] = [:]
+    ) {
+        let preferenceIDs = candidates.map { $0.preferenceID ?? "" }
+        self.candidates = CandidateRecencyOrderer.orderedIndices(
+            preferenceIDs,
+            ranks: ranks
+        ).map { candidates[$0] }
         selectedIndex = nil
     }
 

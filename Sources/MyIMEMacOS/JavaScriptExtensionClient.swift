@@ -169,9 +169,14 @@ actor JavaScriptExtensionClient {
         )
     }
 
-    func calendarCandidates(for date: Date) async -> [String] {
+    func calendarCandidates(for date: Date) async -> [CalendarFormatCandidate] {
         await candidates(for: "calendar", timestamp: date, settings: [:])
-            .map(\.value)
+            .map {
+                CalendarFormatCandidate(
+                    value: $0.value,
+                    preferenceID: $0.preferenceID
+                )
+            }
     }
 
     func timeCandidates(hour: Int, minute: Int) async -> [String] {

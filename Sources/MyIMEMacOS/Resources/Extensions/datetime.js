@@ -46,7 +46,11 @@ function candidates(context) {
   const enteredDate = parseEnteredDate(input, now.getFullYear())
 
   if (input === "calendar") {
-    return format(now, dateFormats)
+    return dynamicDateTimeCandidates(
+      format(now, dateFormats),
+      "dynamic_calendar:",
+      dateFormats
+    )
   }
   if (enteredDate) {
     return format(enteredDate, dateFormats).filter(function(candidate) {
