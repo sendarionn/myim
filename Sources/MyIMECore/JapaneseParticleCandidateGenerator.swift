@@ -17,7 +17,7 @@ public enum JapaneseParticleCandidateGenerator {
     // 選定根拠はdocs/JAPANESE_PARTICLE_SOURCES.mdを参照
     /// Runtime dictionaries do not retain POS data, so connections are
     /// judged from how the candidate is written
-    private enum ConnectionRule: Sendable {
+    private enum ConnectionRule: Equatable, Sendable {
         /// Kanji and katakana only, as nouns are written
         case nounLikeByScript
         /// Nouns and na-adjective stems such as 学生 and 便利, and
@@ -200,7 +200,27 @@ public enum JapaneseParticleCandidateGenerator {
 
         func append(stem: String, particle: Particle) {
             guard stem.count >= particle.minimumStemLength else { return }
-            for candidate in exactCandidates(stem) where !candidate.isEmpty
+            let candidates = exactCandidates(stem)
+            let orderedCandidates: [String]
+            if particle.trailingConnection == .nounLikeByScript {
+                var naAdjectives: [String] = []
+                var otherCandidates: [String] = []
+                for candidate in candidates {
+                    if adjectiveDictionary.contains(
+                        reading: stem,
+                        surface: candidate,
+                        class: .naAdjectiveStem
+                    ) {
+                        naAdjectives.append(candidate)
+                    } else {
+                        otherCandidates.append(candidate)
+                    }
+                }
+                orderedCandidates = naAdjectives + otherCandidates
+            } else {
+                orderedCandidates = candidates
+            }
+            for candidate in orderedCandidates where !candidate.isEmpty
                 && particle.trailingConnection.map({
                     allowsConnection(
                         candidate,
@@ -279,7 +299,11 @@ public enum JapaneseParticleCandidateGenerator {
         }
         switch rule {
         case .nounLikeByScript:
-            return nounLike
+            return nounLike || adjectiveDictionary.contains(
+                reading: reading,
+                surface: candidate,
+                class: .naAdjectiveStem
+            )
         case .copulaStemByScript:
             return nounLike || isIAdjectiveLike(candidate)
         case .nounPhraseByScript:

@@ -847,6 +847,31 @@ struct StandardConversionCandidateSourceTests {
         #expect(!promoted.hasSource(.selectionHistory))
     }
 
+    @Test
+    func repeatedSelectionPromotesAdjectiveInflectionWithoutReclassifyingIt()
+        throws
+    {
+        let input = "osokatta"
+        let generated = "遅かった"
+        let source = makeSource(
+            systemText: "osokatta\tオソカッタ\n",
+            adjectiveText: "osoi\t遅い\ti-adjective\t1000\n"
+        )
+        var history = CandidateSelectionHistory()
+        history.record(generated, reading: input)
+        history.record(generated, reading: input)
+
+        let promoted = try #require(source.candidates(for: .init(
+            input: input,
+            conversionReading: input,
+            selectionHistory: history
+        )).first)
+
+        #expect(promoted.storageText == generated)
+        #expect(promoted.hasSource(.adjectiveInflection))
+        #expect(!promoted.hasSource(.selectionHistory))
+    }
+
     private let madeBasic = [DictionaryEntry(reading: "made", candidates: ["まで"])]
     private let madeImported = [
         DictionaryEntry(reading: "made", candidates: ["メイド", "メード"]),
@@ -880,7 +905,8 @@ struct StandardConversionCandidateSourceTests {
         symbolEntries: [DictionaryEntry] = [],
         systemText: String = "",
         deferred: String = "",
-        verbText: String = ""
+        verbText: String = "",
+        adjectiveText: String = ""
     ) -> StandardConversionCandidateSource {
         StandardConversionCandidateSource(
             userEngine: LayeredConversionEngine(engines: [
@@ -896,7 +922,10 @@ struct StandardConversionCandidateSourceTests {
                 entries: basicEntries
             ),
             deferredSystemCandidates: DeferredSystemCandidates(text: deferred),
-            verbConjugations: VerbConjugationDictionary(text: verbText)
+            verbConjugations: VerbConjugationDictionary(text: verbText),
+            adjectiveDictionary: JapaneseAdjectiveDictionary(
+                text: adjectiveText
+            )
         )
     }
 }

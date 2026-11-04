@@ -157,4 +157,36 @@ struct CandidateAssemblyTests {
         #expect(candidates.first?.hasSource(.verbInflection) == true)
         #expect(candidates.first?.hasSource(.selectionHistory) == false)
     }
+
+    @Test
+    func marksAdjectiveInflectionCandidatesWithTheirSource() {
+        let candidates = CandidateAssembly().candidates(from: .init(
+            reading: "osokatta",
+            kana: [],
+            userExact: [],
+            learnedExact: [],
+            dateTime: [],
+            numericPrefix: [],
+            javaScript: [],
+            symbolExact: [],
+            basicExact: [],
+            systemExact: [],
+            inflection: [],
+            adjectiveInflection: ["遅かった"],
+            particle: [],
+            generatedParticles: [],
+            userPrefix: [],
+            learnedCompletion: [],
+            symbolPrefix: [],
+            systemPrefix: [],
+            basicPrefix: [],
+            english: [],
+            uppercase: [],
+            recencyRanks: [:],
+            contextualCandidates: [],
+            prioritizeKana: false
+        ))
+
+        #expect(candidates.first?.hasSource(.adjectiveInflection) == true)
+    }
 }

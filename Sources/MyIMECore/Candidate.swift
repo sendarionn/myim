@@ -11,6 +11,7 @@ public enum CandidateSourceKind: String, CaseIterable, Sendable {
     case basicDictionary
     case systemDictionary
     case verbInflection
+    case adjectiveInflection
     case particleComposition
     case englishCompletion
     case uppercase

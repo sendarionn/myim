@@ -36,6 +36,8 @@ public struct StandardConversionCandidateSource: Sendable {
     private let deferredSystemCandidates: DeferredSystemCandidates
     private let verbConjugations: VerbConjugationDictionary
     private let adjectiveDictionary: JapaneseAdjectiveDictionary
+    private let adjectiveInflectionGenerator:
+        JapaneseAdjectiveInflectionCandidateGenerator
     private let verbConjugationGenerator: VerbConjugationCandidateGenerator
     private let verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let maximumSystemPrefixCandidates: Int
@@ -66,6 +68,10 @@ public struct StandardConversionCandidateSource: Sendable {
         self.deferredSystemCandidates = deferredSystemCandidates
         self.verbConjugations = verbConjugations
         self.adjectiveDictionary = adjectiveDictionary
+        adjectiveInflectionGenerator =
+            JapaneseAdjectiveInflectionCandidateGenerator(
+                dictionary: adjectiveDictionary
+            )
         verbConjugationGenerator = VerbConjugationCandidateGenerator(
             dictionary: verbConjugations
         )
@@ -209,6 +215,9 @@ public struct StandardConversionCandidateSource: Sendable {
         let conjugations = verbConjugationGenerator.candidates(
             for: context.conversionReading
         )
+        let adjectiveInflections = adjectiveInflectionGenerator.candidates(
+            for: context.conversionReading
+        )
         let inflections = mergedCandidates(
             readings: lookupReadings
         ) { reading in
@@ -221,7 +230,7 @@ public struct StandardConversionCandidateSource: Sendable {
                 lookup: systemEngine.candidates
             )
         }
-        let generatedInflections = Self.removingDuplicates(
+        let generatedVerbInflections = Self.removingDuplicates(
             conjugations + inflections
         )
         let numericPrefixes = numericPrefixCandidates(
@@ -242,7 +251,8 @@ public struct StandardConversionCandidateSource: Sendable {
                 exactDictionaryCandidates: exactDictionaryCandidates
             )
         let generatedOnlyCandidates = Set(
-            kana + numericPrefixes + generatedInflections + particles
+            kana + numericPrefixes + generatedVerbInflections
+                + adjectiveInflections + particles
         ).subtracting(exactDictionaryCandidates)
         // Selection history changes ranking without reclassifying candidates
         // that are generated for the current input as whole-input exact matches
@@ -255,7 +265,8 @@ public struct StandardConversionCandidateSource: Sendable {
         // candidates before established full-input selection takes precedence
         let secondaryRanks = context.learningEnabled
             ? ParticleCompositionRanking.ranks(
-                for: numericPrefixes + generatedInflections + particles,
+                for: numericPrefixes + generatedVerbInflections
+                    + adjectiveInflections + particles,
                 compositions: particleCompositions,
                 history: context.selectionHistory,
                 compositionRanks: fullReadingRanks
@@ -284,7 +295,8 @@ public struct StandardConversionCandidateSource: Sendable {
             deferredSystemExact: deferredSystemExact,
             importedExact: imported.reading.exact,
             importedSpelling: imported.spelling.exact,
-            inflection: generatedInflections,
+            inflection: generatedVerbInflections,
+            adjectiveInflection: adjectiveInflections,
             particle: particles,
             generatedParticles: generatedParticles,
             userPrefix: user.prefix,

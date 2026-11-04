@@ -6,6 +6,11 @@ public enum JapaneseAdjectiveClass: String, CaseIterable, Sendable {
 /// The adjective entries extracted from the same Mozc source revision as
 /// the bundled conversion dictionary
 public struct JapaneseAdjectiveDictionary: Sendable {
+    private struct ReadingClassKey: Hashable, Sendable {
+        let reading: String
+        let adjectiveClass: JapaneseAdjectiveClass
+    }
+
     private struct Key: Hashable, Sendable {
         let reading: String
         let surface: String
@@ -13,9 +18,12 @@ public struct JapaneseAdjectiveDictionary: Sendable {
     }
 
     private let entries: Set<Key>
+    private let surfacesByReadingAndClass: [ReadingClassKey: [String]]
 
     public init(text: String = "") {
-        entries = Set(text.split(whereSeparator: \.isNewline).compactMap {
+        let parsedEntries: [Key] = text.split(
+            whereSeparator: \.isNewline
+        ).compactMap {
             line in
             let columns = line.split(separator: "\t")
             guard columns.count == 4,
@@ -30,7 +38,19 @@ public struct JapaneseAdjectiveDictionary: Sendable {
                 surface: String(columns[1]),
                 adjectiveClass: adjectiveClass
             )
-        })
+        }
+        entries = Set(parsedEntries)
+        var grouped: [ReadingClassKey: [String]] = [:]
+        for entry in parsedEntries {
+            let key = ReadingClassKey(
+                reading: entry.reading,
+                adjectiveClass: entry.adjectiveClass
+            )
+            if grouped[key]?.contains(entry.surface) != true {
+                grouped[key, default: []].append(entry.surface)
+            }
+        }
+        surfacesByReadingAndClass = grouped
     }
 
     public func contains(
@@ -49,5 +69,17 @@ public struct JapaneseAdjectiveDictionary: Sendable {
         JapaneseAdjectiveClass.allCases.contains {
             contains(reading: reading, surface: surface, class: $0)
         }
+    }
+
+    public func surfaces(
+        reading: String,
+        class adjectiveClass: JapaneseAdjectiveClass
+    ) -> [String] {
+        surfacesByReadingAndClass[
+            ReadingClassKey(
+                reading: reading,
+                adjectiveClass: adjectiveClass
+            )
+        ] ?? []
     }
 }

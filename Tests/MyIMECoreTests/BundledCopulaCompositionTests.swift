@@ -325,6 +325,40 @@ struct BundledCopulaCompositionTests {
     }
 
     @Test(arguments: [
+        ("osokatta", "遅かった"),
+        ("hayakatta", "早かった"),
+        ("hayakatta", "速かった"),
+        ("takakatta", "高かった"),
+        ("samukatta", "寒かった"),
+        ("atsukatta", "暑かった"),
+        ("atsukatta", "熱かった"),
+        ("omoshirokatta", "面白かった"),
+        ("sugokatta", "すごかった"),
+        ("ookikatta", "大きかった"),
+        ("chiisakatta", "小さかった"),
+        ("yokatta", "良かった"),
+        ("osokunakatta", "遅くなかった"),
+        ("takakunakatta", "高くなかった"),
+        ("samukunakatta", "寒くなかった"),
+        ("omoshirokunakatta", "面白くなかった"),
+        ("yokunakatta", "良くなかった")
+    ])
+    func showsIAdjectivePastFormsOnTheFirstPage(
+        input: String,
+        expected: String
+    ) throws {
+        #expect(try visible(input).prefix(4).contains(expected))
+    }
+
+    @Test(arguments: ["gakuseikatta", "kireikatta"])
+    func doesNotGenerateInvalidIAdjectivePastForms(_ input: String) throws {
+        let candidates = try visible(input)
+
+        #expect(!candidates.contains("学生かった"))
+        #expect(!candidates.contains("綺麗かった"))
+    }
+
+    @Test(arguments: [
         ("kouhodesu", "候補です"),
         ("kouhodeshita", "候補でした"),
         ("gakuseidesu", "学生です"),
@@ -351,7 +385,11 @@ struct BundledCopulaCompositionTests {
         ("kouhodearukamoshirenai", "候補であるかもしれない"),
         ("kouhodearubeki", "候補であるべき"),
         ("kouhonohazuda", "候補のはずだ"),
-        ("benridatta", "便利だった")
+        ("kireidatta", "綺麗だった"),
+        ("benridatta", "便利だった"),
+        ("shizukadatta", "静かだった"),
+        ("kireidehanakatta", "綺麗ではなかった"),
+        ("benrijanakatta", "便利じゃなかった")
     ])
     func convertsWordsFollowedByTheCopula(
         input: String,

@@ -52,6 +52,25 @@ struct JapaneseParticleCandidateGeneratorTests {
         #expect(candidates(for: input) == expected)
     }
 
+    @Test
+    func prioritizesKnownNaAdjectiveStemsForPastForms() {
+        let adjectiveClasses = JapaneseAdjectiveDictionary(text: """
+            shizuka\t静か\tna-adjective-stem\t1000
+            """)
+
+        let candidates = JapaneseParticleCandidateGenerator.candidates(
+            for: "shizukadatta",
+            adjectiveDictionary: adjectiveClasses
+        ) { reading in
+            reading == "shizuka" ? ["静香", "静", "靜", "静華", "静か"] : []
+        }
+
+        #expect(candidates.first == "静かだった")
+        #expect(candidates.dropFirst() == [
+            "静香だった", "静だった", "靜だった", "静華だった"
+        ])
+    }
+
     @Test(arguments: [
         "ikudesu", "taberudeshita", "utsukushiideshita", "desu", "kouhodes"
     ])

@@ -15,6 +15,7 @@ public struct CandidateAssembly: Sendable {
         public let importedExact: [String]
         public let importedSpelling: [String]
         public let inflection: [String]
+        public let adjectiveInflection: [String]
         public let particle: [String]
         public let generatedParticles: Set<String>
         public let userPrefix: [String]
@@ -50,6 +51,7 @@ public struct CandidateAssembly: Sendable {
             importedExact: [String] = [],
             importedSpelling: [String] = [],
             inflection: [String],
+            adjectiveInflection: [String] = [],
             particle: [String],
             generatedParticles: Set<String>,
             userPrefix: [String],
@@ -82,6 +84,7 @@ public struct CandidateAssembly: Sendable {
             self.importedExact = importedExact
             self.importedSpelling = importedSpelling
             self.inflection = inflection
+            self.adjectiveInflection = adjectiveInflection
             self.particle = particle
             self.generatedParticles = generatedParticles
             self.userPrefix = userPrefix
@@ -210,6 +213,10 @@ public struct CandidateAssembly: Sendable {
                 ) + makeCandidates(
                     input.inflection,
                     source: .verbInflection,
+                    reading: input.reading
+                ) + makeCandidates(
+                    input.adjectiveInflection,
+                    source: .adjectiveInflection,
                     reading: input.reading
                 ) + input.particle.map {
                     Candidate(

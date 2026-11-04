@@ -31,5 +31,13 @@ struct JapaneseAdjectiveDictionaryTests {
             surface: "学生",
             class: .naAdjectiveStem
         ))
+        #expect(dictionary.surfaces(
+            reading: "sugoi",
+            class: .iAdjective
+        ) == ["すごい"])
+        #expect(dictionary.surfaces(
+            reading: "missing",
+            class: .iAdjective
+        ).isEmpty)
     }
 }
