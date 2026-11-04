@@ -14,7 +14,14 @@ public enum JavaScriptExtensionMetadata {
             }
     }
 
-    public static func matches(input: String, prefixes: [String]) -> Bool {
-        prefixes.isEmpty || prefixes.contains(where: input.hasPrefix)
+    /// A script without either declaration runs for every input
+    public static func matches(
+        input: String,
+        prefixes: [String],
+        exactInputs: [String] = []
+    ) -> Bool {
+        (prefixes.isEmpty && exactInputs.isEmpty)
+            || prefixes.contains(where: input.hasPrefix)
+            || exactInputs.contains(input)
     }
 }

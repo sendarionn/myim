@@ -89,4 +89,8 @@ public final class NextInputLearningStore {
     public func flush() {
         writer.flush()
     }
+
+    public func flushInBackground() {
+        writer.flushInBackground()
+    }
 }

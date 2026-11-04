@@ -1,13 +1,20 @@
 // @myim-prefix eto
-// @myim-prefix ne
-// @myim-prefix u
-// @myim-prefix i
-// @myim-prefix mi
-// @myim-prefix to
-// @myim-prefix tatsu
-// @myim-prefix hebi
-// @myim-prefix hitsuji
-// @myim-prefix saru
+// @myim-exact ne
+// @myim-exact nezumi
+// @myim-exact ushi
+// @myim-exact tora
+// @myim-exact u
+// @myim-exact usagi
+// @myim-exact tatsu
+// @myim-exact mi
+// @myim-exact hebi
+// @myim-exact uma
+// @myim-exact hitsuji
+// @myim-exact saru
+// @myim-exact tori
+// @myim-exact inu
+// @myim-exact i
+// @myim-exact inoshishi
 
 // The twelve branches in order from 子, each with the readings it is typed
 // with; 2020 is a 子 year and each calendar year moves one branch on

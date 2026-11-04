@@ -52,4 +52,8 @@ public final class CandidateSelectionHistoryStore {
     public func flush() {
         writer.flush()
     }
+
+    public func flushInBackground() {
+        writer.flushInBackground()
+    }
 }

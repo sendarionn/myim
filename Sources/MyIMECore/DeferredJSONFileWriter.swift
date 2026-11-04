@@ -56,6 +56,15 @@ public final class DeferredJSONFileWriter<Value: Encodable & Sendable>:
         }
     }
 
+    /// Starts writing any pending value without waiting for it, so a caller
+    /// on the main thread is never held up by encoding or a busy disk
+    public func flushInBackground() {
+        guard let value = takePendingValue() else { return }
+        queue.async { [self] in
+            write(value)
+        }
+    }
+
     private func writePendingValue(id: UUID) {
         guard let value = takePendingValue(id: id) else {
             return

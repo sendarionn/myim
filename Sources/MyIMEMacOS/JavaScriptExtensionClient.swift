@@ -1,5 +1,6 @@
 import Foundation
 import MyIMECore
+import os
 
 actor JavaScriptExtensionClient {
     struct ExtensionInfo: Sendable {
@@ -12,6 +13,11 @@ actor JavaScriptExtensionClient {
 
     private static let disabledFileNamesDefaultsKey =
         "DisabledJavaScriptExtensionFileNames"
+    private static let logger = Logger(
+        subsystem: "com.sendarionn.myim",
+        category: "javascript-extension"
+    )
+    private var restartPolicy = ExtensionHostRestartPolicy()
     private static let executionTimeoutMilliseconds = 100
     private static let coldStartTimeoutMilliseconds = 2_000
 
@@ -207,7 +213,10 @@ actor JavaScriptExtensionClient {
         parameters: [String: String]? = nil,
         functionName: String? = nil
     ) async -> [JavaScriptExtensionCandidate] {
-        guard !input.isEmpty else { return [] }
+        guard !input.isEmpty,
+              restartPolicy.allowsRequest(
+                now: ProcessInfo.processInfo.systemUptime
+              ) else { return [] }
         let wasRunning = process?.isRunning == true
         guard startIfNeeded() else { return [] }
         let timeoutMilliseconds = wasRunning
@@ -246,6 +255,7 @@ actor JavaScriptExtensionClient {
             }
         }
         if let response {
+            restartPolicy.recordResponse()
             latestStatuses = Dictionary(
                 uniqueKeysWithValues: response.statuses.map { ($0.fileName, $0) }
             )
@@ -307,6 +317,12 @@ actor JavaScriptExtensionClient {
     private func timeout(_ id: UUID) {
         guard pending[id] != nil else { return }
         latestRuntimeError = "JavaScript拡張の実行が制限時間を超えました"
+        let paused = restartPolicy.recordTimeout(
+            now: ProcessInfo.processInfo.systemUptime
+        )
+        Self.logger.notice(
+            "extension host timed out paused=\(paused, privacy: .public)"
+        )
         finish(id, response: nil)
         stopHost()
     }

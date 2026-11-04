@@ -49,7 +49,11 @@ while let line = readLine() {
             )
             if !JavaScriptExtensionMetadata.matches(
                 input: request.input,
-                prefixes: prefixes
+                prefixes: prefixes,
+                exactInputs: JavaScriptExtensionMetadata.values(
+                    "myim-exact",
+                    in: source
+                )
             ) {
                 statuses.append(.init(fileName: fileName, state: .ready))
                 continue

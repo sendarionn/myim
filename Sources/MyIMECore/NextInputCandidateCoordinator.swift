@@ -282,4 +282,8 @@ public final class NextInputCandidateCoordinator {
     public func flush() {
         store.flush()
     }
+
+    public func flushInBackground() {
+        store.flushInBackground()
+    }
 }

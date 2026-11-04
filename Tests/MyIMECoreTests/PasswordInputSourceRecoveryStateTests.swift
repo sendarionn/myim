@@ -241,4 +241,58 @@ struct PasswordInputSourceRecoveryStateTests {
         )
         return state
     }
+
+    /// Focus is watched only from the temporary switch until it is settled,
+    /// so ordinary typing sends no Accessibility messages to the application
+    @Test
+    func awaitsFocusOnlyDuringATemporarySwitch() {
+        var state = PasswordInputSourceRecoveryState(
+            myIMInputSourceIdentifier: "myim",
+            currentInputSourceIdentifier: "myim",
+            currentApplicationIdentifier: "app"
+        )
+        #expect(!state.isAwaitingFocus)
+
+        state.inputSourceChanged(
+            to: "abc",
+            isTemporaryASCIIKeyboard: true,
+            applicationIdentifier: "app",
+            now: 10
+        )
+        #expect(state.isAwaitingFocus)
+
+        _ = state.focusChanged(
+            to: .secureText,
+            applicationIdentifier: "app",
+            now: 10.1
+        )
+        #expect(state.isAwaitingFocus)
+
+        let request = state.focusChanged(
+            to: .ordinaryText,
+            applicationIdentifier: "app",
+            now: 20
+        )
+        #expect(request?.temporaryInputSourceIdentifier == "abc")
+        #expect(!state.isAwaitingFocus)
+    }
+
+    @Test
+    func stopsAwaitingFocusWhenTheApplicationChanges() {
+        var state = PasswordInputSourceRecoveryState(
+            myIMInputSourceIdentifier: "myim",
+            currentInputSourceIdentifier: "myim",
+            currentApplicationIdentifier: "app"
+        )
+        state.inputSourceChanged(
+            to: "abc",
+            isTemporaryASCIIKeyboard: true,
+            applicationIdentifier: "app",
+            now: 10
+        )
+
+        state.applicationChanged(to: "other")
+
+        #expect(!state.isAwaitingFocus)
+    }
 }

@@ -56,4 +56,29 @@ struct JavaScriptExtensionMetadataTests {
             prefixes: []
         ))
     }
+
+    /// A script for whole words is not run for every word starting alike
+    @Test
+    func exactInputsMatchOnlyTheWholeInput() {
+        #expect(JavaScriptExtensionMetadata.matches(
+            input: "tori",
+            prefixes: ["eto"],
+            exactInputs: ["tori", "i"]
+        ))
+        #expect(JavaScriptExtensionMetadata.matches(
+            input: "eto2026",
+            prefixes: ["eto"],
+            exactInputs: ["tori", "i"]
+        ))
+        #expect(!JavaScriptExtensionMetadata.matches(
+            input: "ita",
+            prefixes: ["eto"],
+            exactInputs: ["tori", "i"]
+        ))
+        #expect(!JavaScriptExtensionMetadata.matches(
+            input: "ita",
+            prefixes: [],
+            exactInputs: ["i"]
+        ))
+    }
 }

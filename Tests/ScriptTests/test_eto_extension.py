@@ -134,26 +134,30 @@ process.stdout.write(JSON.stringify(candidates({{
             [candidate["preferenceID"] for candidate in given_2027],
         )
 
-    def test_declares_only_the_prefixes_of_its_readings(self):
+    def test_declares_the_whole_words_it_answers(self):
         source = SCRIPT.read_text(encoding="utf-8")
-        prefixes = [
-            line.split()[-1]
-            for line in source.splitlines()
-            if line.startswith("// @myim-prefix ")
-        ]
-        readings = (
-            ["eto"]
-            + [
+        declared = [line.split() for line in source.splitlines()
+                    if line.startswith("// @myim-")]
+        prefixes = [fields[-1] for fields in declared
+                    if fields[1] == "@myim-prefix"]
+        exact = [fields[-1] for fields in declared
+                 if fields[1] == "@myim-exact"]
+
+        # Everyday inputs starting with i or u do not run the script
+        self.assertEqual(prefixes, ["eto"])
+        self.assertEqual(
+            set(exact),
+            {
                 "ne", "nezumi", "ushi", "tora", "u", "usagi", "tatsu", "mi",
                 "hebi", "uma", "hitsuji", "saru", "tori", "inu", "i",
                 "inoshishi",
-            ]
+            },
         )
-        for reading in readings:
-            with self.subTest(reading=reading):
-                self.assertTrue(
-                    any(reading.startswith(prefix) for prefix in prefixes)
-                )
+        # Metadata is read from the first 20 lines only
+        self.assertLessEqual(
+            source.splitlines().index("// @myim-exact inoshishi"),
+            19,
+        )
 
 
 if __name__ == "__main__":

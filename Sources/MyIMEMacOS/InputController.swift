@@ -43,6 +43,7 @@ final class InputController: IMKInputController {
     private static let sharedMozcConversionEngine = loadMozcDictionaryEngine()
     // Learning shared by every InputController; each controller only keeps
     // its own candidate session and typing context
+    private static let largeHistoryWriteDelay: TimeInterval = 5
     private static let sharedCandidateSelectionHistoryStore =
         makeCandidateSelectionHistoryStore()
     private static let sharedUnselectedInputLearningStore =
@@ -63,6 +64,9 @@ final class InputController: IMKInputController {
         model: loadNextInputPredictionModel(),
         writer: DeferredJSONFileWriter(
             fileURL: nextInputPredictionModelURL(),
+            // The whole model is rewritten each time, so commits in quick
+            // succession are written together
+            delay: largeHistoryWriteDelay,
             queueLabel: "myim.next-input-history",
             errorHandler: {
                 NSLog(
@@ -5381,9 +5385,11 @@ final class InputController: IMKInputController {
     }
 
     private func flushPendingHistoryWrites() {
-        candidateSelectionHistoryStore.flush()
-        unselectedInputLearningStore.flush()
-        nextInputCandidateCoordinator.flush()
+        // Called when switching applications; the main thread never waits
+        // for encoding or the disk here
+        candidateSelectionHistoryStore.flushInBackground()
+        unselectedInputLearningStore.flushInBackground()
+        nextInputCandidateCoordinator.flushInBackground()
     }
 
     private func moveNextInputCandidate(
@@ -6683,6 +6689,7 @@ final class InputController: IMKInputController {
             history: loadCandidateSelectionHistory(),
             writer: DeferredJSONFileWriter(
                 fileURL: historyURL,
+                delay: largeHistoryWriteDelay,
                 queueLabel: "myim.candidate-selection-history",
                 errorHandler: {
                     NSLog(

@@ -37,9 +37,18 @@ final class PasswordInputSourceRecoveryController {
     )
     private var inputSourceObserver: NSObjectProtocol?
     private var applicationObserver: NSObjectProtocol?
-    private var accessibilityObserver: AXObserver?
-    private var accessibilityApplication: AXUIElement?
     private var started = false
+    /// Every Accessibility call to other applications happens on its thread
+    private lazy var focusMonitor = AccessibilityFocusMonitor {
+        generation, kind in
+        PasswordInputSourceRecoveryController.shared
+            .focusDidChange(generation: generation, kind: kind)
+    }
+    /// Results of an older generation describe an earlier application or
+    /// state and are ignored
+    private var focusGeneration: UInt = 0
+    private var observedProcessIdentifier: pid_t?
+    private var pendingRecovery: PasswordInputSourceRecoveryRequest?
     private var loggedStatus: Status?
 
     private init() {}
@@ -117,7 +126,7 @@ final class PasswordInputSourceRecoveryController {
                 InputSourceRegistrationManager.selectedSourceIdentifier(),
             currentApplicationIdentifier: application?.bundleIdentifier
         )
-        observeAccessibilityFocus(in: application)
+        stopObservingFocus()
     }
 
     private func logStatusIfChanged(_ status: Status) {
@@ -141,7 +150,7 @@ final class PasswordInputSourceRecoveryController {
             )
             self.applicationObserver = nil
         }
-        removeAccessibilityObserver()
+        stopObservingFocus()
         state.reset()
     }
 
@@ -154,13 +163,14 @@ final class PasswordInputSourceRecoveryController {
         Self.logger.debug(
             "frontmost application changed identifier=\(application?.bundleIdentifier ?? "unavailable", privacy: .private)"
         )
-        observeAccessibilityFocus(in: application)
+        updateFocusObservation()
     }
 
     private func inputSourceDidChange() {
         guard let source = InputSourceRegistrationManager.currentSource else {
             Self.logger.debug("input source changed identifier=unavailable")
             state.reset()
+            updateFocusObservation()
             return
         }
         Self.logger.debug(
@@ -173,81 +183,72 @@ final class PasswordInputSourceRecoveryController {
                 NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
             now: ProcessInfo.processInfo.systemUptime
         )
+        updateFocusObservation()
     }
 
-    private func observeAccessibilityFocus(
-        in application: NSRunningApplication?
-    ) {
-        removeAccessibilityObserver()
-        guard let application,
+    /// Accessibility messages run on the main thread of the application they
+    /// are sent to, so its focus is watched only while a temporary switch
+    /// waits for it, not throughout ordinary typing
+    private func updateFocusObservation() {
+        guard state.isAwaitingFocus,
+              let application = NSWorkspace.shared.frontmostApplication,
               application.bundleIdentifier
                 != "io.github.sendarionn.inputmethod.myime" else {
-            state.reset()
+            stopObservingFocus()
             return
         }
-        let applicationElement = AXUIElementCreateApplication(
-            application.processIdentifier
-        )
-        var observer: AXObserver?
-        let creation = AXObserverCreate(
-            application.processIdentifier,
-            Self.accessibilityCallback,
-            &observer
-        )
-        guard creation == .success, let observer else {
-            state.reset()
+        guard observedProcessIdentifier != application.processIdentifier else {
             return
         }
-        let registration = AXObserverAddNotification(
-            observer,
-            applicationElement,
-            kAXFocusedUIElementChangedNotification as CFString,
-            Unmanaged.passUnretained(self).toOpaque()
+        focusGeneration &+= 1
+        pendingRecovery = nil
+        observedProcessIdentifier = application.processIdentifier
+        focusMonitor.observe(
+            processIdentifier: application.processIdentifier,
+            generation: focusGeneration
         )
-        guard registration == .success else {
-            state.reset()
-            return
-        }
-        accessibilityObserver = observer
-        accessibilityApplication = applicationElement
-        CFRunLoopAddSource(
-            CFRunLoopGetMain(),
-            AXObserverGetRunLoopSource(observer),
-            .commonModes
-        )
-        focusedElementDidChange()
     }
 
-    private func removeAccessibilityObserver() {
-        if let accessibilityObserver {
-            CFRunLoopRemoveSource(
-                CFRunLoopGetMain(),
-                AXObserverGetRunLoopSource(accessibilityObserver),
-                .commonModes
-            )
-        }
-        accessibilityObserver = nil
-        accessibilityApplication = nil
+    private func stopObservingFocus() {
+        pendingRecovery = nil
+        guard observedProcessIdentifier != nil else { return }
+        observedProcessIdentifier = nil
+        focusGeneration &+= 1
+        focusMonitor.stop(generation: focusGeneration)
     }
 
-    private func focusedElementDidChange() {
-        let applicationIdentifier = NSWorkspace.shared.frontmostApplication?
-            .bundleIdentifier
-        let kind = focusedElement().map(Self.focusKind) ?? .unavailable
+    private func focusDidChange(
+        generation: UInt,
+        kind: PasswordInputFocusKind
+    ) {
+        guard generation == focusGeneration else { return }
         Self.logger.debug(
             "focused element changed kind=\(String(describing: kind), privacy: .public)"
         )
+        if let request = pendingRecovery {
+            pendingRecovery = nil
+            recoverMyIMIfStillValid(request, focus: kind)
+            updateFocusObservation()
+            return
+        }
         let request = state.focusChanged(
             to: kind,
-            applicationIdentifier: applicationIdentifier,
+            applicationIdentifier:
+                NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
             now: ProcessInfo.processInfo.systemUptime
         )
-        guard let request else { return }
-        recoverMyIMIfStillValid(request)
+        if let request {
+            // The focus is read once more just before acting on it
+            pendingRecovery = request
+            focusMonitor.refresh(generation: generation)
+            return
+        }
+        updateFocusObservation()
     }
 
     private func recoverMyIMIfStillValid(
-        _ request: PasswordInputSourceRecoveryRequest
+        _ request: PasswordInputSourceRecoveryRequest,
+        focus: PasswordInputFocusKind
     ) {
         guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                 == request.applicationIdentifier,
@@ -255,7 +256,7 @@ final class PasswordInputSourceRecoveryController {
               source.identifier
                 == request.temporaryInputSourceIdentifier,
               source.isASCIICapableKeyboardLayout,
-              focusedElement().map(Self.focusKind) == .ordinaryText else {
+              focus == .ordinaryText else {
             Self.logger.notice("recovery cancelled during final validation")
             return
         }
@@ -270,66 +271,6 @@ final class PasswordInputSourceRecoveryController {
             Self.logger.error(
                 "recovery failed error=\(error.localizedDescription, privacy: .public)"
             )
-        }
-    }
-
-    private func focusedElement() -> AXUIElement? {
-        guard let accessibilityApplication else { return nil }
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            accessibilityApplication,
-            kAXFocusedUIElementAttribute as CFString,
-            &value
-        ) == .success,
-        let value,
-        CFGetTypeID(value) == AXUIElementGetTypeID() else {
-            return nil
-        }
-        return unsafeBitCast(value, to: AXUIElement.self)
-    }
-
-    private static func focusKind(
-        of element: AXUIElement
-    ) -> PasswordInputFocusKind {
-        let subrole = stringAttribute(
-            kAXSubroleAttribute as CFString,
-            from: element
-        )
-        let role = stringAttribute(
-            kAXRoleAttribute as CFString,
-            from: element
-        )
-        return PasswordInputFocusClassifier.classify(
-            role: role,
-            subrole: subrole
-        )
-    }
-
-    private static func stringAttribute(
-        _ attribute: CFString,
-        from element: AXUIElement
-    ) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            element,
-            attribute,
-            &value
-        ) == .success else {
-            return nil
-        }
-        return value as? String
-    }
-
-    private static let accessibilityCallback: AXObserverCallback = {
-        _, _, notification, context in
-        guard notification as String
-                == kAXFocusedUIElementChangedNotification as String,
-              let context else { return }
-        let controller = Unmanaged<PasswordInputSourceRecoveryController>
-            .fromOpaque(context)
-            .takeUnretainedValue()
-        DispatchQueue.main.async {
-            controller.focusedElementDidChange()
         }
     }
 }

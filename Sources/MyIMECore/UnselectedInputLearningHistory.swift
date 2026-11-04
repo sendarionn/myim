@@ -134,4 +134,8 @@ public final class UnselectedInputLearningStore {
     public func flush() {
         writer.flush()
     }
+
+    public func flushInBackground() {
+        writer.flushInBackground()
+    }
 }

@@ -73,6 +73,12 @@ public struct PasswordInputSourceRecoveryState: Equatable, Sendable {
         self.correlationInterval = correlationInterval
     }
 
+    /// A temporary switch is waiting for its focus to be read, so the focused
+    /// element only has to be watched while this holds
+    public var isAwaitingFocus: Bool {
+        pendingSwitch != nil || confirmedSwitch != nil
+    }
+
     public mutating func applicationChanged(to identifier: String?) {
         guard currentApplicationIdentifier != identifier else { return }
         currentApplicationIdentifier = identifier
