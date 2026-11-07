@@ -571,19 +571,11 @@ final class InputController: IMKInputController {
         }
 
         if selectionBracketChoice != nil,
-           let handled = handleSelectionBracketChoice(event, client: sender) {
+           let handled = handleSelectionBracketKey(event) {
             return handled
         }
 
         if MyIMFeatureShortcut.selectionBracket.shortcut.matches(event) {
-            wrapSelection(
-                in: SelectionBracketPreference().pair,
-                client: sender
-            )
-            return true
-        }
-
-        if MyIMFeatureShortcut.selectionBracketChoice.shortcut.matches(event) {
             beginSelectionBracketChoice(client: sender)
             return true
         }
@@ -1686,6 +1678,7 @@ final class InputController: IMKInputController {
         )
         CandidateDeletionGlobalHotKey.shared.deactivate()
         EmojiGlobalHotKey.shared.deactivate()
+        finishSelectionBracketChoice()
         if Self.activeController === self {
             Self.activeController = nil
         }
@@ -2323,36 +2316,58 @@ final class InputController: IMKInputController {
     /// the application undoes it as one step. It is not a commit: nothing is
     /// learned, and next input or closing bracket candidates are not shown
     private func wrapSelection(
+        for choice: SelectionBracketChoice,
         in pair: SelectionBracketPair,
-        client sender: Any,
-        expectedRange: NSRange? = nil
-    ) {
-        dismissNextInputCandidates(clearMarkedTextIn: nil)
+        client sender: Any
+    ) -> Bool {
         guard let textClient = sender as? IMKTextInput,
               let selection = bracketableSelection(in: sender),
-              expectedRange.map({ $0 == selection.range }) ?? true,
+              choice.appliesTo(
+                applicationIdentifier: Self.frontmostApplicationIdentifier,
+                range: selection.range,
+                text: selection.text.string
+              ),
               let wrapped = SelectionBracketWrapper.wrapped(
                 selection.text,
                 in: pair
               ) else {
-            NSSound.beep()
-            return
+            return false
         }
         isInsertingCommittedText = true
         textClient.insertText(wrapped, replacementRange: selection.range)
         isInsertingCommittedText = false
+        return true
     }
+
+    private static var frontmostApplicationIdentifier: String? {
+        NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    }
+
+    /// The controller whose bracket panel the captured keys operate
+    private static weak var selectionBracketController: InputController?
 
     private func beginSelectionBracketChoice(client sender: Any) {
         dismissNextInputCandidates(clearMarkedTextIn: nil)
+        finishSelectionBracketChoice()
         guard let selection = bracketableSelection(in: sender) else {
             NSSound.beep()
             return
         }
+        // The emoji panel takes the same keys while it is shown
+        if emojiWindow.isVisible {
+            toggleEmojiWindow(client: sender)
+        }
+        guard SelectionBracketKeyCapture.shared.begin() else {
+            NSSound.beep()
+            return
+        }
         selectionBracketChoice = SelectionBracketChoice(
+            applicationIdentifier: Self.frontmostApplicationIdentifier,
             selectedRange: selection.range,
+            selectedText: selection.text.string,
             current: SelectionBracketPreference().pair
         )
+        Self.selectionBracketController = self
         showSelectionBracketChoice(client: sender)
     }
 
@@ -2370,41 +2385,58 @@ final class InputController: IMKInputController {
         )
     }
 
-    /// nil hands an unrelated key on after closing the choice
-    private func handleSelectionBracketChoice(
-        _ event: NSEvent,
-        client sender: Any
-    ) -> Bool? {
-        guard var choice = selectionBracketChoice else { return nil }
-        switch event.keyCode {
-        case 125, 124:
-            choice.move(by: 1)
-        case 126, 123:
-            choice.move(by: -1)
-        case 48:
-            choice.move(by: event.modifierFlags.contains(.shift) ? -1 : 1)
-        case 36, 76:
-            finishSelectionBracketChoice()
-            SelectionBracketPreference().remember(choice.selectedPair)
-            wrapSelection(
-                in: choice.selectedPair,
-                client: sender,
-                expectedRange: choice.selectedRange
-            )
-            return true
-        case 53:
-            finishSelectionBracketChoice()
-            return true
-        default:
-            finishSelectionBracketChoice()
-            return nil
+    /// Keys taken as hot keys reach here instead of the application
+    static func handleSelectionBracketCommand(
+        _ command: SelectionBracketCommand
+    ) {
+        guard let controller = selectionBracketController,
+              controller.selectionBracketChoice != nil,
+              let client = controller.activeInputClient
+                ?? (controller.client() as Any?) else {
+            SelectionBracketKeyCapture.shared.end()
+            return
         }
-        selectionBracketChoice = choice
-        showSelectionBracketChoice(client: sender)
-        return true
+        controller.handleSelectionBracketCommand(command, client: client)
     }
 
+    private func handleSelectionBracketCommand(
+        _ command: SelectionBracketCommand,
+        client sender: Any
+    ) {
+        guard var choice = selectionBracketChoice else { return }
+        switch choice.handle(command) {
+        case .moved:
+            selectionBracketChoice = choice
+            showSelectionBracketChoice(client: sender)
+        case let .apply(pair):
+            finishSelectionBracketChoice()
+            if wrapSelection(for: choice, in: pair, client: sender) {
+                SelectionBracketPreference().remember(pair)
+            } else {
+                NSSound.beep()
+            }
+        case .cancel:
+            finishSelectionBracketChoice()
+        }
+    }
+
+    /// Keys the hot keys take are not handled a second time here; any other
+    /// key closes the panel and is handled as usual
+    private func handleSelectionBracketKey(_ event: NSEvent) -> Bool? {
+        if SelectionBracketKeyCapture.shared.isCapturing,
+           [123, 124, 125, 126, 48, 36, 76, 53].contains(event.keyCode) {
+            return true
+        }
+        finishSelectionBracketChoice()
+        return nil
+    }
+
+    /// Every way the panel closes releases the captured keys
     private func finishSelectionBracketChoice() {
+        SelectionBracketKeyCapture.shared.end()
+        if Self.selectionBracketController === self {
+            Self.selectionBracketController = nil
+        }
         guard selectionBracketChoice != nil else { return }
         selectionBracketChoice = nil
         primaryCandidatePanel.hide()
@@ -2818,6 +2850,8 @@ final class InputController: IMKInputController {
     }
 
     private func toggleEmojiWindow(client sender: Any) {
+        // Both panels take the same keys while shown
+        finishSelectionBracketChoice()
         if emojiWindow.isVisible {
             EmojiDiagnostics.logger.notice("hiding emoji panel")
             clearCompositionForSystemPaste(in: sender)
@@ -5423,7 +5457,7 @@ final class InputController: IMKInputController {
     }
 
     private func resetTransientInteractionState() {
-        selectionBracketChoice = nil
+        finishSelectionBracketChoice()
         trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
         candidateSearchCoordinator.cancel(.calendarFormat)

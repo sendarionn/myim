@@ -10,7 +10,6 @@ enum MyIMFeatureShortcut: String, CaseIterable {
     case webSearch
     case externalInformation
     case selectionBracket
-    case selectionBracketChoice
 
     var title: String {
         switch self {
@@ -21,8 +20,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .dictionaryRegistration: "辞書登録"
         case .webSearch: "Web検索"
         case .externalInformation: "外部ページ"
-        case .selectionBracket: "選択範囲を括弧で囲む"
-        case .selectionBracketChoice: "括弧を選んで囲む"
+        case .selectionBracket: "選択文字列を括弧で囲む"
         }
     }
 
@@ -36,12 +34,21 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .webSearch: MyIMShortcut(modifiers: [.option], key: "w")
         case .externalInformation: MyIMShortcut(modifiers: [.option], key: "o")
         case .selectionBracket: MyIMShortcut(modifiers: [.option], key: "q")
-        case .selectionBracketChoice:
-            MyIMShortcut(modifiers: [.option, .shift], key: "q")
         }
     }
 
     var defaultsKey: String { "FeatureShortcut.\(rawValue)" }
+
+    /// Settings of features that were merged into others
+    static let retiredDefaultsKeys = [
+        "FeatureShortcut.selectionBracketChoice"
+    ]
+
+    static func removeRetiredSettings() {
+        retiredDefaultsKeys.forEach {
+            UserDefaults.standard.removeObject(forKey: $0)
+        }
+    }
 
     var shortcut: MyIMShortcut {
         guard let value = UserDefaults.standard.string(forKey: defaultsKey),

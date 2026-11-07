@@ -80,14 +80,38 @@ public struct SelectionBracketPreference: @unchecked Sendable {
     }
 }
 
+/// What a key does while the brackets are being chosen
+public enum SelectionBracketCommand: Equatable, Sendable {
+    case previous
+    case next
+    case apply
+    case cancel
+}
+
 /// Choosing a bracket for the selection captured when the panel opened;
-/// the selection must still be the same when the choice is made
+/// the brackets go in only while the same application still has the same
+/// text selected
 public struct SelectionBracketChoice: Equatable, Sendable {
+    public enum Outcome: Equatable, Sendable {
+        case moved
+        case apply(SelectionBracketPair)
+        case cancel
+    }
+
+    public let applicationIdentifier: String?
     public let selectedRange: NSRange
+    public let selectedText: String
     public private(set) var selectedIndex: Int
 
-    public init(selectedRange: NSRange, current: SelectionBracketPair) {
+    public init(
+        applicationIdentifier: String?,
+        selectedRange: NSRange,
+        selectedText: String,
+        current: SelectionBracketPair
+    ) {
+        self.applicationIdentifier = applicationIdentifier
         self.selectedRange = selectedRange
+        self.selectedText = selectedText
         selectedIndex = SelectionBracketPair.all.firstIndex(of: current) ?? 0
     }
 
@@ -97,14 +121,35 @@ public struct SelectionBracketChoice: Equatable, Sendable {
         SelectionBracketPair.all[selectedIndex]
     }
 
+    public mutating func handle(_ command: SelectionBracketCommand) -> Outcome {
+        switch command {
+        case .previous:
+            move(by: -1)
+            return .moved
+        case .next:
+            move(by: 1)
+            return .moved
+        case .apply:
+            return .apply(selectedPair)
+        case .cancel:
+            return .cancel
+        }
+    }
+
     /// Moves through the pairs, wrapping at either end
     public mutating func move(by offset: Int) {
         let count = SelectionBracketPair.all.count
         selectedIndex = ((selectedIndex + offset) % count + count) % count
     }
 
-    public func appliesTo(currentRange: NSRange) -> Bool {
-        currentRange == selectedRange
+    public func appliesTo(
+        applicationIdentifier: String?,
+        range: NSRange,
+        text: String
+    ) -> Bool {
+        applicationIdentifier == self.applicationIdentifier
+            && range == selectedRange
+            && text == selectedText
     }
 }
 

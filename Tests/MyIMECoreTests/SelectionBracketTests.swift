@@ -84,33 +84,66 @@ struct SelectionBracketTests {
         #expect(preference.pair == .standard)
     }
 
+    private func choice(
+        current: SelectionBracketPair = .standard
+    ) -> SelectionBracketChoice {
+        SelectionBracketChoice(
+            applicationIdentifier: "com.apple.TextEdit",
+            selectedRange: NSRange(location: 3, length: 3),
+            selectedText: "テスト",
+            current: current
+        )
+    }
+
+    /// The panel opens on the pair chosen last and keys move around it
     @Test
     func choiceStartsAtTheCurrentPairAndWraps() {
-        var choice = SelectionBracketChoice(
-            selectedRange: NSRange(location: 3, length: 2),
-            current: SelectionBracketPair.all[11]
-        )
+        var choice = choice(current: SelectionBracketPair.all[11])
         #expect(choice.selectedIndex == 11)
 
-        choice.move(by: 1)
+        #expect(choice.handle(.next) == .moved)
         #expect(choice.selectedPair == .standard)
 
-        choice.move(by: -1)
+        #expect(choice.handle(.previous) == .moved)
         #expect(choice.selectedPair.label == "“”")
         #expect(choice.labels.count == 12)
     }
 
-    /// The choice applies only to the selection it was opened for
+    @Test
+    func enterAppliesTheSelectedPairAndEscCancels() {
+        var choice = choice()
+        _ = choice.handle(.next)
+
+        #expect(choice.handle(.apply) == .apply(SelectionBracketPair.all[1]))
+        #expect(choice.handle(.cancel) == .cancel)
+    }
+
+    /// The brackets go in only where the panel was opened
     @Test
     func choiceAppliesOnlyToTheSameSelection() {
-        let choice = SelectionBracketChoice(
-            selectedRange: NSRange(location: 3, length: 2),
-            current: .standard
-        )
+        let choice = choice()
+        let range = NSRange(location: 3, length: 3)
 
-        #expect(choice.appliesTo(currentRange: NSRange(location: 3, length: 2)))
-        #expect(!choice.appliesTo(currentRange: NSRange(location: 3, length: 0)))
-        #expect(!choice.appliesTo(currentRange: NSRange(location: 4, length: 2)))
+        #expect(choice.appliesTo(
+            applicationIdentifier: "com.apple.TextEdit",
+            range: range,
+            text: "テスト"
+        ))
+        #expect(!choice.appliesTo(
+            applicationIdentifier: "com.google.Chrome",
+            range: range,
+            text: "テスト"
+        ))
+        #expect(!choice.appliesTo(
+            applicationIdentifier: "com.apple.TextEdit",
+            range: NSRange(location: 4, length: 3),
+            text: "テスト"
+        ))
+        #expect(!choice.appliesTo(
+            applicationIdentifier: "com.apple.TextEdit",
+            range: range,
+            text: "てすと"
+        ))
     }
 
     @Test

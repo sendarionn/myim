@@ -71,6 +71,7 @@ NSLog("myim: IMKServer initialized bundle=%@ connection=%@", bundleIdentifier, c
 let passwordInputSourceRecovery = PasswordInputSourceRecoveryController.shared
 passwordInputSourceRecovery.start()
 MainThreadStallMonitor.shared.start()
+MyIMFeatureShortcut.removeRetiredSettings()
 
 withExtendedLifetime((server, passwordInputSourceRecovery)) {
     application.run()
