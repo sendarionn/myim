@@ -126,6 +126,8 @@ final class InputController: IMKInputController {
     private var candidateFilterCoordinator = CandidateFilterCoordinator()
     private var calendarSelectionSession = CalendarFormatSelectionSession()
     private var timeSelectionSession = TimeFormatSelectionSession()
+    /// Choosing the brackets put around the selection with ⌥⇧Q
+    private var selectionBracketChoice: SelectionBracketChoice?
     private var fuzzyCandidateSession = FuzzyCandidateSession()
     private let userDictionaryStore: UserDictionaryStore
     private var dictionaryRuntime: ConversionDictionaryRuntime
@@ -565,6 +567,24 @@ final class InputController: IMKInputController {
             DispatchQueue.main.async { [weak self] in
                 _ = self?.beginTimeSelection(client: sender, anchorFrame: anchorFrame)
             }
+            return true
+        }
+
+        if selectionBracketChoice != nil,
+           let handled = handleSelectionBracketChoice(event, client: sender) {
+            return handled
+        }
+
+        if MyIMFeatureShortcut.selectionBracket.shortcut.matches(event) {
+            wrapSelection(
+                in: SelectionBracketPreference().pair,
+                client: sender
+            )
+            return true
+        }
+
+        if MyIMFeatureShortcut.selectionBracketChoice.shortcut.matches(event) {
+            beginSelectionBracketChoice(client: sender)
             return true
         }
 
@@ -2280,6 +2300,114 @@ final class InputController: IMKInputController {
             return nil
         }
         return value
+    }
+
+    /// The selected range and text when nothing is being composed; the
+    /// document is left alone otherwise
+    private func bracketableSelection(
+        in sender: Any
+    ) -> (range: NSRange, text: NSAttributedString)? {
+        guard inputBuffer.isEmpty,
+              dictionaryRegistrationSession == nil,
+              let textClient = sender as? IMKTextInput else { return nil }
+        let range = textClient.selectedRange()
+        guard range.location != NSNotFound, range.length > 0,
+              let text = textClient.attributedSubstring(from: range),
+              text.length > 0 else {
+            return nil
+        }
+        return (range, text)
+    }
+
+    /// Replaces the selection with itself in brackets in one insertion, so
+    /// the application undoes it as one step. It is not a commit: nothing is
+    /// learned, and next input or closing bracket candidates are not shown
+    private func wrapSelection(
+        in pair: SelectionBracketPair,
+        client sender: Any,
+        expectedRange: NSRange? = nil
+    ) {
+        dismissNextInputCandidates(clearMarkedTextIn: nil)
+        guard let textClient = sender as? IMKTextInput,
+              let selection = bracketableSelection(in: sender),
+              expectedRange.map({ $0 == selection.range }) ?? true,
+              let wrapped = SelectionBracketWrapper.wrapped(
+                selection.text,
+                in: pair
+              ) else {
+            NSSound.beep()
+            return
+        }
+        isInsertingCommittedText = true
+        textClient.insertText(wrapped, replacementRange: selection.range)
+        isInsertingCommittedText = false
+    }
+
+    private func beginSelectionBracketChoice(client sender: Any) {
+        dismissNextInputCandidates(clearMarkedTextIn: nil)
+        guard let selection = bracketableSelection(in: sender) else {
+            NSSound.beep()
+            return
+        }
+        selectionBracketChoice = SelectionBracketChoice(
+            selectedRange: selection.range,
+            current: SelectionBracketPreference().pair
+        )
+        showSelectionBracketChoice(client: sender)
+    }
+
+    private func showSelectionBracketChoice(client sender: Any) {
+        guard let choice = selectionBracketChoice else { return }
+        let pageSize = Self.maximumCandidateCount
+        let pageStart = choice.selectedIndex / pageSize * pageSize
+        let labels = choice.labels
+        primaryCandidatePanel.show(
+            candidates: Array(
+                labels[pageStart..<min(pageStart + pageSize, labels.count)]
+            ),
+            selectedIndex: choice.selectedIndex - pageStart,
+            near: inputLocation(for: sender)
+        )
+    }
+
+    /// nil hands an unrelated key on after closing the choice
+    private func handleSelectionBracketChoice(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool? {
+        guard var choice = selectionBracketChoice else { return nil }
+        switch event.keyCode {
+        case 125, 124:
+            choice.move(by: 1)
+        case 126, 123:
+            choice.move(by: -1)
+        case 48:
+            choice.move(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+        case 36, 76:
+            finishSelectionBracketChoice()
+            SelectionBracketPreference().remember(choice.selectedPair)
+            wrapSelection(
+                in: choice.selectedPair,
+                client: sender,
+                expectedRange: choice.selectedRange
+            )
+            return true
+        case 53:
+            finishSelectionBracketChoice()
+            return true
+        default:
+            finishSelectionBracketChoice()
+            return nil
+        }
+        selectionBracketChoice = choice
+        showSelectionBracketChoice(client: sender)
+        return true
+    }
+
+    private func finishSelectionBracketChoice() {
+        guard selectionBracketChoice != nil else { return }
+        selectionBracketChoice = nil
+        primaryCandidatePanel.hide()
     }
 
     private func restoreReconversionOriginal(client sender: Any) {
@@ -5295,6 +5423,7 @@ final class InputController: IMKInputController {
     }
 
     private func resetTransientInteractionState() {
+        selectionBracketChoice = nil
         trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
         candidateSearchCoordinator.cancel(.calendarFormat)

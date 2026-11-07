@@ -230,6 +230,19 @@ class InstallerProcessUpdateTests(unittest.TestCase):
         self.assertLess(replace, stop)
         self.assertLess(stop, register)
 
+    def test_launch_records_are_cleared_before_the_files_are_replaced(self):
+        # A process started from the new files right after the replacement
+        # writes its record; clearing afterwards would erase it
+        clear = self.script.index('rm -f "$runtime_status"')
+        replace = self.script.index(
+            '/usr/bin/rsync -aE --checksum --delete \\\n'
+            '        "$staged_destination/"'
+        )
+        stop = self.script.index("stop_process myim\n")
+
+        self.assertLess(stop, clear)
+        self.assertLess(clear, replace)
+
     def test_process_verification_is_retried_a_bounded_number_of_times(self):
         self.assertIn("process_update_attempts=3", self.script)
         self.assertIn("for attempt in {1..$process_update_attempts}", self.script)

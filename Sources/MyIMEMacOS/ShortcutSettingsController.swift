@@ -31,6 +31,12 @@ private final class ShortcutRecorderButton: NSButton {
             NSSound.beep()
             return
         }
+        // Keeps recording so another combination can be pressed
+        if let conflict = feature.conflictingFeature(for: shortcut) {
+            NSSound.beep()
+            title = "\(conflict.title)と重複"
+            return
+        }
         feature.save(shortcut)
         finishRecording()
     }
@@ -73,7 +79,7 @@ final class ShortcutSettingsController: NSObject {
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 380),
+            contentRect: NSRect(x: 0, y: 0, width: 420, height: 460),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false

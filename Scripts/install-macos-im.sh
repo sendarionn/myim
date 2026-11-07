@@ -560,6 +560,15 @@ log_install "existing processes $(myim_running_process_ids | tr '\n' ' ')"
 stop_process myim
 stop_process my-ime
 log_install "existing processes stopped"
+# Cleared before the files are replaced: a process macOS starts from the
+# new files right after the replacement keeps the record it writes
+rm -f "$runtime_status"
+if [[ -d "$input_session_status_directory" ]]; then
+    find "$input_session_status_directory" \
+        -type f \
+        -name '*.json' \
+        -delete
+fi
 stop_process myim-external-browser
 stop_process myim-extension-host
 stop_process myim-selection-service
@@ -670,13 +679,6 @@ log_install "files placed build=$installed_build_number commit=$(build_info_valu
 if ! terminate_stale_processes "$installed_executable"; then
     echo "置き換え前のmyimプロセスを終了できません: ${stale_process_ids[*]}" >&2
     exit 1
-fi
-rm -f "$runtime_status"
-if [[ -d "$input_session_status_directory" ]]; then
-    find "$input_session_status_directory" \
-        -type f \
-        -name '*.json' \
-        -delete
 fi
 "$installed_executable" --install-default-extensions
 "$launch_services_register" -u "$app_source" 2>/dev/null || true

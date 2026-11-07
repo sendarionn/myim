@@ -1,4 +1,5 @@
 import AppKit
+import MyIMECore
 
 enum MyIMFeatureShortcut: String, CaseIterable {
     case candidateFilter
@@ -8,6 +9,8 @@ enum MyIMFeatureShortcut: String, CaseIterable {
     case dictionaryRegistration
     case webSearch
     case externalInformation
+    case selectionBracket
+    case selectionBracketChoice
 
     var title: String {
         switch self {
@@ -18,6 +21,8 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .dictionaryRegistration: "辞書登録"
         case .webSearch: "Web検索"
         case .externalInformation: "外部ページ"
+        case .selectionBracket: "選択範囲を括弧で囲む"
+        case .selectionBracketChoice: "括弧を選んで囲む"
         }
     }
 
@@ -30,6 +35,9 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .dictionaryRegistration: MyIMShortcut(modifiers: [.option], key: "d")
         case .webSearch: MyIMShortcut(modifiers: [.option], key: "w")
         case .externalInformation: MyIMShortcut(modifiers: [.option], key: "o")
+        case .selectionBracket: MyIMShortcut(modifiers: [.option], key: "q")
+        case .selectionBracketChoice:
+            MyIMShortcut(modifiers: [.option, .shift], key: "q")
         }
     }
 
@@ -49,6 +57,15 @@ enum MyIMFeatureShortcut: String, CaseIterable {
 
     func reset() {
         UserDefaults.standard.removeObject(forKey: defaultsKey)
+    }
+
+    /// Another feature already using the shortcut
+    func conflictingFeature(for shortcut: MyIMShortcut) -> MyIMFeatureShortcut? {
+        ShortcutConflict.conflictingFeature(
+            for: shortcut.storageValue,
+            assignedTo: self,
+            among: Self.allCases.map { ($0, $0.shortcut.storageValue) }
+        )
     }
 }
 
