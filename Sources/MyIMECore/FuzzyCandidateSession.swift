@@ -6,6 +6,7 @@ public struct FuzzyCandidate: Equatable, Sendable {
     public let isLearnable: Bool
     public let sourceTokens: [String]
     public let sourceReadings: [String?]
+    public let registersInUserDictionary: Bool
 
     public init(
         storageText: String,
@@ -13,7 +14,8 @@ public struct FuzzyCandidate: Equatable, Sendable {
         distance: Int,
         isLearnable: Bool = true,
         sourceTokens: [String] = [],
-        sourceReadings: [String?] = []
+        sourceReadings: [String?] = [],
+        registersInUserDictionary: Bool = true
     ) {
         self.storageText = storageText
         self.reading = reading
@@ -21,6 +23,7 @@ public struct FuzzyCandidate: Equatable, Sendable {
         self.isLearnable = isLearnable
         self.sourceTokens = sourceTokens
         self.sourceReadings = sourceReadings
+        self.registersInUserDictionary = registersInUserDictionary
     }
 }
 
@@ -40,7 +43,7 @@ extension FuzzyCandidate {
     /// input it was found from, and not at all while a reading is missing
     public var userDictionaryEntry: UserDictionaryRegistration? {
         guard !sourceTokens.isEmpty else {
-            return isLearnable
+            return isLearnable && registersInUserDictionary
                 ? UserDictionaryRegistration(
                     reading: reading,
                     candidate: storageText
@@ -148,7 +151,9 @@ public struct FuzzyCandidateSession: Equatable, Sendable {
                         distance: match.distance,
                         isLearnable: match.isLearnable,
                         sourceTokens: match.sourceTokens,
-                        sourceReadings: match.sourceReadings
+                        sourceReadings: match.sourceReadings,
+                        registersInUserDictionary:
+                            match.registersInUserDictionary
                     )
                 }
             }

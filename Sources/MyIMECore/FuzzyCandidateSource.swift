@@ -7,6 +7,7 @@ public struct FuzzyCandidateSource: Sendable {
     private let mozcDictionary: IndexedDictionaryEngine
     private let fuzzyRepository: FuzzyEngineRepository
     private let learnedCompounds: [LearnedCompoundPrediction]
+    private let ranking: FuzzyCandidateRanking?
 
     public init(
         query: String,
@@ -18,7 +19,8 @@ public struct FuzzyCandidateSource: Sendable {
         basicDictionary: ConversionEngine,
         mozcDictionary: IndexedDictionaryEngine,
         fuzzyRepository: FuzzyEngineRepository,
-        learnedCompounds: [LearnedCompoundPrediction] = []
+        learnedCompounds: [LearnedCompoundPrediction] = [],
+        ranking: FuzzyCandidateRanking? = nil
     ) {
         self.query = query
         self.visibleCandidates = visibleCandidates
@@ -28,6 +30,7 @@ public struct FuzzyCandidateSource: Sendable {
         self.mozcDictionary = mozcDictionary
         self.fuzzyRepository = fuzzyRepository
         self.learnedCompounds = learnedCompounds
+        self.ranking = ranking
     }
 
     public func matchTiers(
@@ -89,10 +92,15 @@ public struct FuzzyCandidateSource: Sendable {
                     excluding: visibleCandidates
                 )
                 : []
-            return [learnedMatches] + FuzzyCandidateTierBuilder.build(
+            let typoTiers = FuzzyCandidateTierBuilder.build(
                 directTypoMatches: filtered,
                 multipleKeyMatches: multipleKeyMatches
             )
+            return [learnedMatches] + (ranking?.ranked(
+                typoTiers,
+                for: query,
+                excluding: visibleCandidates
+            ) ?? typoTiers)
         }.value
     }
 

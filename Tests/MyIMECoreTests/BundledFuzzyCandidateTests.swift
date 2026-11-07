@@ -406,6 +406,163 @@ struct BundledFuzzyCandidateTests {
         #expect(candidates.prefix(4).contains(expected))
     }
 
+    private func standardSource() throws -> StandardConversionCandidateSource {
+        let fixture = try #require(Self.fixture)
+        return StandardConversionCandidateSource(
+            userEngine: LayeredConversionEngine(engines: []),
+            importedEngine: Self.importedSKK,
+            basicEngine: fixture.basic,
+            symbolEngine: ConversionEngine(entries: []),
+            systemEngine: fixture.system,
+            verbInflectionGenerator: VerbInflectionCandidateGenerator(
+                entries: fixture.entries
+            ),
+            verbConjugations: fixture.conjugations
+        )
+    }
+
+    private func firstPanel(
+        _ reading: String,
+        history: CandidateSelectionHistory
+    ) throws -> String? {
+        try standardSource().candidates(for: .init(
+            input: reading,
+            conversionReading: reading,
+            selectionHistory: history
+        )).first?.storageText
+    }
+
+    private func secondPanelMatch(
+        _ query: String,
+        reading: String,
+        history: CandidateSelectionHistory
+    ) async throws -> FuzzyConversionMatch? {
+        let fixture = try #require(Self.fixture)
+        let tiers = await FuzzyCandidateSource(
+            query: query,
+            visibleCandidates: [],
+            userDictionary: LayeredConversionEngine(engines: []),
+            importedDictionary: Self.importedSKK,
+            basicDictionary: fixture.basic,
+            mozcDictionary: fixture.system,
+            fuzzyRepository: fixture.repository,
+            ranking: FuzzyCandidateRanking(
+                standardSource: try standardSource(),
+                selectionHistory: history
+            )
+        ).matchTiers()
+        return tiers.flatMap { $0 }.first { $0.reading == reading }
+    }
+
+    /// `ahite` corrected to `shite` offers what the first panel puts first
+    /// for `shite`, with no history and after either word is learned
+    @Test(arguments: [String?.none, "して", "仕手"])
+    func correctedReadingOffersTheFirstPanelsFirstCandidate(
+        learned: String?
+    ) async throws {
+        var history = CandidateSelectionHistory()
+        if let learned {
+            history.record(learned, reading: "shite")
+            history.record(learned, reading: "shite")
+        }
+
+        let first = try firstPanel("shite", history: history)
+        let match = try await secondPanelMatch(
+            "ahite",
+            reading: "shite",
+            history: history
+        )
+
+        if let learned {
+            #expect(first == learned)
+        }
+        #expect(match?.candidates.first == first)
+    }
+
+    /// Choosing して in the second panel records it for `shite` too, as
+    /// InputController does, so the first panel puts it first once chosen
+    /// twice as kana always needs, also after the history is saved and read
+    @Test
+    func secondPanelChoiceReachesTheFirstPanel() throws {
+        var history = CandidateSelectionHistory()
+        history.record("して", readings: ["ahite", "shite"])
+        #expect(try firstPanel("shite", history: history) != "して")
+
+        history.record("して", readings: ["ahite", "shite"])
+        history = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: JSONEncoder().encode(history)
+        )
+
+        #expect(try firstPanel("shite", history: history) == "して")
+    }
+
+    /// Kana generated for the reading is learned but not added to the user
+    /// dictionary under it; a dictionary word still is
+    @Test
+    func onlyDictionaryWordsAreAddedToTheUserDictionary() async throws {
+        var kanaHistory = CandidateSelectionHistory()
+        kanaHistory.record("して", reading: "shite")
+        kanaHistory.record("して", reading: "shite")
+        var wordHistory = CandidateSelectionHistory()
+        wordHistory.record("仕手", reading: "shite")
+        wordHistory.record("仕手", reading: "shite")
+
+        let kana = try #require(try await secondPanelMatch(
+            "ahite",
+            reading: "shite",
+            history: kanaHistory
+        ))
+        let word = try #require(try await secondPanelMatch(
+            "ahite",
+            reading: "shite",
+            history: wordHistory
+        ))
+        var session = FuzzyCandidateSession()
+        session.replace(matchTiers: [[kana], [word]], recencyRanks: [:])
+
+        #expect(kana.candidates.first == "して")
+        #expect(!kana.registersInUserDictionary)
+        #expect(session.candidates.first?.userDictionaryEntry == nil)
+        #expect(word.registersInUserDictionary)
+        #expect(session.candidates.last?.userDictionaryEntry
+            == UserDictionaryRegistration(reading: "shite", candidate: "仕手"))
+    }
+
+    /// The corrections and their order of readings stay as before
+    @Test(arguments: [
+        ("kaigii", "会議"), ("denwq", "電話"), ("keisna", "計算"),
+        ("saihshin", "最新"), ("susmete", "進めて"), ("z=tp", "アート")
+    ])
+    func keepsTheCorrectionsWhenRanked(query: String, expected: String)
+        async throws {
+        let fixture = try #require(Self.fixture)
+        let source = { (ranking: FuzzyCandidateRanking?) in
+            FuzzyCandidateSource(
+                query: query,
+                visibleCandidates: [],
+                userDictionary: LayeredConversionEngine(engines: []),
+                importedDictionary: Self.importedSKK,
+                basicDictionary: fixture.basic,
+                mozcDictionary: fixture.system,
+                fuzzyRepository: fixture.repository,
+                ranking: ranking
+            )
+        }
+        let plain = await source(nil).matchTiers()
+        let ranked = await source(FuzzyCandidateRanking(
+            standardSource: try standardSource(),
+            selectionHistory: CandidateSelectionHistory()
+        )).matchTiers()
+
+        #expect(ranked.map { $0.map(\.reading) }
+            == plain.map { $0.map(\.reading) })
+        var session = FuzzyCandidateSession()
+        session.replace(matchTiers: ranked, recencyRanks: [:])
+        #expect(session.candidates.prefix(4).map(\.storageText)
+            .contains(expected))
+    }
+
     private func fuzzyCandidates(
         for query: String,
         visibleCandidates: Set<String> = []

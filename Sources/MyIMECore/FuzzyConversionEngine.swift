@@ -7,6 +7,9 @@ public struct FuzzyConversionMatch: Equatable, Sendable {
     public let isLearnable: Bool
     public let sourceTokens: [String]
     public let sourceReadings: [String?]
+    /// A candidate generated for the reading, such as the kana して, is
+    /// learned in the selection history but not added to the user dictionary
+    public let registersInUserDictionary: Bool
 
     public init(
         reading: String,
@@ -14,7 +17,8 @@ public struct FuzzyConversionMatch: Equatable, Sendable {
         distance: Int,
         isLearnable: Bool = true,
         sourceTokens: [String] = [],
-        sourceReadings: [String?] = []
+        sourceReadings: [String?] = [],
+        registersInUserDictionary: Bool = true
     ) {
         self.reading = reading
         self.candidates = candidates
@@ -22,6 +26,7 @@ public struct FuzzyConversionMatch: Equatable, Sendable {
         self.isLearnable = isLearnable
         self.sourceTokens = sourceTokens
         self.sourceReadings = sourceReadings
+        self.registersInUserDictionary = registersInUserDictionary
     }
 }
 

@@ -3649,19 +3649,7 @@ final class InputController: IMKInputController {
                 limit: NextInputPredictionModel.maximumFollowersPerContext
             )
             : []
-        let standardSource = StandardConversionCandidateSource(
-            userEngine: dictionaryRuntime.userDictionaryEngine,
-            importedEngine: dictionaryRuntime.importedEngine,
-            basicEngine: dictionaryRuntime.basicEngine,
-            symbolEngine: Self.sharedSymbolConversionEngine,
-            systemEngine: dictionaryRuntime.systemEngine,
-            verbInflectionGenerator: dictionaryRuntime.verbInflectionGenerator,
-            deferredSystemCandidates: Self.sharedDeferredSystemCandidates,
-            verbConjugations: Self.sharedVerbConjugations,
-            adjectiveDictionary: Self.sharedAdjectiveDictionary,
-            maximumSystemPrefixCandidates:
-                Self.maximumMozcDictionaryPrefixCandidates
-        )
+        let standardSource = makeStandardConversionCandidateSource()
         let sourceStart = performanceClock.now
         let orderedCandidates = standardSource.candidates(for: .init(
             input: input,
@@ -3694,6 +3682,25 @@ final class InputController: IMKInputController {
         updateFuzzyCandidatesIfNeeded()
         showInputPreview(client: sender)
         presentationDuration = performanceClock.now - presentationStart
+    }
+
+    /// The first panel's candidate generation; the second panel orders the
+    /// candidates of a corrected reading with the same one
+    private func makeStandardConversionCandidateSource()
+        -> StandardConversionCandidateSource {
+        StandardConversionCandidateSource(
+            userEngine: dictionaryRuntime.userDictionaryEngine,
+            importedEngine: dictionaryRuntime.importedEngine,
+            basicEngine: dictionaryRuntime.basicEngine,
+            symbolEngine: Self.sharedSymbolConversionEngine,
+            systemEngine: dictionaryRuntime.systemEngine,
+            verbInflectionGenerator: dictionaryRuntime.verbInflectionGenerator,
+            deferredSystemCandidates: Self.sharedDeferredSystemCandidates,
+            verbConjugations: Self.sharedVerbConjugations,
+            adjectiveDictionary: Self.sharedAdjectiveDictionary,
+            maximumSystemPrefixCandidates:
+                Self.maximumMozcDictionaryPrefixCandidates
+        )
     }
 
     private func replaceCurrentCandidates(with candidates: [String]) {
@@ -3760,7 +3767,12 @@ final class InputController: IMKInputController {
             basicDictionary: dictionaryRuntime.basicEngine,
             mozcDictionary: dictionaryRuntime.systemEngine,
             fuzzyRepository: Self.fuzzyEngineRepository,
-            learnedCompounds: learnedCompounds
+            learnedCompounds: learnedCompounds,
+            ranking: FuzzyCandidateRanking(
+                standardSource: makeStandardConversionCandidateSource(),
+                selectionHistory: candidateSelectionHistoryStore.snapshot,
+                learningEnabled: Self.diagnosticConfiguration.enables(.learning)
+            )
         )
         guard let asyncSnapshot = currentInputSessionSnapshot() else {
             return
