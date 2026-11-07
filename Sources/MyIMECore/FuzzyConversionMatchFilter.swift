@@ -18,7 +18,11 @@ public enum FuzzyConversionMatchFilter {
             return FuzzyConversionMatch(
                 reading: match.reading,
                 candidates: candidates,
-                distance: match.distance
+                distance: match.distance,
+                isLearnable: match.isLearnable,
+                sourceTokens: match.sourceTokens,
+                sourceReadings: match.sourceReadings,
+                origin: match.origin
             )
         }
     }

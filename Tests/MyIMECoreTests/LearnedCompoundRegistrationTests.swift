@@ -87,7 +87,8 @@ struct LearnedCompoundRegistrationTests {
             distance: 0,
             isLearnable: false,
             sourceTokens: ["東京都", "中野区"],
-            sourceReadings: ["toukyouto", nil]
+            sourceReadings: ["toukyouto", nil],
+            origin: .learnedCompound
         )
 
         #expect(fuzzyCandidate.userDictionaryEntry == nil)
@@ -140,12 +141,15 @@ struct LearnedCompoundRegistrationTests {
         #expect(fuzzyCandidate.userDictionaryEntry == nil)
     }
 
+    /// A corrected typo is not a request to register the word, even one
+    /// in a dictionary; learned phrases above are still registered
     @Test
-    func ordinaryFuzzyCandidatesKeepTheirRegistration() {
+    func correctedTyposAreNotRegistered() {
         let correction = FuzzyCandidate(
             storageText: "最新",
             reading: "saishin",
-            distance: 1
+            distance: 1,
+            origin: .typoCorrection
         )
         let notLearnable = FuzzyCandidate(
             storageText: "際ハッシウム品",
@@ -154,11 +158,27 @@ struct LearnedCompoundRegistrationTests {
             isLearnable: false
         )
 
-        #expect(correction.userDictionaryEntry == UserDictionaryRegistration(
-            reading: "saishin",
-            candidate: "最新"
-        ))
+        #expect(correction.userDictionaryEntry == nil)
         #expect(notLearnable.userDictionaryEntry == nil)
+    }
+
+    /// The learned phrase keeps the input it was found from as before
+    @Test
+    func learnedPhrasesKeepTheirSelectionHistoryReadings() {
+        let phrase = FuzzyCandidate(
+            storageText: "東京都中野区",
+            reading: "toukyoutonakanoku",
+            distance: 0,
+            isLearnable: false,
+            sourceTokens: ["東京都", "中野区"],
+            sourceReadings: ["toukyouto", "nakanoku"],
+            origin: .learnedCompound
+        )
+
+        #expect(FuzzySelectionLearning.historyReadings(
+            for: phrase,
+            query: "toukyouto"
+        ) == ["toukyouto", "toukyoutonakanoku"])
     }
 
     /// 東京都 typed and 中野区 picked from the next-input fuzzyCandidates

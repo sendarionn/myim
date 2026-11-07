@@ -497,36 +497,71 @@ struct BundledFuzzyCandidateTests {
         #expect(try firstPanel("shite", history: history) == "して")
     }
 
-    /// Kana generated for the reading is learned but not added to the user
-    /// dictionary under it; a dictionary word still is
-    @Test
-    func onlyDictionaryWordsAreAddedToTheUserDictionary() async throws {
-        var kanaHistory = CandidateSelectionHistory()
-        kanaHistory.record("して", reading: "shite")
-        kanaHistory.record("して", reading: "shite")
-        var wordHistory = CandidateSelectionHistory()
-        wordHistory.record("仕手", reading: "shite")
-        wordHistory.record("仕手", reading: "shite")
-
-        let kana = try #require(try await secondPanelMatch(
+    /// A corrected typo is not added to the user dictionary, whether it is
+    /// generated kana or a dictionary word
+    @Test(arguments: ["して", "仕手"])
+    func correctedTyposAreNotAddedToTheUserDictionary(
+        learned: String
+    ) async throws {
+        var history = CandidateSelectionHistory()
+        history.record(learned, reading: "shite")
+        history.record(learned, reading: "shite")
+        let match = try #require(try await secondPanelMatch(
             "ahite",
             reading: "shite",
-            history: kanaHistory
-        ))
-        let word = try #require(try await secondPanelMatch(
-            "ahite",
-            reading: "shite",
-            history: wordHistory
+            history: history
         ))
         var session = FuzzyCandidateSession()
-        session.replace(matchTiers: [[kana], [word]], recencyRanks: [:])
+        session.replace(matchTiers: [[match]], recencyRanks: [:])
+        let candidate = try #require(session.candidates.first)
 
-        #expect(kana.candidates.first == "して")
-        #expect(!kana.registersInUserDictionary)
-        #expect(session.candidates.first?.userDictionaryEntry == nil)
-        #expect(word.registersInUserDictionary)
-        #expect(session.candidates.last?.userDictionaryEntry
-            == UserDictionaryRegistration(reading: "shite", candidate: "仕手"))
+        #expect(candidate.storageText == learned)
+        #expect(candidate.origin == .typoCorrection)
+        #expect(candidate.userDictionaryEntry == nil)
+    }
+
+    /// Committing the corrected typo learns it for `shite`, not `ahite`, and
+    /// the first panel of `shite` follows it; nothing is learned for `ahite`
+    @Test
+    func correctedTypoIsLearnedForTheCorrectedReadingOnly() async throws {
+        let match = try #require(try await secondPanelMatch(
+            "ahite",
+            reading: "shite",
+            history: CandidateSelectionHistory()
+        ))
+        var session = FuzzyCandidateSession()
+        session.replace(matchTiers: [[match]], recencyRanks: [:])
+        let candidate = try #require(session.candidates.first)
+        var history = CandidateSelectionHistory()
+
+        for _ in 0..<2 {
+            history.record(
+                "仕手",
+                readings: FuzzySelectionLearning.historyReadings(
+                    for: FuzzyCandidate(
+                        storageText: "仕手",
+                        reading: candidate.reading,
+                        distance: candidate.distance,
+                        origin: candidate.origin
+                    ),
+                    query: "ahite"
+                )
+            )
+        }
+        history = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: JSONEncoder().encode(history)
+        )
+
+        #expect(history.candidates(for: ["shite"]).contains("仕手"))
+        #expect(history.candidates(for: ["ahite"]).isEmpty)
+        #expect(try firstPanel("shite", history: history) == "仕手")
+        let next = try await secondPanelMatch(
+            "ahite",
+            reading: "shite",
+            history: history
+        )
+        #expect(next?.candidates.first == "仕手")
     }
 
     /// The corrections and their order of readings stay as before

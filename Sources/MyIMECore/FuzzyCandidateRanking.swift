@@ -84,16 +84,7 @@ public struct FuzzyCandidateRanking: Sendable {
             candidates: [first.storageText],
             distance: match.distance,
             isLearnable: match.isLearnable,
-            registersInUserDictionary: Self.isDictionaryWord(first)
+            origin: match.origin
         )
-    }
-
-    /// Words found in a dictionary are added to the user dictionary as
-    /// before; kana and forms generated for the reading are not
-    private static func isDictionaryWord(_ candidate: Candidate) -> Bool {
-        [
-            .userDictionary, .basicDictionary, .systemDictionary,
-            .importedDictionary, .symbolDictionary
-        ].contains(where: candidate.hasSource)
     }
 }

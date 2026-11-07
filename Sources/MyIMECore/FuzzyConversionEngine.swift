@@ -1,5 +1,16 @@
 import Foundation
 
+/// How a second panel candidate was found
+public enum FuzzyCandidateOrigin: Equatable, Sendable {
+    /// The input corrected to another reading, such as `ahite` to `shite`;
+    /// committing it is not a request to register the word, and only the
+    /// corrected reading is learned
+    case typoCorrection
+    /// A phrase learned from units committed in a row, found without any
+    /// correction
+    case learnedCompound
+}
+
 public struct FuzzyConversionMatch: Equatable, Sendable {
     public let reading: String
     public let candidates: [String]
@@ -7,9 +18,7 @@ public struct FuzzyConversionMatch: Equatable, Sendable {
     public let isLearnable: Bool
     public let sourceTokens: [String]
     public let sourceReadings: [String?]
-    /// A candidate generated for the reading, such as the kana して, is
-    /// learned in the selection history but not added to the user dictionary
-    public let registersInUserDictionary: Bool
+    public let origin: FuzzyCandidateOrigin
 
     public init(
         reading: String,
@@ -18,7 +27,7 @@ public struct FuzzyConversionMatch: Equatable, Sendable {
         isLearnable: Bool = true,
         sourceTokens: [String] = [],
         sourceReadings: [String?] = [],
-        registersInUserDictionary: Bool = true
+        origin: FuzzyCandidateOrigin = .typoCorrection
     ) {
         self.reading = reading
         self.candidates = candidates
@@ -26,7 +35,7 @@ public struct FuzzyConversionMatch: Equatable, Sendable {
         self.isLearnable = isLearnable
         self.sourceTokens = sourceTokens
         self.sourceReadings = sourceReadings
-        self.registersInUserDictionary = registersInUserDictionary
+        self.origin = origin
     }
 }
 

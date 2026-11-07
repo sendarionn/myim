@@ -4052,7 +4052,10 @@ final class InputController: IMKInputController {
         if fuzzyCandidate.isLearnable {
             candidateSelectionHistoryStore.record(
                 fuzzyCandidate.storageText,
-                readings: [fuzzyQuery, fuzzyCandidate.reading]
+                readings: FuzzySelectionLearning.historyReadings(
+                    for: fuzzyCandidate,
+                    query: fuzzyQuery
+                )
             )
         }
         let value = fuzzyCandidate.storageText + fuzzySuffix

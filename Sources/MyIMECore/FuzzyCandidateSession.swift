@@ -6,7 +6,7 @@ public struct FuzzyCandidate: Equatable, Sendable {
     public let isLearnable: Bool
     public let sourceTokens: [String]
     public let sourceReadings: [String?]
-    public let registersInUserDictionary: Bool
+    public let origin: FuzzyCandidateOrigin
 
     public init(
         storageText: String,
@@ -15,7 +15,7 @@ public struct FuzzyCandidate: Equatable, Sendable {
         isLearnable: Bool = true,
         sourceTokens: [String] = [],
         sourceReadings: [String?] = [],
-        registersInUserDictionary: Bool = true
+        origin: FuzzyCandidateOrigin = .typoCorrection
     ) {
         self.storageText = storageText
         self.reading = reading
@@ -23,7 +23,7 @@ public struct FuzzyCandidate: Equatable, Sendable {
         self.isLearnable = isLearnable
         self.sourceTokens = sourceTokens
         self.sourceReadings = sourceReadings
-        self.registersInUserDictionary = registersInUserDictionary
+        self.origin = origin
     }
 }
 
@@ -42,8 +42,10 @@ extension FuzzyCandidate {
     /// is saved with the whole reading of its units, never the partial
     /// input it was found from, and not at all while a reading is missing
     public var userDictionaryEntry: UserDictionaryRegistration? {
+        // A corrected typo is never registered, even a dictionary word
+        guard origin != .typoCorrection else { return nil }
         guard !sourceTokens.isEmpty else {
-            return isLearnable && registersInUserDictionary
+            return isLearnable
                 ? UserDictionaryRegistration(
                     reading: reading,
                     candidate: storageText
@@ -152,8 +154,7 @@ public struct FuzzyCandidateSession: Equatable, Sendable {
                         isLearnable: match.isLearnable,
                         sourceTokens: match.sourceTokens,
                         sourceReadings: match.sourceReadings,
-                        registersInUserDictionary:
-                            match.registersInUserDictionary
+                        origin: match.origin
                     )
                 }
             }
@@ -264,5 +265,22 @@ public struct FuzzyCandidateSession: Equatable, Sendable {
 
     public mutating func reset() {
         selection.reset()
+    }
+}
+
+public enum FuzzySelectionLearning {
+    /// Readings a committed second panel candidate is learned for: a
+    /// corrected typo only for its corrected reading, other candidates for
+    /// the input and their own reading as before
+    public static func historyReadings(
+        for candidate: FuzzyCandidate,
+        query: String
+    ) -> [String] {
+        switch candidate.origin {
+        case .typoCorrection:
+            CandidateSelectionReading.historyReadings(for: candidate.reading)
+        case .learnedCompound:
+            [query, candidate.reading]
+        }
     }
 }

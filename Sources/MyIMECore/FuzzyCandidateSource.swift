@@ -48,7 +48,8 @@ public struct FuzzyCandidateSource: Sendable {
                     distance: 0,
                     isLearnable: false,
                     sourceTokens: prediction.sourceTokens,
-                    sourceReadings: prediction.sourceReadings
+                    sourceReadings: prediction.sourceReadings,
+                    origin: .learnedCompound
                 )
             }
             guard includesTypoCorrections else {
