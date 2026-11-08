@@ -203,6 +203,19 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             requiring: .negative
         ),
         FollowingExpression("nakutemoii", "なくてもいい", requiring: .negative),
+        FollowingExpression(
+            "nakunarimashita",
+            "なくなりました",
+            requiring: .negative
+        ),
+        FollowingExpression(
+            "nakunarimasu",
+            "なくなります",
+            requiring: .negative
+        ),
+        FollowingExpression("nakunatta", "なくなった", requiring: .negative),
+        FollowingExpression("nakunatte", "なくなって", requiring: .negative),
+        FollowingExpression("nakunaru", "なくなる", requiring: .negative),
         FollowingExpression("beki", "べき", requiring: .beforeBeki),
         FollowingExpression("kamoshirenai", "かもしれない", requiring: .terminal),
         FollowingExpression("kotogaaru", "ことがある", requiring: .past),
@@ -277,12 +290,24 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 derivedStem: row.negative.0,
                 baseEnding: row.reading
             )
+            rules.append(VoiceReverseRule(
+                .potential,
+                row.conditional.0 + "ru",
+                row.reading,
+                .godan
+            ))
         }
         appendRules(
             conjugationClass: .godanIku,
             derivedStem: GodanRow.iku.negative.0,
             baseEnding: GodanRow.iku.reading
         )
+        rules.append(VoiceReverseRule(
+            .potential,
+            GodanRow.iku.conditional.0 + "ru",
+            GodanRow.iku.reading,
+            .godanIku
+        ))
         // 呼ばされる is the short 呼ばせられる; す verbs keep the long form
         let shortCausativeRows = GodanRow.rows.map { ($0, VerbConjugationClass.godan) }
             + [(GodanRow.iku, .godanIku)]
@@ -376,21 +401,25 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 ) + rule.baseEnding
                 for entry in dictionary.entries(for: baseReading)
                 where entry.conjugationClass == rule.conjugationClass
-                    && following.allows(entry) {
+                    && following.allows(entry)
+                    && Self.allowsPotential(entry, rule: rule) {
                     guard let derived = Self.derive(entry, as: rule.voice),
                           let conjugated = Self.conjugate(
                             derived,
                             to: following.requiredVerbForm
                           ),
                           conjugated.reading == formReading else { continue }
+                    // A potential form such as 買える reads like the ichidan
+                    // verb 変える, whose own forms stay ahead of it
+                    let cost = rule.voice == .potential
+                        ? entry.cost + Self.commonVerbCost
+                        : entry.cost
                     if following.isBareContinuative {
-                        bareContinuatives.append(
-                            (conjugated.surface, entry.cost)
-                        )
+                        bareContinuatives.append((conjugated.surface, cost))
                     } else {
                         record(
                             conjugated.surface + following.surfaceSuffix,
-                            cost: entry.cost
+                            cost: cost
                         )
                     }
                 }
@@ -408,6 +437,18 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         }.map(\.key)
     }
 
+    /// Potential forms are made from common godan verbs written with
+    /// kanji only; rare variants such as 歸る and kana verbs such as いう are
+    /// left out, as the automatic kana covers the latter
+    private static func allowsPotential(
+        _ entry: VerbConjugationDictionary.Entry,
+        rule: VoiceReverseRule
+    ) -> Bool {
+        guard rule.voice == .potential else { return true }
+        return entry.cost < commonVerbCost
+            && entry.surface != RomajiConverter().hiragana(from: entry.reading)
+    }
+
     /// The ichidan verb such as 呼ばれる derived from `entry`
     private static func derive(
         _ entry: VerbConjugationDictionary.Entry,
@@ -417,14 +458,21 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         let suffix: (reading: String, surface: String)?
         switch entry.conjugationClass {
         case .godan, .godanIku:
-            guard let value = conjugate(entry, to: .negative) else {
+            guard let value = conjugate(
+                entry,
+                to: voice == .potential ? .conditional : .negative
+            ) else {
                 return nil
             }
             stem = value
-            // The reading of 待つ also ends in su, so the kana decides
-            suffix = entry.surface.hasSuffix("す")
-                ? voice.godanSuffixAfterSu
-                : voice.godanSuffix
+            if voice == .potential {
+                suffix = ("ru", "る")
+            } else {
+                // The reading of 待つ also ends in su, so the kana decides
+                suffix = entry.surface.hasSuffix("す")
+                    ? voice.godanSuffixAfterSu
+                    : voice.godanSuffix
+            }
         case .ichidan, .zuru:
             guard let value = conjugate(entry, to: .continuative) else {
                 return nil
@@ -557,6 +605,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     }
 
     private enum DerivedVoice: Sendable {
+        case potential
         case passive
         case causative
         case causativePassive
@@ -565,6 +614,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
         var godanSuffix: (reading: String, surface: String)? {
             switch self {
+            case .potential: nil
             case .passive: ("reru", "れる")
             case .causative: ("seru", "せる")
             case .causativePassive: ("serareru", "せられる")
@@ -579,6 +629,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
         var nonGodanSuffix: (reading: String, surface: String)? {
             switch self {
+            case .potential: nil
             case .passive: ("rareru", "られる")
             case .causative: ("saseru", "させる")
             case .causativePassive: ("saserareru", "させられる")
@@ -588,6 +639,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
         var suruSuffix: (reading: String, surface: String)? {
             switch self {
+            case .potential: nil
             case .passive: ("reru", "れる")
             case .causative: ("seru", "せる")
             case .causativePassive: ("serareru", "せられる")

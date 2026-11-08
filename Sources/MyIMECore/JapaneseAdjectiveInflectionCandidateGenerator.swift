@@ -6,6 +6,14 @@ public struct JapaneseAdjectiveInflectionCandidateGenerator: Sendable {
 
     private static let inflections = [
         Inflection(
+            inputSuffix: "kunakunatta",
+            surfaceSuffix: "くなくなった"
+        ),
+        Inflection(
+            inputSuffix: "kunakunaru",
+            surfaceSuffix: "くなくなる"
+        ),
+        Inflection(
             inputSuffix: "kunakatta",
             surfaceSuffix: "くなかった"
         ),

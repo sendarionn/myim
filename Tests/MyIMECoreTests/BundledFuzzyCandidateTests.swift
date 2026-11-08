@@ -479,6 +479,24 @@ struct BundledFuzzyCandidateTests {
         #expect(match?.candidates.first == first)
     }
 
+    @Test
+    func correctedReadingUsesCompoundVerbGeneration() throws {
+        let ranked = FuzzyCandidateRanking(
+            standardSource: try standardSource(),
+            selectionHistory: CandidateSelectionHistory()
+        ).ranked(
+            [[FuzzyConversionMatch(
+                reading: "tsukaenakunatta",
+                candidates: ["つかえなくなった"],
+                distance: 1
+            )]],
+            for: "tsukaenakunattq",
+            excluding: []
+        )
+
+        #expect(ranked.first?.first?.candidates == ["使えなくなった"])
+    }
+
     /// Choosing して in the second panel records it for `shite` too, as
     /// InputController does, so the first panel puts it first once chosen
     /// twice as kana always needs, also after the history is saved and read

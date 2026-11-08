@@ -15,6 +15,7 @@ struct VerbConjugationCandidateGeneratorTests {
         shinu\t死ぬ\tgodan\t3000
         toru\t取る\tgodan\t3000
         kau\t買う\tgodan\t3000
+        tsukau\t使う\tgodan\t3000
         shiru\t知る\tgodan\t3000
         shiru\tしる\tgodan\t1000
         wakaru\t分かる\tgodan\t2420
@@ -308,6 +309,38 @@ struct VerbConjugationCandidateGeneratorTests {
         #expect(generator.candidates(for: input).contains(expected))
     }
 
+    @Test(arguments: [
+        ("tsukawanakunatta", "使わなくなった"),
+        ("tsukawanakunaru", "使わなくなる"),
+        ("tsukawanakunatte", "使わなくなって"),
+        ("tsukawanakunarimasu", "使わなくなります"),
+        ("tsukawanakunarimashita", "使わなくなりました"),
+        ("tabenakunatta", "食べなくなった"),
+        ("benkyoushinakunatta", "勉強しなくなった"),
+        ("konakunatta", "来なくなった")
+    ])
+    func composesNegativeStateChanges(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("tsukaenakunatta", "使えなくなった"),
+        ("tsukaenakunaru", "使えなくなる"),
+        ("tsukaenakunatte", "使えなくなって"),
+        ("tsukaenakatta", "使えなかった"),
+        ("yomenakunatta", "読めなくなった"),
+        ("kakenakunaru", "書けなくなる")
+    ])
+    func reconjugatesGodanPotentialForms(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
     @Test
     func zuFollowsTheClassicalNegativeOfSuru() {
         #expect(!generator.candidates(for: "benkyoushizu").contains("勉強しず"))
@@ -377,6 +410,8 @@ struct VerbConjugationCandidateGeneratorTests {
         #expect(generator.candidates(
             for: String(repeating: "dammy", count: 40) + "seraretemo"
         ).isEmpty)
+        #expect(generator.candidates(for: "dammyenakunatta").isEmpty)
+        #expect(generator.candidates(for: "ik anakunatta").isEmpty)
     }
 
     @Test
@@ -384,7 +419,8 @@ struct VerbConjugationCandidateGeneratorTests {
         #expect(!generator.candidates(for: "kiteiru").contains("切ている"))
         #expect(generator.candidates(for: "kitteiru") == ["切っている"])
         #expect(generator.candidates(for: "kaeranai") == ["帰らない"])
-        #expect(generator.candidates(for: "kaenai") == ["変えない"])
+        #expect(generator.candidates(for: "kaenai").contains("変えない"))
+        #expect(generator.candidates(for: "kaenai").contains("買えない"))
     }
 
     @Test

@@ -139,6 +139,57 @@ struct BundledVerbConjugationTests {
         #expect(try candidates(for: input).contains(expected))
     }
 
+    /// The potential of 買う reads like 変える; the ichidan verb's own forms
+    /// stay first, kana verbs and rare variants give no potential
+    @Test
+    func potentialFormsStayBehindRealVerbs() throws {
+        let source = try #require(Self.source)
+        func candidates(_ input: String) -> [String] {
+            source.candidates(for: .init(
+                input: input,
+                conversionReading: input
+            )).map(\.storageText)
+        }
+
+        #expect(candidates("kaenai").first == "変えない")
+        #expect(candidates("kaenai").contains("買えない"))
+        #expect(candidates("kaeta").first == "変えた")
+        #expect(candidates("ienai").first == "言えない")
+        #expect(candidates("ienai").firstIndex(of: "いえない")
+            ?? .max > 1)
+        #expect(!candidates("kaerenai").contains("歸れない"))
+        #expect(!candidates("nerenai").contains("寢れない"))
+    }
+
+    @Test(arguments: [
+        ("tsukaenakunatta", "使えなくなった"),
+        ("tsukaenakunaru", "使えなくなる"),
+        ("tsukaenakunatte", "使えなくなって"),
+        ("tsukaenakatta", "使えなかった"),
+        ("tsukawanakunatta", "使わなくなった"),
+        ("yomenakunatta", "読めなくなった"),
+        ("kakenakunaru", "書けなくなる"),
+        ("tabenakunatta", "食べなくなった")
+    ])
+    func showsNegativeStateChangesOnTheFirstPage(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        var session = CandidateSession()
+
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: input
+            )),
+            input: input,
+            reading: input
+        )
+
+        #expect(session.candidateTexts.prefix(4).contains(expected))
+    }
+
     @Test(arguments: [
         ("yobarete", "呼ばれて"),
         ("yobaretemo", "呼ばれても")

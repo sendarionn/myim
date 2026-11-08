@@ -19,6 +19,8 @@ struct JapaneseAdjectiveInflectionCandidateGeneratorTests {
         ("osokatta", ["遅かった"]),
         ("hayakatta", ["早かった", "速かった"]),
         ("osokunakatta", ["遅くなかった"]),
+        ("osokunakunatta", ["遅くなくなった"]),
+        ("osokunakunaru", ["遅くなくなる"]),
         ("yokatta", ["良かった"]),
         ("yokunakatta", ["良くなかった"])
     ])
