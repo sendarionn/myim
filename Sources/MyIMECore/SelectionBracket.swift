@@ -36,6 +36,26 @@ public struct SelectionBracketPair: Equatable, Sendable {
 }
 
 public enum SelectionBracketWrapper {
+    /// `NSTextInputClient` uses this sentinel to replace its current
+    /// selection. This lets the client perform the replacement as normal
+    /// text input and place the caret after the inserted text
+    public static let currentSelectionReplacementRange = NSRange(
+        location: NSNotFound,
+        length: NSNotFound
+    )
+
+    /// The collapsed selection expected after replacing `selectedRange`
+    /// with a wrapped string of `wrappedLength` UTF-16 code units
+    public static func expectedCaretRange(
+        afterReplacing selectedRange: NSRange,
+        wrappedLength: Int
+    ) -> NSRange {
+        NSRange(
+            location: selectedRange.location + wrappedLength,
+            length: 0
+        )
+    }
+
     /// The selection with the brackets around it; each bracket takes the
     /// formatting of the character it sits next to, so styled text keeps
     /// its look where the application accepts attributes

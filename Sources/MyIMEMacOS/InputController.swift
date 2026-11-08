@@ -2333,9 +2333,26 @@ final class InputController: IMKInputController {
               ) else {
             return false
         }
+        let expectedRange = SelectionBracketWrapper.expectedCaretRange(
+            afterReplacing: selection.range,
+            wrappedLength: wrapped.length
+        )
         isInsertingCommittedText = true
-        textClient.insertText(wrapped, replacementRange: selection.range)
+        textClient.insertText(
+            wrapped,
+            replacementRange: SelectionBracketWrapper
+                .currentSelectionReplacementRange
+        )
         isInsertingCommittedText = false
+        let selectedRange = textClient.selectedRange()
+        let markedRange = textClient.markedRange()
+        if selectedRange != expectedRange
+            || (markedRange.location != NSNotFound && markedRange.length > 0) {
+            let application = textClient.bundleIdentifier() ?? "unknown"
+            Self.lifecycleLogger.notice(
+                "selection bracket post-insert app=\(application, privacy: .public) expected=\(NSStringFromRange(expectedRange), privacy: .public) selected=\(NSStringFromRange(selectedRange), privacy: .public) marked=\(NSStringFromRange(markedRange), privacy: .public)"
+            )
+        }
         return true
     }
 

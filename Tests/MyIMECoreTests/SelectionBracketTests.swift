@@ -4,6 +4,25 @@ import Testing
 
 @Suite
 struct SelectionBracketTests {
+    @Test func currentSelectionReplacementUsesInputMethodSentinel() {
+        #expect(
+            SelectionBracketWrapper.currentSelectionReplacementRange
+                == NSRange(location: NSNotFound, length: NSNotFound)
+        )
+    }
+
+    @Test func expectedCaretIsAfterWrappedUTF16Text() {
+        let selectedRange = NSRange(location: 4, length: 3)
+        let wrapped = NSAttributedString(string: "「絵文字😀」")
+
+        #expect(
+            SelectionBracketWrapper.expectedCaretRange(
+                afterReplacing: selectedRange,
+                wrappedLength: wrapped.length
+            ) == NSRange(location: 11, length: 0)
+        )
+    }
+
     @Test(arguments: ["文章", "こんにちは", "abc 123", "1行目\n2行目", "👨‍👩‍👧 が", "e\u{301}t\u{301}e\u{301}"])
     func wrapsTheWholeSelectionWithoutChangingIt(text: String) throws {
         let wrapped = try #require(SelectionBracketWrapper.wrapped(
