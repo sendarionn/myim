@@ -41,6 +41,64 @@ struct BundledVerbConjugationTests {
 
     /// 続ける after the 連用形 of each class, then conjugated as the
     /// ichidan verb it is
+    /// A verb joined after the 連用形 conjugates as that verb: 終わる and
+    /// 直す as godan verbs, 始める and 終える as ichidan verbs
+    @Test(arguments: [
+        ("shiowaru", "し終わる"), ("shiowatta", "し終わった"),
+        ("shiowaranai", "し終わらない"), ("yomioeru", "読み終える"),
+        ("yomioemashita", "読み終えました"), ("shihajimeru", "し始める"),
+        ("shihajimeta", "し始めた"), ("shihajimeteiru", "し始めている"),
+        ("shinaosu", "し直す"), ("shinaoshita", "し直した"),
+        ("shinaosanai", "し直さない"), ("benkyoushinaosu", "勉強し直す"),
+        ("tsukaikiru", "使い切る"), ("tsukaikitta", "使い切った"),
+        ("shiwasureta", "し忘れた"), ("yomikakeru", "読みかける"),
+        ("shisugiru", "し過ぎる"), ("hashiridasu", "走り出す"),
+        ("kakikomu", "書き込む"), ("tasukeau", "助け合う"),
+        ("yarinuku", "やり抜く"), ("kakiageru", "書き上げる")
+    ])
+    func joinsCompoundVerbs(input: String, expected: String) throws {
+        let source = try #require(Self.source)
+        let candidates = source.candidates(for: .init(
+            input: input,
+            conversionReading: input
+        )).map(\.storageText)
+
+        #expect(candidates.first == expected)
+    }
+
+    /// Rare kanji of the same reading, kana verbs other than する, and
+    /// する before verbs that read like other words give no compound
+    @Test(arguments: [
+        ("mikiru", "観切る"), ("mikakeru", "診かける"),
+        ("hanashiau", "離し合う"), ("ukeau", "ウケ合う"),
+        ("shiageru", "し上げる"), ("tsukaikiru", "遣い切る")
+    ])
+    func leavesOutUnnaturalCompounds(input: String, unexpected: String)
+        throws {
+        let source = try #require(Self.source)
+        let candidates = source.candidates(for: .init(
+            input: input,
+            conversionReading: input
+        )).map(\.storageText)
+
+        #expect(!candidates.contains(unexpected))
+    }
+
+    /// Everyday words ending like a joined verb keep their first candidate
+    @Test(arguments: [
+        ("ikiru", "生きる"), ("dekiru", "できる"), ("okiru", "起きる"),
+        ("deau", "出会う"), ("dekakeru", "出かける"), ("omoidasu", "思い出す")
+    ])
+    func keepsEverydayWordsFirst(input: String, expected: String) throws {
+        let source = try #require(Self.source)
+        let candidates = source.candidates(for: .init(
+            input: input,
+            conversionReading: input
+        )).map(\.storageText)
+
+        #expect(candidates.first == expected)
+    }
+
     @Test(arguments: [
         ("shitsuzukeru", "し続ける"), ("shitsuzuketa", "し続けた"),
         ("shitsuzukenai", "し続けない"), ("shitsuzuketeiru", "し続けている"),

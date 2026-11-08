@@ -255,6 +255,10 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     /// while 脱す and 議す, whose 意向形 read like 脱走 and 偽装, do not
     private static let commonVerbCost = 4500
 
+    /// Verbs of one reading within this cost of the most common one join
+    /// compounds such as 書き込む and 描き込む
+    private static let compoundHeadCostRange = 1000
+
     private static let followingExpressions =
         desireChanges + desireInflections + otherFollowings + teFollowings
 
@@ -308,34 +312,6 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             GodanRow.iku.reading,
             .godanIku
         ))
-        // 続ける after the 連用形 of every class, as in 使い続ける and
-        // し続ける
-        let continuing = "tsuzukeru"
-        for row in GodanRow.rows {
-            rules.append(VoiceReverseRule(
-                .continuing,
-                row.continuative.0 + continuing,
-                row.reading,
-                .godan
-            ))
-        }
-        rules.append(VoiceReverseRule(
-            .continuing,
-            GodanRow.iku.continuative.0 + continuing,
-            GodanRow.iku.reading,
-            .godanIku
-        ))
-        for conjugationClass in [
-            VerbConjugationClass.ichidan, .suru, .zuru, .kuru
-        ] {
-            let ending = nonGodanEnding(conjugationClass, .continuative)
-            rules.append(VoiceReverseRule(
-                .continuing,
-                ending.reading + continuing,
-                nonGodanEnding(conjugationClass, .terminal).reading,
-                conjugationClass
-            ))
-        }
         // 呼ばされる is the short 呼ばせられる; す verbs keep the long form
         let shortCausativeRows = GodanRow.rows.map { ($0, VerbConjugationClass.godan) }
             + [(GodanRow.iku, .godanIku)]
@@ -453,6 +429,33 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 }
             }
         }
+        // Compounds such as し終わる conjugate as the verb joined last
+        for following in Self.followingExpressions
+        where reading.hasSuffix(following.readingSuffix) {
+            let formReading = String(
+                reading.dropLast(following.readingSuffix.count)
+            )
+            guard !formReading.isEmpty else { continue }
+            for compound in compoundVerbs(
+                forming: formReading,
+                as: following.requiredVerbForm
+            ) where following.allows(compound) {
+                guard let conjugated = Self.conjugate(
+                    compound,
+                    to: following.requiredVerbForm
+                ), conjugated.reading == formReading else { continue }
+                if following.isBareContinuative {
+                    bareContinuatives.append(
+                        (conjugated.surface, compound.cost)
+                    )
+                } else {
+                    record(
+                        conjugated.surface + following.surfaceSuffix,
+                        cost: compound.cost
+                    )
+                }
+            }
+        }
         // A bare stem such as つかれ fits many verbs, so only the most
         // common ones are offered
         for (surface, cost) in bareContinuatives
@@ -467,22 +470,92 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
     /// Potential forms are made from common godan verbs written with
     /// kanji only; rare variants such as 歸る and kana verbs such as いう are
-    /// left out, as the automatic kana covers the latter. 続ける follows a
-    /// kana verb only when it is する, which gives し続ける
+    /// left out, as the automatic kana covers the latter
     private static func allowsDerivation(
         _ entry: VerbConjugationDictionary.Entry,
         rule: VoiceReverseRule
     ) -> Bool {
-        let writtenInKana = entry.surface
-            == RomajiConverter().hiragana(from: entry.reading)
-        switch rule.voice {
-        case .potential:
-            return entry.cost < commonVerbCost && !writtenInKana
-        case .continuing:
-            return !writtenInKana || entry.conjugationClass == .suru
-        default:
-            return true
+        guard rule.voice == .potential else { return true }
+        return entry.cost < commonVerbCost && !isWrittenInKana(entry)
+    }
+
+    /// Written without kanji, as いう, つかう, and ウケる are
+    private static func isWrittenInKana(
+        _ entry: VerbConjugationDictionary.Entry
+    ) -> Bool {
+        !entry.surface.unicodeScalars.contains {
+            (0x3400...0x9fff).contains($0.value)
+                || (0xf900...0xfaff).contains($0.value)
+                || (0x20000...0x2fa1f).contains($0.value)
         }
+    }
+
+    /// Compound verbs such as し終わる whose conjugated form is
+    /// `formReading`: the joined verb is read off the end of the compound's
+    /// base form, and the rest must be the 連用形 of a verb in the table
+    private func compoundVerbs(
+        forming formReading: String,
+        as form: VerbConjugationForm
+    ) -> [VerbConjugationDictionary.Entry] {
+        var compounds: [VerbConjugationDictionary.Entry] = []
+        for compoundReading in Self.baseReadings(
+            forming: formReading,
+            as: form
+        ) {
+            for rule in CompoundVerbRule.all
+            where compoundReading.hasSuffix(rule.reading) {
+                let headContinuative = String(
+                    compoundReading.dropLast(rule.reading.count)
+                )
+                // A single letter such as the い of 居切る is too short to
+                // tell a verb from part of another word
+                guard headContinuative.count >= 2 else { continue }
+                var heads: [(
+                    entry: VerbConjugationDictionary.Entry,
+                    continuative: (reading: String, surface: String)
+                )] = []
+                for headReading in Self.baseReadings(
+                    forming: headContinuative,
+                    as: .continuative
+                ) {
+                    for head in dictionary.entries(for: headReading)
+                    where Self.allowsCompound(head, rule: rule) {
+                        guard let continuative = Self.conjugate(
+                            head,
+                            to: .continuative
+                        ), continuative.reading == headContinuative else {
+                            continue
+                        }
+                        heads.append((head, continuative))
+                    }
+                }
+                // Other kanji for the same reading, such as 観る beside 見る,
+                // give 観切る; only verbs about as common as the most common
+                // one stand for the reading, which keeps 描き込む by 書き込む
+                let cheapest = heads.map(\.entry.cost).min() ?? 0
+                for head in heads
+                where head.entry.cost <= cheapest + Self.compoundHeadCostRange {
+                    compounds.append(VerbConjugationDictionary.Entry(
+                        reading: head.continuative.reading + rule.reading,
+                        surface: head.continuative.surface + rule.surface,
+                        conjugationClass: rule.conjugationClass,
+                        cost: head.entry.cost + rule.costPenalty
+                    ))
+                }
+            }
+        }
+        return compounds
+    }
+
+    /// Kana verbs are left to the automatic kana, except する, which gives
+    /// し終わる and し続ける
+    private static func allowsCompound(
+        _ head: VerbConjugationDictionary.Entry,
+        rule: CompoundVerbRule
+    ) -> Bool {
+        let allowsKana = head.conjugationClass == .suru && rule.followsSuru
+        return (!isWrittenInKana(head) || allowsKana)
+            && (!rule.commonHeadsOnly || head.cost < commonVerbCost)
     }
 
     /// The ichidan verb such as 呼ばれる derived from `entry`
@@ -490,18 +563,6 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         _ entry: VerbConjugationDictionary.Entry,
         as voice: DerivedVoice
     ) -> VerbConjugationDictionary.Entry? {
-        // 続ける joins the 連用形 the same way for every class
-        if voice == .continuing {
-            guard let stem = conjugate(entry, to: .continuative) else {
-                return nil
-            }
-            return VerbConjugationDictionary.Entry(
-                reading: stem.reading + "tsuzukeru",
-                surface: stem.surface + "続ける",
-                conjugationClass: .ichidan,
-                cost: entry.cost
-            )
-        }
         let stem: (reading: String, surface: String)
         let suffix: (reading: String, surface: String)?
         switch entry.conjugationClass {
@@ -654,8 +715,6 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
     private enum DerivedVoice: Sendable {
         case potential
-        /// 続ける after the 連用形, as in 使い続ける
-        case continuing
         case passive
         case causative
         case causativePassive
@@ -664,7 +723,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
         var godanSuffix: (reading: String, surface: String)? {
             switch self {
-            case .potential, .continuing: nil
+            case .potential: nil
             case .passive: ("reru", "れる")
             case .causative: ("seru", "せる")
             case .causativePassive: ("serareru", "せられる")
@@ -679,7 +738,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
         var nonGodanSuffix: (reading: String, surface: String)? {
             switch self {
-            case .potential, .continuing: nil
+            case .potential: nil
             case .passive: ("rareru", "られる")
             case .causative: ("saseru", "させる")
             case .causativePassive: ("saserareru", "させられる")
@@ -689,7 +748,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
 
         var suruSuffix: (reading: String, surface: String)? {
             switch self {
-            case .potential, .continuing: nil
+            case .potential: nil
             case .passive: ("reru", "れる")
             case .causative: ("seru", "せる")
             case .causativePassive: ("serareru", "せられる")
