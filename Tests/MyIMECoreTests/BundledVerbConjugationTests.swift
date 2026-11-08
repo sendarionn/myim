@@ -39,6 +39,56 @@ struct BundledVerbConjugationTests {
         )
     }()
 
+    /// 続ける after the 連用形 of each class, then conjugated as the
+    /// ichidan verb it is
+    @Test(arguments: [
+        ("shitsuzukeru", "し続ける"), ("shitsuzuketa", "し続けた"),
+        ("shitsuzukenai", "し続けない"), ("shitsuzuketeiru", "し続けている"),
+        ("tsukaitsuzukeru", "使い続ける"), ("tsukaitsuzuketa", "使い続けた"),
+        ("yomitsuzukeru", "読み続ける"),
+        ("kakitsuzuketeiru", "書き続けている"),
+        ("tabetsuzukeru", "食べ続ける"),
+        ("benkyoushitsuzukeru", "勉強し続ける"),
+        ("kirokushitsuzuketa", "記録し続けた"),
+        ("tsukaitsuzukemasu", "使い続けます"),
+        ("tsukaitsuzukemashita", "使い続けました"),
+        ("tsukaitsuzukenakatta", "使い続けなかった"),
+        ("tsukaitsuzuketai", "使い続けたい"),
+        ("tsukaitsuzukeyou", "使い続けよう"),
+        ("tsukaitsuzukereba", "使い続ければ"),
+        ("kitsuzukeru", "来続ける")
+    ])
+    func continuesTheVerbWithTsuzukeru(input: String, expected: String)
+        throws {
+        let source = try #require(Self.source)
+        var session = CandidateSession()
+
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: input
+            )),
+            input: input,
+            reading: input
+        )
+
+        #expect(session.candidateTexts.prefix(4).contains(expected))
+    }
+
+    /// Kana verbs other than する give no 続ける form; the kana candidate
+    /// covers them
+    @Test
+    func continuesOnlyKanjiVerbsAndSuru() throws {
+        let source = try #require(Self.source)
+        let candidates = source.candidates(for: .init(
+            input: "iitsuzukeru",
+            conversionReading: "iitsuzukeru"
+        )).map(\.storageText)
+
+        #expect(candidates.first == "言い続ける")
+        #expect(!candidates.contains("いい続ける"))
+    }
+
     @Test(arguments: [
         ("wakatteiru", "分かっている"),
         ("shiritai", "知りたい"),
