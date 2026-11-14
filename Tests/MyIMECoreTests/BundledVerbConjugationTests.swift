@@ -247,6 +247,32 @@ struct BundledVerbConjugationTests {
         #expect(try candidates(for: input).contains(expected))
     }
 
+    @Test(arguments: [
+        ("nokotteshimatteiru", "残ってしまっている"),
+        ("kieteshimatteita", "消えてしまっていた"),
+        ("yondeinakatta", "読んでいなかった"),
+        ("kaiteokeba", "書いておけば"),
+        ("tameshitemitai", "試してみたい")
+    ])
+    func showsReinflectedAuxiliaryVerbsOnTheFirstPage(
+        input: String,
+        expected: String
+    ) throws {
+        let source = try #require(Self.source)
+        var session = CandidateSession()
+
+        session.replace(
+            with: source.candidates(for: .init(
+                input: input,
+                conversionReading: input
+            )),
+            input: input,
+            reading: input
+        )
+
+        #expect(session.candidateTexts.prefix(4).contains(expected))
+    }
+
     /// The potential of 買う reads like 変える; the ichidan verb's own forms
     /// stay first, kana verbs and rare variants give no potential
     @Test

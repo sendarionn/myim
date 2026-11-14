@@ -16,6 +16,7 @@ struct VerbConjugationCandidateGeneratorTests {
         toru\t取る\tgodan\t3000
         kau\t買う\tgodan\t3000
         tsukau\t使う\tgodan\t3000
+        nokoru\t残る\tgodan\t3000
         shiru\t知る\tgodan\t3000
         shiru\tしる\tgodan\t1000
         wakaru\t分かる\tgodan\t2420
@@ -26,6 +27,8 @@ struct VerbConjugationCandidateGeneratorTests {
         kiru\t切る\tgodan\t3500
         kaeru\t変える\tichidan\t3000
         kaeru\t帰る\tgodan\t3000
+        kieru\t消える\tichidan\t3000
+        tamesu\t試す\tgodan\t3000
         benkyousuru\t勉強する\tsuru\t3000
         ninzuru\t任ずる\tzuru\t3000
         kuru\t来る\tkuru\t3000
@@ -138,6 +141,32 @@ struct VerbConjugationCandidateGeneratorTests {
         expected: String
     ) {
         #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test(arguments: [
+        ("nokotteshimatteiru", "残ってしまっている"),
+        ("kieteshimatteita", "消えてしまっていた"),
+        ("yondeinakatta", "読んでいなかった"),
+        ("kaiteokeba", "書いておけば"),
+        ("tameshitemitai", "試してみたい"),
+        ("yondeshimatta", "読んでしまった"),
+        ("wakatteitemo", "分かっていても")
+    ])
+    func reconjugatesAuxiliaryVerbs(
+        input: String,
+        expected: String
+    ) {
+        #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test
+    func permitsOnlyRegisteredTwoLevelAuxiliaryPairs() {
+        #expect(!generator.candidates(for: "kaiteoiteiru").contains(
+            "書いておいている"
+        ))
+        #expect(!generator.candidates(for: "tameshitemiteiru").contains(
+            "試してみている"
+        ))
     }
 
     @Test(arguments: [

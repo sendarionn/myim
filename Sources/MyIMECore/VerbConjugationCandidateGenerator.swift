@@ -8,7 +8,7 @@ public enum VerbConjugationClass: String, Sendable {
     case kuru
 }
 
-public enum VerbConjugationForm: Sendable, CaseIterable {
+public enum VerbConjugationForm: Sendable, CaseIterable, Hashable {
     /// 連用形 such as 知り in 知りたい
     case continuative
     /// テ形 such as 分かって in 分かっている
@@ -148,6 +148,57 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         }
     }
 
+    private enum AuxiliaryVerbID: Sendable {
+        case iru
+        case shimau
+        case oku
+        case miru
+    }
+
+    /// A hiragana auxiliary joined after the テ形 of the preceding verb
+    private struct AuxiliaryVerbRule: Sendable {
+        let id: AuxiliaryVerbID
+        let reading: String
+        let surface: String
+        let conjugationClass: VerbConjugationClass
+        let requiredPrecedingForm: VerbConjugationForm
+    }
+
+    private struct AuxiliaryCompound: Sendable {
+        let entry: VerbConjugationDictionary.Entry
+        let finalAuxiliary: AuxiliaryVerbID
+    }
+
+    private struct ResolvedVerbForm: Sendable {
+        let reading: String
+        let surface: String
+        let cost: Int
+    }
+
+    private struct VerbFormCacheKey: Hashable, Sendable {
+        let reading: String
+        let form: VerbConjugationForm
+    }
+
+    private static let auxiliaryVerbRules: [AuxiliaryVerbRule] = [
+        AuxiliaryVerbRule(
+            id: .iru, reading: "iru", surface: "いる",
+            conjugationClass: .ichidan, requiredPrecedingForm: .te
+        ),
+        AuxiliaryVerbRule(
+            id: .shimau, reading: "shimau", surface: "しまう",
+            conjugationClass: .godan, requiredPrecedingForm: .te
+        ),
+        AuxiliaryVerbRule(
+            id: .oku, reading: "oku", surface: "おく",
+            conjugationClass: .godan, requiredPrecedingForm: .te
+        ),
+        AuxiliaryVerbRule(
+            id: .miru, reading: "miru", surface: "みる",
+            conjugationClass: .ichidan, requiredPrecedingForm: .te
+        )
+    ]
+
     /// 希望を表す「たい」と、その形容詞型の活用
     private static let desireInflections: [FollowingExpression] = [
         FollowingExpression("takunakatta", "たくなかった", requiring: .continuative),
@@ -236,15 +287,9 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         FollowingExpression("keredo", "けれど", requiring: .terminal)
     ]
 
-    /// Expressions joined to the テ形, including the auxiliary verbs いる,
-    /// おく, しまう, and みる in their common forms
+    /// Expressions joined directly to the テ形 rather than conjugated
+    /// auxiliary verbs
     private static let teFollowings: [FollowingExpression] = [
-        ("itemo", "いても"), ("iru", "いる"), ("ita", "いた"),
-        ("inai", "いない"), ("imasu", "います"),
-        ("oku", "おく"), ("oita", "おいた"), ("oite", "おいて"),
-        ("shimau", "しまう"), ("shimatta", "しまった"),
-        ("shimatte", "しまって"),
-        ("miru", "みる"), ("mita", "みた"), ("mite", "みて"),
         ("mo", "も"), ("kara", "から"),
         ("moii", "もいい"), ("hanaranai", "はならない"), ("aru", "ある")
     ].map { FollowingExpression($0.0, $0.1, requiring: .te) }
@@ -351,6 +396,7 @@ public struct VerbConjugationCandidateGenerator: Sendable {
         let reading = RomajiCanonicalizer.canonicalInput(from: input)
         var costs: [String: (cost: Int, order: Int)] = [:]
         var bareContinuatives: [(surface: String, cost: Int)] = []
+        var primaryVerbFormCache: [VerbFormCacheKey: [ResolvedVerbForm]] = [:]
         func record(_ candidate: String, cost: Int) {
             let order = costs[candidate]?.order ?? costs.count
             costs[candidate] = (
@@ -426,6 +472,36 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                             cost: cost
                         )
                     }
+                }
+            }
+        }
+        // Auxiliary verbs joined after a テ形 conjugate as ordinary
+        // verbs. Only しまう -> いる may form a second auxiliary level
+        for following in Self.followingExpressions
+        where reading.hasSuffix(following.readingSuffix) {
+            let formReading = String(
+                reading.dropLast(following.readingSuffix.count)
+            )
+            guard !formReading.isEmpty else { continue }
+            for auxiliary in auxiliaryVerbs(
+                forming: formReading,
+                as: following.requiredVerbForm,
+                maximumDepth: 2,
+                primaryFormCache: &primaryVerbFormCache
+            ) where following.allows(auxiliary.entry) {
+                guard let conjugated = Self.conjugate(
+                    auxiliary.entry,
+                    to: following.requiredVerbForm
+                ), conjugated.reading == formReading else { continue }
+                if following.isBareContinuative {
+                    bareContinuatives.append(
+                        (conjugated.surface, auxiliary.entry.cost)
+                    )
+                } else {
+                    record(
+                        conjugated.surface + following.surfaceSuffix,
+                        cost: auxiliary.entry.cost
+                    )
                 }
             }
         }
@@ -545,6 +621,145 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             }
         }
         return compounds
+    }
+
+    /// Auxiliary compounds whose last verb produces `formReading`
+    ///
+    /// Each recursive level removes one auxiliary reading before resolving
+    /// the preceding テ形, so the search always becomes shorter
+    private func auxiliaryVerbs(
+        forming formReading: String,
+        as form: VerbConjugationForm,
+        maximumDepth: Int,
+        primaryFormCache: inout [VerbFormCacheKey: [ResolvedVerbForm]]
+    ) -> [AuxiliaryCompound] {
+        guard maximumDepth > 0 else { return [] }
+        var compounds: [AuxiliaryCompound] = []
+        for compoundReading in Self.baseReadings(
+            forming: formReading,
+            as: form
+        ) {
+            for rule in Self.auxiliaryVerbRules
+            where compoundReading.hasSuffix(rule.reading) {
+                let precedingTeReading = String(
+                    compoundReading.dropLast(rule.reading.count)
+                )
+                guard !precedingTeReading.isEmpty else { continue }
+
+                var precedingForms = primaryVerbForms(
+                    forming: precedingTeReading,
+                    as: rule.requiredPrecedingForm,
+                    cache: &primaryFormCache
+                )
+                if maximumDepth > 1 {
+                    for preceding in auxiliaryVerbs(
+                        forming: precedingTeReading,
+                        as: rule.requiredPrecedingForm,
+                        maximumDepth: maximumDepth - 1,
+                        primaryFormCache: &primaryFormCache
+                    ) where Self.allowsAuxiliaryPair(
+                        preceding.finalAuxiliary,
+                        followedBy: rule.id
+                    ) {
+                        guard let conjugated = Self.conjugate(
+                            preceding.entry,
+                            to: rule.requiredPrecedingForm
+                        ), conjugated.reading == precedingTeReading else {
+                            continue
+                        }
+                        precedingForms.append(ResolvedVerbForm(
+                            reading: conjugated.reading,
+                            surface: conjugated.surface,
+                            cost: preceding.entry.cost
+                        ))
+                    }
+                }
+
+                for preceding in precedingForms {
+                    compounds.append(AuxiliaryCompound(
+                        entry: VerbConjugationDictionary.Entry(
+                            reading: preceding.reading + rule.reading,
+                            surface: preceding.surface + rule.surface,
+                            conjugationClass: rule.conjugationClass,
+                            cost: preceding.cost
+                        ),
+                        finalAuxiliary: rule.id
+                    ))
+                }
+            }
+        }
+        return compounds
+    }
+
+    /// Direct, derived, and continuative-compound verbs that produce one
+    /// requested form, excluding auxiliary compounds
+    private func primaryVerbForms(
+        forming formReading: String,
+        as form: VerbConjugationForm,
+        cache: inout [VerbFormCacheKey: [ResolvedVerbForm]]
+    ) -> [ResolvedVerbForm] {
+        let cacheKey = VerbFormCacheKey(reading: formReading, form: form)
+        if let cached = cache[cacheKey] { return cached }
+        var forms: [ResolvedVerbForm] = []
+        for baseReading in Self.baseReadings(forming: formReading, as: form) {
+            let kanaReading = RomajiConverter().hiragana(from: baseReading)
+            for entry in dictionary.entries(for: baseReading)
+            where entry.surface != kanaReading {
+                guard let conjugated = Self.conjugate(entry, to: form),
+                      conjugated.reading == formReading else { continue }
+                forms.append(ResolvedVerbForm(
+                    reading: conjugated.reading,
+                    surface: conjugated.surface,
+                    cost: entry.cost
+                ))
+            }
+        }
+
+        let formEnding = Self.nonGodanEnding(.ichidan, form).reading
+        if formReading.hasSuffix(formEnding) {
+            let derivedReading = String(
+                formReading.dropLast(formEnding.count)
+            ) + "ru"
+            for rule in Self.voiceReverseRules
+            where derivedReading.hasSuffix(rule.derivedEnding) {
+                let baseReading = String(
+                    derivedReading.dropLast(rule.derivedEnding.count)
+                ) + rule.baseEnding
+                for entry in dictionary.entries(for: baseReading)
+                where entry.conjugationClass == rule.conjugationClass
+                    && Self.allowsDerivation(entry, rule: rule) {
+                    guard let derived = Self.derive(entry, as: rule.voice),
+                          let conjugated = Self.conjugate(derived, to: form),
+                          conjugated.reading == formReading else { continue }
+                    forms.append(ResolvedVerbForm(
+                        reading: conjugated.reading,
+                        surface: conjugated.surface,
+                        cost: rule.voice == .potential
+                            ? entry.cost + Self.commonVerbCost
+                            : entry.cost
+                    ))
+                }
+            }
+        }
+
+        for compound in compoundVerbs(forming: formReading, as: form) {
+            guard let conjugated = Self.conjugate(compound, to: form),
+                  conjugated.reading == formReading else { continue }
+            forms.append(ResolvedVerbForm(
+                reading: conjugated.reading,
+                surface: conjugated.surface,
+                cost: compound.cost
+            ))
+        }
+        cache[cacheKey] = forms
+        return forms
+    }
+
+    private static func allowsAuxiliaryPair(
+        _ first: AuxiliaryVerbID,
+        followedBy second: AuxiliaryVerbID
+    ) -> Bool {
+        first == .shimau && second == .iru
     }
 
     /// Kana verbs are left to the automatic kana, except する, which gives
