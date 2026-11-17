@@ -77,6 +77,23 @@ git pull
 ./Scripts/diagnose-installation.sh --expected-build 543
 ```
 
+## Chromeブックマークの同期
+
+ブックマーク検索はChrome拡張機能から同期した一覧を使う
+
+1. `./Scripts/install-macos-im.sh`でmyimをインストールする
+2. `./Scripts/install-chrome-bookmark-host.sh`を実行する
+   - Chromeのユーザー用登録先へ`io.github.sendarionn.myim.bookmarks.json`を作成する
+   - ユーザー用登録先へ書き込めない場合は`./Scripts/install-chrome-bookmark-host.sh --system`で`/Library/Google/Chrome/NativeMessagingHosts`へ登録する（管理者パスワードが必要）
+3. `chrome://extensions`でデベロッパーモードを有効にし、「パッケージ化されていない拡張機能を読み込む」から`ChromeExtension/myim-bookmarks`を選ぶ
+   - 拡張機能IDが`iclmdioflinlagoodmfejdbafcgdgfdm`であることを確認する
+4. 拡張機能の「拡張機能のオプション」でプロファイル名を入力し、「保存して同期」を押す
+   - 同期結果と件数がオプションページに表示される
+   - 接続できない場合は拡張機能アイコンに`!`が表示され、オプションページに原因が表示される
+5. 同期する他のプロファイルでも3と4を行う
+
+同期結果は`~/Library/Application Support/myim/bookmarks/`にプロファイルごとに保存される
+
 ## 旧名称アプリのクリーンアップ
 
 旧名称`my-ime.app`は現行myimと識別子が異なるため直接競合しない

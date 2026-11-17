@@ -572,6 +572,7 @@ fi
 stop_process myim-external-browser
 stop_process myim-extension-host
 stop_process myim-selection-service
+stop_process myim-bookmark-host
 
 mkdir -p "$input_methods_directory" "$services_directory"
 cleanup_staging

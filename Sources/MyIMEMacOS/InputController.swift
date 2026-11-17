@@ -3385,20 +3385,16 @@ final class InputController: IMKInputController {
         bookmarkSearchSession.begin()
         showBookmarkCandidates()
 
-        let applicationSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask
-        ).first
-        let chromeDirectory = applicationSupport?
-            .appendingPathComponent("Google", isDirectory: true)
-            .appendingPathComponent("Chrome", isDirectory: true)
+        // The list the Chrome extension last synced, readable while Chrome
+        // is closed; Chrome's own profile files are not read
+        let syncedDirectory = SyncedBookmarkStore.defaultDirectory
         candidateSearchCoordinator.start(
             .bookmarkLoad,
             query: UUID().uuidString,
-            operation: { () async throws -> [BrowserBookmark] in
-                guard let chromeDirectory else { return [] }
-                return try await Task.detached(priority: .userInitiated) {
-                    try ChromeBookmarkReader().bookmarks(in: chromeDirectory)
+            operation: { () async throws -> SyncedBookmarkStore.Contents in
+                guard let syncedDirectory else { return .notSynced }
+                return await Task.detached(priority: .userInitiated) {
+                    SyncedBookmarkStore(directory: syncedDirectory).load()
                 }.value
             },
             validate: { [weak self] in
@@ -3406,19 +3402,19 @@ final class InputController: IMKInputController {
                 return self.bookmarkSearchSession.isSearching
                     && self.bookmarkInsertionContext?.matches(sender) == true
             },
-            apply: { [weak self] bookmarks in
+            apply: { [weak self] contents in
                 guard let self else { return }
-                self.bookmarkSearchSession.replaceBookmarks(bookmarks)
+                switch contents {
+                case .notSynced:
+                    self.bookmarkSearchSession.failLoading(
+                        BookmarkSearchSession.notSyncedMessage
+                    )
+                case let .synced(bookmarks):
+                    self.bookmarkSearchSession.replaceBookmarks(bookmarks)
+                }
                 self.showBookmarkCandidates()
             },
-            retainQueryAfterCompletion: false,
-            onError: { [weak self] _ in
-                self?.bookmarkSearchSession.failLoading(
-                    "Chromeのブックマークを読み取れません"
-                )
-                self?.showBookmarkCandidates()
-                NSSound.beep()
-            }
+            retainQueryAfterCompletion: false
         )
         return true
     }
@@ -3577,9 +3573,8 @@ final class InputController: IMKInputController {
             )
         }
         let displayedCandidates: [String]
-        if let loadError = bookmarkSearchSession.loadError,
-           candidates.isEmpty {
-            displayedCandidates = [loadError]
+        if let emptyMessage = bookmarkSearchSession.emptyMessage {
+            displayedCandidates = [emptyMessage]
         } else {
             displayedCandidates = candidates[pageRange].map(\.displayText)
         }

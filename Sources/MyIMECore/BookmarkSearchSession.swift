@@ -141,6 +141,24 @@ public struct BookmarkSearchSession: Equatable, Sendable {
         applyQuery(preserving: previous)
     }
 
+    /// Why no bookmark is listed: nothing synced from the extension yet, a
+    /// synced list with no bookmarks, or no bookmark matching the query
+    public var emptyMessage: String? {
+        guard stage == .searching, filteredBookmarks.isEmpty else {
+            return nil
+        }
+        if let loadError { return loadError }
+        if bookmarks.isEmpty {
+            return Self.syncedButEmptyMessage
+        }
+        return "「\(query)」に一致するブックマークがありません"
+    }
+
+    public static let notSyncedMessage =
+        "Chrome拡張機能からまだ同期されていません"
+    public static let syncedButEmptyMessage =
+        "同期済みのブックマークが0件です"
+
     public func bookmarkPageRange(pageSize: Int) -> Range<Int> {
         LinearCandidateNavigator.pageRange(
             containing: selectedBookmarkIndex,

@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "myim Bookmarks",
+  "version": "1.0.0",
+  "description": "Chromeのブックマークをmyimのブックマーク検索へ同期します",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnVmaEuN3/3+ihTVjSrtDZm0Kji5hFOta1/azfyqM4bPTIAeReGnRk5jVdkO6nU/v8z6IiYz+Me2Us4F0hJRK911giCh9ZYtPGNLIKzZPHkttsImVvqvUSqaDy5VP/zCgdiE+SyjGfowJAnwJCY2HC/ZYXGZxZU3TP8Nkczs/ZJ6hzKYbP208W8YXNfS+N3ZxNlNQPC0GpjNabfAwQdYTtYD8s4WylGB3IINso1FNG1gt2//qygjmUyrw+qdYddhS4EZXfFHdR67lTtLJFxzsaP6HXn5TiY7k+sE/rOK3870phRwx291feNguKdurIfkx8LtKYOfi7kHRU6lk+qb32QIDAQAB",
+  "permissions": ["bookmarks", "nativeMessaging", "storage"],
+  "background": { "service_worker": "background.js" },
+  "options_page": "options.html",
+  "action": { "default_title": "myim Bookmarks" }
+}

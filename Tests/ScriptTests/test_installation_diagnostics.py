@@ -110,6 +110,7 @@ class InstallationDiagnosticsTests(unittest.TestCase):
             "myim-external-browser",
             "myim-extension-host",
             "myim-selection-service",
+            "myim-bookmark-host",
         ]:
             self.assertIn(f"stop_process {process}", script)
         self.assertIn("ユーザー領域のmyimと競合", script)

@@ -20,6 +20,7 @@ menu_assets_directory="$repository_root/.build/myim-menu-assets"
 ime_executable="$executable_directory/myim"
 browser_executable="$browser_executable_directory/myim-external-browser"
 extension_host="$helpers_directory/myim-extension-host"
+bookmark_host="$helpers_directory/myim-bookmark-host"
 selection_service_executable="$selection_service_executable_directory/myim-selection-service"
 code_sign_identity=${MYIM_CODE_SIGN_IDENTITY:--}
 architectures=(${=MYIM_ARCHITECTURES:-})
@@ -53,6 +54,7 @@ swift build "${swift_build_arguments[@]}" --product myim-macos
 swift build "${swift_build_arguments[@]}" --product myim-external-browser
 swift build "${swift_build_arguments[@]}" --product myim-extension-host
 swift build "${swift_build_arguments[@]}" --product myim-selection-service
+swift build "${swift_build_arguments[@]}" --product myim-bookmark-host
 products_directory=$(swift build "${swift_build_arguments[@]}" --show-bin-path)
 
 rm -rf \
@@ -72,6 +74,7 @@ mkdir -p "$menu_assets_directory"
 cp "$products_directory/myim-macos" "$ime_executable"
 cp "$products_directory/myim-external-browser" "$browser_executable"
 cp "$products_directory/myim-extension-host" "$extension_host"
+cp "$products_directory/myim-bookmark-host" "$bookmark_host"
 cp \
     "$products_directory/myim-selection-service" \
     "$selection_service_executable"
@@ -250,6 +253,7 @@ iconutil -c icns "$iconset_directory" -o "$resources_directory/AppIcon.icns"
 chmod +x "$ime_executable"
 chmod +x "$browser_executable"
 chmod +x "$extension_host"
+chmod +x "$bookmark_host"
 chmod +x "$selection_service_executable"
 xattr -cr "$application_bundle"
 xattr -cr "$selection_service_bundle"
@@ -260,6 +264,7 @@ plutil -lint "$selection_service_contents/Info.plist"
 if [[ "$code_sign_identity" == "-" ]]; then
     codesign --force --sign - "$selection_service_bundle"
     codesign --force --sign - "$extension_host"
+    codesign --force --sign - "$bookmark_host"
     codesign --force --sign - "$browser_bundle"
     codesign \
         --force \
@@ -279,6 +284,12 @@ else
         --options runtime \
         --timestamp \
         "$extension_host"
+    codesign \
+        --force \
+        --sign "$code_sign_identity" \
+        --options runtime \
+        --timestamp \
+        "$bookmark_host"
     codesign \
         --force \
         --sign "$code_sign_identity" \

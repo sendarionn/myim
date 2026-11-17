@@ -261,6 +261,7 @@ process_names=(
     myim-external-browser
     myim-extension-host
     myim-selection-service
+    myim-bookmark-host
 )
 for process_name in "${process_names[@]}"; do
     process_output=$(pgrep -x "$process_name" 2>/dev/null)

@@ -37,5 +37,6 @@ stop_process my-ime
 stop_process myim-external-browser
 stop_process myim-extension-host
 stop_process myim-selection-service
+stop_process myim-bookmark-host
 
 exit 0

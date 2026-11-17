@@ -20,6 +20,10 @@ let package = Package(
         .executable(
             name: "myim-selection-service",
             targets: ["MyIMSelectionService"]
+        ),
+        .executable(
+            name: "myim-bookmark-host",
+            targets: ["MyIMBookmarkHost"]
         )
     ],
     dependencies: [],
@@ -65,6 +69,13 @@ let package = Package(
         ),
         .executableTarget(
             name: "MyIMSelectionService",
+            dependencies: ["MyIMECore"],
+            swiftSettings: [
+                .swiftLanguageMode(.v5)
+            ]
+        ),
+        .executableTarget(
+            name: "MyIMBookmarkHost",
             dependencies: ["MyIMECore"],
             swiftSettings: [
                 .swiftLanguageMode(.v5)

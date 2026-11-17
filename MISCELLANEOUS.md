@@ -54,7 +54,7 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 | 翻訳候補 | 選択中の標準候補または曖昧候補を翻訳先言語ごとに翻訳する | `TranslationCandidateSource.groups(for:translate:)`、`AppleTranslationCandidateSource`、`InputController.updateTranslationCandidates(...)` | `TranslationCandidateSession` | 翻訳パネル |
 | カレンダー書式候補 | カレンダーで選んだ日付を書式へ展開する | `InputController.loadCalendarFormats(for:client:)`、`JavaScriptExtensionClient.calendarCandidates(for:)` | `CalendarFormatSelectionSession` | 第一パネル |
 | 時刻書式候補 | 時刻入力UIで選んだ時刻を書式へ展開する | `InputController.loadTimeFormats(for:client:)`、`JavaScriptExtensionClient.timeCandidates(hour:minute:)` | `TimeFormatSelectionSession` | 第一パネル |
-| ブックマーク書式候補 | Chromeブックマークを検索し、選んだ項目を書式へ展開する | `ChromeBookmarkReader`、`JavaScriptExtensionClient.bookmarkFormats(for:)` | `BookmarkSearchSession` | 第一パネル |
+| ブックマーク書式候補 | Chromeブックマークを検索し、選んだ項目を書式へ展開する | `SyncedBookmarkStore`、`JavaScriptExtensionClient.bookmarkFormats(for:)` | `BookmarkSearchSession` | 第一パネル |
 
 非同期に取得する候補は`CandidateSearchCoordinator`と`CandidateSearchKind`で検索の種類ごとに管理し、古い結果を破棄する
 
@@ -1257,8 +1257,21 @@ JavaScript拡張候補が後から到着した場合も空き枠だけへ追加�
 
 設定可能なブックマーク検索ショートカットで、入力先のフォーカスとカーソル位置を保持したまま検索を開始する
 
-- Chromeの各プロファイルにある`Bookmarks`と`AccountBookmarks`を開始時に読み直す
-- Chrome固有のJSONは`ChromeBookmarkReader`で共通モデルへ変換し、タイトル、URL、フォルダ、プロファイルをメモリ上で検索する
+- Chromeのプロファイルフォルダは直接読まず、フルディスクアクセスを要求しない
+- Chrome拡張機能`ChromeExtension/myim-bookmarks`が各プロファイルの全ブックマークをタイトル、URL、フォルダパスで送る
+  - 送信は初回導入時、Chrome起動時、ブックマークの追加、変更、移動、削除、並べ替え、インポート完了時に1秒まとめて行う
+  - プロファイルIDは拡張機能のローカルストレージに保存したUUID、プロファイル名はオプションページで設定する
+  - 送信先はNative Messagingの`io.github.sendarionn.myim.bookmarks`だけで、外部へは送らない
+  - 接続失敗は拡張機能のバッジとオプションページに表示する
+- `myim-bookmark-host`は受け取った一覧で該当プロファイルの`~/Library/Application Support/myim/bookmarks/<プロファイルID>.json`だけを置き換え、他のプロファイルは残す
+  - ブックマークの内容はログへ出さない
+  - プロファイルIDは英数字とハイフンの64文字以内だけを受け付ける
+  - 登録マニフェストは`Scripts/install-chrome-bookmark-host.sh`で作成し、許可する拡張機能IDは`iclmdioflinlagoodmfejdbafcgdgfdm`だけにする
+- 検索開始時に`SyncedBookmarkStore`で全プロファイルの保存結果を読み直すため、Chromeを終了していても最後の同期結果を検索できる
+- 一覧が空の場合は次を区別して表示する
+  - 保存結果がない: Chrome拡張機能からまだ同期されていません
+  - 同期済みで0件: 同期済みのブックマークが0件です
+  - 一致なし: 「検索文字列」に一致するブックマークがありません
 - 第一パネルでブックマークを選んだ後、同じパネルを書式選択へ切り替える
 - `bookmarks.js`はURL、リンク付きタイトル、Markdownリンクの表示名と挿入値を返す
 - リンク付きタイトルは属性付き文字列の保持を実機確認した入力先だけに表示する
