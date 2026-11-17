@@ -1,6 +1,8 @@
 import Foundation
 
 public enum CandidateSearchKind: Hashable, Sendable {
+    case bookmarkLoad
+    case bookmarkFormat
     case calendarFormat
     case timeFormat
     case dictionaryDefinition

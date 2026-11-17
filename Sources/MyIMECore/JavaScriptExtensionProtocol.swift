@@ -64,15 +64,27 @@ public struct JavaScriptExtensionCandidate: Codable, Equatable, Hashable, Sendab
     public let value: String
     public let kind: JavaScriptExtensionCandidateKind
     public let preferenceID: String?
+    public let id: String?
+    public let label: String?
+    public let text: String?
+    public let linkURL: String?
 
     public init(
         value: String,
         kind: JavaScriptExtensionCandidateKind = .staticValue,
-        preferenceID: String? = nil
+        preferenceID: String? = nil,
+        id: String? = nil,
+        label: String? = nil,
+        text: String? = nil,
+        linkURL: String? = nil
     ) {
         self.value = value
         self.kind = kind
         self.preferenceID = preferenceID
+        self.id = id
+        self.label = label
+        self.text = text
+        self.linkURL = linkURL
     }
 }
 

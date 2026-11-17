@@ -67,4 +67,25 @@ struct JavaScriptExtensionProtocolTests {
         #expect(decoded.candidates[1].kind == .staticValue)
         #expect(decoded.candidates[1].preferenceID == nil)
     }
+
+    @Test func preservesOptionalBookmarkFormatMetadata() throws {
+        let candidate = JavaScriptExtensionCandidate(
+            value: "Swift",
+            id: "linked-title",
+            label: "リンク付きタイトル",
+            text: "Swift",
+            linkURL: "https://swift.org"
+        )
+
+        let decoded = try JSONDecoder().decode(
+            JavaScriptExtensionCandidate.self,
+            from: JSONEncoder().encode(candidate)
+        )
+
+        #expect(decoded.value == "Swift")
+        #expect(decoded.id == "linked-title")
+        #expect(decoded.label == "リンク付きタイトル")
+        #expect(decoded.text == "Swift")
+        #expect(decoded.linkURL == "https://swift.org")
+    }
 }

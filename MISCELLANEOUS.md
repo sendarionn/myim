@@ -54,6 +54,7 @@ UIの配置、見た目、フォーカス、パネルのライフサイクルは
 | 翻訳候補 | 選択中の標準候補または曖昧候補を翻訳先言語ごとに翻訳する | `TranslationCandidateSource.groups(for:translate:)`、`AppleTranslationCandidateSource`、`InputController.updateTranslationCandidates(...)` | `TranslationCandidateSession` | 翻訳パネル |
 | カレンダー書式候補 | カレンダーで選んだ日付を書式へ展開する | `InputController.loadCalendarFormats(for:client:)`、`JavaScriptExtensionClient.calendarCandidates(for:)` | `CalendarFormatSelectionSession` | 第一パネル |
 | 時刻書式候補 | 時刻入力UIで選んだ時刻を書式へ展開する | `InputController.loadTimeFormats(for:client:)`、`JavaScriptExtensionClient.timeCandidates(hour:minute:)` | `TimeFormatSelectionSession` | 第一パネル |
+| ブックマーク書式候補 | Chromeブックマークを検索し、選んだ項目を書式へ展開する | `ChromeBookmarkReader`、`JavaScriptExtensionClient.bookmarkFormats(for:)` | `BookmarkSearchSession` | 第一パネル |
 
 非同期に取得する候補は`CandidateSearchCoordinator`と`CandidateSearchKind`で検索の種類ごとに管理し、古い結果を破棄する
 
@@ -1233,6 +1234,7 @@ JavaScript拡張候補が後から到着した場合も空き枠だけへ追加�
 | --- | --- |
 | `datetime.js` | 相対日付、入力した日付、曜日、現在時刻、カレンダー書式 |
 | `time.js` | 時刻入力UIで選んだ時刻と、直接入力した`HH:MM`の書式 |
+| `bookmarks.js` | ChromeブックマークのURL、リンク付きタイトル、Markdownリンク |
 | `gengou.js` | `gengou`から現在の元号 |
 | `nendo.js` | `nendo`から現在の年度 |
 | `eto.js` | 十二支の読みから漢字と絵文字、`eto`と`etoYYYY`から今年と指定年の干支 |
@@ -1250,6 +1252,20 @@ JavaScript拡張候補が後から到着した場合も空き枠だけへ追加�
 - 次の同梱内容に変わった場合は新しい更新として再度確認する
 - ユーザーが独自に追加した拡張は更新対象にしない
 - 拡張の有効・無効設定は更新で変更しない
+
+### Chromeブックマーク検索
+
+設定可能なブックマーク検索ショートカットで、入力先のフォーカスとカーソル位置を保持したまま検索を開始する
+
+- Chromeの各プロファイルにある`Bookmarks`と`AccountBookmarks`を開始時に読み直す
+- Chrome固有のJSONは`ChromeBookmarkReader`で共通モデルへ変換し、タイトル、URL、フォルダ、プロファイルをメモリ上で検索する
+- 第一パネルでブックマークを選んだ後、同じパネルを書式選択へ切り替える
+- `bookmarks.js`はURL、リンク付きタイトル、Markdownリンクの表示名と挿入値を返す
+- リンク付きタイトルは属性付き文字列の保持を実機確認した入力先だけに表示する
+- 書式確定前に入力先、選択範囲、未確定範囲を再確認し、変化していれば挿入せず終了する
+- 検索文字列と挿入結果は変換履歴、次入力履歴、ユーザー辞書へ記録しない
+- 書式選択中のEscは検索結果へ戻り、検索中のEscは何も挿入せず終了する
+- 終了済みセッションや古いブックマークに対する非同期結果は破棄する
 
 ### 日付と時刻
 

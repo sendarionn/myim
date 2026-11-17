@@ -103,9 +103,16 @@ while let line = readLine() {
                 let normalized = JavaScriptExtensionCandidate(
                     value: trimmed,
                     kind: candidate.kind,
-                    preferenceID: candidate.preferenceID
+                    preferenceID: candidate.preferenceID,
+                    id: candidate.id,
+                    label: candidate.label,
+                    text: candidate.text,
+                    linkURL: candidate.linkURL
                 )
-                if !trimmed.isEmpty, trimmed.count <= 256,
+                let maximumLength = request.functionName == "bookmarkFormats"
+                    ? 4096
+                    : 256
+                if !trimmed.isEmpty, trimmed.count <= maximumLength,
                    seen.insert(normalized).inserted, candidates.count < 32 {
                     candidates.append(normalized)
                 }
@@ -135,14 +142,20 @@ private func extensionCandidates(
             return JavaScriptExtensionCandidate(value: string)
         }
         if let object = element as? [String: Any] {
-            guard let value = object["value"] as? String else { return nil }
+            guard let value = (object["value"] ?? object["text"]) as? String else {
+                return nil
+            }
             let kind = (object["kind"] as? String)
                 .flatMap(JavaScriptExtensionCandidateKind.init(rawValue:))
                 ?? .staticValue
             return JavaScriptExtensionCandidate(
                 value: value,
                 kind: kind,
-                preferenceID: object["preferenceID"] as? String
+                preferenceID: object["preferenceID"] as? String,
+                id: object["id"] as? String,
+                label: object["label"] as? String,
+                text: object["text"] as? String,
+                linkURL: object["linkURL"] as? String
             )
         }
         return nil

@@ -126,6 +126,8 @@ final class InputController: IMKInputController {
     private var candidateFilterCoordinator = CandidateFilterCoordinator()
     private var calendarSelectionSession = CalendarFormatSelectionSession()
     private var timeSelectionSession = TimeFormatSelectionSession()
+    private var bookmarkSearchSession = BookmarkSearchSession()
+    private var bookmarkInsertionContext: BookmarkInsertionContext?
     /// Choosing the brackets put around the selection with ⌥⇧Q
     private var selectionBracketChoice: SelectionBracketChoice?
     private var fuzzyCandidateSession = FuzzyCandidateSession()
@@ -547,6 +549,17 @@ final class InputController: IMKInputController {
 
         if timeSelectionSession.isSelectingFormat {
             return handleTimeFormatSelection(event, client: sender)
+        }
+
+        if bookmarkSearchSession.isActive {
+            if bookmarkInsertionContext?.matches(sender) == true {
+                return handleBookmarkSearchEvent(event, client: sender)
+            }
+            clearBookmarkSearch()
+        }
+
+        if MyIMFeatureShortcut.bookmarks.shortcut.matches(event) {
+            return beginBookmarkSearch(client: sender)
         }
 
         if isCalendarShortcut(event) {
@@ -1100,6 +1113,12 @@ final class InputController: IMKInputController {
         }
         if let aSelector,
            NSStringFromSelector(aSelector) == "cancelOperation:",
+           bookmarkSearchSession.isActive {
+            handleBookmarkEscape()
+            return
+        }
+        if let aSelector,
+           NSStringFromSelector(aSelector) == "cancelOperation:",
            let inputClient = activeInputClient ?? client(),
            handleCancelOperationCommand(client: inputClient) {
             return
@@ -1548,6 +1567,10 @@ final class InputController: IMKInputController {
         guard let sender else {
             return
         }
+        if bookmarkSearchSession.isActive {
+            clearBookmarkSearch()
+            return
+        }
         guard !isInsertingCommittedText else {
             Self.lifecycleLogger.notice(
                 "suppressed reentrant system commit during insertText"
@@ -1673,6 +1696,7 @@ final class InputController: IMKInputController {
             return
         }
         trace("deactivateServer", sender: sender)
+        clearBookmarkSearch()
         let deactivation = lifecycleCoordinator.beginDeactivation(
             hasComposition: !inputBuffer.isEmpty
         )
@@ -3333,6 +3357,278 @@ final class InputController: IMKInputController {
         candidateSearchCoordinator.cancel(.timeFormat)
         timeSelectionSession.reset()
         panelCoordinator.clearTimePresentation()
+    }
+
+    private func beginBookmarkSearch(client sender: Any) -> Bool {
+        guard inputBuffer.isEmpty,
+              dictionaryRegistrationSession == nil else {
+            NSSound.beep()
+            return true
+        }
+        let anchorFrame = inputLocation(for: sender)
+        guard let context = BookmarkInsertionContext(
+            client: sender,
+            anchorFrame: anchorFrame
+        ), context.selectedRange.length == 0 else {
+            NSSound.beep()
+            return true
+        }
+        dismissNextInputCandidates(clearMarkedTextIn: sender)
+        hideConversionPanels()
+        emojiWindow.hide()
+        previewWindow.hide()
+        symbolTipsWindow.hide()
+        clearCalendarSelection()
+        clearTimeSelection()
+        clearBookmarkSearch()
+        bookmarkInsertionContext = context
+        bookmarkSearchSession.begin()
+        showBookmarkCandidates()
+
+        let applicationSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first
+        let chromeDirectory = applicationSupport?
+            .appendingPathComponent("Google", isDirectory: true)
+            .appendingPathComponent("Chrome", isDirectory: true)
+        candidateSearchCoordinator.start(
+            .bookmarkLoad,
+            query: UUID().uuidString,
+            operation: { () async throws -> [BrowserBookmark] in
+                guard let chromeDirectory else { return [] }
+                return try await Task.detached(priority: .userInitiated) {
+                    try ChromeBookmarkReader().bookmarks(in: chromeDirectory)
+                }.value
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return self.bookmarkSearchSession.isSearching
+                    && self.bookmarkInsertionContext?.matches(sender) == true
+            },
+            apply: { [weak self] bookmarks in
+                guard let self else { return }
+                self.bookmarkSearchSession.replaceBookmarks(bookmarks)
+                self.showBookmarkCandidates()
+            },
+            retainQueryAfterCompletion: false,
+            onError: { [weak self] _ in
+                self?.bookmarkSearchSession.failLoading(
+                    "Chromeのブックマークを読み取れません"
+                )
+                self?.showBookmarkCandidates()
+                NSSound.beep()
+            }
+        )
+        return true
+    }
+
+    private func handleBookmarkSearchEvent(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        switch event.keyCode {
+        case 53:
+            handleBookmarkEscape()
+        case 36, 76:
+            if bookmarkSearchSession.stage == .searching {
+                beginBookmarkFormatSelection(client: sender)
+            } else if bookmarkSearchSession.stage == .selectingFormat {
+                commitSelectedBookmarkFormat(client: sender)
+            }
+        case 48, 125:
+            moveBookmarkSelection(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+        case 126:
+            moveBookmarkSelection(by: -1)
+        case 123:
+            moveBookmarkSelection(by: -1)
+        case 124:
+            moveBookmarkSelection(by: 1)
+        case 51:
+            guard bookmarkSearchSession.isSearching else { return true }
+            var query = bookmarkSearchSession.query
+            if !query.isEmpty {
+                query.removeLast()
+                bookmarkSearchSession.updateQuery(query)
+                showBookmarkCandidates()
+            }
+        default:
+            guard bookmarkSearchSession.isSearching,
+                  event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
+                  let characters = event.characters,
+                  !characters.isEmpty,
+                  characters.unicodeScalars.allSatisfy({
+                      !CharacterSet.controlCharacters.contains($0)
+                  })
+            else { return true }
+            bookmarkSearchSession.updateQuery(
+                bookmarkSearchSession.query + characters
+            )
+            showBookmarkCandidates()
+        }
+        return true
+    }
+
+    private func handleBookmarkEscape() {
+        if bookmarkSearchSession.isSelectingFormat {
+            candidateSearchCoordinator.cancel(.bookmarkFormat)
+            bookmarkSearchSession.returnToSearch()
+            showBookmarkCandidates()
+        } else {
+            clearBookmarkSearch()
+        }
+    }
+
+    private func moveBookmarkSelection(by offset: Int) {
+        if bookmarkSearchSession.stage == .searching {
+            bookmarkSearchSession.moveBookmarkSelection(by: offset)
+            showBookmarkCandidates()
+        } else if bookmarkSearchSession.stage == .selectingFormat {
+            bookmarkSearchSession.moveFormatSelection(by: offset)
+            showBookmarkFormats()
+        }
+    }
+
+    private func beginBookmarkFormatSelection(client sender: Any) {
+        guard let bookmark = bookmarkSearchSession.beginFormatLoading() else {
+            NSSound.beep()
+            return
+        }
+        showBookmarkFormats()
+        candidateSearchCoordinator.cancel(.bookmarkFormat)
+        candidateSearchCoordinator.start(
+            .bookmarkFormat,
+            query: bookmark.url,
+            operation: {
+                await Self.javaScriptExtensionClient.bookmarkFormats(for: bookmark)
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return self.bookmarkSearchSession.acceptsFormats(for: bookmark)
+                    && self.bookmarkInsertionContext?.matches(sender) == true
+            },
+            apply: { [weak self] formats in
+                guard let self,
+                      let context = self.bookmarkInsertionContext else { return }
+                let supportedFormats = formats.filter {
+                    $0.linkURL == nil || BookmarkLinkInsertionSupport.supports(
+                        bundleIdentifier: context.bundleIdentifier
+                    )
+                }
+                self.bookmarkSearchSession.replaceFormats(supportedFormats)
+                if supportedFormats.isEmpty {
+                    self.bookmarkSearchSession.returnToSearch()
+                    NSSound.beep()
+                    self.showBookmarkCandidates()
+                } else {
+                    self.showBookmarkFormats()
+                }
+            },
+            retainQueryAfterCompletion: false
+        )
+    }
+
+    private func commitSelectedBookmarkFormat(client sender: Any) {
+        guard let context = bookmarkInsertionContext,
+              context.matches(sender),
+              let textClient = sender as? IMKTextInput,
+              let format = bookmarkSearchSession.selectedFormat else {
+            clearBookmarkSearch()
+            NSSound.beep()
+            return
+        }
+        let insertedValue: Any
+        if let linkURL = format.linkURL,
+           BookmarkLinkInsertionSupport.supports(
+               bundleIdentifier: context.bundleIdentifier
+           ), let url = URL(string: linkURL) {
+            let value = NSMutableAttributedString(string: format.text)
+            value.addAttribute(
+                .link,
+                value: url,
+                range: NSRange(location: 0, length: value.length)
+            )
+            insertedValue = value
+        } else {
+            insertedValue = format.text
+        }
+        clearBookmarkSearch()
+        isInsertingCommittedText = true
+        textClient.insertText(
+            insertedValue,
+            replacementRange: NSRange(location: NSNotFound, length: 0)
+        )
+        isInsertingCommittedText = false
+    }
+
+    private func showBookmarkCandidates() {
+        guard let context = bookmarkInsertionContext else { return }
+        let candidates = bookmarkSearchSession.filteredBookmarks
+        let pageRange = bookmarkSearchSession.bookmarkPageRange(
+            pageSize: Self.maximumCandidateCount
+        )
+        let selectedIndex = bookmarkSearchSession.selectedBookmarkIndex.map {
+            $0 - pageRange.lowerBound
+        }
+        primaryCandidatePanel.onSelectionChanged = { [weak self] localIndex in
+            guard let self else { return }
+            self.bookmarkSearchSession.selectBookmark(
+                at: localIndex.map { pageRange.lowerBound + $0 }
+            )
+        }
+        let displayedCandidates: [String]
+        if let loadError = bookmarkSearchSession.loadError,
+           candidates.isEmpty {
+            displayedCandidates = [loadError]
+        } else {
+            displayedCandidates = candidates[pageRange].map(\.displayText)
+        }
+        primaryCandidatePanel.show(
+            candidates: displayedCandidates,
+            selectedIndex: selectedIndex,
+            near: context.anchorFrame,
+            caption: "ブックマーク検索: \(bookmarkSearchSession.query)",
+            reservesEmptyRow: bookmarkSearchSession.stage == .loadingBookmarks,
+            minimumPanelText: "ブックマーク検索"
+        )
+    }
+
+    private func showBookmarkFormats() {
+        guard let context = bookmarkInsertionContext else { return }
+        let formats = bookmarkSearchSession.formats
+        let pageRange = bookmarkSearchSession.formatPageRange(
+            pageSize: Self.maximumCandidateCount
+        )
+        let selectedIndex = bookmarkSearchSession.selectedFormatIndex.map {
+            $0 - pageRange.lowerBound
+        }
+        primaryCandidatePanel.onSelectionChanged = { [weak self] localIndex in
+            guard let self else { return }
+            self.bookmarkSearchSession.selectFormat(
+                at: localIndex.map { pageRange.lowerBound + $0 }
+            )
+        }
+        primaryCandidatePanel.show(
+            candidates: formats[pageRange].map { "\($0.label) — \($0.text)" },
+            selectedIndex: selectedIndex,
+            near: context.anchorFrame,
+            caption: bookmarkSearchSession.formatBookmark?.title ?? "書式",
+            reservesEmptyRow: bookmarkSearchSession.stage == .loadingFormats,
+            minimumPanelText: "Markdownリンク"
+        )
+    }
+
+    private func clearBookmarkSearch() {
+        let wasActive = bookmarkSearchSession.isActive
+            || bookmarkInsertionContext != nil
+        candidateSearchCoordinator.cancel(.bookmarkLoad)
+        candidateSearchCoordinator.cancel(.bookmarkFormat)
+        bookmarkSearchSession.reset()
+        bookmarkInsertionContext = nil
+        if wasActive {
+            primaryCandidatePanel.onSelectionChanged = nil
+            primaryCandidatePanel.hide()
+        }
     }
 
     private func beginCandidateFilterInput(client sender: Any) -> Bool {
@@ -5490,6 +5786,7 @@ final class InputController: IMKInputController {
 
     private func resetTransientInteractionState() {
         finishSelectionBracketChoice()
+        clearBookmarkSearch()
         trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
         candidateSearchCoordinator.cancel(.calendarFormat)

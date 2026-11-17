@@ -1,0 +1,181 @@
+import Foundation
+
+public struct BookmarkSearchSession: Equatable, Sendable {
+    public enum Stage: Equatable, Sendable {
+        case inactive
+        case loadingBookmarks
+        case searching
+        case loadingFormats
+        case selectingFormat
+    }
+
+    public private(set) var stage: Stage = .inactive
+    public private(set) var query = ""
+    public private(set) var loadError: String?
+    public private(set) var bookmarks: [BrowserBookmark] = []
+    public private(set) var filteredBookmarks: [BrowserBookmark] = []
+    public private(set) var selectedBookmarkIndex: Int?
+    public private(set) var formatBookmark: BrowserBookmark?
+    public private(set) var formats: [BookmarkFormatCandidate] = []
+    public private(set) var selectedFormatIndex: Int?
+
+    public init() {}
+
+    public var isActive: Bool { stage != .inactive }
+    public var isSearching: Bool {
+        stage == .loadingBookmarks || stage == .searching
+    }
+    public var isSelectingFormat: Bool {
+        stage == .loadingFormats || stage == .selectingFormat
+    }
+
+    public var selectedBookmark: BrowserBookmark? {
+        guard let selectedBookmarkIndex,
+              filteredBookmarks.indices.contains(selectedBookmarkIndex) else {
+            return nil
+        }
+        return filteredBookmarks[selectedBookmarkIndex]
+    }
+
+    public var selectedFormat: BookmarkFormatCandidate? {
+        guard let selectedFormatIndex,
+              formats.indices.contains(selectedFormatIndex) else { return nil }
+        return formats[selectedFormatIndex]
+    }
+
+    public mutating func begin() {
+        reset()
+        stage = .loadingBookmarks
+    }
+
+    public mutating func replaceBookmarks(_ bookmarks: [BrowserBookmark]) {
+        guard stage == .loadingBookmarks || stage == .searching else { return }
+        self.bookmarks = bookmarks
+        stage = .searching
+        applyQuery(preserving: nil)
+    }
+
+    public mutating func failLoading(_ message: String) {
+        guard stage == .loadingBookmarks else { return }
+        loadError = message
+        stage = .searching
+        applyQuery(preserving: nil)
+    }
+
+    public mutating func updateQuery(_ query: String) {
+        guard isSearching else { return }
+        self.query = query
+        if stage == .searching {
+            applyQuery(preserving: nil)
+        }
+    }
+
+    public mutating func moveBookmarkSelection(by offset: Int) {
+        guard stage == .searching else { return }
+        selectedBookmarkIndex = LinearCandidateNavigator.index(
+            from: selectedBookmarkIndex,
+            offset: offset,
+            candidateCount: filteredBookmarks.count
+        )
+    }
+
+    public mutating func selectBookmark(at index: Int?) {
+        guard stage == .searching else { return }
+        guard let index else {
+            selectedBookmarkIndex = nil
+            return
+        }
+        guard filteredBookmarks.indices.contains(index) else { return }
+        selectedBookmarkIndex = index
+    }
+
+    @discardableResult
+    public mutating func beginFormatLoading() -> BrowserBookmark? {
+        guard stage == .searching, let bookmark = selectedBookmark else {
+            return nil
+        }
+        formatBookmark = bookmark
+        formats = []
+        selectedFormatIndex = nil
+        stage = .loadingFormats
+        return bookmark
+    }
+
+    public func acceptsFormats(for bookmark: BrowserBookmark) -> Bool {
+        stage == .loadingFormats && formatBookmark == bookmark
+    }
+
+    public mutating func replaceFormats(_ formats: [BookmarkFormatCandidate]) {
+        guard stage == .loadingFormats else { return }
+        self.formats = formats
+        selectedFormatIndex = formats.isEmpty ? nil : 0
+        stage = .selectingFormat
+    }
+
+    public mutating func moveFormatSelection(by offset: Int) {
+        guard stage == .selectingFormat else { return }
+        selectedFormatIndex = LinearCandidateNavigator.index(
+            from: selectedFormatIndex,
+            offset: offset,
+            candidateCount: formats.count
+        )
+    }
+
+    public mutating func selectFormat(at index: Int?) {
+        guard stage == .selectingFormat else { return }
+        guard let index else {
+            selectedFormatIndex = nil
+            return
+        }
+        guard formats.indices.contains(index) else { return }
+        selectedFormatIndex = index
+    }
+
+    public mutating func returnToSearch() {
+        guard isSelectingFormat else { return }
+        let previous = formatBookmark
+        formatBookmark = nil
+        formats = []
+        selectedFormatIndex = nil
+        stage = .searching
+        applyQuery(preserving: previous)
+    }
+
+    public func bookmarkPageRange(pageSize: Int) -> Range<Int> {
+        LinearCandidateNavigator.pageRange(
+            containing: selectedBookmarkIndex,
+            pageSize: pageSize,
+            candidateCount: filteredBookmarks.count
+        )
+    }
+
+    public func formatPageRange(pageSize: Int) -> Range<Int> {
+        LinearCandidateNavigator.pageRange(
+            containing: selectedFormatIndex,
+            pageSize: pageSize,
+            candidateCount: formats.count
+        )
+    }
+
+    public mutating func reset() {
+        stage = .inactive
+        query = ""
+        loadError = nil
+        bookmarks = []
+        filteredBookmarks = []
+        selectedBookmarkIndex = nil
+        formatBookmark = nil
+        formats = []
+        selectedFormatIndex = nil
+    }
+
+    private mutating func applyQuery(preserving bookmark: BrowserBookmark?) {
+        filteredBookmarks = bookmarks.filter { $0.matches(query) }
+        if let bookmark,
+           let index = filteredBookmarks.firstIndex(of: bookmark) {
+            selectedBookmarkIndex = index
+        } else {
+            selectedBookmarkIndex = filteredBookmarks.isEmpty ? nil : 0
+        }
+    }
+}

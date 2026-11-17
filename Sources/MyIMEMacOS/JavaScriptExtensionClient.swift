@@ -197,6 +197,35 @@ actor JavaScriptExtensionClient {
         ).map(\.value)
     }
 
+    func bookmarkFormats(
+        for bookmark: BrowserBookmark
+    ) async -> [BookmarkFormatCandidate] {
+        await candidates(
+            for: "bookmarks",
+            timestamp: Date(),
+            settings: [:],
+            parameters: [
+                "title": bookmark.title,
+                "url": bookmark.url,
+                "folderPath": bookmark.folderPath
+            ],
+            functionName: "bookmarkFormats"
+        ).compactMap { candidate in
+            let text = candidate.text ?? candidate.value
+            guard let id = candidate.id,
+                  let label = candidate.label,
+                  !id.isEmpty, !label.isEmpty, !text.isEmpty else {
+                return nil
+            }
+            return BookmarkFormatCandidate(
+                id: id,
+                label: label,
+                text: text,
+                linkURL: candidate.linkURL
+            )
+        }
+    }
+
     func nextInputCandidates(after value: String) async -> [String] {
         await candidates(
             for: value,

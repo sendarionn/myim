@@ -327,6 +327,7 @@ final class CandidatePanelController: NSObject {
     private var alternateCommitIndicators: [Bool] = []
     private var inputCaretIndicators: [Bool] = []
     private var itemSizes: [NSSize] = []
+    var onSelectionChanged: ((Int?) -> Void)?
 
     override init() {
         collectionView = NSCollectionView()
@@ -953,6 +954,22 @@ extension CandidatePanelController: NSCollectionViewDataSource {
 }
 
 extension CandidatePanelController: NSCollectionViewDelegateFlowLayout {
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        didSelectItemsAt indexPaths: Set<IndexPath>
+    ) {
+        onSelectionChanged?(indexPaths.first?.item)
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        didDeselectItemsAt indexPaths: Set<IndexPath>
+    ) {
+        if collectionView.selectionIndexPaths.isEmpty {
+            onSelectionChanged?(nil)
+        }
+    }
+
     func collectionView(
         _ collectionView: NSCollectionView,
         layout collectionViewLayout: NSCollectionViewLayout,
