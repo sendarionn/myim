@@ -1114,7 +1114,10 @@ final class InputController: IMKInputController {
         if let aSelector,
            NSStringFromSelector(aSelector) == "cancelOperation:",
            bookmarkSearchSession.isActive {
-            handleBookmarkEscape()
+            // Esc taken as a hot key has been handled already
+            if !PanelKeyCapture.bookmark.isCapturing {
+                handleBookmarkEscape()
+            }
             return
         }
         if let aSelector,
@@ -2394,11 +2397,12 @@ final class InputController: IMKInputController {
             NSSound.beep()
             return
         }
-        // The emoji panel takes the same keys while it is shown
+        // The emoji and bookmark panels take the same keys while shown
         if emojiWindow.isVisible {
             toggleEmojiWindow(client: sender)
         }
-        guard SelectionBracketKeyCapture.shared.begin() else {
+        clearBookmarkSearch()
+        guard PanelKeyCapture.selectionBracket.begin() else {
             NSSound.beep()
             return
         }
@@ -2427,14 +2431,20 @@ final class InputController: IMKInputController {
     }
 
     /// Keys taken as hot keys reach here instead of the application
-    static func handleSelectionBracketCommand(
-        _ command: SelectionBracketCommand
-    ) {
+    static func handleSelectionBracketCommand(_ key: PanelKeyCommand) {
+        let command: SelectionBracketCommand
+        switch key {
+        case .previous: command = .previous
+        case .next: command = .next
+        case .apply: command = .apply
+        case .cancel: command = .cancel
+        case .deleteBackward: return
+        }
         guard let controller = selectionBracketController,
               controller.selectionBracketChoice != nil,
               let client = controller.activeInputClient
                 ?? (controller.client() as Any?) else {
-            SelectionBracketKeyCapture.shared.end()
+            PanelKeyCapture.selectionBracket.end()
             return
         }
         controller.handleSelectionBracketCommand(command, client: client)
@@ -2464,7 +2474,7 @@ final class InputController: IMKInputController {
     /// Keys the hot keys take are not handled a second time here; any other
     /// key closes the panel and is handled as usual
     private func handleSelectionBracketKey(_ event: NSEvent) -> Bool? {
-        if SelectionBracketKeyCapture.shared.isCapturing,
+        if PanelKeyCapture.selectionBracket.isCapturing,
            [123, 124, 125, 126, 48, 36, 76, 53].contains(event.keyCode) {
             return true
         }
@@ -2474,7 +2484,7 @@ final class InputController: IMKInputController {
 
     /// Every way the panel closes releases the captured keys
     private func finishSelectionBracketChoice() {
-        SelectionBracketKeyCapture.shared.end()
+        PanelKeyCapture.selectionBracket.end()
         if Self.selectionBracketController === self {
             Self.selectionBracketController = nil
         }
@@ -2891,8 +2901,9 @@ final class InputController: IMKInputController {
     }
 
     private func toggleEmojiWindow(client sender: Any) {
-        // Both panels take the same keys while shown
+        // Every panel takes the same keys while shown
         finishSelectionBracketChoice()
+        clearBookmarkSearch()
         if emojiWindow.isVisible {
             EmojiDiagnostics.logger.notice("hiding emoji panel")
             clearCompositionForSystemPaste(in: sender)
@@ -3380,7 +3391,16 @@ final class InputController: IMKInputController {
         symbolTipsWindow.hide()
         clearCalendarSelection()
         clearTimeSelection()
+        finishSelectionBracketChoice()
         clearBookmarkSearch()
+        if let owner = Self.bookmarkPanelController, owner !== self {
+            owner.clearBookmarkSearch()
+        }
+        guard PanelKeyCapture.bookmark.begin() else {
+            NSSound.beep()
+            return true
+        }
+        Self.bookmarkPanelController = self
         bookmarkInsertionContext = context
         bookmarkSearchSession.begin()
         showBookmarkCandidates()
@@ -3419,35 +3439,80 @@ final class InputController: IMKInputController {
         return true
     }
 
-    private func handleBookmarkSearchEvent(
-        _ event: NSEvent,
+    /// The controller whose bookmark panel the captured keys operate
+    private static weak var bookmarkPanelController: InputController?
+
+    /// Keys taken as hot keys reach here instead of the application, only
+    /// while the input target the search began in is unchanged
+    static func handleBookmarkPanelCommand(_ command: PanelKeyCommand) {
+        guard let controller = bookmarkPanelController,
+              controller.bookmarkSearchSession.isActive else {
+            PanelKeyCapture.bookmark.end()
+            return
+        }
+        guard let client = controller.activeInputClient
+                ?? (controller.client() as Any?),
+              controller.bookmarkInsertionContext?.matches(client) == true else {
+            controller.clearBookmarkSearch()
+            return
+        }
+        controller.handleBookmarkCommand(command, client: client)
+    }
+
+    private func handleBookmarkCommand(
+        _ command: PanelKeyCommand,
         client sender: Any
-    ) -> Bool {
-        switch event.keyCode {
-        case 53:
+    ) {
+        switch command {
+        case .cancel:
             handleBookmarkEscape()
-        case 36, 76:
+        case .apply:
+            // The first press lists the formats, the second inserts
             if bookmarkSearchSession.stage == .searching {
                 beginBookmarkFormatSelection(client: sender)
             } else if bookmarkSearchSession.stage == .selectingFormat {
                 commitSelectedBookmarkFormat(client: sender)
             }
-        case 48, 125:
-            moveBookmarkSelection(by: event.modifierFlags.contains(.shift) ? -1 : 1)
-        case 126:
+        case .previous:
             moveBookmarkSelection(by: -1)
-        case 123:
-            moveBookmarkSelection(by: -1)
-        case 124:
+        case .next:
             moveBookmarkSelection(by: 1)
-        case 51:
-            guard bookmarkSearchSession.isSearching else { return true }
+        case .deleteBackward:
+            guard bookmarkSearchSession.isSearching else { return }
             var query = bookmarkSearchSession.query
             if !query.isEmpty {
                 query.removeLast()
                 bookmarkSearchSession.updateQuery(query)
                 showBookmarkCandidates()
             }
+        }
+    }
+
+    private func handleBookmarkSearchEvent(
+        _ event: NSEvent,
+        client sender: Any
+    ) -> Bool {
+        // A captured key that still arrives was handled as a hot key
+        if PanelKeyCapture.bookmark.isCapturing,
+           PanelKeyCapture.capturedKeyCodes.contains(event.keyCode) {
+            return true
+        }
+        switch event.keyCode {
+        case 53:
+            handleBookmarkCommand(.cancel, client: sender)
+        case 36, 76:
+            handleBookmarkCommand(.apply, client: sender)
+        case 48, 125:
+            handleBookmarkCommand(
+                event.modifierFlags.contains(.shift) ? .previous : .next,
+                client: sender
+            )
+        case 123, 126:
+            handleBookmarkCommand(.previous, client: sender)
+        case 124:
+            handleBookmarkCommand(.next, client: sender)
+        case 51:
+            handleBookmarkCommand(.deleteBackward, client: sender)
         default:
             guard bookmarkSearchSession.isSearching,
                   event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
@@ -3620,6 +3685,12 @@ final class InputController: IMKInputController {
         candidateSearchCoordinator.cancel(.bookmarkFormat)
         bookmarkSearchSession.reset()
         bookmarkInsertionContext = nil
+        // Another controller's open panel keeps its keys
+        if Self.bookmarkPanelController === self
+            || Self.bookmarkPanelController == nil {
+            PanelKeyCapture.bookmark.end()
+            Self.bookmarkPanelController = nil
+        }
         if wasActive {
             primaryCandidatePanel.onSelectionChanged = nil
             primaryCandidatePanel.hide()

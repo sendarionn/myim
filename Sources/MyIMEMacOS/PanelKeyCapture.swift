@@ -1,48 +1,90 @@
 @preconcurrency import Carbon
 import Foundation
-import MyIMECore
 import os
 
-/// Takes the keys that operate the bracket panel as hot keys while it is
-/// shown, so applications such as Chrome do not also move their cursor or
-/// selection with them; nothing is registered while the panel is closed
-final class SelectionBracketKeyCapture {
-    static let shared = SelectionBracketKeyCapture()
+/// A key that operates a panel the input method shows near the caret
+enum PanelKeyCommand: Equatable {
+    case previous
+    case next
+    case apply
+    case cancel
+    case deleteBackward
+}
 
-    private static let logger = Logger(
-        subsystem: "io.github.sendarionn.inputmethod.myime",
-        category: "selection-bracket"
-    )
-    /// Differs from the emoji panel's, so each handles only its own keys
-    private static let signature: OSType = 0x4D_59_42_4B
+/// Takes the keys that operate a panel as hot keys while it is shown, so
+/// applications such as Chrome and VS Code, which also act on keys the input
+/// method handled when there is no marked text, do not move their cursor,
+/// focus or text with them; nothing is registered while the panel is closed.
+/// A hot key reaches only its handler, so each press is handled once
+final class PanelKeyCapture {
+    private typealias Key = (keyCode: Int, modifiers: Int, command: PanelKeyCommand)
 
-    private static let keys: [(id: UInt32, keyCode: Int, modifiers: Int,
-                               command: SelectionBracketCommand)] = [
-        (1, kVK_LeftArrow, 0, .previous),
-        (2, kVK_UpArrow, 0, .previous),
-        (3, kVK_RightArrow, 0, .next),
-        (4, kVK_DownArrow, 0, .next),
-        (5, kVK_Tab, 0, .next),
-        (6, kVK_Tab, shiftKey, .previous),
-        (7, kVK_Return, 0, .apply),
-        (8, kVK_ANSI_KeypadEnter, 0, .apply),
-        (9, kVK_Escape, 0, .cancel)
+    private static let navigationKeys: [Key] = [
+        (kVK_LeftArrow, 0, .previous),
+        (kVK_UpArrow, 0, .previous),
+        (kVK_RightArrow, 0, .next),
+        (kVK_DownArrow, 0, .next),
+        (kVK_Tab, 0, .next),
+        (kVK_Tab, shiftKey, .previous),
+        (kVK_Return, 0, .apply),
+        (kVK_ANSI_KeypadEnter, 0, .apply),
+        (kVK_Escape, 0, .cancel)
     ]
 
+    /// Key codes of every captured key, for events that still arrive
+    static let capturedKeyCodes: Set<UInt16> = Set(
+        (navigationKeys.map(\.keyCode) + [kVK_Delete]).map { UInt16($0) }
+    )
+
+    static let selectionBracket = PanelKeyCapture(
+        category: "selection-bracket",
+        signature: 0x4D_59_42_4B,
+        keys: navigationKeys,
+        handler: { InputController.handleSelectionBracketCommand($0) }
+    )
+
+    /// Backspace edits the search text, and must not delete the document's
+    /// text while formats are listed either
+    static let bookmark = PanelKeyCapture(
+        category: "bookmark",
+        signature: 0x4D_59_42_4D,
+        keys: navigationKeys + [(kVK_Delete, 0, .deleteBackward)],
+        handler: { InputController.handleBookmarkPanelCommand($0) }
+    )
+
+    private let logger: Logger
+    private let signature: OSType
+    private let keys: [Key]
+    private let handler: (PanelKeyCommand) -> Void
     private var eventHandler: EventHandlerRef?
     private var hotKeys: [EventHotKeyRef] = []
 
     var isCapturing: Bool { !hotKeys.isEmpty }
 
-    private init() {
+    private init(
+        category: String,
+        signature: OSType,
+        keys: [Key],
+        handler: @escaping (PanelKeyCommand) -> Void
+    ) {
+        logger = Logger(
+            subsystem: "io.github.sendarionn.inputmethod.myime",
+            category: category
+        )
+        self.signature = signature
+        self.keys = keys
+        self.handler = handler
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )
+        // Instances live for the whole process as static constants
         InstallEventHandler(
             GetApplicationEventTarget(),
-            { _, event, _ in
-                guard let event else { return OSStatus(eventNotHandledErr) }
+            { _, event, userData in
+                guard let event, let userData else {
+                    return OSStatus(eventNotHandledErr)
+                }
                 var identifier = EventHotKeyID()
                 let status = GetEventParameter(
                     event,
@@ -53,24 +95,29 @@ final class SelectionBracketKeyCapture {
                     nil,
                     &identifier
                 )
+                let capture = Unmanaged<PanelKeyCapture>
+                    .fromOpaque(userData)
+                    .takeUnretainedValue()
                 guard status == noErr,
-                      identifier.signature
-                        == SelectionBracketKeyCapture.signature,
-                      let command = SelectionBracketKeyCapture.keys.first(
-                        where: { $0.id == identifier.id }
-                      )?.command else {
+                      identifier.signature == capture.signature,
+                      let command = capture.command(for: identifier.id) else {
                     return OSStatus(eventNotHandledErr)
                 }
                 DispatchQueue.main.async {
-                    InputController.handleSelectionBracketCommand(command)
+                    capture.handler(command)
                 }
                 return noErr
             },
             1,
             &eventType,
-            nil,
+            Unmanaged.passUnretained(self).toOpaque(),
             &eventHandler
         )
+    }
+
+    private func command(for identifier: UInt32) -> PanelKeyCommand? {
+        let index = Int(identifier) - 1
+        return keys.indices.contains(index) ? keys[index].command : nil
     }
 
     /// Returns false, with nothing left registered, unless every key is
@@ -78,19 +125,20 @@ final class SelectionBracketKeyCapture {
     /// application
     func begin() -> Bool {
         end()
-        for key in Self.keys {
+        for (index, key) in keys.enumerated() {
+            let id = UInt32(index + 1)
             var reference: EventHotKeyRef?
             let status = RegisterEventHotKey(
                 UInt32(key.keyCode),
                 UInt32(key.modifiers),
-                EventHotKeyID(signature: Self.signature, id: key.id),
+                EventHotKeyID(signature: signature, id: id),
                 GetApplicationEventTarget(),
                 0,
                 &reference
             )
             guard status == noErr, let reference else {
-                Self.logger.error(
-                    "hot key registration failed id=\(key.id, privacy: .public) status=\(status, privacy: .public)"
+                logger.error(
+                    "hot key registration failed id=\(id, privacy: .public) status=\(status, privacy: .public)"
                 )
                 end()
                 return false

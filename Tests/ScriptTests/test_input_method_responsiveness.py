@@ -66,7 +66,7 @@ class SelectionBracketKeyCaptureTests(unittest.TestCase):
         self.controller = (SOURCES / "InputController.swift").read_text(
             encoding="utf-8"
         )
-        self.capture = (SOURCES / "SelectionBracketKeyCapture.swift").read_text(
+        self.capture = (SOURCES / "PanelKeyCapture.swift").read_text(
             encoding="utf-8"
         )
 
@@ -86,7 +86,7 @@ class SelectionBracketKeyCaptureTests(unittest.TestCase):
 
     def test_every_close_releases_the_keys(self):
         finish = self.body("private func finishSelectionBracketChoice()")
-        self.assertIn("SelectionBracketKeyCapture.shared.end()", finish)
+        self.assertIn("PanelKeyCapture.selectionBracket.end()", finish)
         for caller in [
             "private func resetTransientInteractionState()",
             "private func toggleEmojiWindow(client sender: Any)",
@@ -103,9 +103,9 @@ class SelectionBracketKeyCaptureTests(unittest.TestCase):
 
     def test_the_panel_opens_only_with_every_key_taken(self):
         begin = self.body("private func beginSelectionBracketChoice(")
-        self.assertIn("guard SelectionBracketKeyCapture.shared.begin()", begin)
+        self.assertIn("guard PanelKeyCapture.selectionBracket.begin()", begin)
         self.assertLess(
-            begin.index("SelectionBracketKeyCapture.shared.begin()"),
+            begin.index("PanelKeyCapture.selectionBracket.begin()"),
             begin.index("selectionBracketChoice = SelectionBracketChoice("),
         )
         self.assertIn("end()\n                return false", self.capture)
@@ -116,3 +116,78 @@ class SelectionBracketKeyCaptureTests(unittest.TestCase):
                     "kVK_Return", "kVK_ANSI_KeypadEnter", "kVK_Escape"]:
             with self.subTest(key=key):
                 self.assertIn(key, self.capture)
+
+
+class BookmarkPanelKeyCaptureTests(unittest.TestCase):
+    """The bookmark panel takes its keys from the application only while it
+    is shown, so Chrome and VS Code do not also move their cursor or focus"""
+
+    def setUp(self):
+        self.controller = (SOURCES / "InputController.swift").read_text(
+            encoding="utf-8"
+        )
+        self.capture = (SOURCES / "PanelKeyCapture.swift").read_text(
+            encoding="utf-8"
+        )
+
+    def body(self, signature):
+        start = self.controller.index(signature)
+        return self.controller[start:self.controller.index("\n    }\n", start)]
+
+    def test_captures_the_navigation_keys_and_backspace(self):
+        start = self.capture.index("static let bookmark = PanelKeyCapture(")
+        bookmark = self.capture[start:self.capture.index("\n    )\n", start)]
+        self.assertIn("navigationKeys + [(kVK_Delete, 0, .deleteBackward)]",
+                      bookmark)
+        self.assertIn("handleBookmarkPanelCommand", bookmark)
+
+    def test_panels_use_their_own_hot_key_signature(self):
+        signatures = [
+            line.split("signature: ")[1].rstrip(",")
+            for line in self.capture.splitlines()
+            if line.strip().startswith("signature: 0x")
+        ]
+        self.assertEqual(len(signatures), len(set(signatures)))
+        self.assertEqual(len(signatures), 2)
+
+    def test_the_panel_opens_only_with_every_key_taken(self):
+        begin = self.body("private func beginBookmarkSearch(")
+        self.assertLess(
+            begin.index("guard PanelKeyCapture.bookmark.begin()"),
+            begin.index("bookmarkSearchSession.begin()"),
+        )
+        # The bracket panel takes the same keys
+        self.assertLess(
+            begin.index("finishSelectionBracketChoice()"),
+            begin.index("guard PanelKeyCapture.bookmark.begin()"),
+        )
+
+    def test_every_close_releases_the_keys(self):
+        self.assertIn("PanelKeyCapture.bookmark.end()",
+                      self.body("private func clearBookmarkSearch()"))
+        for caller in [
+            "private func resetTransientInteractionState()",
+            "private func toggleEmojiWindow(client sender: Any)",
+            "private func beginSelectionBracketChoice(",
+            "private func commitSelectedBookmarkFormat(",
+            "override func deactivateServer(",
+        ]:
+            with self.subTest(caller=caller):
+                self.assertIn("clearBookmarkSearch()", self.body(caller))
+
+    def test_captured_keys_run_only_for_the_original_input_target(self):
+        handler = self.body("static func handleBookmarkPanelCommand(")
+        self.assertIn("bookmarkInsertionContext?.matches(client) == true",
+                      handler)
+        self.assertIn("controller.clearBookmarkSearch()", handler)
+
+    def test_a_captured_key_is_not_handled_twice(self):
+        event = self.body("private func handleBookmarkSearchEvent(")
+        self.assertLess(
+            event.index("PanelKeyCapture.capturedKeyCodes.contains"),
+            event.index("switch event.keyCode"),
+        )
+        escape = self.controller[
+            self.controller.index('"cancelOperation:",\n           bookmarkSearchSession.isActive'):
+        ][:300]
+        self.assertIn("if !PanelKeyCapture.bookmark.isCapturing", escape)
