@@ -197,6 +197,20 @@ actor JavaScriptExtensionClient {
         ).map(\.value)
     }
 
+    /// The text `time.js` inserts for a range chosen on the clock's rail
+    func timeRangeText(_ range: TimeRangeSelection) async -> String? {
+        await candidates(
+            for: "time",
+            timestamp: Date(),
+            settings: [:],
+            parameters: [
+                "start": String(range.start),
+                "end": String(range.end)
+            ],
+            functionName: "timeRangeText"
+        ).first?.value
+    }
+
     func bookmarkFormats(
         for bookmark: BrowserBookmark
     ) async -> [BookmarkFormatCandidate] {

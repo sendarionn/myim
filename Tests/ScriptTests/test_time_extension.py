@@ -32,6 +32,38 @@ process.stdout.write(JSON.stringify(candidates({{
         )
         return json.loads(completed.stdout)
 
+    def range_text(self, start, end):
+        runner = f"""
+const fs = require("fs")
+eval(fs.readFileSync({json.dumps(str(SCRIPT))}, "utf8"))
+process.stdout.write(JSON.stringify(timeRangeText({{
+  input: "time",
+  parameters: {{ start: {json.dumps(str(start))}, end: {json.dumps(str(end))} }}
+}})))
+"""
+        completed = subprocess.run(
+            ["node", "-e", runner],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(completed.stdout)
+
+    def test_range_on_the_hour_is_inserted_with_hours_only(self):
+        self.assertEqual(self.range_text(13 * 60, 14 * 60), ["13〜14時"])
+        self.assertEqual(self.range_text(0, 24 * 60), ["0〜24時"])
+
+    def test_range_with_minutes_is_inserted_as_clock_times(self):
+        self.assertEqual(self.range_text(13 * 60 + 15, 14 * 60),
+                         ["13:15〜14:00"])
+        self.assertEqual(self.range_text(9 * 60, 9 * 60 + 5),
+                         ["9:00〜9:05"])
+
+    def test_range_that_does_not_end_after_it_starts_gives_nothing(self):
+        self.assertEqual(self.range_text(14 * 60, 13 * 60), [])
+        self.assertEqual(self.range_text(60, 60), [])
+        self.assertEqual(self.range_text(0, 24 * 60 + 1), [])
+
     def direct_candidates(self, value):
         runner = f"""
 const fs = require("fs")

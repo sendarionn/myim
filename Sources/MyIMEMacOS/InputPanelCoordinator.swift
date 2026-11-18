@@ -168,7 +168,7 @@ final class InputPanelCoordinator {
         calendar.hide()
     }
 
-    func beginTimeSelection(near anchorFrame: NSRect) -> TimeSelectionState? {
+    func beginTimeSelection(near anchorFrame: NSRect) -> TimePanelResult? {
         timeAnchorFrame = anchorFrame == .zero ? nil : anchorFrame
         return time.runSelection(near: timeAnchorFrame ?? anchorFrame)
     }
@@ -178,7 +178,7 @@ final class InputPanelCoordinator {
         at initialTime: TimeSelectionState,
         fallback: NSRect,
         stage: TimeInputStage = .minute
-    ) -> TimeSelectionState? {
+    ) -> TimePanelResult? {
         time.runSelection(
             near: timeAnchorFrame ?? fallback,
             initialTime: initialTime,

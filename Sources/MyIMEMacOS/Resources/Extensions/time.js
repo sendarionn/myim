@@ -44,3 +44,23 @@ function formatTime(hour, minute, includesNumericFormat) {
 function pad(value, length) {
   return String(value).padStart(length, "0")
 }
+
+// The text inserted for a range chosen on the clock's rail, given as
+// minutes from 0:00; the end may be 24:00
+function timeRangeText(context) {
+  const parameters = context.parameters || {}
+  const start = Number(parameters.start)
+  const end = Number(parameters.end)
+  if (!Number.isInteger(start) || !Number.isInteger(end) ||
+      start < 0 || start >= end || end > 24 * 60) {
+    return []
+  }
+  if (start % 60 === 0 && end % 60 === 0) {
+    return [`${start / 60}〜${end / 60}時`]
+  }
+  return [`${clockText(start)}〜${clockText(end)}`]
+}
+
+function clockText(minutes) {
+  return `${Math.floor(minutes / 60)}:${pad(minutes % 60, 2)}`
+}

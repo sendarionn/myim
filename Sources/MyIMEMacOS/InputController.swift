@@ -3239,12 +3239,55 @@ final class InputController: IMKInputController {
         clearCalendarSelection()
         candidateSearchCoordinator.cancel(.timeFormat)
         timeSelectionSession.beginTimeSelection()
-        guard let time = panelCoordinator.beginTimeSelection(near: anchorFrame) else {
+        guard let result = panelCoordinator.beginTimeSelection(near: anchorFrame) else {
             clearTimeSelection()
             return true
         }
-        loadTimeFormats(for: time, client: sender)
+        handleTimePanelResult(result, client: sender)
         return true
+    }
+
+    private func handleTimePanelResult(
+        _ result: TimePanelResult,
+        client sender: Any
+    ) {
+        switch result {
+        case let .time(time):
+            loadTimeFormats(for: time, client: sender)
+        case let .range(range):
+            insertTimeRange(range, client: sender)
+        }
+    }
+
+    /// The panel has closed; the text comes from `time.js`, and arrives too
+    /// late to insert once another time selection or input has begun
+    private func insertTimeRange(
+        _ range: TimeRangeSelection,
+        client sender: Any
+    ) {
+        candidateSearchCoordinator.cancel(.timeFormat)
+        candidateSearchCoordinator.start(
+            .timeFormat,
+            query: "\(range.start)-\(range.end)",
+            operation: {
+                await Self.javaScriptExtensionClient.timeRangeText(range)
+            },
+            validate: { [weak self] in
+                guard let self else { return false }
+                return self.timeSelectionSession.isActive
+                    && !self.timeSelectionSession.isSelectingFormat
+            },
+            apply: { [weak self] text in
+                guard let self else { return }
+                self.clearTimeSelection()
+                guard let text, !text.isEmpty else {
+                    NSSound.beep()
+                    return
+                }
+                self.commit(text, to: sender)
+            },
+            retainQueryAfterCompletion: false
+        )
     }
 
     private func loadTimeFormats(
@@ -3365,7 +3408,7 @@ final class InputController: IMKInputController {
             clearTimeSelection()
             return
         }
-        guard let time = panelCoordinator.resumeTimeSelection(
+        guard let result = panelCoordinator.resumeTimeSelection(
             at: previous,
             fallback: inputLocation(for: sender),
             stage: stage
@@ -3373,7 +3416,7 @@ final class InputController: IMKInputController {
             clearTimeSelection()
             return
         }
-        loadTimeFormats(for: time, client: sender)
+        handleTimePanelResult(result, client: sender)
     }
 
     private func clearTimeSelection() {
