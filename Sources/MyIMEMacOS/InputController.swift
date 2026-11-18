@@ -127,6 +127,7 @@ final class InputController: IMKInputController {
     private var calendarSelectionSession = CalendarFormatSelectionSession()
     private var timeSelectionSession = TimeFormatSelectionSession()
     private var bookmarkSearchSession = BookmarkSearchSession()
+    private var moraicNInputFormToggle = MoraicNInputFormToggle()
     private var bookmarkInsertionContext: BookmarkInsertionContext?
     /// Choosing the brackets put around the selection with ⌥⇧Q
     private var selectionBracketChoice: SelectionBracketChoice?
@@ -2190,10 +2191,21 @@ final class InputController: IMKInputController {
         default:
             return false
         }
-        guard let converted = InputFormConverter.convert(source, to: form) else {
+        let selectedText = selectedCandidateIndex.flatMap {
+            currentCandidates.indices.contains($0) ? currentCandidates[$0] : nil
+        }
+        // Only the part converted changes; the input typed stays as it is
+        let reading = moraicNInputFormToggle.reading(
+            for: form,
+            of: source,
+            selectedText: selectedText
+        )
+        guard let converted = InputFormConverter.convert(reading, to: form) else {
+            moraicNInputFormToggle.reset()
             return true
         }
         let candidate = converted + suffix
+        moraicNInputFormToggle.didShow(candidate)
         let index: Int
         if let existingIndex = currentCandidates.firstIndex(of: candidate) {
             index = existingIndex
