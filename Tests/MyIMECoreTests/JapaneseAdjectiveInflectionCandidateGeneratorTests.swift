@@ -21,8 +21,18 @@ struct JapaneseAdjectiveInflectionCandidateGeneratorTests {
         ("osokunakatta", ["遅くなかった"]),
         ("osokunakunatta", ["遅くなくなった"]),
         ("osokunakunaru", ["遅くなくなる"]),
+        ("osokereba", ["遅ければ"]),
+        ("osokunakereba", ["遅くなければ"]),
+        ("osokattara", ["遅かったら"]),
+        ("osokunai", ["遅くない"]),
+        ("osoku", ["遅く"]),
+        ("osokute", ["遅くて"]),
+        ("osokunakute", ["遅くなくて"]),
+        ("osokutemo", ["遅くても"]),
         ("yokatta", ["良かった"]),
-        ("yokunakatta", ["良くなかった"])
+        ("yokunakatta", ["良くなかった"]),
+        ("yokereba", ["良ければ"]),
+        ("yokunai", ["良くない"])
     ])
     func generatesIAdjectivePastForms(
         input: String,
@@ -32,7 +42,8 @@ struct JapaneseAdjectiveInflectionCandidateGeneratorTests {
     }
 
     @Test(arguments: [
-        "ordinary", "gakuseikatta", "kireikatta", "iikatta", "katta"
+        "ordinary", "gakuseikatta", "kireikatta", "iikatta", "ikereba",
+        "ikunai", "katta"
     ])
     func rejectsInputsWithoutAMatchingIAdjective(_ input: String) {
         #expect(generator.candidates(for: input).isEmpty)

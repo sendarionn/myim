@@ -341,9 +341,19 @@ struct BundledCopulaCompositionTests {
         ("takakunakatta", "高くなかった"),
         ("samukunakatta", "寒くなかった"),
         ("omoshirokunakatta", "面白くなかった"),
-        ("yokunakatta", "良くなかった")
+        ("yokunakatta", "良くなかった"),
+        ("muzukashikereba", "難しければ"),
+        ("muzukashikunakereba", "難しくなければ"),
+        ("muzukashikattara", "難しかったら"),
+        ("muzukashikunai", "難しくない"),
+        ("muzukashiku", "難しく"),
+        ("muzukashikute", "難しくて"),
+        ("muzukashikunakute", "難しくなくて"),
+        ("muzukashikutemo", "難しくても"),
+        ("yokereba", "良ければ"),
+        ("yokunai", "良くない")
     ])
-    func showsIAdjectivePastFormsOnTheFirstPage(
+    func showsIAdjectiveInflectionsOnTheFirstPage(
         input: String,
         expected: String
     ) throws {
@@ -351,11 +361,87 @@ struct BundledCopulaCompositionTests {
     }
 
     @Test(arguments: ["gakuseikatta", "kireikatta"])
-    func doesNotGenerateInvalidIAdjectivePastForms(_ input: String) throws {
+    func doesNotGenerateInvalidIAdjectiveInflections(_ input: String) throws {
         let candidates = try visible(input)
 
         #expect(!candidates.contains("学生かった"))
         #expect(!candidates.contains("綺麗かった"))
+    }
+
+    @Test
+    func selectedAdjectiveBasePromotesAnotherInflection() throws {
+        let source = try #require(Self.source)
+        let past = try #require(source.candidates(for: .init(
+            input: "hayakatta",
+            conversionReading: "hayakatta"
+        )).first { $0.storageText == "速かった" })
+        let base = try #require(past.uniqueInflectionBase)
+        var history = CandidateSelectionHistory()
+        history.record(
+            "速かった",
+            reading: "hayakatta",
+            inflectionBase: base
+        )
+
+        let candidates = source.candidates(for: .init(
+            input: "hayakereba",
+            conversionReading: "hayakereba",
+            selectionHistory: history
+        )).map(\.storageText)
+        let fast = try #require(candidates.firstIndex(of: "速ければ"))
+        let early = try #require(candidates.firstIndex(of: "早ければ"))
+
+        #expect(fast < early)
+    }
+
+    @Test
+    func directAdjectiveInflectionHistoryOverridesBaseHistory() throws {
+        let source = try #require(Self.source)
+        let past = try #require(source.candidates(for: .init(
+            input: "hayakatta",
+            conversionReading: "hayakatta"
+        )).first { $0.storageText == "速かった" })
+        let fastBase = try #require(past.uniqueInflectionBase)
+        let conditional = source.candidates(for: .init(
+            input: "hayakereba",
+            conversionReading: "hayakereba"
+        ))
+        let earlyCandidate = try #require(conditional.first {
+            $0.storageText == "早ければ"
+        })
+        let earlyBase = try #require(earlyCandidate.uniqueInflectionBase)
+        var history = CandidateSelectionHistory()
+        history.record(
+            "速かった",
+            reading: "hayakatta",
+            inflectionBase: fastBase
+        )
+        history.record(
+            "早ければ",
+            reading: "hayakereba",
+            inflectionBase: earlyBase
+        )
+
+        let candidates = source.candidates(for: .init(
+            input: "hayakereba",
+            conversionReading: "hayakereba",
+            selectionHistory: history
+        )).map(\.storageText)
+        let fast = try #require(candidates.firstIndex(of: "速ければ"))
+        let early = try #require(candidates.firstIndex(of: "早ければ"))
+
+        #expect(early < fast)
+    }
+
+    @Test
+    func iiReadingDoesNotGenerateGoodAdjectiveInflections() throws {
+        let candidates = try #require(Self.source).candidates(for: .init(
+            input: "ikereba",
+            conversionReading: "ikereba"
+        )).filter { $0.hasSource(.adjectiveInflection) }
+
+        #expect(!candidates.contains { $0.storageText == "良ければ" })
+        #expect(!candidates.contains { $0.storageText == "いければ" })
     }
 
     @Test(arguments: [
