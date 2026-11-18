@@ -3263,13 +3263,11 @@ final class InputController: IMKInputController {
     ) {
         candidateSearchCoordinator.cancel(.timeFormat)
         let query: String
-        let title: String?
         let operation: @Sendable () async -> [String]
         switch target {
         case let .time(time):
             timeSelectionSession.beginFormatLoading(for: time)
             query = time.digitalText
-            title = nil
             operation = {
                 await Self.javaScriptExtensionClient.timeCandidates(
                     hour: time.hour,
@@ -3279,8 +3277,6 @@ final class InputController: IMKInputController {
         case let .range(range):
             timeSelectionSession.beginFormatLoading(for: range)
             query = "\(range.start)-\(range.end)"
-            title = TimeRangeSelection.text(forMinutes: range.start) + " 〜 "
-                + TimeRangeSelection.text(forMinutes: range.end)
             operation = {
                 await Self.javaScriptExtensionClient.timeRangeFormats(range)
             }
@@ -3307,9 +3303,10 @@ final class InputController: IMKInputController {
                     self.clearTimeSelection()
                     return
                 }
+                // Shown in the candidate panel, as the calendar's formats are
+                self.showTimeFormatCandidates(client: sender)
                 let outcome = self.panelCoordinator.runTimeFormatSelection(
-                    candidates: ordered,
-                    title: title,
+                    candidateCount: ordered.count,
                     fallbackLocation: self.inputLocation(for: sender),
                     directionalSelection: { [weak self] index, direction in
                         self?.calendarFormatSelectionIndex(
@@ -3321,14 +3318,14 @@ final class InputController: IMKInputController {
                     selectionChanged: { [weak self] index in
                         guard let self else { return }
                         self.timeSelectionSession.select(index: index)
+                        self.showTimeFormatCandidates(client: sender)
                     }
                 )
+                self.primaryCandidatePanel.hide()
                 guard case let .selected(selectedIndex) = outcome,
                       ordered.indices.contains(selectedIndex) else {
                     if outcome == .returnToTime {
-                        self.returnToTimeSelection(client: sender, stage: .minute)
-                    } else if outcome == .restartTime {
-                        self.returnToTimeSelection(client: sender, stage: .period)
+                        self.returnToTimeSelection(client: sender)
                     } else {
                         self.clearTimeSelection()
                         self.primaryCandidatePanel.hide()
@@ -3349,6 +3346,11 @@ final class InputController: IMKInputController {
         client sender: Any
     ) -> Bool {
         guard let candidates = timeSelectionSession.candidates else { return false }
+        // The key panel's own selection decides what Return commits
+        if timeWindow.isSelectingFormat {
+            timeWindow.handleFormatKey(event)
+            return true
+        }
         switch event.keyCode {
         case 48:
             guard !candidates.isEmpty else { return true }
@@ -3386,6 +3388,26 @@ final class InputController: IMKInputController {
         return true
     }
 
+    private func showTimeFormatCandidates(client sender: Any) {
+        guard let candidates = timeSelectionSession.candidates,
+              !candidates.isEmpty else {
+            primaryCandidatePanel.hide()
+            return
+        }
+        let pageRange = timeSelectionSession.pageRange(
+            pageSize: Self.maximumCandidateCount
+        )
+        primaryCandidatePanel.show(
+            candidates: Array(candidates[pageRange]),
+            selectedIndex: timeSelectionSession.selectedIndex.map {
+                $0 - pageRange.lowerBound
+            },
+            near: panelCoordinator.timeInputLocation(
+                fallback: inputLocation(for: sender)
+            )
+        )
+    }
+
     /// The text of a range differs with every range, so only the formats of
     /// a time are remembered as before
     private func recordTimeFormatSelection(_ value: String) {
@@ -3394,36 +3416,28 @@ final class InputController: IMKInputController {
     }
 
     /// Goes back from the formats to the clock at the time chosen before, or
-    /// to the rail at the range chosen before; `.period` starts the clock
-    /// over, from the range's start for a range. Formats still loading are
+    /// to the rail at the range chosen before; formats still loading are
     /// discarded
-    private func returnToTimeSelection(
-        client sender: Any,
-        stage: TimeInputStage = .minute
-    ) {
+    private func returnToTimeSelection(client sender: Any) {
+        // The formats' own session returns when it ends, so the panel is
+        // not opened inside it
+        if timeWindow.isSelectingFormat {
+            timeWindow.cancelFormatSelection()
+            return
+        }
         candidateSearchCoordinator.cancel(.timeFormat)
         primaryCandidatePanel.hide()
         let fallback = inputLocation(for: sender)
         let resumed: TimePanelResult?
         if let range = timeSelectionSession.returnToRangeSelection() {
-            resumed = stage == .period
-                ? panelCoordinator.resumeTimeSelection(
-                    at: TimeSelectionState(
-                        hour: range.start / 60,
-                        minute: range.start % 60
-                    )!,
-                    fallback: fallback,
-                    stage: .period
-                )
-                : panelCoordinator.resumeTimeRangeSelection(
-                    at: range,
-                    fallback: fallback
-                )
+            resumed = panelCoordinator.resumeTimeRangeSelection(
+                at: range,
+                fallback: fallback
+            )
         } else if let previous = timeSelectionSession.returnToTimeSelection() {
             resumed = panelCoordinator.resumeTimeSelection(
                 at: previous,
-                fallback: fallback,
-                stage: stage
+                fallback: fallback
             )
         } else {
             clearTimeSelection()

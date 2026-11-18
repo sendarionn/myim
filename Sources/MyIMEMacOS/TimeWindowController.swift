@@ -319,20 +319,11 @@ private final class TimeDialView: NSView {
 private final class TimeInputView: NSView {
     var confirmAction: ((TimeSelectionState) -> Void)?
     var cancelAction: (() -> Void)?
-    var formatSelectionChanged: ((Int?) -> Void)?
-    var formatCommitAction: ((Int) -> Void)?
-    var formatBackAction: (() -> Void)?
-    var formatRestartAction: (() -> Void)?
 
     private let dialView = TimeDialView()
     private var flow = TimeInputFlow(
         time: TimeSelectionState(hour: 0, minute: 0)!
     )
-    private var formatCandidates: [String]?
-    /// Shown above the formats of a range instead of the clock's time
-    private var formatTitle: String?
-    private var selectedFormatIndex: Int?
-    private var directionalSelection: ((Int?, CandidateNavigationDirection) -> Int?)?
     private var arrowSequence = TimeDialArrowSequence()
 
     private let panelLayout = TimeDialLayout()
@@ -377,45 +368,9 @@ private final class TimeInputView: NSView {
     ) {
         arrowSequence.reset()
         flow = TimeInputFlow(time: time, stage: stage)
-        formatCandidates = nil
-        formatTitle = nil
-        selectedFormatIndex = nil
-        dialView.isHidden = false
         dialView.flow = flow
         needsDisplay = true
     }
-
-    /// `title` names a range the formats are for; without it they are for
-    /// the clock's time
-    func showFormats(
-        _ candidates: [String],
-        title: String?,
-        directionalSelection: @escaping (
-            Int?, CandidateNavigationDirection
-        ) -> Int?
-    ) {
-        arrowSequence.reset()
-        formatCandidates = candidates
-        formatTitle = title
-        selectedFormatIndex = nil
-        self.directionalSelection = directionalSelection
-        dialView.isHidden = true
-        needsDisplay = true
-    }
-
-    func clearFormats() {
-        arrowSequence.reset()
-        formatCandidates = nil
-        formatTitle = nil
-        selectedFormatIndex = nil
-        directionalSelection = nil
-        formatSelectionChanged = nil
-        formatCommitAction = nil
-        formatBackAction = nil
-        formatRestartAction = nil
-    }
-
-    var isShowingFormats: Bool { formatCandidates != nil }
 
     /// Takes the keys itself, since nothing in the panel is edited
     func takeKeyboard() {
@@ -452,43 +407,23 @@ private final class TimeInputView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawPanelBackground()
-        // The clock's steps do not lead to the formats of a range
-        if formatTitle == nil { drawStepIndicator() }
+        drawStepIndicator()
         drawHeading()
-        if formatCandidates != nil { drawFormatStage() }
         drawFooter()
     }
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if backRect.contains(point) {
-            if formatCandidates != nil {
-                formatBackAction?()
-            } else if !moveBack() {
-                cancelAction?()
-            }
+            if !moveBack() { cancelAction?() }
             return
         }
         if restartRect.contains(point) {
-            if formatCandidates != nil {
-                formatRestartAction?()
-            } else {
-                restart()
-            }
-            return
+            restart()
         }
-        guard let index = formatIndex(at: point) else { return }
-        selectedFormatIndex = index
-        formatSelectionChanged?(index)
-        needsDisplay = true
-        formatCommitAction?(index)
     }
 
     override func keyDown(with event: NSEvent) {
-        if formatCandidates != nil {
-            handleFormatKey(event)
-            return
-        }
         switch event.keyCode {
         case 123, 124, 125, 126:
             let direction: TimeDialArrowDirection = switch event.keyCode {
@@ -519,46 +454,6 @@ private final class TimeInputView: NSView {
         }
     }
 
-    private func handleFormatKey(_ event: NSEvent) {
-        switch event.keyCode {
-        case 48:
-            moveFormatSelection(
-                by: event.modifierFlags.contains(.shift) ? -1 : 1
-            )
-        case 123, 124, 125, 126:
-            let direction: CandidateNavigationDirection = switch event.keyCode {
-            case 123: .left
-            case 124: .right
-            case 125: .down
-            default: .up
-            }
-            selectedFormatIndex = directionalSelection?(
-                selectedFormatIndex,
-                direction
-            )
-            formatSelectionChanged?(selectedFormatIndex)
-            needsDisplay = true
-        case 36, 76:
-            if let selectedFormatIndex {
-                formatCommitAction?(selectedFormatIndex)
-            }
-        case 53:
-            formatBackAction?()
-        default:
-            break
-        }
-    }
-
-    private func moveFormatSelection(by offset: Int) {
-        guard let formatCandidates, !formatCandidates.isEmpty else { return }
-        let current = selectedFormatIndex ?? (offset > 0 ? -1 : 0)
-        selectedFormatIndex = (
-            current + offset + formatCandidates.count
-        ) % formatCandidates.count
-        formatSelectionChanged?(selectedFormatIndex)
-        needsDisplay = true
-    }
-
     private func drawPanelBackground() {
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 14, yRadius: 14)
         NSColor.windowBackgroundColor.setFill()
@@ -569,8 +464,7 @@ private final class TimeInputView: NSView {
     }
 
     private var displayedStep: Int {
-        if formatCandidates != nil { return 3 }
-        return switch flow.stage {
+        switch flow.stage {
         case .period: 0
         case .hour: 1
         case .minute: 2
@@ -622,14 +516,10 @@ private final class TimeInputView: NSView {
     }
 
     private func drawHeading() {
-        let heading = if formatCandidates != nil {
-            "書式を選択"
-        } else {
-            switch flow.stage {
-            case .period: "午前・午後を選択"
-            case .hour: "時を選択"
-            case .minute: "分を選択"
-            }
+        let heading = switch flow.stage {
+        case .period: "午前・午後を選択"
+        case .hour: "時を選択"
+        case .minute: "分を選択"
         }
         drawCentered(
             heading,
@@ -637,64 +527,6 @@ private final class TimeInputView: NSView {
             font: NSFont.systemFont(ofSize: 17, weight: .semibold),
             color: .labelColor
         )
-    }
-
-    private func drawFormatStage() {
-        guard let formatCandidates else { return }
-        drawCentered(
-            formatTitle ?? flow.time.digitalText,
-            at: NSPoint(x: bounds.midX, y: bounds.height - 108),
-            font: NSFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold),
-            color: .labelColor
-        )
-        if formatTitle == nil { drawTimeSubtitle() }
-        drawFormatRows(formatCandidates)
-    }
-
-    private func drawTimeSubtitle() {
-        let subtitle = "\(flow.time.period == .am ? "午前" : "午後") \(flow.time.twelveHour):\(String(format: "%02d", flow.time.minute))"
-        drawCentered(
-            subtitle,
-            at: NSPoint(x: bounds.midX, y: bounds.height - 137),
-            font: NSFont.systemFont(ofSize: 12),
-            color: .secondaryLabelColor
-        )
-    }
-
-    private func drawFormatRows(_ formatCandidates: [String]) {
-        for index in visibleFormatIndices {
-            let rect = formatRowRect(for: index)
-            let selected = selectedFormatIndex == index
-            let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
-            (selected
-                ? NSColor.controlAccentColor.withAlphaComponent(0.16)
-                : NSColor.controlBackgroundColor).setFill()
-            path.fill()
-            (selected ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
-            path.lineWidth = selected ? 1.5 : 0.5
-            path.stroke()
-            drawText(
-                String(index + 1),
-                in: NSRect(x: rect.minX + 12, y: rect.minY, width: 24, height: rect.height),
-                alignment: .left,
-                font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
-                color: .secondaryLabelColor
-            )
-            drawText(
-                formatCandidates[index],
-                in: NSRect(x: rect.minX + 42, y: rect.minY, width: rect.width - 116, height: rect.height),
-                alignment: .left,
-                font: NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .medium),
-                color: .labelColor
-            )
-            drawText(
-                "書式 \(index + 1)",
-                in: NSRect(x: rect.maxX - 70, y: rect.minY, width: 58, height: rect.height),
-                alignment: .right,
-                font: NSFont.systemFont(ofSize: 10),
-                color: .secondaryLabelColor
-            )
-        }
     }
 
     private func drawFooter() {
@@ -712,7 +544,7 @@ private final class TimeInputView: NSView {
             color: .secondaryLabelColor
         )
         drawCentered(
-            formatTitle ?? flow.time.digitalText,
+            flow.time.digitalText,
             at: NSPoint(x: bounds.midX, y: 25),
             font: NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .medium),
             color: .labelColor
@@ -732,31 +564,6 @@ private final class TimeInputView: NSView {
 
     private var restartRect: NSRect {
         NSRect(x: bounds.width - 92, y: 8, width: 76, height: 34)
-    }
-
-    private var visibleFormatIndices: Range<Int> {
-        guard let formatCandidates else { return 0..<0 }
-        let pageSize = 4
-        let page = (selectedFormatIndex ?? 0) / pageSize
-        let start = page * pageSize
-        return start..<min(start + pageSize, formatCandidates.count)
-    }
-
-    private func formatRowRect(for index: Int) -> NSRect {
-        let position = index - visibleFormatIndices.lowerBound
-        return NSRect(
-            x: 24,
-            y: bounds.height - 194 - CGFloat(position) * 50,
-            width: bounds.width - 48,
-            height: 40
-        )
-    }
-
-    private func formatIndex(at point: NSPoint) -> Int? {
-        guard formatCandidates != nil else { return nil }
-        return visibleFormatIndices.first(where: {
-            formatRowRect(for: $0).contains(point)
-        })
     }
 
     private func drawCentered(
@@ -817,19 +624,16 @@ enum TimePanelResult: Equatable {
 }
 
 final class TimeWindowController: NSObject {
-    private static let restartModalResponse = NSApplication.ModalResponse(
-        rawValue: 1_001
-    )
     private let panel: TimePanel
     private let inputView: TimeInputView
     private let rangeView: TimeRangeView
+    private let formatKeyPanel = FormatKeyPanel()
     private var selectedTime: TimeSelectionState?
     private var selectedRange: TimeRangeSelection?
     /// The range left for the clock, offered again while the clock keeps
     /// the time it had then
     private var leftRange: (range: TimeRangeSelection, clockTime: TimeSelectionState)?
     private var anchorFrame: NSRect = .zero
-    private var selectedFormatIndex: Int?
     private var outsideLocalMonitor: Any?
     private var outsideGlobalMonitor: Any?
     private var outsideClickTimer: Timer?
@@ -999,48 +803,34 @@ final class TimeWindowController: NSObject {
         return selectedTime.map(TimePanelResult.time)
     }
 
+    /// The formats are shown in the candidate panel by the caller, as the
+    /// calendar's are; the time panel closes and an almost invisible panel
+    /// takes the keys until one is chosen or Esc goes back
     func runFormatSelection(
-        candidates: [String],
-        title: String? = nil,
+        candidateCount: Int,
         near anchorFrame: NSRect,
         directionalSelection: @escaping (Int?, CandidateNavigationDirection) -> Int?,
         selectionChanged: @escaping (Int?) -> Void
     ) -> TimeFormatSelectionOutcome {
-        guard !candidates.isEmpty else { return .closed }
-        showClock()
-        selectedFormatIndex = nil
-        inputView.showFormats(
-            candidates,
-            title: title,
-            directionalSelection: directionalSelection
-        )
-        inputView.formatSelectionChanged = { [weak self] index in
-            self?.selectedFormatIndex = index
-            selectionChanged(index)
-        }
-        inputView.formatCommitAction = { [weak self] index in
-            self?.selectedFormatIndex = index
-            NSApp.stopModal(withCode: .OK)
-        }
-        inputView.formatBackAction = {
-            NSApp.stopModal(withCode: .cancel)
-        }
-        inputView.formatRestartAction = {
-            NSApp.stopModal(withCode: Self.restartModalResponse)
-        }
-        position(near: anchorFrame)
+        guard candidateCount > 0 else { return .closed }
+        stopOutsideClickMonitoring()
+        panel.orderOut(nil)
+        formatKeyPanel.candidateCount = candidateCount
+        formatKeyPanel.selectedIndex = nil
+        formatKeyPanel.directionalSelection = directionalSelection
+        formatKeyPanel.selectionChanged = selectionChanged
         let previousPolicy = NSApp.activationPolicy()
         if previousPolicy == .prohibited {
             _ = NSApp.setActivationPolicy(.accessory)
         }
-        panel.makeKeyAndOrderFront(nil)
-        inputView.takeKeyboard()
-        startOutsideClickMonitoring()
-        let response = NSApp.runModal(for: panel)
-        stopOutsideClickMonitoring()
-        let result = selectedFormatIndex
-        panel.orderOut(nil)
-        inputView.clearFormats()
+        formatKeyPanel.setFrameOrigin(anchorFrame.origin)
+        formatKeyPanel.makeKeyAndOrderFront(nil)
+        formatKeyPanel.makeFirstResponder(formatKeyPanel)
+        let response = NSApp.runModal(for: formatKeyPanel)
+        let result = formatKeyPanel.selectedIndex
+        formatKeyPanel.orderOut(nil)
+        formatKeyPanel.directionalSelection = nil
+        formatKeyPanel.selectionChanged = nil
         if NSApp.activationPolicy() != previousPolicy {
             _ = NSApp.setActivationPolicy(previousPolicy)
         }
@@ -1049,26 +839,38 @@ final class TimeWindowController: NSObject {
             return result.map(TimeFormatSelectionOutcome.selected) ?? .closed
         case .cancel:
             return .returnToTime
-        case Self.restartModalResponse:
-            return .restartTime
         default:
             return .closed
         }
     }
 
+    var isSelectingFormat: Bool { NSApp.modalWindow === formatKeyPanel }
+
+    /// A key the input method received while the formats are chosen, handled
+    /// as the key panel handles its own
+    func handleFormatKey(_ event: NSEvent) {
+        guard isSelectingFormat else { return }
+        formatKeyPanel.keyDown(with: event)
+    }
+
+    /// Ends the format selection as Esc does, going back to the clock or rail
+    func cancelFormatSelection() {
+        guard isSelectingFormat else { return }
+        NSApp.stopModal(withCode: .cancel)
+    }
+
     func hide() {
         stopOutsideClickMonitoring()
-        if NSApp.modalWindow === panel {
+        if NSApp.modalWindow === panel || NSApp.modalWindow === formatKeyPanel {
             NSApp.abortModal()
         }
         panel.orderOut(nil)
-        inputView.clearFormats()
+        formatKeyPanel.orderOut(nil)
     }
 
     /// Each press switches between the clock and the rail; only Esc closes
     /// the panel, and the formats stay as they are
     private func handleShortcut() {
-        guard !inputView.isShowingFormats else { return }
         if isShowingRange {
             showClock()
         } else {
@@ -1079,8 +881,6 @@ final class TimeWindowController: NSObject {
     func handleEscape() {
         if isShowingRange {
             cancelSelection()
-        } else if inputView.isShowingFormats {
-            inputView.formatBackAction?()
         } else if !inputView.moveBack() {
             cancelSelection()
         }

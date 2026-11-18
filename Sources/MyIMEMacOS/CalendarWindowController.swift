@@ -316,60 +316,9 @@ private final class CalendarGridView: NSView {
     }
 }
 
-private final class CalendarFormatKeyPanel: NSPanel {
-    var candidateCount = 0
-    var selectedIndex: Int?
-    var selectionChanged: ((Int?) -> Void)?
-    var directionalSelection: ((Int?, CandidateNavigationDirection) -> Int?)?
-
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-
-    override func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-        case 48:
-            guard candidateCount > 0 else { return }
-            let direction = event.modifierFlags.contains(.shift) ? -1 : 1
-            moveSelection(by: direction)
-        case 123:
-            moveSelection(.left)
-        case 124:
-            moveSelection(.right)
-        case 125:
-            moveSelection(.down)
-        case 126:
-            moveSelection(.up)
-        case 36, 76:
-            guard selectedIndex != nil else { return }
-            NSApp.stopModal(withCode: .OK)
-        case 53:
-            NSApp.stopModal(withCode: .cancel)
-        default:
-            break
-        }
-    }
-
-    private func moveSelection(by offset: Int) {
-        guard candidateCount > 0 else { return }
-        let current = selectedIndex ?? (offset > 0 ? -1 : 0)
-        selectedIndex = (current + offset + candidateCount) % candidateCount
-        selectionChanged?(selectedIndex)
-    }
-
-    private func moveSelection(_ direction: CandidateNavigationDirection) {
-        guard candidateCount > 0 else { return }
-        if selectedIndex == nil {
-            selectedIndex = 0
-        } else if let directionalSelection {
-            selectedIndex = directionalSelection(selectedIndex, direction)
-        }
-        selectionChanged?(selectedIndex)
-    }
-}
-
 final class CalendarWindowController: NSObject {
     private let panel: CalendarPanel
-    private let formatKeyPanel: CalendarFormatKeyPanel
+    private let formatKeyPanel: FormatKeyPanel
     private let calendarView: CalendarGridView
     private var selectedDate: Date?
     private var outsideLocalMonitor: Any?
@@ -387,16 +336,10 @@ final class CalendarWindowController: NSObject {
             backing: .buffered,
             defer: true
         )
-        formatKeyPanel = CalendarFormatKeyPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
-        )
+        formatKeyPanel = FormatKeyPanel()
         super.init()
 
         panel.animationBehavior = .none
-        formatKeyPanel.animationBehavior = .none
         panel.isMovableByWindowBackground = true
         panel.contentView?.wantsLayer = true
         panel.contentView?.layer?.cornerRadius = 0
@@ -426,15 +369,6 @@ final class CalendarWindowController: NSObject {
                 copiedEvent.post(tap: .cgSessionEventTap)
             }
         }
-        formatKeyPanel.level = .popUpMenu
-        formatKeyPanel.alphaValue = 0.01
-        formatKeyPanel.isOpaque = false
-        formatKeyPanel.backgroundColor = .clear
-        formatKeyPanel.isReleasedWhenClosed = false
-        formatKeyPanel.becomesKeyOnlyIfNeeded = false
-        formatKeyPanel.collectionBehavior = [
-            .moveToActiveSpace, .transient, .fullScreenAuxiliary
-        ]
     }
 
     var isVisible: Bool {

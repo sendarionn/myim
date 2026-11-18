@@ -3,8 +3,6 @@ public enum TimeFormatSelectionOutcome: Equatable, Sendable {
     case selected(Int)
     /// Esc goes back to the clock with the same time
     case returnToTime
-    /// The bottom action returns to the first AM/PM step
-    case restartTime
     /// The panels were closed some other way
     case closed
 }

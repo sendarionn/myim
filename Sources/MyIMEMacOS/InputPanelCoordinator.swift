@@ -198,15 +198,13 @@ final class InputPanelCoordinator {
     }
 
     func runTimeFormatSelection(
-        candidates: [String],
-        title: String? = nil,
+        candidateCount: Int,
         fallbackLocation: NSRect,
         directionalSelection: @escaping (Int?, CandidateNavigationDirection) -> Int?,
         selectionChanged: @escaping (Int?) -> Void
     ) -> TimeFormatSelectionOutcome {
         time.runFormatSelection(
-            candidates: candidates,
-            title: title,
+            candidateCount: candidateCount,
             near: timeInputLocation(fallback: fallbackLocation),
             directionalSelection: directionalSelection,
             selectionChanged: selectionChanged

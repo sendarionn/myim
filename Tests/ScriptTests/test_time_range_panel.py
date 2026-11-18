@@ -29,8 +29,6 @@ class TimeRangePanelTests(unittest.TestCase):
 
     def test_each_shortcut_switches_between_the_clock_and_the_rail(self):
         shortcut = self.body(self.window, "private func handleShortcut()")
-        self.assertIn("guard !inputView.isShowingFormats else { return }",
-                      shortcut)
         self.assertIn("showClock()", shortcut)
         self.assertIn("showRange()", shortcut)
         self.assertNotIn("cancelSelection()", shortcut)
@@ -39,6 +37,29 @@ class TimeRangePanelTests(unittest.TestCase):
         # Keys the panel receives itself take the same route
         self.assertIn("panel.shortcutAction = { [weak self] in "
                       "self?.handleShortcut() }", self.window)
+
+    def test_formats_are_shown_in_the_candidate_panel(self):
+        # The time panel no longer draws formats of its own
+        self.assertNotIn("drawFormatStage", self.window)
+        self.assertNotIn("書式を選択", self.window)
+        run = self.body(self.window, "func runFormatSelection(")
+        self.assertIn("panel.orderOut(nil)", run)
+        self.assertIn("NSApp.runModal(for: formatKeyPanel)", run)
+        show = self.body(self.controller,
+                         "private func showTimeFormatCandidates(")
+        self.assertIn("primaryCandidatePanel.show(", show)
+        load = self.body(self.controller, "private func loadTimeFormats(")
+        self.assertLess(load.index("self.showTimeFormatCandidates(client: sender)"),
+                        load.index("runTimeFormatSelection("))
+
+    def test_keys_the_input_method_receives_go_to_the_format_key_panel(self):
+        handle = self.body(self.controller,
+                           "private func handleTimeFormatSelection(")
+        self.assertLess(handle.index("timeWindow.handleFormatKey(event)"),
+                        handle.index("switch event.keyCode"))
+        back = self.body(self.controller, "private func returnToTimeSelection(")
+        self.assertLess(back.index("timeWindow.cancelFormatSelection()"),
+                        back.index("candidateSearchCoordinator.cancel"))
 
     def test_the_clock_has_no_range_button(self):
         self.assertNotIn("rangeButton", self.window)
@@ -52,7 +73,6 @@ class TimeRangePanelTests(unittest.TestCase):
         load = self.body(self.controller, "private func loadTimeFormats(")
         self.assertIn("timeRangeFormats(range)", load)
         self.assertIn("accepts(formatsFor: range)", load)
-        self.assertIn("title: title,", self.controller)
         back = self.body(self.controller, "private func returnToTimeSelection(")
         self.assertIn("resumeTimeRangeSelection(", back)
 
