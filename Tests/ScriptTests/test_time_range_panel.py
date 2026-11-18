@@ -27,36 +27,34 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertIn("rangeView.handleKey(event)", handle)
         self.assertTrue(handle.rstrip().endswith("return true"))
 
-    def test_pressing_the_shortcut_again_switches_the_clock_to_the_rail(self):
+    def test_each_shortcut_switches_between_the_clock_and_the_rail(self):
         shortcut = self.body(self.window, "private func handleShortcut()")
-        self.assertIn("if !isShowingRange, !inputView.isShowingFormats {\n"
-                      "            showRange()", shortcut)
+        self.assertIn("guard !inputView.isShowingFormats else { return }",
+                      shortcut)
+        self.assertIn("showClock()", shortcut)
+        self.assertIn("showRange()", shortcut)
+        self.assertNotIn("cancelSelection()", shortcut)
         handle = self.body(self.window, "func handleKeyEvent(")
         self.assertIn("handleShortcut()", handle)
         # Keys the panel receives itself take the same route
         self.assertIn("panel.shortcutAction = { [weak self] in "
                       "self?.handleShortcut() }", self.window)
 
-    def test_both_views_take_the_panel_size_after_a_resize(self):
-        # Autoresizing left the range view with no height once the panel
-        # shrank from the clock's height to the rail's
-        resize = self.body(self.window, "private func resize(toHeight")
-        self.assertLess(resize.index("panel.setContentSize("),
-                        resize.index("rangeView.frame = bounds"))
-        self.assertIn("inputView.frame = bounds", resize)
+    def test_the_clock_has_no_range_button(self):
+        self.assertNotIn("rangeButton", self.window)
 
     def test_escape_closes_the_rail_without_inserting(self):
         escape = self.body(self.window, "func handleEscape()")
         self.assertIn("if isShowingRange {\n            cancelSelection()",
                       escape)
 
-    def test_range_is_inserted_from_time_js_after_the_panel_closes(self):
-        insert = self.body(self.controller, "private func insertTimeRange(")
-        self.assertIn("timeRangeText(range)", insert)
-        self.assertLess(insert.index("self.clearTimeSelection()"),
-                        insert.index("self.commit(text, to: sender)"))
-        result = self.body(self.controller, "private func handleTimePanelResult(")
-        self.assertIn("insertTimeRange(range, client: sender)", result)
+    def test_range_formats_are_chosen_like_those_of_a_time(self):
+        load = self.body(self.controller, "private func loadTimeFormats(")
+        self.assertIn("timeRangeFormats(range)", load)
+        self.assertIn("accepts(formatsFor: range)", load)
+        self.assertIn("title: title,", self.controller)
+        back = self.body(self.controller, "private func returnToTimeSelection(")
+        self.assertIn("resumeTimeRangeSelection(", back)
 
     def test_only_voiceover_names_describe_the_parts(self):
         drawn = re.findall(r'drawCentered\(\s*"([^"]*)"', self.view)

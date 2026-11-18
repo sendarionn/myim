@@ -15,6 +15,8 @@ public struct TimeFormatSelectionSession: Equatable, Sendable {
     public private(set) var isActive = false
     /// The time the formats are made for, kept for going back to the clock
     public private(set) var time: TimeSelectionState?
+    /// The range the formats are made for, kept for going back to the rail
+    public private(set) var range: TimeRangeSelection?
 
     public init() {}
 
@@ -24,6 +26,7 @@ public struct TimeFormatSelectionSession: Equatable, Sendable {
         candidates = nil
         selectedIndex = nil
         time = nil
+        range = nil
         isActive = true
     }
 
@@ -31,6 +34,27 @@ public struct TimeFormatSelectionSession: Equatable, Sendable {
         candidates = []
         selectedIndex = nil
         self.time = time
+        range = nil
+    }
+
+    public mutating func beginFormatLoading(for range: TimeRangeSelection) {
+        candidates = []
+        selectedIndex = nil
+        time = nil
+        self.range = range
+    }
+
+    /// Whether formats arriving for `range` belong to the current request
+    public func accepts(formatsFor range: TimeRangeSelection) -> Bool {
+        isActive && isSelectingFormat && self.range == range
+    }
+
+    /// Leaves the formats for the rail, returning the range to show again
+    public mutating func returnToRangeSelection() -> TimeRangeSelection? {
+        guard isActive, let range else { return nil }
+        candidates = nil
+        selectedIndex = nil
+        return range
     }
 
     /// Whether formats arriving for `time` belong to the current request;
@@ -84,6 +108,7 @@ public struct TimeFormatSelectionSession: Equatable, Sendable {
         candidates = nil
         selectedIndex = nil
         time = nil
+        range = nil
         isActive = false
     }
 }

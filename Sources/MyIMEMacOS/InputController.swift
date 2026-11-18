@@ -3251,63 +3251,53 @@ final class InputController: IMKInputController {
         _ result: TimePanelResult,
         client sender: Any
     ) {
-        switch result {
-        case let .time(time):
-            loadTimeFormats(for: time, client: sender)
-        case let .range(range):
-            insertTimeRange(range, client: sender)
-        }
+        loadTimeFormats(for: result, client: sender)
     }
 
-    /// The panel has closed; the text comes from `time.js`, and arrives too
-    /// late to insert once another time selection or input has begun
-    private func insertTimeRange(
-        _ range: TimeRangeSelection,
-        client sender: Any
-    ) {
-        candidateSearchCoordinator.cancel(.timeFormat)
-        candidateSearchCoordinator.start(
-            .timeFormat,
-            query: "\(range.start)-\(range.end)",
-            operation: {
-                await Self.javaScriptExtensionClient.timeRangeText(range)
-            },
-            validate: { [weak self] in
-                guard let self else { return false }
-                return self.timeSelectionSession.isActive
-                    && !self.timeSelectionSession.isSelectingFormat
-            },
-            apply: { [weak self] text in
-                guard let self else { return }
-                self.clearTimeSelection()
-                guard let text, !text.isEmpty else {
-                    NSSound.beep()
-                    return
-                }
-                self.commit(text, to: sender)
-            },
-            retainQueryAfterCompletion: false
-        )
-    }
-
+    /// The formats of a time or of a range come from `time.js` and are
+    /// chosen in the time panel; formats arriving after going back or
+    /// closing are discarded
     private func loadTimeFormats(
-        for time: TimeSelectionState,
+        for target: TimePanelResult,
         client sender: Any
     ) {
         candidateSearchCoordinator.cancel(.timeFormat)
-        timeSelectionSession.beginFormatLoading(for: time)
-        primaryCandidatePanel.hide()
-        candidateSearchCoordinator.start(
-            .timeFormat,
-            query: time.digitalText,
-            operation: {
+        let query: String
+        let title: String?
+        let operation: @Sendable () async -> [String]
+        switch target {
+        case let .time(time):
+            timeSelectionSession.beginFormatLoading(for: time)
+            query = time.digitalText
+            title = nil
+            operation = {
                 await Self.javaScriptExtensionClient.timeCandidates(
                     hour: time.hour,
                     minute: time.minute
                 )
-            },
+            }
+        case let .range(range):
+            timeSelectionSession.beginFormatLoading(for: range)
+            query = "\(range.start)-\(range.end)"
+            title = TimeRangeSelection.text(forMinutes: range.start) + " 〜 "
+                + TimeRangeSelection.text(forMinutes: range.end)
+            operation = {
+                await Self.javaScriptExtensionClient.timeRangeFormats(range)
+            }
+        }
+        primaryCandidatePanel.hide()
+        candidateSearchCoordinator.start(
+            .timeFormat,
+            query: query,
+            operation: operation,
             validate: { [weak self] in
-                self?.timeSelectionSession.accepts(formatsFor: time) == true
+                guard let self else { return false }
+                return switch target {
+                case let .time(time):
+                    self.timeSelectionSession.accepts(formatsFor: time)
+                case let .range(range):
+                    self.timeSelectionSession.accepts(formatsFor: range)
+                }
             },
             apply: { [weak self] candidates in
                 guard let self else { return }
@@ -3319,6 +3309,7 @@ final class InputController: IMKInputController {
                 }
                 let outcome = self.panelCoordinator.runTimeFormatSelection(
                     candidates: ordered,
+                    title: title,
                     fallbackLocation: self.inputLocation(for: sender),
                     directionalSelection: { [weak self] index, direction in
                         self?.calendarFormatSelectionIndex(
@@ -3345,7 +3336,7 @@ final class InputController: IMKInputController {
                     return
                 }
                 let value = ordered[selectedIndex]
-                self.recordCandidateSelection(value)
+                self.recordTimeFormatSelection(value)
                 self.clearTimeSelection()
                 self.commit(value, to: sender)
             },
@@ -3381,7 +3372,7 @@ final class InputController: IMKInputController {
             guard let index = timeSelectionSession.selectedIndex,
                   candidates.indices.contains(index) else { return true }
             let value = candidates[index]
-            recordCandidateSelection(value)
+            recordTimeFormatSelection(value)
             clearTimeSelection()
             commit(value, to: sender)
         case 53:
@@ -3395,24 +3386,50 @@ final class InputController: IMKInputController {
         return true
     }
 
-    /// Goes back from the formats to the clock at the time chosen before;
-    /// formats still loading for it are discarded
+    /// The text of a range differs with every range, so only the formats of
+    /// a time are remembered as before
+    private func recordTimeFormatSelection(_ value: String) {
+        guard timeSelectionSession.range == nil else { return }
+        recordCandidateSelection(value)
+    }
+
+    /// Goes back from the formats to the clock at the time chosen before, or
+    /// to the rail at the range chosen before; `.period` starts the clock
+    /// over, from the range's start for a range. Formats still loading are
+    /// discarded
     private func returnToTimeSelection(
         client sender: Any,
         stage: TimeInputStage = .minute
     ) {
         candidateSearchCoordinator.cancel(.timeFormat)
         primaryCandidatePanel.hide()
-        guard let previous = timeSelectionSession.returnToTimeSelection()
-        else {
+        let fallback = inputLocation(for: sender)
+        let resumed: TimePanelResult?
+        if let range = timeSelectionSession.returnToRangeSelection() {
+            resumed = stage == .period
+                ? panelCoordinator.resumeTimeSelection(
+                    at: TimeSelectionState(
+                        hour: range.start / 60,
+                        minute: range.start % 60
+                    )!,
+                    fallback: fallback,
+                    stage: .period
+                )
+                : panelCoordinator.resumeTimeRangeSelection(
+                    at: range,
+                    fallback: fallback
+                )
+        } else if let previous = timeSelectionSession.returnToTimeSelection() {
+            resumed = panelCoordinator.resumeTimeSelection(
+                at: previous,
+                fallback: fallback,
+                stage: stage
+            )
+        } else {
             clearTimeSelection()
             return
         }
-        guard let result = panelCoordinator.resumeTimeSelection(
-            at: previous,
-            fallback: inputLocation(for: sender),
-            stage: stage
-        ) else {
+        guard let result = resumed else {
             clearTimeSelection()
             return
         }

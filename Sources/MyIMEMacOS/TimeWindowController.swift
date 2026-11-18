@@ -323,14 +323,14 @@ private final class TimeInputView: NSView {
     var formatCommitAction: ((Int) -> Void)?
     var formatBackAction: (() -> Void)?
     var formatRestartAction: (() -> Void)?
-    var rangeAction: (() -> Void)?
 
     private let dialView = TimeDialView()
-    private let rangeButton = NSButton(title: "〜", target: nil, action: nil)
     private var flow = TimeInputFlow(
         time: TimeSelectionState(hour: 0, minute: 0)!
     )
     private var formatCandidates: [String]?
+    /// Shown above the formats of a range instead of the clock's time
+    private var formatTitle: String?
     private var selectedFormatIndex: Int?
     private var directionalSelection: ((Int?, CandidateNavigationDirection) -> Int?)?
     private var arrowSequence = TimeDialArrowSequence()
@@ -352,14 +352,6 @@ private final class TimeInputView: NSView {
             }
         }
         addSubview(dialView)
-        rangeButton.isBordered = false
-        rangeButton.font = NSFont.systemFont(ofSize: 18, weight: .medium)
-        rangeButton.contentTintColor = .secondaryLabelColor
-        rangeButton.refusesFirstResponder = true
-        rangeButton.target = self
-        rangeButton.action = #selector(rangeClicked)
-        rangeButton.setAccessibilityLabel("時間帯")
-        addSubview(rangeButton)
     }
 
     required init?(coder: NSCoder) { nil }
@@ -368,10 +360,6 @@ private final class TimeInputView: NSView {
 
     /// The time the clock shows now, which a range starts from
     var currentTime: TimeSelectionState { flow.time }
-
-    @objc private func rangeClicked() {
-        rangeAction?()
-    }
 
     func setInitialTime(_ date: Date, calendar: Calendar = .current) {
         let hour = calendar.component(.hour, from: date)
@@ -390,31 +378,35 @@ private final class TimeInputView: NSView {
         arrowSequence.reset()
         flow = TimeInputFlow(time: time, stage: stage)
         formatCandidates = nil
+        formatTitle = nil
         selectedFormatIndex = nil
         dialView.isHidden = false
-        rangeButton.isHidden = false
         dialView.flow = flow
         needsDisplay = true
     }
 
+    /// `title` names a range the formats are for; without it they are for
+    /// the clock's time
     func showFormats(
         _ candidates: [String],
+        title: String?,
         directionalSelection: @escaping (
             Int?, CandidateNavigationDirection
         ) -> Int?
     ) {
         arrowSequence.reset()
         formatCandidates = candidates
+        formatTitle = title
         selectedFormatIndex = nil
         self.directionalSelection = directionalSelection
         dialView.isHidden = true
-        rangeButton.isHidden = true
         needsDisplay = true
     }
 
     func clearFormats() {
         arrowSequence.reset()
         formatCandidates = nil
+        formatTitle = nil
         selectedFormatIndex = nil
         directionalSelection = nil
         formatSelectionChanged = nil
@@ -439,12 +431,6 @@ private final class TimeInputView: NSView {
             width: diameter,
             height: diameter
         )
-        rangeButton.frame = NSRect(
-            x: bounds.width - 48,
-            y: bounds.height - 77,
-            width: 32,
-            height: 28
-        )
     }
 
     /// Returns false when Esc should close the whole time panel
@@ -466,7 +452,8 @@ private final class TimeInputView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         drawPanelBackground()
-        drawStepIndicator()
+        // The clock's steps do not lead to the formats of a range
+        if formatTitle == nil { drawStepIndicator() }
         drawHeading()
         if formatCandidates != nil { drawFormatStage() }
         drawFooter()
@@ -655,11 +642,16 @@ private final class TimeInputView: NSView {
     private func drawFormatStage() {
         guard let formatCandidates else { return }
         drawCentered(
-            flow.time.digitalText,
+            formatTitle ?? flow.time.digitalText,
             at: NSPoint(x: bounds.midX, y: bounds.height - 108),
             font: NSFont.monospacedDigitSystemFont(ofSize: 28, weight: .semibold),
             color: .labelColor
         )
+        if formatTitle == nil { drawTimeSubtitle() }
+        drawFormatRows(formatCandidates)
+    }
+
+    private func drawTimeSubtitle() {
         let subtitle = "\(flow.time.period == .am ? "午前" : "午後") \(flow.time.twelveHour):\(String(format: "%02d", flow.time.minute))"
         drawCentered(
             subtitle,
@@ -667,6 +659,9 @@ private final class TimeInputView: NSView {
             font: NSFont.systemFont(ofSize: 12),
             color: .secondaryLabelColor
         )
+    }
+
+    private func drawFormatRows(_ formatCandidates: [String]) {
         for index in visibleFormatIndices {
             let rect = formatRowRect(for: index)
             let selected = selectedFormatIndex == index
@@ -717,7 +712,7 @@ private final class TimeInputView: NSView {
             color: .secondaryLabelColor
         )
         drawCentered(
-            flow.time.digitalText,
+            formatTitle ?? flow.time.digitalText,
             at: NSPoint(x: bounds.midX, y: 25),
             font: NSFont.monospacedDigitSystemFont(ofSize: 15, weight: .medium),
             color: .labelColor
@@ -830,6 +825,9 @@ final class TimeWindowController: NSObject {
     private let rangeView: TimeRangeView
     private var selectedTime: TimeSelectionState?
     private var selectedRange: TimeRangeSelection?
+    /// The range left for the clock, offered again while the clock keeps
+    /// the time it had then
+    private var leftRange: (range: TimeRangeSelection, clockTime: TimeSelectionState)?
     private var anchorFrame: NSRect = .zero
     private var selectedFormatIndex: Int?
     private var outsideLocalMonitor: Any?
@@ -874,7 +872,6 @@ final class TimeWindowController: NSObject {
         panel.shortcutAction = { [weak self] in self?.handleShortcut() }
         inputView.cancelAction = { [weak self] in self?.cancelSelection() }
         inputView.confirmAction = { [weak self] state in self?.confirmSelection(state) }
-        inputView.rangeAction = { [weak self] in self?.showRange() }
         rangeView.cancelAction = { [weak self] in self?.cancelSelection() }
         rangeView.clockAction = { [weak self] in self?.showClock() }
         rangeView.confirmAction = { [weak self] range in
@@ -887,9 +884,14 @@ final class TimeWindowController: NSObject {
 
     private var isShowingRange: Bool { !rangeView.isHidden }
 
-    /// Switches the panel to the rail, starting at the clock's time
-    private func showRange() {
-        rangeView.begin(with: TimeRangeSelection(startingAt: inputView.currentTime))
+    /// Switches the panel to the rail, at `range` or else starting at the
+    /// clock's time
+    private func showRange(_ range: TimeRangeSelection? = nil) {
+        let clockTime = inputView.currentTime
+        let kept = leftRange.flatMap { $0.clockTime == clockTime ? $0.range : nil }
+        rangeView.begin(
+            with: range ?? kept ?? TimeRangeSelection(startingAt: clockTime)
+        )
         inputView.isHidden = true
         rangeView.isHidden = false
         resize(toHeight: TimeRangeView.height)
@@ -899,6 +901,7 @@ final class TimeWindowController: NSObject {
     /// Back to the clock, which keeps its time
     private func showClock() {
         guard isShowingRange else { return }
+        leftRange = (rangeView.range, inputView.currentTime)
         rangeView.isHidden = true
         inputView.isHidden = false
         resize(toHeight: CGFloat(TimeDialLayout().panelHeight))
@@ -942,19 +945,31 @@ final class TimeWindowController: NSObject {
         return true
     }
 
-    /// `initialTime` reopens the clock at a time chosen before; without it
-    /// the clock starts at the current time
+    /// `initialTime` reopens the clock at a time chosen before and
+    /// `initialRange` the rail at a range chosen before; without them the
+    /// clock starts at the current time
     func runSelection(
         near anchorFrame: NSRect,
         initialTime: TimeSelectionState? = nil,
         initialStage: TimeInputStage = .period,
+        initialRange: TimeRangeSelection? = nil,
         initialDate: Date = Date()
     ) -> TimePanelResult? {
         selectedTime = nil
         selectedRange = nil
         self.anchorFrame = anchorFrame
         showClock()
-        if let initialTime {
+        leftRange = nil
+        if let initialRange {
+            inputView.setTime(
+                TimeSelectionState(
+                    hour: initialRange.start / 60,
+                    minute: initialRange.start % 60
+                )!,
+                stage: .minute
+            )
+            showRange(initialRange)
+        } else if let initialTime {
             inputView.setTime(initialTime, stage: initialStage)
         } else {
             inputView.setInitialTime(initialDate)
@@ -967,7 +982,11 @@ final class TimeWindowController: NSObject {
         panel.makeKeyAndOrderFront(nil)
         // The shadow follows the drawn circle rather than the square window
         panel.invalidateShadow()
-        inputView.takeKeyboard()
+        if isShowingRange {
+            panel.makeFirstResponder(rangeView)
+        } else {
+            inputView.takeKeyboard()
+        }
         startOutsideClickMonitoring()
         let response = NSApp.runModal(for: panel)
         stopOutsideClickMonitoring()
@@ -982,6 +1001,7 @@ final class TimeWindowController: NSObject {
 
     func runFormatSelection(
         candidates: [String],
+        title: String? = nil,
         near anchorFrame: NSRect,
         directionalSelection: @escaping (Int?, CandidateNavigationDirection) -> Int?,
         selectionChanged: @escaping (Int?) -> Void
@@ -991,6 +1011,7 @@ final class TimeWindowController: NSObject {
         selectedFormatIndex = nil
         inputView.showFormats(
             candidates,
+            title: title,
             directionalSelection: directionalSelection
         )
         inputView.formatSelectionChanged = { [weak self] index in
@@ -1044,13 +1065,14 @@ final class TimeWindowController: NSObject {
         inputView.clearFormats()
     }
 
-    /// Pressed again on the clock it switches to the range; on the range or
-    /// the formats it closes the panel
+    /// Each press switches between the clock and the rail; only Esc closes
+    /// the panel, and the formats stay as they are
     private func handleShortcut() {
-        if !isShowingRange, !inputView.isShowingFormats {
-            showRange()
+        guard !inputView.isShowingFormats else { return }
+        if isShowingRange {
+            showClock()
         } else {
-            cancelSelection()
+            showRange()
         }
     }
 

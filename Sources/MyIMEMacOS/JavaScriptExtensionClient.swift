@@ -197,8 +197,8 @@ actor JavaScriptExtensionClient {
         ).map(\.value)
     }
 
-    /// The text `time.js` inserts for a range chosen on the clock's rail
-    func timeRangeText(_ range: TimeRangeSelection) async -> String? {
+    /// The formats `time.js` offers for a range chosen on the clock's rail
+    func timeRangeFormats(_ range: TimeRangeSelection) async -> [String] {
         await candidates(
             for: "time",
             timestamp: Date(),
@@ -207,8 +207,8 @@ actor JavaScriptExtensionClient {
                 "start": String(range.start),
                 "end": String(range.end)
             ],
-            functionName: "timeRangeText"
-        ).first?.value
+            functionName: "timeRangeFormats"
+        ).map(\.value)
     }
 
     func bookmarkFormats(

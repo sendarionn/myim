@@ -186,14 +186,27 @@ final class InputPanelCoordinator {
         )
     }
 
+    /// Reopens the rail where it was, at the range chosen before
+    func resumeTimeRangeSelection(
+        at range: TimeRangeSelection,
+        fallback: NSRect
+    ) -> TimePanelResult? {
+        time.runSelection(
+            near: timeAnchorFrame ?? fallback,
+            initialRange: range
+        )
+    }
+
     func runTimeFormatSelection(
         candidates: [String],
+        title: String? = nil,
         fallbackLocation: NSRect,
         directionalSelection: @escaping (Int?, CandidateNavigationDirection) -> Int?,
         selectionChanged: @escaping (Int?) -> Void
     ) -> TimeFormatSelectionOutcome {
         time.runFormatSelection(
             candidates: candidates,
+            title: title,
             near: timeInputLocation(fallback: fallbackLocation),
             directionalSelection: directionalSelection,
             selectionChanged: selectionChanged

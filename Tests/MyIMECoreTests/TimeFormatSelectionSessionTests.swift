@@ -21,6 +21,28 @@ struct TimeFormatSelectionSessionTests {
         #expect(!session.isSelectingFormat)
     }
 
+    /// Esc on the formats of a range goes back to the rail at that range,
+    /// and formats requested for it before are discarded
+    @Test func escapeReturnsToTheRailWithTheChosenRange() throws {
+        var session = TimeFormatSelectionSession()
+        session.beginTimeSelection()
+        let range = try #require(TimeRangeSelection(start: 780, end: 840))
+        session.beginFormatLoading(for: range)
+        #expect(session.accepts(formatsFor: range))
+
+        let returned = session.returnToRangeSelection()
+        let returnedTime = session.returnToTimeSelection()
+
+        #expect(returned == range)
+        #expect(returnedTime == nil)
+        #expect(!session.accepts(formatsFor: range))
+
+        let time = try #require(TimeSelectionState(hour: 13, minute: 0))
+        session.beginFormatLoading(for: time)
+        #expect(session.range == nil)
+        #expect(!session.accepts(formatsFor: range))
+    }
+
     /// Esc on the formats of 14:30 reopens the clock at 14:30, and the
     /// formats made next are for the time chosen then
     @Test func escapeReturnsToTheClockWithTheChosenTime() throws {

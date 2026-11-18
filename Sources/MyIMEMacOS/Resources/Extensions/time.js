@@ -45,9 +45,12 @@ function pad(value, length) {
   return String(value).padStart(length, "0")
 }
 
-// The text inserted for a range chosen on the clock's rail, given as
-// minutes from 0:00; the end may be 24:00
-function timeRangeText(context) {
+// The formats offered for a range chosen on the clock's rail, given as
+// minutes from 0:00; the end may be 24:00. Hours alone when both ends are
+// on the hour, otherwise H:MM
+const rangeSeparators = ["〜", " - ", "から"]
+
+function timeRangeFormats(context) {
   const parameters = context.parameters || {}
   const start = Number(parameters.start)
   const end = Number(parameters.end)
@@ -55,10 +58,12 @@ function timeRangeText(context) {
       start < 0 || start >= end || end > 24 * 60) {
     return []
   }
-  if (start % 60 === 0 && end % 60 === 0) {
-    return [`${start / 60}〜${end / 60}時`]
-  }
-  return [`${clockText(start)}〜${clockText(end)}`]
+  const onTheHour = start % 60 === 0 && end % 60 === 0
+  return rangeSeparators.map(function(separator) {
+    return onTheHour
+      ? `${start / 60}${separator}${end / 60}時`
+      : `${clockText(start)}${separator}${clockText(end)}`
+  })
 }
 
 function clockText(minutes) {

@@ -36,7 +36,7 @@ process.stdout.write(JSON.stringify(candidates({{
         runner = f"""
 const fs = require("fs")
 eval(fs.readFileSync({json.dumps(str(SCRIPT))}, "utf8"))
-process.stdout.write(JSON.stringify(timeRangeText({{
+process.stdout.write(JSON.stringify(timeRangeFormats({{
   input: "time",
   parameters: {{ start: {json.dumps(str(start))}, end: {json.dumps(str(end))} }}
 }})))
@@ -50,14 +50,15 @@ process.stdout.write(JSON.stringify(timeRangeText({{
         return json.loads(completed.stdout)
 
     def test_range_on_the_hour_is_inserted_with_hours_only(self):
-        self.assertEqual(self.range_text(13 * 60, 14 * 60), ["13〜14時"])
-        self.assertEqual(self.range_text(0, 24 * 60), ["0〜24時"])
+        self.assertEqual(self.range_text(13 * 60, 14 * 60),
+                         ["13〜14時", "13 - 14時", "13から14時"])
+        self.assertEqual(self.range_text(0, 24 * 60)[0], "0〜24時")
 
     def test_range_with_minutes_is_inserted_as_clock_times(self):
         self.assertEqual(self.range_text(13 * 60 + 15, 14 * 60),
-                         ["13:15〜14:00"])
-        self.assertEqual(self.range_text(9 * 60, 9 * 60 + 5),
-                         ["9:00〜9:05"])
+                         ["13:15〜14:00", "13:15 - 14:00", "13:15から14:00"])
+        self.assertEqual(self.range_text(9 * 60, 9 * 60 + 5)[0],
+                         "9:00〜9:05")
 
     def test_range_that_does_not_end_after_it_starts_gives_nothing(self):
         self.assertEqual(self.range_text(14 * 60, 13 * 60), [])
