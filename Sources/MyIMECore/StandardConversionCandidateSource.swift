@@ -203,10 +203,21 @@ public struct StandardConversionCandidateSource: Sendable {
             dynamicPreferenceRanks,
             uniquingKeysWith: max
         )
-        let kana = [
-            romajiConverter.hiragana(from: context.conversionReading),
-            romajiConverter.katakana(from: context.conversionReading)
-        ].compactMap { $0 }
+        // The kana of `ny` read as ん + や行 follow those of the reading as
+        // typed, so シンヤ is offered for `shinya` beside シニャ
+        var kana: [String] = []
+        let kanaReadings = [context.conversionReading]
+            + [RomajiCanonicalizer.moraicNBeforeYKanaInput(
+                from: context.conversionReading
+            )].compactMap { $0 }
+        for reading in kanaReadings {
+            for value in [
+                romajiConverter.hiragana(from: reading),
+                romajiConverter.katakana(from: reading)
+            ].compactMap({ $0 }) where !kana.contains(value) {
+                kana.append(value)
+            }
+        }
         let caseCandidates = context.input == context.conversionReading
             ? EnglishCandidateCaseRestorer.caseCandidates(
                 for: context.conversionReading

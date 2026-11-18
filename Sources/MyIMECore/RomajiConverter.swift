@@ -382,6 +382,14 @@ public enum RomajiCanonicalizer {
         return result
     }
 
+    /// The reading with each `ny` after a vowel read as ん + や行, as
+    /// `shinya` gives `shin'ya` for しんや beside しにゃ, or nil when there is
+    /// no such `ny`; the converter itself keeps reading `ny` as にゃ行
+    public static func moraicNBeforeYKanaInput(from input: String) -> String? {
+        let moraicN = moraicNBeforeYInput(from: input)
+        return moraicN == input ? nil : moraicN
+    }
+
     private static func moraicNBeforeYInput(from input: String) -> String {
         let characters = Array(input)
         guard characters.count >= 3 else { return input }

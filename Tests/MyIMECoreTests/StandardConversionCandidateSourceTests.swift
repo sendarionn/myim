@@ -580,6 +580,71 @@ struct StandardConversionCandidateSourceTests {
         #expect(values.prefix(2) == ["調", "次の"])
     }
 
+    /// `ny` after a vowel also reads as ん + や行, as dictionaries key 深夜
+    /// as `shin'ya`; the kana of the reading as typed come first
+    @Test
+    func automaticKanaAlsoReadsNyAfterAVowelAsMoraicN() throws {
+        let source = makeSource(systemText: "shin'ya\t深夜\n")
+        let generated = source.candidates(for: .init(
+            input: "shinya",
+            conversionReading: "shinya"
+        ))
+        let values = visibleCandidates(
+            generated,
+            input: "shinya",
+            reading: "shinya"
+        )
+
+        #expect(values.contains("深夜"))
+        let typed = try #require(values.firstIndex(of: "シニャ"))
+        let moraic = try #require(values.firstIndex(of: "シンヤ"))
+        #expect(values.firstIndex(of: "しにゃ").map { $0 < moraic } == true)
+        #expect(typed < moraic)
+        #expect(values.contains("しんや"))
+        #expect(Set(values).count == values.count)
+        #expect(generated.first { $0.storageText == "シンヤ" }?
+            .hasSource(.automaticKana) == true)
+
+        #expect(texts(source, "shin'ya").contains("シンヤ"))
+    }
+
+    @Test(arguments: [
+        ("nyuugaku", ["にゅうがく", "ニュウガク"]),
+        ("konnyaku", ["こんにゃく", "コンニャク"])
+    ])
+    func automaticKanaKeepsNyThatHasNoVowelBefore(
+        input: String,
+        kana: [String]
+    ) {
+        let values = texts(makeSource(), input)
+
+        #expect(values.filter { $0.allSatisfy(Self.isKana) } == kana)
+    }
+
+    @Test
+    func repeatedSelectionPromotesKanaOfTheMoraicNReading() throws {
+        let source = makeSource(systemText: "shin'ya\t深夜\n")
+        var history = CandidateSelectionHistory()
+        history.record("シンヤ", reading: "shinya")
+        history.record("シンヤ", reading: "shinya")
+
+        let learned = try #require(source.candidates(for: .init(
+            input: "shinya",
+            conversionReading: "shinya",
+            selectionHistory: history
+        )).first)
+
+        #expect(learned.storageText == "シンヤ")
+        #expect(learned.hasSource(.automaticKana))
+        #expect(!learned.hasSource(.selectionHistory))
+    }
+
+    private static func isKana(_ character: Character) -> Bool {
+        character.unicodeScalars.allSatisfy {
+            (0x3041...0x30FF).contains($0.value)
+        }
+    }
+
     @Test
     func deferredSystemCandidatesStayAheadOfAutomaticKana() throws {
         let values = texts(
