@@ -33,12 +33,20 @@ function parseTime(context) {
 }
 
 function formatTime(hour, minute, includesNumericFormat) {
-  const HH = pad(hour, 2)
-  const mm = pad(minute, 2)
-  const results = [`${hour}時${minute}分`]
-  if (includesNumericFormat) results.push(`${HH}:${mm}`)
-  if (minute === 30) results.push(`${hour}時半`)
-  return results
+  return timeFormats(hour, minute).filter(function(format) {
+    return includesNumericFormat || format.kind !== "numeric"
+  }).map(function(format) { return format.text })
+}
+
+// The clock's formats of a time, each with its kind so the two ends of a
+// range can take the same one; 半 only at 30 minutes
+function timeFormats(hour, minute) {
+  const formats = [
+    { kind: "kanji", text: `${hour}時${minute}分` },
+    { kind: "numeric", text: `${pad(hour, 2)}:${pad(minute, 2)}` }
+  ]
+  if (minute === 30) formats.push({ kind: "half", text: `${hour}時半` })
+  return formats
 }
 
 function pad(value, length) {
@@ -46,8 +54,10 @@ function pad(value, length) {
 }
 
 // The formats offered for a range chosen on the clock's rail, given as
-// minutes from 0:00; the end may be 24:00. Hours alone when both ends are
-// on the hour, otherwise H:MM
+// minutes from 0:00; the end may be 24:00. Both ends take the same format
+// of the clock, joined by each separator; a format that only one end has,
+// such as 半, is left out. Ranges on the hour also come as hours alone,
+// such as 13〜14時, ahead of them
 const rangeSeparators = ["〜", " - ", "から"]
 
 function timeRangeFormats(context) {
@@ -58,14 +68,27 @@ function timeRangeFormats(context) {
       start < 0 || start >= end || end > 24 * 60) {
     return []
   }
-  const onTheHour = start % 60 === 0 && end % 60 === 0
-  return rangeSeparators.map(function(separator) {
-    return onTheHour
-      ? `${start / 60}${separator}${end / 60}時`
-      : `${clockText(start)}${separator}${clockText(end)}`
-  })
+  const results = []
+  if (start % 60 === 0 && end % 60 === 0) {
+    for (const separator of rangeSeparators) {
+      results.push(`${start / 60}${separator}${end / 60}時`)
+    }
+  }
+  const startFormats = rangeEndFormats(start)
+  const endFormats = rangeEndFormats(end)
+  for (const separator of rangeSeparators) {
+    for (const startFormat of startFormats) {
+      const endFormat = endFormats.find(function(format) {
+        return format.kind === startFormat.kind
+      })
+      if (endFormat) {
+        results.push(`${startFormat.text}${separator}${endFormat.text}`)
+      }
+    }
+  }
+  return results
 }
 
-function clockText(minutes) {
-  return `${Math.floor(minutes / 60)}:${pad(minutes % 60, 2)}`
+function rangeEndFormats(minutes) {
+  return timeFormats(Math.floor(minutes / 60), minutes % 60)
 }

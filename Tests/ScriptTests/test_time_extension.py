@@ -49,16 +49,31 @@ process.stdout.write(JSON.stringify(timeRangeFormats({{
         )
         return json.loads(completed.stdout)
 
-    def test_range_on_the_hour_is_inserted_with_hours_only(self):
-        self.assertEqual(self.range_text(13 * 60, 14 * 60),
-                         ["13〜14時", "13 - 14時", "13から14時"])
-        self.assertEqual(self.range_text(0, 24 * 60)[0], "0〜24時")
+    def test_range_on_the_hour_also_comes_as_hours_only(self):
+        self.assertEqual(self.range_text(13 * 60, 14 * 60), [
+            "13〜14時", "13 - 14時", "13から14時",
+            "13時0分〜14時0分", "13:00〜14:00",
+            "13時0分 - 14時0分", "13:00 - 14:00",
+            "13時0分から14時0分", "13:00から14:00",
+        ])
 
-    def test_range_with_minutes_is_inserted_as_clock_times(self):
-        self.assertEqual(self.range_text(13 * 60 + 15, 14 * 60),
-                         ["13:15〜14:00", "13:15 - 14:00", "13:15から14:00"])
-        self.assertEqual(self.range_text(9 * 60, 9 * 60 + 5)[0],
-                         "9:00〜9:05")
+    def test_both_ends_take_the_same_format_of_the_clock(self):
+        self.assertEqual(self.range_text(9 * 60 + 5, 10 * 60 + 15), [
+            "9時5分〜10時15分", "09:05〜10:15",
+            "9時5分 - 10時15分", "09:05 - 10:15",
+            "9時5分から10時15分", "09:05から10:15",
+        ])
+
+    def test_half_is_offered_only_when_both_ends_have_it(self):
+        both = self.range_text(13 * 60 + 30, 14 * 60 + 30)
+        one = self.range_text(13 * 60 + 30, 15 * 60)
+
+        self.assertIn("13時半〜14時半", both)
+        self.assertEqual(len(both), 3 * 3)
+        self.assertFalse(any("半" in text for text in one))
+
+    def test_clock_formats_are_unchanged(self):
+        self.assertEqual(self.candidates(9, 30), ["9時30分", "09:30", "9時半"])
 
     def test_range_that_does_not_end_after_it_starts_gives_nothing(self):
         self.assertEqual(self.range_text(14 * 60, 13 * 60), [])
