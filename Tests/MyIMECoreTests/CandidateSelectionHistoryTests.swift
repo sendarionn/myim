@@ -243,6 +243,51 @@ struct CandidateSelectionHistoryTests {
     }
 
     @Test
+    func persistsInflectionBaseRecencyWithoutCreatingACompletion() throws {
+        let base = InflectionBaseIdentity(
+            kind: .verb,
+            reading: "kaku",
+            surface: "描く",
+            inflectionType: "godan"
+        )
+        var history = CandidateSelectionHistory()
+        history.record(
+            "描いた",
+            reading: "kaita",
+            inflectionBase: base
+        )
+
+        let data = try JSONEncoder().encode(history)
+        let restored = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: data
+        )
+
+        #expect(restored.rank(for: base) != nil)
+        #expect(restored.recordedCandidates(for: "kaku").isEmpty)
+        #expect(!restored.completions(for: "ka").contains("描く"))
+    }
+
+    @Test
+    func loadsHistoryWrittenBeforeInflectionBaseRanksExisted() throws {
+        let data = Data("""
+            {
+              "ranks": {"描いた": 1},
+              "statsByReading": {},
+              "maximumEntryCount": 10000,
+              "nextRank": 2
+            }
+            """.utf8)
+        let restored = try JSONDecoder().decode(
+            CandidateSelectionHistory.self,
+            from: data
+        )
+
+        #expect(restored.inflectionBaseRanks.isEmpty)
+        #expect(restored.ranks["描いた"] == 1)
+    }
+
+    @Test
     func removesCandidateFromRanksAndCompletions() {
         var history = CandidateSelectionHistory()
         history.record("みるみる", reading: "mirumiru")
@@ -251,5 +296,26 @@ struct CandidateSelectionHistoryTests {
         #expect(history.ranks["みるみる"] == nil)
         #expect(history.ranks(for: "mirumiru")["みるみる"] == nil)
         #expect(!history.completions(for: "miru").contains("みるみる"))
+    }
+
+    @Test
+    func removesTheBaseRankWithTheSelectedInflection() {
+        let base = InflectionBaseIdentity(
+            kind: .verb,
+            reading: "kaku",
+            surface: "描く",
+            inflectionType: "godan"
+        )
+        var history = CandidateSelectionHistory()
+        history.record(
+            "描いた",
+            reading: "kaita",
+            inflectionBase: base
+        )
+
+        history.remove(["描いた"], inflectionBases: [base])
+
+        #expect(history.ranks["描いた"] == nil)
+        #expect(history.rank(for: base) == nil)
     }
 }

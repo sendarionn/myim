@@ -5122,7 +5122,14 @@ final class InputController: IMKInputController {
                 }
                 rebuildConversionEngine()
             }
-            candidateSelectionHistoryStore.remove(historyCandidates)
+            let inflectionBases = currentCandidateModels.indices.contains(
+                selectedCandidateIndex
+            ) ? Set(currentCandidateModels[selectedCandidateIndex]
+                .uniqueInflectionBase.map { [$0] } ?? []) : []
+            candidateSelectionHistoryStore.remove(
+                historyCandidates,
+                inflectionBases: inflectionBases
+            )
             unselectedInputLearningStore.remove(candidates: historyCandidates)
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
@@ -5491,7 +5498,8 @@ final class InputController: IMKInputController {
         } else {
             recordCandidateSelection(
                 candidate.storageText,
-                isLearnable: candidate.isLearnable
+                isLearnable: candidate.isLearnable,
+                inflectionBase: candidate.uniqueInflectionBase
             )
         }
     }
@@ -5499,7 +5507,8 @@ final class InputController: IMKInputController {
     private func recordCandidateSelection(
         _ candidate: String,
         reading: String? = nil,
-        isLearnable: Bool = false
+        isLearnable: Bool = false,
+        inflectionBase: InflectionBaseIdentity? = nil
     ) {
         guard Self.diagnosticConfiguration.enables(.learning) else { return }
         let learnedReading = reading ?? candidateSelectionReading
@@ -5526,7 +5535,8 @@ final class InputController: IMKInputController {
             candidate,
             readings: CandidateSelectionReading.historyReadings(
                 for: learnedReading
-            )
+            ),
+            inflectionBase: inflectionBase
         )
     }
 

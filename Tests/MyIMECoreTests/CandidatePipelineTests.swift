@@ -52,6 +52,47 @@ struct CandidatePipelineTests {
     }
 
     @Test
+    func directInflectionHistoryStaysAheadOfNewerBaseHistory() {
+        let drawing = InflectionBaseIdentity(
+            kind: .verb,
+            reading: "kaku",
+            surface: "描く",
+            inflectionType: "godan"
+        )
+        let writing = InflectionBaseIdentity(
+            kind: .verb,
+            reading: "kaku",
+            surface: "書く",
+            inflectionType: "godan"
+        )
+        let candidates = CandidatePipeline().candidates(
+            from: CandidatePipeline.StructuredInput(
+                kana: [],
+                direct: [],
+                secondary: [
+                    Candidate(
+                        storageText: "描かない",
+                        source: .verbInflection,
+                        inflectionBase: drawing
+                    ),
+                    Candidate(
+                        storageText: "書かない",
+                        source: .verbInflection,
+                        inflectionBase: writing
+                    )
+                ],
+                other: [],
+                recencyRanks: [:],
+                secondaryRanks: ["書かない": 1],
+                inflectionBaseRanks: [drawing.historyKey: 10_000],
+                prioritizeKana: false
+            )
+        )
+
+        #expect(candidates.map(\.storageText) == ["書かない", "描かない"])
+    }
+
+    @Test
     func keepsSingleHiraganaBeforeKatakanaFoundInDictionary() {
         let candidates = CandidatePipeline().candidates(
             from: CandidatePipeline.Input(

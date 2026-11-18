@@ -212,27 +212,30 @@ public struct StandardConversionCandidateSource: Sendable {
                 for: context.conversionReading
             )
             : []
-        let conjugations = verbConjugationGenerator.candidates(
+        let conjugations = verbConjugationGenerator.generatedCandidates(
             for: context.conversionReading
         )
-        let adjectiveInflections = adjectiveInflectionGenerator.candidates(
-            for: context.conversionReading
-        )
-        let inflections = mergedCandidates(
-            readings: lookupReadings
-        ) { reading in
-            verbInflectionGenerator.candidates(
-                for: reading,
-                conjugations: verbConjugations
-            ) + VerbInflectionCandidateGenerator.candidates(
-                for: reading,
-                conjugations: verbConjugations,
-                lookup: systemEngine.candidates
+        let adjectiveInflections = adjectiveInflectionGenerator
+            .generatedCandidates(
+                for: context.conversionReading
             )
-        }
-        let generatedVerbInflections = Self.removingDuplicates(
+        let inflections = Self.mergingGeneratedInflections(
+            lookupReadings.flatMap { reading in
+                verbInflectionGenerator.generatedCandidates(
+                    for: reading,
+                    conjugations: verbConjugations
+                ) + VerbInflectionCandidateGenerator.generatedCandidates(
+                    for: reading,
+                    conjugations: verbConjugations,
+                    lookup: systemEngine.candidates
+                )
+            }
+        )
+        let generatedVerbInflections = Self.mergingGeneratedInflections(
             conjugations + inflections
         )
+        let generatedVerbInflectionTexts = generatedVerbInflections.map(\.text)
+        let adjectiveInflectionTexts = adjectiveInflections.map(\.text)
         let numericPrefixes = numericPrefixCandidates(
             for: context.conversionReading,
             history: context.selectionHistory,
@@ -251,8 +254,8 @@ public struct StandardConversionCandidateSource: Sendable {
                 exactDictionaryCandidates: exactDictionaryCandidates
             )
         let generatedOnlyCandidates = Set(
-            kana + numericPrefixes + generatedVerbInflections
-                + adjectiveInflections + particles
+            kana + numericPrefixes + generatedVerbInflectionTexts
+                + adjectiveInflectionTexts + particles
         ).subtracting(exactDictionaryCandidates)
         // Selection history changes ranking without reclassifying candidates
         // that are generated for the current input as whole-input exact matches
@@ -265,8 +268,8 @@ public struct StandardConversionCandidateSource: Sendable {
         // candidates before established full-input selection takes precedence
         let secondaryRanks = context.learningEnabled
             ? ParticleCompositionRanking.ranks(
-                for: numericPrefixes + generatedVerbInflections
-                    + adjectiveInflections + particles,
+                for: numericPrefixes + generatedVerbInflectionTexts
+                    + adjectiveInflectionTexts + particles,
                 compositions: particleCompositions,
                 history: context.selectionHistory,
                 compositionRanks: fullReadingRanks
@@ -295,8 +298,9 @@ public struct StandardConversionCandidateSource: Sendable {
             deferredSystemExact: deferredSystemExact,
             importedExact: imported.reading.exact,
             importedSpelling: imported.spelling.exact,
-            inflection: generatedVerbInflections,
-            adjectiveInflection: adjectiveInflections,
+            inflection: [],
+            generatedInflections: generatedVerbInflections,
+            generatedAdjectiveInflections: adjectiveInflections,
             particle: particles,
             generatedParticles: generatedParticles,
             userPrefix: user.prefix,
@@ -312,11 +316,35 @@ public struct StandardConversionCandidateSource: Sendable {
             uppercase: caseCandidates,
             recencyRanks: combinedDirectRanks,
             secondaryRanks: secondaryRanks,
+            inflectionBaseRanks: context.learningEnabled
+                ? context.selectionHistory.inflectionBaseRanks
+                : [:],
             contextualCandidates: context.contextualCandidates,
             prioritizeKana: kana.first?.count == 1,
             longVowelNotationProtectedCandidates:
                 longVowelNotationProtectedCandidates
         ))
+    }
+
+    private static func mergingGeneratedInflections(
+        _ candidates: [GeneratedInflectionCandidate]
+    ) -> [GeneratedInflectionCandidate] {
+        var order: [String] = []
+        var basesByText: [String: Set<InflectionBaseIdentity>] = [:]
+        for candidate in candidates {
+            if basesByText[candidate.text] == nil {
+                order.append(candidate.text)
+            }
+            basesByText[candidate.text, default: []].formUnion(candidate.bases)
+        }
+        return order.map { text in
+            GeneratedInflectionCandidate(
+                text: text,
+                bases: (basesByText[text] ?? []).sorted {
+                    $0.historyKey < $1.historyKey
+                }
+            )
+        }
     }
 
     private func numericPrefixCandidates(

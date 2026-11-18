@@ -15,7 +15,9 @@ public struct CandidateAssembly: Sendable {
         public let importedExact: [String]
         public let importedSpelling: [String]
         public let inflection: [String]
+        public let generatedInflections: [GeneratedInflectionCandidate]
         public let adjectiveInflection: [String]
+        public let generatedAdjectiveInflections: [GeneratedInflectionCandidate]
         public let particle: [String]
         public let generatedParticles: Set<String>
         public let userPrefix: [String]
@@ -30,6 +32,7 @@ public struct CandidateAssembly: Sendable {
         /// Ranks ordering generated candidates without moving them ahead of
         /// exact candidates
         public let secondaryRanks: [String: Int]?
+        public let inflectionBaseRanks: [String: Int]
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
         public let includeAutomaticKanaCandidates: Bool
@@ -51,7 +54,9 @@ public struct CandidateAssembly: Sendable {
             importedExact: [String] = [],
             importedSpelling: [String] = [],
             inflection: [String],
+            generatedInflections: [GeneratedInflectionCandidate] = [],
             adjectiveInflection: [String] = [],
+            generatedAdjectiveInflections: [GeneratedInflectionCandidate] = [],
             particle: [String],
             generatedParticles: Set<String>,
             userPrefix: [String],
@@ -64,6 +69,7 @@ public struct CandidateAssembly: Sendable {
             uppercase: [String],
             recencyRanks: [String: Int],
             secondaryRanks: [String: Int]? = nil,
+            inflectionBaseRanks: [String: Int] = [:],
             contextualCandidates: [String],
             prioritizeKana: Bool,
             includeAutomaticKanaCandidates: Bool = true,
@@ -84,7 +90,9 @@ public struct CandidateAssembly: Sendable {
             self.importedExact = importedExact
             self.importedSpelling = importedSpelling
             self.inflection = inflection
+            self.generatedInflections = generatedInflections
             self.adjectiveInflection = adjectiveInflection
+            self.generatedAdjectiveInflections = generatedAdjectiveInflections
             self.particle = particle
             self.generatedParticles = generatedParticles
             self.userPrefix = userPrefix
@@ -97,6 +105,7 @@ public struct CandidateAssembly: Sendable {
             self.uppercase = uppercase
             self.recencyRanks = recencyRanks
             self.secondaryRanks = secondaryRanks
+            self.inflectionBaseRanks = inflectionBaseRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
             self.includeAutomaticKanaCandidates =
@@ -214,8 +223,16 @@ public struct CandidateAssembly: Sendable {
                     input.inflection,
                     source: .verbInflection,
                     reading: input.reading
+                ) + makeInflectionCandidates(
+                    input.generatedInflections,
+                    source: .verbInflection,
+                    reading: input.reading
                 ) + makeCandidates(
                     input.adjectiveInflection,
+                    source: .adjectiveInflection,
+                    reading: input.reading
+                ) + makeInflectionCandidates(
+                    input.generatedAdjectiveInflections,
                     source: .adjectiveInflection,
                     reading: input.reading
                 ) + input.particle.map {
@@ -242,6 +259,7 @@ public struct CandidateAssembly: Sendable {
                 ),
                 recencyRanks: input.recencyRanks,
                 secondaryRanks: input.secondaryRanks,
+                inflectionBaseRanks: input.inflectionBaseRanks,
                 contextualCandidates: input.contextualCandidates,
                 prioritizeKana: input.prioritizeKana,
                 includeAutomaticKanaCandidates:
@@ -278,6 +296,30 @@ public struct CandidateAssembly: Sendable {
                     ? attributes.union(.preservesLongVowelNotation)
                     : attributes
             )
+        }
+    }
+
+    private func makeInflectionCandidates(
+        _ values: [GeneratedInflectionCandidate],
+        source: CandidateSourceKind,
+        reading: String
+    ) -> [Candidate] {
+        values.flatMap { value in
+            if value.bases.isEmpty {
+                return [Candidate(
+                    storageText: value.text,
+                    source: source,
+                    reading: reading
+                )]
+            }
+            return value.bases.map {
+                Candidate(
+                    storageText: value.text,
+                    source: source,
+                    reading: reading,
+                    inflectionBase: $0
+                )
+            }
         }
     }
 }

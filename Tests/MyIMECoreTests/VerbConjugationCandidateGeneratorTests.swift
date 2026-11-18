@@ -160,6 +160,22 @@ struct VerbConjugationCandidateGeneratorTests {
     }
 
     @Test
+    func keepsTheOriginalVerbOnAuxiliaryCompounds() throws {
+        let candidate = try #require(
+            generator.generatedCandidates(for: "nokotteshimatteiru").first {
+                $0.text == "残ってしまっている"
+            }
+        )
+
+        #expect(candidate.bases == [InflectionBaseIdentity(
+            kind: .verb,
+            reading: "nokoru",
+            surface: "残る",
+            inflectionType: "godan"
+        )])
+    }
+
+    @Test
     func permitsOnlyRegisteredTwoLevelAuxiliaryPairs() {
         #expect(!generator.candidates(for: "kaiteoiteiru").contains(
             "書いておいている"
@@ -368,6 +384,22 @@ struct VerbConjugationCandidateGeneratorTests {
         expected: String
     ) {
         #expect(generator.candidates(for: input).contains(expected))
+    }
+
+    @Test
+    func keepsTheOriginalVerbOnPotentialStateChanges() throws {
+        let candidate = try #require(
+            generator.generatedCandidates(for: "tsukaenakunatta").first {
+                $0.text == "使えなくなった"
+            }
+        )
+
+        #expect(candidate.bases == [InflectionBaseIdentity(
+            kind: .verb,
+            reading: "tsukau",
+            surface: "使う",
+            inflectionType: "godan"
+        )])
     }
 
     @Test

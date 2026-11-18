@@ -18,7 +18,14 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         for reading: String,
         conjugations: VerbConjugationDictionary
     ) -> [String] {
-        Self.candidates(for: reading, conjugations: conjugations) {
+        generatedCandidates(for: reading, conjugations: conjugations).map(\.text)
+    }
+
+    public func generatedCandidates(
+        for reading: String,
+        conjugations: VerbConjugationDictionary
+    ) -> [GeneratedInflectionCandidate] {
+        Self.generatedCandidates(for: reading, conjugations: conjugations) {
             baseReading in
             candidatesByReading[baseReading] ?? []
         }
@@ -72,10 +79,23 @@ public struct VerbInflectionCandidateGenerator: Sendable {
         conjugations: VerbConjugationDictionary,
         lookup: (String) -> [String]
     ) -> [String] {
+        generatedCandidates(
+            for: reading,
+            conjugations: conjugations,
+            lookup: lookup
+        ).map(\.text)
+    }
+
+    public static func generatedCandidates(
+        for reading: String,
+        conjugations: VerbConjugationDictionary,
+        lookup: (String) -> [String]
+    ) -> [GeneratedInflectionCandidate] {
         let normalized = RomajiCanonicalizer.canonicalInput(
             from: reading
         )
-        var result: [String] = []
+        var order: [String] = []
+        var basesByCandidate: [String: Set<InflectionBaseIdentity>] = [:]
         for rule in Self.rules(for: normalized) {
             let kanaReading = RomajiConverter().hiragana(from: rule.baseReading)
             let baseCandidates = lookup(rule.baseReading)
@@ -92,12 +112,36 @@ public struct VerbInflectionCandidateGenerator: Sendable {
                 let inflected = String(
                     candidate.dropLast(rule.baseEnding.count)
                 ) + rule.inflectedEnding
-                if !result.contains(inflected) {
-                    result.append(inflected)
+                let matchingEntries = conjugations.entries(
+                    for: rule.baseReading
+                ).filter {
+                    $0.surface == candidate
+                        && rule.classes.contains($0.conjugationClass)
+                }
+                guard !matchingEntries.isEmpty else { continue }
+                if basesByCandidate[inflected] == nil {
+                    order.append(inflected)
+                }
+                for entry in matchingEntries {
+                    basesByCandidate[inflected, default: []].insert(
+                        InflectionBaseIdentity(
+                            kind: .verb,
+                            reading: entry.reading,
+                            surface: entry.surface,
+                            inflectionType: entry.conjugationClass.rawValue
+                        )
+                    )
                 }
             }
         }
-        return result
+        return order.map { candidate in
+            GeneratedInflectionCandidate(
+                text: candidate,
+                bases: (basesByCandidate[candidate] ?? []).sorted {
+                    $0.historyKey < $1.historyKey
+                }
+            )
+        }
     }
 
     private static func rules(for reading: String) -> [Rule] {

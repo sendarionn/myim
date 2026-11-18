@@ -9,6 +9,7 @@ public struct CandidatePipeline: Sendable {
         public let recencyRanks: [String: Int]
         /// Ranks used within `secondary` instead of `recencyRanks`
         public let secondaryRanks: [String: Int]?
+        public let inflectionBaseRanks: [String: Int]
         public let contextualCandidates: [String]
         public let prioritizeKana: Bool
         public let includeAutomaticKanaCandidates: Bool
@@ -22,6 +23,7 @@ public struct CandidatePipeline: Sendable {
             trailing: [Candidate] = [],
             recencyRanks: [String: Int],
             secondaryRanks: [String: Int]? = nil,
+            inflectionBaseRanks: [String: Int] = [:],
             contextualCandidates: [String] = [],
             prioritizeKana: Bool,
             includeAutomaticKanaCandidates: Bool = true
@@ -34,6 +36,7 @@ public struct CandidatePipeline: Sendable {
             self.trailing = trailing
             self.recencyRanks = recencyRanks
             self.secondaryRanks = secondaryRanks
+            self.inflectionBaseRanks = inflectionBaseRanks
             self.contextualCandidates = contextualCandidates
             self.prioritizeKana = prioritizeKana
             self.includeAutomaticKanaCandidates = includeAutomaticKanaCandidates
@@ -84,6 +87,49 @@ public struct CandidatePipeline: Sendable {
     public init() {}
 
     public func candidates(from input: StructuredInput) -> [Candidate] {
+        let secondaryByText = Dictionary(
+            grouping: input.secondary,
+            by: \.storageText
+        ).mapValues { matches in
+            matches.dropFirst().reduce(matches[0]) {
+                $0.mergingOrigins(from: $1)
+            }
+        }
+        let secondaryOrder = Dictionary(
+            input.secondary.enumerated().map {
+                ($0.element.storageText, $0.offset)
+            },
+            uniquingKeysWith: min
+        )
+        let directRanks = input.secondaryRanks ?? [:]
+        let directlyRanked = directRanks.keys.filter {
+            secondaryByText[$0] != nil
+        }.sorted {
+            if directRanks[$0] != directRanks[$1] {
+                return (directRanks[$0] ?? 0) > (directRanks[$1] ?? 0)
+            }
+            return (secondaryOrder[$0] ?? .max)
+                < (secondaryOrder[$1] ?? .max)
+        }
+        let directlyRankedSet = Set(directlyRanked)
+        let baseRanked = secondaryByText.compactMap {
+            text, candidate -> (text: String, rank: Int)? in
+            guard !directlyRankedSet.contains(text),
+                  let base = candidate.uniqueInflectionBase,
+                  let rank = input.inflectionBaseRanks[base.historyKey]
+            else { return nil }
+            return (text, rank)
+        }.sorted {
+            if $0.rank != $1.rank { return $0.rank > $1.rank }
+            return (secondaryOrder[$0.text] ?? .max)
+                < (secondaryOrder[$1.text] ?? .max)
+        }.map(\.text)
+        let rankedSecondary = directlyRanked + baseRanked
+        let effectiveSecondaryRanks = Dictionary(
+            uniqueKeysWithValues: rankedSecondary.enumerated().map {
+                ($0.element, rankedSecondary.count - $0.offset)
+            }
+        )
         let orderedTexts = candidates(from: Input(
             kana: input.kana.map(\.storageText),
             direct: input.direct.map(\.storageText),
@@ -92,7 +138,7 @@ public struct CandidatePipeline: Sendable {
             english: input.english.map(\.storageText),
             trailing: input.trailing.map(\.storageText),
             recencyRanks: input.recencyRanks,
-            secondaryRanks: input.secondaryRanks,
+            secondaryRanks: effectiveSecondaryRanks,
             contextualCandidates: input.contextualCandidates,
             prioritizeKana: input.prioritizeKana,
             includeAutomaticKanaCandidates:

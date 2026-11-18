@@ -492,6 +492,99 @@ struct BundledVerbConjugationTests {
     }
 
     @Test
+    func selectedPastFormPromotesTheSameVerbInAnotherInflection() throws {
+        let source = try #require(Self.source)
+        let pastCandidates = source.candidates(for: .init(
+            input: "kaita",
+            conversionReading: "kaita"
+        ))
+        let drawingPast = try #require(pastCandidates.first {
+            $0.storageText == "描いた"
+        })
+        let drawingBase = try #require(drawingPast.uniqueInflectionBase)
+        #expect(drawingBase.reading == "kaku")
+        #expect(drawingBase.surface == "描く")
+
+        var history = CandidateSelectionHistory()
+        history.record(
+            "描いた",
+            reading: "kaita",
+            inflectionBase: drawingBase
+        )
+
+        let candidates = source.candidates(for: .init(
+            input: "kakanai",
+            conversionReading: "kakanai",
+            selectionHistory: history
+        )).map(\.storageText)
+
+        let drawing = try #require(candidates.firstIndex(of: "描かない"))
+        let writing = try #require(candidates.firstIndex(of: "書かない"))
+        #expect(drawing < writing)
+    }
+
+    @Test
+    func exactInflectionSelectionOverridesBaseVerbSelection() throws {
+        let source = try #require(Self.source)
+        let pastCandidates = source.candidates(for: .init(
+            input: "kaita",
+            conversionReading: "kaita"
+        ))
+        let drawingPast = try #require(pastCandidates.first {
+            $0.storageText == "描いた"
+        })
+        let drawingBase = try #require(drawingPast.uniqueInflectionBase)
+
+        let negativeCandidates = source.candidates(for: .init(
+            input: "kakanai",
+            conversionReading: "kakanai"
+        ))
+        let writingNegative = try #require(negativeCandidates.first {
+            $0.storageText == "書かない"
+        })
+        let writingBase = try #require(writingNegative.uniqueInflectionBase)
+
+        var history = CandidateSelectionHistory()
+        history.record(
+            "描いた",
+            reading: "kaita",
+            inflectionBase: drawingBase
+        )
+        history.record(
+            "書かない",
+            reading: "kakanai",
+            inflectionBase: writingBase
+        )
+
+        let candidates = source.candidates(for: .init(
+            input: "kakanai",
+            conversionReading: "kakanai",
+            selectionHistory: history
+        )).map(\.storageText)
+
+        let drawing = try #require(candidates.firstIndex(of: "描かない"))
+        let writing = try #require(candidates.firstIndex(of: "書かない"))
+        #expect(writing < drawing)
+    }
+
+    @Test
+    func oldStringOnlyHistoryDoesNotGuessTheBaseVerb() throws {
+        let source = try #require(Self.source)
+        var history = CandidateSelectionHistory()
+        history.record("描いた", reading: "kaita")
+
+        let candidates = source.candidates(for: .init(
+            input: "kakanai",
+            conversionReading: "kakanai",
+            selectionHistory: history
+        )).map(\.storageText)
+
+        let drawing = try #require(candidates.firstIndex(of: "描かない"))
+        let writing = try #require(candidates.firstIndex(of: "書かない"))
+        #expect(writing < drawing)
+    }
+
+    @Test
     func keepsNounsAndExactWordsAhead() throws {
         #expect(try candidates(for: "kitai").first == "期待")
         #expect(try candidates(for: "kaitai").first == "解体")

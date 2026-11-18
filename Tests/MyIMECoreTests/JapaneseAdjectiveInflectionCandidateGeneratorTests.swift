@@ -44,4 +44,19 @@ struct JapaneseAdjectiveInflectionCandidateGeneratorTests {
             "早かった"
         ])
     }
+
+    @Test
+    func keepsTheDictionaryAdjectiveOnGeneratedForms() throws {
+        let candidate = try #require(
+            generator.generatedCandidates(for: "osokunakatta").first
+        )
+
+        #expect(candidate.text == "遅くなかった")
+        #expect(candidate.bases == [InflectionBaseIdentity(
+            kind: .adjective,
+            reading: "osoi",
+            surface: "遅い",
+            inflectionType: "i-adjective"
+        )])
+    }
 }

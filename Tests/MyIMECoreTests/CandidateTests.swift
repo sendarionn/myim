@@ -40,6 +40,33 @@ struct CandidateTests {
     }
 
     @Test
+    func doesNotChooseABaseWhenMergedOriginsAreAmbiguous() {
+        let drawing = InflectionBaseIdentity(
+            kind: .verb,
+            reading: "kaku",
+            surface: "描く",
+            inflectionType: "godan"
+        )
+        let writing = InflectionBaseIdentity(
+            kind: .verb,
+            reading: "kaku",
+            surface: "書く",
+            inflectionType: "godan"
+        )
+        let merged = Candidate(
+            storageText: "かいた",
+            source: .verbInflection,
+            inflectionBase: drawing
+        ).mergingOrigins(from: Candidate(
+            storageText: "かいた",
+            source: .verbInflection,
+            inflectionBase: writing
+        ))
+
+        #expect(merged.uniqueInflectionBase == nil)
+    }
+
+    @Test
     func excludesOnlyDynamicDateTimeOnlyCandidatesFromSelectionHistory() {
         let dynamic = Candidate(
             storageText: "20261031",

@@ -37,17 +37,20 @@ public struct CandidateOrigin: Equatable, Sendable {
     public let reading: String?
     public let isLearnable: Bool
     public let attributes: Attributes
+    public let inflectionBase: InflectionBaseIdentity?
 
     public init(
         source: CandidateSourceKind,
         reading: String? = nil,
         isLearnable: Bool = false,
-        attributes: Attributes = []
+        attributes: Attributes = [],
+        inflectionBase: InflectionBaseIdentity? = nil
     ) {
         self.source = source
         self.reading = reading
         self.isLearnable = isLearnable
         self.attributes = attributes
+        self.inflectionBase = inflectionBase
     }
 }
 
@@ -65,6 +68,7 @@ public struct Candidate: Equatable, Sendable {
         reading: String? = nil,
         isLearnable: Bool = false,
         attributes: CandidateOrigin.Attributes = [],
+        inflectionBase: InflectionBaseIdentity? = nil,
         priority: Int? = nil,
         contextualMetadata: [String: String] = [:]
     ) {
@@ -73,7 +77,8 @@ public struct Candidate: Equatable, Sendable {
             source: source,
             reading: reading,
             isLearnable: isLearnable,
-            attributes: attributes
+            attributes: attributes,
+            inflectionBase: inflectionBase
         )]
         self.priority = priority
         self.contextualMetadata = contextualMetadata
@@ -115,6 +120,11 @@ public struct Candidate: Equatable, Sendable {
 
     public var selectionHistoryValue: String? {
         allowsSelectionHistory ? storageText : dynamicPreferenceID
+    }
+
+    public var uniqueInflectionBase: InflectionBaseIdentity? {
+        let bases = Set(origins.compactMap(\.inflectionBase))
+        return bases.count == 1 ? bases.first : nil
     }
 
     public func hasSource(_ source: CandidateSourceKind) -> Bool {

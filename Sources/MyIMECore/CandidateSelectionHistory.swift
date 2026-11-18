@@ -12,6 +12,7 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
 
     public private(set) var ranks: [String: Int]
     private var statsByReading: [String: [String: Stat]]
+    private var ranksByInflectionBase: [String: Int]
     private var maximumEntryCount: Int?
     private var nextRank: Int
 
@@ -26,14 +27,27 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         )
         self.ranks = recentRanks
         statsByReading = [:]
+        ranksByInflectionBase = [:]
         self.nextRank = (recentRanks.values.max() ?? 0) + 1
     }
 
-    public mutating func record(_ candidate: String, reading: String? = nil) {
-        record(candidate, readings: reading.map { [$0] } ?? [])
+    public mutating func record(
+        _ candidate: String,
+        reading: String? = nil,
+        inflectionBase: InflectionBaseIdentity? = nil
+    ) {
+        record(
+            candidate,
+            readings: reading.map { [$0] } ?? [],
+            inflectionBase: inflectionBase
+        )
     }
 
-    public mutating func record(_ candidate: String, readings: [String]) {
+    public mutating func record(
+        _ candidate: String,
+        readings: [String],
+        inflectionBase: InflectionBaseIdentity? = nil
+    ) {
         guard !candidate.isEmpty else {
             return
         }
@@ -53,12 +67,24 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
             )
             statsByReading[reading] = readingStats
         }
+        if let inflectionBase {
+            ranksByInflectionBase[inflectionBase.historyKey] = nextRank
+        }
         nextRank += 1
         if let maximumEntryCount, ranks.count > maximumEntryCount {
             ranks = Self.compacted(ranks, limit: maximumEntryCount)
             nextRank = (ranks.values.max() ?? 0) + 1
         }
         compactReadingsIfNeeded()
+        compactInflectionBasesIfNeeded()
+    }
+
+    public func rank(for inflectionBase: InflectionBaseIdentity) -> Int? {
+        ranksByInflectionBase[inflectionBase.historyKey]
+    }
+
+    public var inflectionBaseRanks: [String: Int] {
+        ranksByInflectionBase
     }
 
     public mutating func preserveRank(_ rank: Int, for candidate: String) {
@@ -71,10 +97,16 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         }
     }
 
-    public mutating func remove(_ candidates: Set<String>) {
-        guard !candidates.isEmpty else { return }
+    public mutating func remove(
+        _ candidates: Set<String>,
+        inflectionBases: Set<InflectionBaseIdentity> = []
+    ) {
+        guard !candidates.isEmpty || !inflectionBases.isEmpty else { return }
         for candidate in candidates {
             ranks.removeValue(forKey: candidate)
+        }
+        for base in inflectionBases {
+            ranksByInflectionBase.removeValue(forKey: base.historyKey)
         }
         for reading in Array(statsByReading.keys) {
             var stats = statsByReading[reading] ?? [:]
@@ -263,9 +295,19 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
         })
     }
 
+    private mutating func compactInflectionBasesIfNeeded() {
+        guard let maximumEntryCount,
+              ranksByInflectionBase.count > maximumEntryCount else { return }
+        ranksByInflectionBase = Self.compacted(
+            ranksByInflectionBase,
+            limit: maximumEntryCount
+        )
+    }
+
     private enum CodingKeys: String, CodingKey {
         case ranks
         case statsByReading
+        case ranksByInflectionBase
         case maximumEntryCount
         case nextRank
     }
@@ -288,6 +330,10 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
             [String: [String: Stat]].self,
             forKey: .statsByReading
         ) ?? [:]
+        ranksByInflectionBase = try container.decodeIfPresent(
+            [String: Int].self,
+            forKey: .ranksByInflectionBase
+        ) ?? [:]
         for reading in Array(statsByReading.keys) {
             statsByReading[reading] = Self.compactedStats(
                 statsByReading[reading] ?? [:],
@@ -299,5 +345,6 @@ public struct CandidateSelectionHistory: Equatable, Codable, Sendable {
             (ranks.values.max() ?? 0) + 1
         )
         compactReadingsIfNeeded()
+        compactInflectionBasesIfNeeded()
     }
 }

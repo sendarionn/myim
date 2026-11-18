@@ -167,12 +167,19 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     private struct AuxiliaryCompound: Sendable {
         let entry: VerbConjugationDictionary.Entry
         let finalAuxiliary: AuxiliaryVerbID
+        let base: InflectionBaseIdentity
     }
 
     private struct ResolvedVerbForm: Sendable {
         let reading: String
         let surface: String
         let cost: Int
+        let base: InflectionBaseIdentity
+    }
+
+    private struct CompoundVerb: Sendable {
+        let entry: VerbConjugationDictionary.Entry
+        let base: InflectionBaseIdentity
     }
 
     private struct VerbFormCacheKey: Hashable, Sendable {
@@ -393,15 +400,32 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     }
 
     public func candidates(for input: String) -> [String] {
+        generatedCandidates(for: input).map(\.text)
+    }
+
+    public func generatedCandidates(
+        for input: String
+    ) -> [GeneratedInflectionCandidate] {
         let reading = RomajiCanonicalizer.canonicalInput(from: input)
-        var costs: [String: (cost: Int, order: Int)] = [:]
-        var bareContinuatives: [(surface: String, cost: Int)] = []
+        var costs: [
+            String: (cost: Int, order: Int, bases: Set<InflectionBaseIdentity>)
+        ] = [:]
+        var bareContinuatives: [
+            (surface: String, cost: Int, base: InflectionBaseIdentity)
+        ] = []
         var primaryVerbFormCache: [VerbFormCacheKey: [ResolvedVerbForm]] = [:]
-        func record(_ candidate: String, cost: Int) {
+        func record(
+            _ candidate: String,
+            cost: Int,
+            base: InflectionBaseIdentity
+        ) {
             let order = costs[candidate]?.order ?? costs.count
+            var bases = costs[candidate]?.bases ?? []
+            bases.insert(base)
             costs[candidate] = (
                 min(cost, costs[candidate]?.cost ?? .max),
-                order
+                order,
+                bases
             )
         }
         for following in Self.followingExpressions
@@ -424,7 +448,8 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                     ), conjugated.reading == formReading else { continue }
                     record(
                         conjugated.surface + following.surfaceSuffix,
-                        cost: entry.cost
+                        cost: entry.cost,
+                        base: Self.baseIdentity(for: entry)
                     )
                 }
             }
@@ -465,11 +490,16 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                         ? entry.cost + Self.commonVerbCost
                         : entry.cost
                     if following.isBareContinuative {
-                        bareContinuatives.append((conjugated.surface, cost))
+                        bareContinuatives.append((
+                            conjugated.surface,
+                            cost,
+                            Self.baseIdentity(for: entry)
+                        ))
                     } else {
                         record(
                             conjugated.surface + following.surfaceSuffix,
-                            cost: cost
+                            cost: cost,
+                            base: Self.baseIdentity(for: entry)
                         )
                     }
                 }
@@ -495,12 +525,17 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 ), conjugated.reading == formReading else { continue }
                 if following.isBareContinuative {
                     bareContinuatives.append(
-                        (conjugated.surface, auxiliary.entry.cost)
+                        (
+                            conjugated.surface,
+                            auxiliary.entry.cost,
+                            auxiliary.base
+                        )
                     )
                 } else {
                     record(
                         conjugated.surface + following.surfaceSuffix,
-                        cost: auxiliary.entry.cost
+                        cost: auxiliary.entry.cost,
+                        base: auxiliary.base
                     )
                 }
             }
@@ -515,33 +550,56 @@ public struct VerbConjugationCandidateGenerator: Sendable {
             for compound in compoundVerbs(
                 forming: formReading,
                 as: following.requiredVerbForm
-            ) where following.allows(compound) {
+            ) where following.allows(compound.entry) {
                 guard let conjugated = Self.conjugate(
-                    compound,
+                    compound.entry,
                     to: following.requiredVerbForm
                 ), conjugated.reading == formReading else { continue }
                 if following.isBareContinuative {
                     bareContinuatives.append(
-                        (conjugated.surface, compound.cost)
+                        (
+                            conjugated.surface,
+                            compound.entry.cost,
+                            compound.base
+                        )
                     )
                 } else {
                     record(
                         conjugated.surface + following.surfaceSuffix,
-                        cost: compound.cost
+                        cost: compound.entry.cost,
+                        base: compound.base
                     )
                 }
             }
         }
         // A bare stem such as つかれ fits many verbs, so only the most
         // common ones are offered
-        for (surface, cost) in bareContinuatives
+        for (surface, cost, base) in bareContinuatives
             .sorted(by: { $0.cost < $1.cost })
             .prefix(Self.maximumBareContinuativeCandidates) {
-            record(surface, cost: cost)
+            record(surface, cost: cost, base: base)
         }
         return costs.sorted {
             ($0.value.cost, $0.value.order) < ($1.value.cost, $1.value.order)
-        }.map(\.key)
+        }.map { item in
+            GeneratedInflectionCandidate(
+                text: item.key,
+                bases: item.value.bases.sorted {
+                    $0.historyKey < $1.historyKey
+                }
+            )
+        }
+    }
+
+    private static func baseIdentity(
+        for entry: VerbConjugationDictionary.Entry
+    ) -> InflectionBaseIdentity {
+        InflectionBaseIdentity(
+            kind: .verb,
+            reading: entry.reading,
+            surface: entry.surface,
+            inflectionType: entry.conjugationClass.rawValue
+        )
     }
 
     /// Potential forms are made from common godan verbs written with
@@ -572,8 +630,8 @@ public struct VerbConjugationCandidateGenerator: Sendable {
     private func compoundVerbs(
         forming formReading: String,
         as form: VerbConjugationForm
-    ) -> [VerbConjugationDictionary.Entry] {
-        var compounds: [VerbConjugationDictionary.Entry] = []
+    ) -> [CompoundVerb] {
+        var compounds: [CompoundVerb] = []
         for compoundReading in Self.baseReadings(
             forming: formReading,
             as: form
@@ -611,11 +669,14 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 let cheapest = heads.map(\.entry.cost).min() ?? 0
                 for head in heads
                 where head.entry.cost <= cheapest + Self.compoundHeadCostRange {
-                    compounds.append(VerbConjugationDictionary.Entry(
-                        reading: head.continuative.reading + rule.reading,
-                        surface: head.continuative.surface + rule.surface,
-                        conjugationClass: rule.conjugationClass,
-                        cost: head.entry.cost + rule.costPenalty
+                    compounds.append(CompoundVerb(
+                        entry: VerbConjugationDictionary.Entry(
+                            reading: head.continuative.reading + rule.reading,
+                            surface: head.continuative.surface + rule.surface,
+                            conjugationClass: rule.conjugationClass,
+                            cost: head.entry.cost + rule.costPenalty
+                        ),
+                        base: Self.baseIdentity(for: head.entry)
                     ))
                 }
             }
@@ -670,7 +731,8 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                         precedingForms.append(ResolvedVerbForm(
                             reading: conjugated.reading,
                             surface: conjugated.surface,
-                            cost: preceding.entry.cost
+                            cost: preceding.entry.cost,
+                            base: preceding.base
                         ))
                     }
                 }
@@ -683,7 +745,8 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                             conjugationClass: rule.conjugationClass,
                             cost: preceding.cost
                         ),
-                        finalAuxiliary: rule.id
+                        finalAuxiliary: rule.id,
+                        base: preceding.base
                     ))
                 }
             }
@@ -710,7 +773,8 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                 forms.append(ResolvedVerbForm(
                     reading: conjugated.reading,
                     surface: conjugated.surface,
-                    cost: entry.cost
+                    cost: entry.cost,
+                    base: Self.baseIdentity(for: entry)
                 ))
             }
         }
@@ -736,19 +800,21 @@ public struct VerbConjugationCandidateGenerator: Sendable {
                         surface: conjugated.surface,
                         cost: rule.voice == .potential
                             ? entry.cost + Self.commonVerbCost
-                            : entry.cost
+                            : entry.cost,
+                        base: Self.baseIdentity(for: entry)
                     ))
                 }
             }
         }
 
         for compound in compoundVerbs(forming: formReading, as: form) {
-            guard let conjugated = Self.conjugate(compound, to: form),
+            guard let conjugated = Self.conjugate(compound.entry, to: form),
                   conjugated.reading == formReading else { continue }
             forms.append(ResolvedVerbForm(
                 reading: conjugated.reading,
                 surface: conjugated.surface,
-                cost: compound.cost
+                cost: compound.entry.cost,
+                base: compound.base
             ))
         }
         cache[cacheKey] = forms

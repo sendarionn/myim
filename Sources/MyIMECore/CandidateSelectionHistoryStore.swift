@@ -39,13 +39,24 @@ public final class CandidateSelectionHistoryStore {
         candidates.contains { history.ranks[$0] != nil }
     }
 
-    public func record(_ candidate: String, readings: [String]) {
-        history.record(candidate, readings: readings)
+    public func record(
+        _ candidate: String,
+        readings: [String],
+        inflectionBase: InflectionBaseIdentity? = nil
+    ) {
+        history.record(
+            candidate,
+            readings: readings,
+            inflectionBase: inflectionBase
+        )
         writer.schedule(history)
     }
 
-    public func remove(_ candidates: Set<String>) {
-        history.remove(candidates)
+    public func remove(
+        _ candidates: Set<String>,
+        inflectionBases: Set<InflectionBaseIdentity> = []
+    ) {
+        history.remove(candidates, inflectionBases: inflectionBases)
         writer.schedule(history)
     }
 
