@@ -1,12 +1,61 @@
 @preconcurrency import AppKit
+import CoreText
 import MyIMECore
+
+private final class EmojiCellButton: NSButton {
+    override func draw(_ dirtyRect: NSRect) {
+        guard !title.isEmpty,
+              let context = NSGraphicsContext.current?.cgContext else {
+            return
+        }
+
+        context.saveGState()
+        defer { context.restoreGState() }
+        if isFlipped {
+            context.translateBy(x: 0, y: bounds.height)
+            context.scaleBy(x: 1, y: -1)
+        }
+
+        let font = font ?? NSFont(name: "Apple Color Emoji", size: 22)
+            ?? NSFont.systemFont(ofSize: 22)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(
+            string: title,
+            attributes: [.font: font]
+        ))
+        var imageBounds = CTLineGetImageBounds(line, context)
+        if imageBounds.isNull || imageBounds.isEmpty {
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            var leading: CGFloat = 0
+            let width = CGFloat(CTLineGetTypographicBounds(
+                line,
+                &ascent,
+                &descent,
+                &leading
+            ))
+            imageBounds = NSRect(
+                x: 0,
+                y: -descent,
+                width: width,
+                height: ascent + descent
+            )
+        }
+
+        context.textMatrix = .identity
+        context.textPosition = CGPoint(
+            x: bounds.midX - imageBounds.midX,
+            y: bounds.midY - imageBounds.midY
+        )
+        CTLineDraw(line, context)
+    }
+}
 
 private final class EmojiCollectionItem: NSCollectionViewItem {
     override func loadView() {
         // The button takes the click itself, as the recent emojis do; the
         // collection view tracks a mouse-down to its mouse-up for selection
         // and dragging, which a click gesture on it does not receive
-        let button = NSButton(
+        let button = EmojiCellButton(
             title: "",
             target: nil,
             action: nil
@@ -112,12 +161,11 @@ final class EmojiWindowController: NSObject {
     ) / CGFloat(columnCount)
     private static let recentCellWidth = cellSize
     private static let recentCellHeight = cellSize
-    private static let maximumListHeight: CGFloat = 155
     private static let recentContentHeight = recentCellHeight * 2 + spacing
     private static let recentAreaHeight = recentContentHeight
-        + outerPadding * 2
     private static let panelChromeHeight = recentAreaHeight
         + outerPadding * 3 + 1
+    private static let maximumListHeight = panelWidth - panelChromeHeight
     private static let comparisonPanelSize = NSSize(width: 240, height: 88)
     private static let fallbackEmojis = Array(
         "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪"
@@ -573,9 +621,9 @@ final class EmojiWindowController: NSObject {
         recentStack.alignment = .leading
         recentStack.spacing = Self.spacing
         recentStack.edgeInsets = NSEdgeInsets(
-            top: Self.outerPadding,
+            top: 0,
             left: 0,
-            bottom: Self.outerPadding,
+            bottom: 0,
             right: 0
         )
         recentSeparator.wantsLayer = true
@@ -709,11 +757,11 @@ final class EmojiWindowController: NSObject {
             + rowCount * Self.cellSize
             + max(rowCount - 1, 0) * Self.spacing
             + layout.sectionInset.bottom
-        let listHeight = min(documentHeight, Self.maximumListHeight)
+        let listHeight = panel.frame.width
+            - (showsRecentArea ? Self.panelChromeHeight : 0)
         let size = NSSize(
             width: panel.frame.width,
-            height: listHeight
-                + (showsRecentArea ? Self.panelChromeHeight : 0)
+            height: panel.frame.width
         )
         panel.setContentSize(size)
         panel.contentView?.frame = NSRect(origin: .zero, size: size)
@@ -861,10 +909,16 @@ final class EmojiWindowController: NSObject {
                 recentHistory.emojis.count
             )
             for index in rowStart..<rowEnd {
-                let button = NSButton(title: recentHistory.emojis[index], target: self, action: #selector(selectRecentEmoji(_:)))
+                let button = EmojiCellButton(
+                    title: recentHistory.emojis[index],
+                    target: self,
+                    action: #selector(selectRecentEmoji(_:))
+                )
                 button.tag = index
-                button.isBordered = false
                 button.font = NSFont(name: "Apple Color Emoji", size: 22)
+                button.alignment = .center
+                button.isBordered = false
+                button.focusRingType = .none
                 button.wantsLayer = true
                 button.layer?.cornerRadius = 0
                 button.widthAnchor.constraint(
@@ -1058,14 +1112,16 @@ final class EmojiWindowController: NSObject {
             row.spacing = Self.spacing
             let rowEnd = min(rowStart + Self.columnCount, entries.count)
             for index in rowStart..<rowEnd {
-                let button = NSButton(
+                let button = EmojiCellButton(
                     title: entries[index].emoji,
                     target: self,
                     action: #selector(commitClickedVariation(_:))
                 )
                 button.tag = index
-                button.isBordered = false
                 button.font = NSFont(name: "Apple Color Emoji", size: 22)
+                button.alignment = .center
+                button.isBordered = false
+                button.focusRingType = .none
                 button.wantsLayer = true
                 button.layer?.cornerRadius = 0
                 button.widthAnchor.constraint(
