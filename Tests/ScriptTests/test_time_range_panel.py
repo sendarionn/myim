@@ -76,6 +76,26 @@ class TimeRangePanelTests(unittest.TestCase):
         back = self.body(self.controller, "private func returnToTimeSelection(")
         self.assertIn("resumeTimeRangeSelection(", back)
 
+    def test_holding_a_knob_still_is_checked_on_a_timer(self):
+        start = self.body(self.view, "private func startStillnessTracking(")
+        self.assertIn("Timer(timeInterval:", start)
+        self.assertIn("forMode: .modalPanel", start)
+        dragged = self.body(self.view, "override func mouseDragged(")
+        self.assertIn("> Self.stillTolerance", dragged)
+        self.assertIn("dragFinely(to: point)", dragged)
+
+    def test_every_end_of_a_drag_drops_the_timer_and_the_hour(self):
+        end = self.body(self.view, "func endDrag()")
+        self.assertIn("stillnessTimer?.invalidate()", end)
+        self.assertIn("fineDrag = nil", end)
+        self.assertIn("endDrag()", self.body(self.view, "override func mouseUp("))
+        self.assertIn("endDrag()", self.body(self.view, "func begin(with"))
+        for caller in ["func hide()", "private func showClock()",
+                       "func runSelection("]:
+            with self.subTest(caller=caller):
+                self.assertIn("rangeView.endDrag()",
+                              self.body(self.window, caller))
+
     def test_only_voiceover_names_describe_the_parts(self):
         drawn = re.findall(r'drawCentered\(\s*"([^"]*)"', self.view)
         self.assertEqual(drawn, ["〜"])

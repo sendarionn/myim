@@ -20,6 +20,15 @@ final class TimeRangeView: NSView {
     private var editingText: String?
     private var showsInvalidText = false
     private var draggingEdge: Edge?
+    /// Set once the held knob has stayed still; the rail then shows an hour
+    private var fineDrag: TimeRangeFineDrag?
+    private var stillnessTimer: Timer?
+    /// Where the cursor last moved more than the tolerance, and when
+    private var stillOrigin: NSPoint = .zero
+    private var stillSince: TimeInterval = 0
+    private var lastDragPoint: NSPoint = .zero
+    private static let stillDuration: TimeInterval = 0.4
+    private static let stillTolerance: CGFloat = 3
 
     private let confirmButton = NSButton(title: "↵", target: nil, action: nil)
     private let clockButton = NSButton(title: "", target: nil, action: nil)
@@ -90,7 +99,7 @@ final class TimeRangeView: NSView {
         focusedEdge = .start
         editingText = nil
         showsInvalidText = false
-        draggingEdge = nil
+        endDrag()
         updateAccessibility()
         needsDisplay = true
     }
@@ -198,15 +207,89 @@ final class TimeRangeView: NSView {
         focusedEdge = edge
         draggingEdge = edge
         drag(to: point)
+        startStillnessTracking(at: point)
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard draggingEdge != nil else { return }
-        drag(to: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        lastDragPoint = point
+        if fineDrag != nil {
+            dragFinely(to: point)
+            return
+        }
+        drag(to: point)
+        // Small shakes do not restart the wait
+        if hypot(point.x - stillOrigin.x, point.y - stillOrigin.y)
+            > Self.stillTolerance {
+            stillOrigin = point
+            stillSince = ProcessInfo.processInfo.systemUptime
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
+        endDrag()
+    }
+
+    /// Ends a drag however it stops; the times stay as they were moved, and
+    /// the rail shows the whole day again
+    func endDrag() {
+        stillnessTimer?.invalidate()
+        stillnessTimer = nil
         draggingEdge = nil
+        if fineDrag != nil {
+            fineDrag = nil
+            updateAccessibility()
+            needsDisplay = true
+        }
+    }
+
+    /// Checked on a timer, so holding the cursor still with no events also
+    /// switches to the hour
+    private func startStillnessTracking(at point: NSPoint) {
+        stillnessTimer?.invalidate()
+        stillOrigin = point
+        lastDragPoint = point
+        stillSince = ProcessInfo.processInfo.systemUptime
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+            self?.checkStillness()
+        }
+        stillnessTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        RunLoop.main.add(timer, forMode: .modalPanel)
+        RunLoop.main.add(timer, forMode: .eventTracking)
+    }
+
+    private func checkStillness() {
+        guard let draggingEdge, fineDrag == nil else {
+            stillnessTimer?.invalidate()
+            stillnessTimer = nil
+            return
+        }
+        guard ProcessInfo.processInfo.systemUptime - stillSince
+            >= Self.stillDuration else { return }
+        stillnessTimer?.invalidate()
+        stillnessTimer = nil
+        // The knob keeps its place and time; the cursor from here on moves
+        // it by the minute
+        fineDrag = TimeRangeFineDrag(
+            edge: draggingEdge,
+            range: range,
+            knobFraction: Double(range.minutes(of: draggingEdge))
+                / Double(TimeRangeSelection.dayMinutes),
+            cursorX: Double(lastDragPoint.x),
+            railWidth: Double(railRect.width)
+        )
+        updateAccessibility()
+        needsDisplay = true
+    }
+
+    private func dragFinely(to point: NSPoint) {
+        guard var fineDrag else { return }
+        fineDrag.drag(toX: Double(point.x), range: &range)
+        self.fineDrag = fineDrag
+        updateAccessibility()
+        needsDisplay = true
     }
 
     private func drag(to point: NSPoint) {
@@ -254,10 +337,18 @@ final class TimeRangeView: NSView {
         return NSRect(x: x, y: 87, width: width, height: 30)
     }
 
+    /// On the whole day, or on the hour shown while a knob is held still
     private func x(forMinutes minutes: Int) -> CGFloat {
         let rail = railRect
-        return rail.minX
-            + rail.width * CGFloat(minutes) / CGFloat(TimeRangeSelection.dayMinutes)
+        let fraction = fineDrag?.fraction(forMinutes: Double(minutes))
+            ?? Double(minutes) / Double(TimeRangeSelection.dayMinutes)
+        return rail.minX + rail.width * CGFloat(fraction)
+    }
+
+    /// The other knob is drawn only while its time is on the hour shown
+    private func showsKnob(_ edge: Edge) -> Bool {
+        guard let fineDrag, fineDrag.edge != edge else { return true }
+        return fineDrag.contains(minutes: range.minutes(of: edge))
     }
 
     private func knobCenter(for edge: Edge) -> NSPoint {
@@ -337,35 +428,52 @@ final class TimeRangeView: NSView {
 
     private func drawRail() {
         let rail = railRect
-        NSColor.separatorColor.setFill()
+        let dayStartX = max(x(forMinutes: 0), rail.minX)
+        let dayEndX = min(x(forMinutes: TimeRangeSelection.dayMinutes), rail.maxX)
+        // Times outside the day cannot be chosen and are drawn faint
+        NSColor.separatorColor.withAlphaComponent(0.35).setFill()
         NSBezierPath(roundedRect: rail, xRadius: 2, yRadius: 2).fill()
-        let startX = x(forMinutes: range.start)
-        let endX = x(forMinutes: range.end)
-        NSColor.controlAccentColor.setFill()
+        NSColor.separatorColor.setFill()
         NSBezierPath(
             roundedRect: NSRect(
-                x: startX,
+                x: dayStartX,
                 y: rail.minY,
-                width: max(endX - startX, 2),
+                width: max(dayEndX - dayStartX, 0),
                 height: rail.height
             ),
             xRadius: 2,
             yRadius: 2
         ).fill()
 
-        for hour in stride(from: 0, through: 24, by: 6) {
-            let tickX = x(forMinutes: hour * 60)
+        let startX = min(max(x(forMinutes: range.start), rail.minX), rail.maxX)
+        let endX = min(max(x(forMinutes: range.end), rail.minX), rail.maxX)
+        if endX > startX || fineDrag == nil {
+            NSColor.controlAccentColor.setFill()
+            NSBezierPath(
+                roundedRect: NSRect(
+                    x: startX,
+                    y: rail.minY,
+                    width: max(endX - startX, fineDrag == nil ? 2 : 0),
+                    height: rail.height
+                ),
+                xRadius: 2,
+                yRadius: 2
+            ).fill()
+        }
+
+        for (minutes, label) in tickMarks() {
+            let tickX = x(forMinutes: minutes)
             NSColor.tertiaryLabelColor.setFill()
             NSRect(x: tickX - 0.5, y: rail.minY - 4, width: 1, height: 3).fill()
             drawCentered(
-                String(hour),
+                label,
                 at: NSPoint(x: tickX, y: 18),
                 font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
                 color: .secondaryLabelColor
             )
         }
 
-        for edge in [Edge.start, .end] {
+        for edge in [Edge.start, .end] where showsKnob(edge) {
             let center = knobCenter(for: edge)
             let stem = NSBezierPath()
             stem.move(to: NSPoint(x: center.x, y: railY))
@@ -387,6 +495,20 @@ final class TimeRangeView: NSView {
                 knob.stroke()
             }
         }
+    }
+
+    /// Every six hours on the whole day, every ten minutes on the hour
+    /// shown; none outside the day
+    private func tickMarks() -> [(minutes: Int, label: String)] {
+        guard let fineDrag else {
+            return stride(from: 0, through: 24, by: 6).map {
+                ($0 * 60, String($0))
+            }
+        }
+        let first = Int((fineDrag.windowStart / 10).rounded(.up)) * 10
+        return stride(from: first, through: Int(fineDrag.windowEnd), by: 10)
+            .filter { (0...TimeRangeSelection.dayMinutes).contains($0) }
+            .map { ($0, TimeRangeSelection.text(forMinutes: $0)) }
     }
 
     private func drawCentered(

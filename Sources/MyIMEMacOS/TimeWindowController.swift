@@ -705,6 +705,7 @@ final class TimeWindowController: NSObject {
     /// Back to the clock, which keeps its time
     private func showClock() {
         guard isShowingRange else { return }
+        rangeView.endDrag()
         leftRange = (rangeView.range, inputView.currentTime)
         rangeView.isHidden = true
         inputView.isHidden = false
@@ -793,6 +794,8 @@ final class TimeWindowController: NSObject {
         }
         startOutsideClickMonitoring()
         let response = NSApp.runModal(for: panel)
+        // A knob held when the panel closed leaves no timer behind
+        rangeView.endDrag()
         stopOutsideClickMonitoring()
         panel.orderOut(nil)
         if NSApp.activationPolicy() != previousPolicy {
@@ -860,6 +863,7 @@ final class TimeWindowController: NSObject {
     }
 
     func hide() {
+        rangeView.endDrag()
         stopOutsideClickMonitoring()
         if NSApp.modalWindow === panel || NSApp.modalWindow === formatKeyPanel {
             NSApp.abortModal()
