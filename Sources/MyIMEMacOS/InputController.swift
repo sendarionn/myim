@@ -4176,8 +4176,13 @@ final class InputController: IMKInputController {
 
     private func replaceCurrentCandidates(with candidates: [Candidate]) {
         let hadSelection = selectedCandidateIndex != nil
+        let presentedCandidates = EmojiSearchCandidateFilter.candidates(
+            candidates,
+            isEditingEmojiSearch: isEditingEmojiSearch
+                && !emojiWindow.isSearchConfirmed
+        )
         candidateSession.replace(
-            with: candidates,
+            with: presentedCandidates,
             input: conversionInput,
             reading: conversionReading
         )
