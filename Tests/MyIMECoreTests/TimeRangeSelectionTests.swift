@@ -21,13 +21,34 @@ struct TimeRangeSelectionTests {
         #expect(range.end == end)
     }
 
-    /// Dragging one end past the other stops a minute away from it
     @Test
-    func dragStopsAMinuteBeforeTheOtherEnd() throws {
+    func initialTimeIsRoundedToTheNearestSelectableValue() throws {
+        let ordinary = TimeRangeSelection(
+            startingAt: try #require(TimeSelectionState(hour: 13, minute: 7))
+        )
+        let dayEnd = TimeRangeSelection(
+            startingAt: try #require(TimeSelectionState(hour: 23, minute: 58))
+        )
+
+        #expect(ordinary.start == 785)
+        #expect(dayEnd.start == 1435)
+        #expect(dayEnd.end == 1440)
+    }
+
+    @Test
+    func rangeRequiresAtLeastOneFiveMinuteStep() {
+        #expect(TimeRangeSelection(start: 780, end: 780) == nil)
+        #expect(TimeRangeSelection(start: 780, end: 781) == nil)
+        #expect(TimeRangeSelection(start: 780, end: 785) != nil)
+    }
+
+    /// Dragging one end past the other stops one five-minute step away
+    @Test
+    func dragStopsFiveMinutesBeforeTheOtherEnd() throws {
         var range = try #require(TimeRangeSelection(start: 780, end: 840))
 
         range.drag(.start, toFraction: 0.9)
-        #expect(range.start == 839)
+        #expect(range.start == 835)
 
         range.drag(.end, toFraction: 0)
         #expect(range.end == 840)
@@ -69,9 +90,10 @@ struct TimeRangeSelectionTests {
         let refused = [
             range.set(.start, text: "14:00"),
             range.set(.end, text: "13:00"),
-            range.set(.start, text: "24:00")
+            range.set(.start, text: "24:00"),
+            range.set(.start, text: "13:07")
         ]
-        #expect(refused == [false, false, false])
+        #expect(refused == [false, false, false, false])
         #expect(range == TimeRangeSelection(start: 780, end: 840))
 
         let accepted = [

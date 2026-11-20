@@ -1,5 +1,5 @@
 /// The rail of a time range showing one hour while a knob is held still,
-/// so the knob moves by the minute; it starts with the knob where it was on
+/// so the knob moves in five-minute steps; it starts with the knob where it was on
 /// the whole day, and only horizontal movement after that changes the time
 public struct TimeRangeFineDrag: Equatable, Sendable {
     public static let windowMinutes = 60
@@ -10,7 +10,7 @@ public struct TimeRangeFineDrag: Equatable, Sendable {
     public let windowStart: Double
     private let railWidth: Double
     private var lastX: Double
-    /// Kept below the minute so small movements add up
+    /// Kept below the five-minute step so small movements add up
     private var exactMinutes: Double
 
     /// `knobFraction` is where the knob is on the rail, from 0 to 1, and
@@ -42,16 +42,16 @@ public struct TimeRangeFineDrag: Equatable, Sendable {
         Double(minutes) >= windowStart && Double(minutes) <= windowEnd
     }
 
-    /// Moves the held end by the cursor's horizontal movement since the last
-    /// call; movement past the shown hour, the day or the other end is not
-    /// kept, so turning back moves the knob at once
+    /// Moves the held end in five-minute steps while preserving sub-step
+    /// pointer movement
     public mutating func drag(toX x: Double, range: inout TimeRangeSelection) {
         let delta = (x - lastX) * Double(Self.windowMinutes) / railWidth
         lastX = x
         let bounds = allowedMinutes(in: range)
         exactMinutes = min(max(exactMinutes + delta, bounds.lowerBound),
                            bounds.upperBound)
-        range.move(edge, to: Int(exactMinutes.rounded()))
+        let step = Double(TimeRangeSelection.dragStep)
+        range.move(edge, to: Int((exactMinutes / step).rounded() * step))
     }
 
     private func allowedMinutes(
@@ -62,14 +62,20 @@ public struct TimeRangeFineDrag: Equatable, Sendable {
         switch edge {
         case .start:
             lower = max(windowStart, 0)
-            upper = min(windowEnd, Double(range.end - 1))
+            upper = min(
+                windowEnd,
+                Double(range.end - TimeRangeSelection.dragStep)
+            )
         case .end:
-            lower = max(windowStart, Double(range.start + 1))
+            lower = max(
+                windowStart,
+                Double(range.start + TimeRangeSelection.dragStep)
+            )
             upper = min(windowEnd, Double(TimeRangeSelection.dayMinutes))
         }
-        // Whole minutes, so rounding never leaves the bounds
-        let low = lower.rounded(.up)
-        let high = upper.rounded(.down)
+        let step = Double(TimeRangeSelection.dragStep)
+        let low = (lower / step).rounded(.up) * step
+        let high = (upper / step).rounded(.down) * step
         let current = Double(range.minutes(of: edge))
         return low <= high ? low...high : current...current
     }

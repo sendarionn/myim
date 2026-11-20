@@ -28,7 +28,7 @@ struct TimeRangeFineDragTests {
     }
 
     @Test
-    func movesByTheMinuteFromWhereTheCursorWas() throws {
+    func movesInFiveMinuteStepsFromWhereTheCursorWas() throws {
         var range = try #require(TimeRangeSelection(start: 780, end: 900))
         var drag = TimeRangeFineDrag(
             edge: .start,
@@ -39,13 +39,13 @@ struct TimeRangeFineDragTests {
         )
 
         drag.drag(toX: 100 + minute * 3, range: &range)
-        #expect(range.start == 783)
+        #expect(range.start == 785)
 
         drag.drag(toX: 100 + minute * 2, range: &range)
-        #expect(range.start == 782)
+        #expect(range.start == 780)
     }
 
-    /// Movements below a minute add up instead of being lost
+    /// Movements below a selectable step add up instead of being lost
     @Test
     func smallMovementsAddUp() throws {
         var range = try #require(TimeRangeSelection(start: 780, end: 900))
@@ -57,17 +57,17 @@ struct TimeRangeFineDragTests {
             railWidth: railWidth
         )
 
-        for step in 1...4 {
+        for step in 1...10 {
             drag.drag(toX: minute * 0.3 * Double(step), range: &range)
         }
 
-        #expect(range.start == 781)
+        #expect(range.start == 785)
     }
 
-    /// Past the other end the knob stops a minute away, and turning back
+    /// Past the other end the knob stops five minutes away, and turning back
     /// moves it at once
     @Test
-    func stopsAMinuteBeforeTheOtherEndWithoutKeepingTheOvershoot() throws {
+    func stopsFiveMinutesBeforeTheOtherEndWithoutKeepingTheOvershoot() throws {
         var range = try #require(TimeRangeSelection(start: 780, end: 790))
         var drag = TimeRangeFineDrag(
             edge: .start,
@@ -78,10 +78,10 @@ struct TimeRangeFineDragTests {
         )
 
         drag.drag(toX: minute * 30, range: &range)
-        #expect(range.start == 789)
+        #expect(range.start == 785)
 
-        drag.drag(toX: minute * 29, range: &range)
-        #expect(range.start == 788)
+        drag.drag(toX: minute * 25, range: &range)
+        #expect(range.start == 780)
         #expect(range.end == 790)
     }
 
@@ -99,18 +99,18 @@ struct TimeRangeFineDragTests {
         drag.drag(toX: minute * 45, range: &range)
         #expect(range.start == 810)
 
-        drag.drag(toX: minute * 44, range: &range)
-        #expect(range.start == 809)
+        drag.drag(toX: minute * 40, range: &range)
+        #expect(range.start == 805)
     }
 
     /// The knob's place on the whole day decides the hour shown, which
     /// therefore never runs before 0:00 or past 24:00
-    @Test(arguments: [0, 1, 30, 719, 1380, 1439, 1440])
+    @Test(arguments: [0, 5, 30, 720, 1380, 1435, 1440])
     func shownHourStaysWithinTheDay(minutes: Int) throws {
         let range = try #require(
             minutes == 1440
-                ? TimeRangeSelection(start: 1439, end: 1440)
-                : TimeRangeSelection(start: minutes, end: minutes + 1)
+                ? TimeRangeSelection(start: 1435, end: 1440)
+                : TimeRangeSelection(start: minutes, end: minutes + 5)
         )
         let edge: TimeRangeSelection.Edge = minutes == 1440 ? .end : .start
         let drag = TimeRangeFineDrag(

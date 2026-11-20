@@ -27,16 +27,12 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertIn("rangeView.handleKey(event)", handle)
         self.assertTrue(handle.rstrip().endswith("return true"))
 
-    def test_each_shortcut_switches_between_the_clock_and_the_rail(self):
-        shortcut = self.body(self.window, "private func handleShortcut()")
-        self.assertIn("showClock()", shortcut)
-        self.assertIn("showRange()", shortcut)
-        self.assertNotIn("cancelSelection()", shortcut)
+    def test_the_shortcut_does_not_toggle_another_input_ui(self):
         handle = self.body(self.window, "func handleKeyEvent(")
-        self.assertIn("handleShortcut()", handle)
-        # Keys the panel receives itself take the same route
-        self.assertIn("panel.shortcutAction = { [weak self] in "
-                      "self?.handleShortcut() }", self.window)
+        self.assertNotIn("handleShortcut()", handle)
+        controller = self.window[self.window.index("final class TimeWindowController"):]
+        self.assertNotIn("showClock()", controller)
+        self.assertNotIn("showRange()", controller)
 
     def test_formats_are_shown_in_the_candidate_panel(self):
         # The time panel no longer draws formats of its own
@@ -61,13 +57,13 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertLess(back.index("timeWindow.cancelFormatSelection()"),
                         back.index("candidateSearchCoordinator.cancel"))
 
-    def test_the_clock_has_no_range_button(self):
+    def test_the_unified_rail_has_no_mode_button(self):
         self.assertNotIn("rangeButton", self.window)
 
-    def test_escape_closes_the_rail_without_inserting(self):
+    def test_escape_leaves_range_mode_before_closing(self):
         escape = self.body(self.window, "func handleEscape()")
-        self.assertIn("if isShowingRange {\n            cancelSelection()",
-                      escape)
+        self.assertIn("rangeView.returnToTimeMode()", escape)
+        self.assertIn("cancelSelection()", escape)
 
     def test_range_formats_are_chosen_like_those_of_a_time(self):
         load = self.body(self.controller, "private func loadTimeFormats(")
@@ -89,9 +85,10 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertIn("stillnessTimer?.invalidate()", end)
         self.assertIn("fineDrag = nil", end)
         self.assertIn("endDrag()", self.body(self.view, "override func mouseUp("))
-        self.assertIn("endDrag()", self.body(self.view, "func begin(with"))
-        for caller in ["func hide()", "private func showClock()",
-                       "func runSelection("]:
+        self.assertIn("resetInteraction()", self.body(self.view, "func begin(with"))
+        self.assertIn("endDrag()", self.body(self.view,
+                                             "private func resetInteraction()"))
+        for caller in ["func hide()", "func runSelection("]:
             with self.subTest(caller=caller):
                 self.assertIn("rangeView.endDrag()",
                               self.body(self.window, caller))
@@ -99,15 +96,25 @@ class TimeRangePanelTests(unittest.TestCase):
     def test_only_voiceover_names_describe_the_parts(self):
         drawn = re.findall(r'drawCentered\(\s*"([^"]*)"', self.view)
         self.assertEqual(drawn, ["〜"])
-        for label in ["開始時刻", "終了時刻", "挿入"]:
+        for label in ["時刻", "終了時刻"]:
             self.assertIn(f'"{label}"', self.view)
+        self.assertNotIn('"↵"', self.view)
 
-    def test_each_knob_is_taken_from_its_own_side_of_the_rail(self):
+    def test_each_knob_uses_its_own_center_as_the_hit_target(self):
         knob = self.body(self.view, "private func knobEdge(")
-        self.assertIn("point.y >= railY", knob)
-        self.assertIn("return .start", knob)
-        self.assertIn("point.y < railY", knob)
-        self.assertIn("return .end", knob)
+        self.assertIn("knobCenter(for: edge)", knob)
+        self.assertIn("<= knobHitRadius", knob)
+
+    def test_grabbing_a_knob_does_not_move_it(self):
+        down = self.body(self.view, "override func mouseDown(")
+        self.assertNotIn("applyDragged", down)
+        self.assertNotIn("apply(", down)
+
+    def test_every_value_path_uses_five_minute_steps(self):
+        self.assertIn("private static let step = 5", self.view)
+        self.assertIn("minutes.isMultiple(of: Self.step)", self.view)
+        self.assertIn("moveFocusedEdge(by: -Self.step)", self.view)
+        self.assertIn("moveFocusedEdge(by: Self.step)", self.view)
 
 
 if __name__ == "__main__":

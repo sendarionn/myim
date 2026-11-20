@@ -7,14 +7,17 @@ public struct TimeRangeSelection: Equatable, Sendable {
     }
 
     public static let dayMinutes = 24 * 60
-    /// Dragging moves in steps of this many minutes; typing sets any minute
+    /// Every input path uses the same five-minute step
     public static let dragStep = 5
 
     public private(set) var start: Int
     public private(set) var end: Int
 
     public init?(start: Int, end: Int) {
-        guard 0 <= start, start < end, end <= Self.dayMinutes else {
+        guard 0 <= start, start + Self.dragStep <= end,
+              end <= Self.dayMinutes,
+              start.isMultiple(of: Self.dragStep),
+              end.isMultiple(of: Self.dragStep) else {
             return nil
         }
         self.start = start
@@ -23,7 +26,10 @@ public struct TimeRangeSelection: Equatable, Sendable {
 
     /// Starts at `time` and ends an hour later, or at 24:00
     public init(startingAt time: TimeSelectionState) {
-        start = time.hour * 60 + time.minute
+        start = min(
+            Self.roundToStep(time.hour * 60 + time.minute),
+            Self.dayMinutes - Self.dragStep
+        )
         end = min(start + 60, Self.dayMinutes)
     }
 
@@ -31,13 +37,16 @@ public struct TimeRangeSelection: Equatable, Sendable {
         edge == .start ? start : end
     }
 
-    /// Moves one end, stopping a minute away from the other end
+    /// Moves one end, stopping one selectable step away from the other end
     public mutating func move(_ edge: Edge, to minutes: Int) {
         switch edge {
         case .start:
-            start = min(max(minutes, 0), end - 1)
+            start = min(max(Self.roundToStep(minutes), 0), end - Self.dragStep)
         case .end:
-            end = max(min(minutes, Self.dayMinutes), start + 1)
+            end = max(
+                min(Self.roundToStep(minutes), Self.dayMinutes),
+                start + Self.dragStep
+            )
         }
     }
 
@@ -52,7 +61,8 @@ public struct TimeRangeSelection: Equatable, Sendable {
     /// text is not a time or would not keep the start before the end
     @discardableResult
     public mutating func set(_ edge: Edge, text: String) -> Bool {
-        guard let minutes = Self.minutes(from: text) else { return false }
+        guard let minutes = Self.minutes(from: text),
+              minutes.isMultiple(of: Self.dragStep) else { return false }
         switch edge {
         case .start:
             guard minutes < end else { return false }
@@ -100,5 +110,9 @@ public struct TimeRangeSelection: Equatable, Sendable {
         let minute = minutes % 60
         return (hour < 10 ? "0" : "") + "\(hour):" + (minute < 10 ? "0" : "")
             + "\(minute)"
+    }
+
+    private static func roundToStep(_ minutes: Int) -> Int {
+        Int((Double(minutes) / Double(dragStep)).rounded()) * dragStep
     }
 }
