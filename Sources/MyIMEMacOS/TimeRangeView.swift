@@ -433,7 +433,8 @@ final class TimeRangeView: NSView {
                 .map { minutes in
                     TickMark(
                         minutes: minutes,
-                        label: minutes.isMultiple(of: 360) ? String(minutes / 60) : nil,
+                        // Every tick of the day carries its hour
+                        label: String(minutes / 60),
                         isEndpoint: minutes == 0 || minutes == TimeRangeSelection.dayMinutes
                     )
                 }

@@ -146,7 +146,9 @@ class TimeRangePanelTests(unittest.TestCase):
     def test_day_ticks_and_zoom_ticks_follow_the_spec(self):
         ticks = self.body(self.view, "private func tickMarks(")
         self.assertIn("by: 180", ticks)
-        self.assertIn("minutes.isMultiple(of: 360)", ticks)
+        # 3, 9, 15 and 21 are labelled as well as 0, 6, 12, 18 and 24
+        self.assertIn("label: String(minutes / 60),", ticks)
+        self.assertNotIn("isMultiple(of: 360)", ticks)
         self.assertIn("stride(from: first, through: last, by: 5)", ticks)
         self.assertIn('label = "\\(minutes / 60)時"', ticks)
         self.assertIn("minutes.isMultiple(of: 10)", ticks)
