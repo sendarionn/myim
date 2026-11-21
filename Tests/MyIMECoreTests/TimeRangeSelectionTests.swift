@@ -42,20 +42,6 @@ struct TimeRangeSelectionTests {
         #expect(TimeRangeSelection(start: 780, end: 785) != nil)
     }
 
-    @Test(arguments: [
-        ("13:05", 785), ("1305", 785), ("9:05", 545), ("905", 545),
-        ("13", 780), ("9", 540), ("24:00", 1440), ("0:00", 0)
-    ])
-    func readsTypedTimes(text: String, minutes: Int) {
-        #expect(TimeRangeSelection.minutes(from: text) == minutes)
-    }
-
-    @Test(arguments: ["", "24:01", "25", "13:60", "1:5", "13:", ":30",
-                      "１３:００", "13:00:00", "a"])
-    func refusesTextThatIsNotATime(text: String) {
-        #expect(TimeRangeSelection.minutes(from: text) == nil)
-    }
-
     @Test
     func showsTimesAsTheClockDoes() {
         #expect(TimeRangeSelection.text(forMinutes: 545) == "09:05")

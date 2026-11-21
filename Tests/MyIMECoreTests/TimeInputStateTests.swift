@@ -112,7 +112,7 @@ struct TimeInputStateTests {
     }
 
     @Test
-    func typedValuesMustUseFiveMinuteStepsButMayCross() throws {
+    func exactValuesMustUseFiveMinuteStepsButMayCross() throws {
         var state = TimeInputState(
             range: try #require(TimeRangeSelection(start: 780, end: 840))
         )

@@ -1,4 +1,3 @@
-import re
 import unittest
 from pathlib import Path
 
@@ -102,11 +101,37 @@ class TimeRangePanelTests(unittest.TestCase):
                               self.body(self.window, caller))
 
     def test_only_voiceover_names_describe_the_parts(self):
-        drawn = re.findall(r'drawCentered\(\s*"([^"]*)"', self.view)
-        self.assertEqual(drawn, ["〜"])
-        for label in ["時刻", "終了時刻"]:
+        for label in ["選択時刻", "時刻のつまみ", "終了時刻のつまみ"]:
             self.assertIn(f'"{label}"', self.view)
         self.assertNotIn('"↵"', self.view)
+
+    def test_time_preview_is_static_and_not_editable(self):
+        self.assertIn("setAccessibilityRole(.staticText)", self.view)
+        self.assertNotIn("setAccessibilityRole(.textField)", self.view)
+        for editing_symbol in [
+            "editingText",
+            "showsInvalidText",
+            "fieldRole(at:",
+            "func edit(",
+            "commitEditing",
+            "selectedTextBackgroundColor",
+        ]:
+            with self.subTest(editing_symbol=editing_symbol):
+                self.assertNotIn(editing_symbol, self.view)
+        mouse_down = self.body(self.view, "override func mouseDown(")
+        self.assertIn("knobHandle(at: point)", mouse_down)
+        self.assertNotIn("previewRect.contains", mouse_down)
+
+    def test_time_preview_uses_one_text_for_time_and_range(self):
+        preview = self.body(self.view, "private var previewText:")
+        self.assertIn('return "\\(start) 〜 \\(end)"', preview)
+        self.assertIn("guard state.mode == .range else { return start }", preview)
+
+    def test_panel_background_has_square_corners(self):
+        draw = self.body(self.view, "override func draw(")
+        self.assertIn("NSBezierPath(rect:", draw)
+        self.assertNotIn("roundedRect: bounds", draw)
+        self.assertNotIn("xRadius: 14", draw)
 
     def test_each_knob_uses_its_own_center_as_the_hit_target(self):
         knob = self.body(self.view, "private func knobHandle(")
@@ -123,9 +148,14 @@ class TimeRangePanelTests(unittest.TestCase):
             "private static let step = TimeRangeSelection.dragStep",
             self.view,
         )
-        self.assertIn("minutes.isMultiple(of: Self.step)", self.view)
         self.assertIn("moveFocusedEdge(by: -Self.step)", self.view)
         self.assertIn("moveFocusedEdge(by: Self.step)", self.view)
+
+    def test_tab_only_switches_the_focused_handle(self):
+        keys = self.body(self.view, "func handleKey(")
+        self.assertIn("case 48:", keys)
+        self.assertIn("focusedHandle == .upper ? .lower : .upper", keys)
+        self.assertNotIn("event.characters", keys)
 
     def test_physical_handles_are_separate_from_chronological_roles(self):
         self.assertIn("enum Handle", self.state)
