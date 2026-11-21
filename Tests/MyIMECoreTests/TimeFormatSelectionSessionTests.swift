@@ -43,7 +43,7 @@ struct TimeFormatSelectionSessionTests {
         #expect(!session.accepts(formatsFor: range))
     }
 
-    /// Esc on the formats of 14:30 reopens the clock at 14:30, and the
+    /// Esc on the formats of 14:30 reopens the rail at 14:30, and the
     /// formats made next are for the time chosen then
     @Test func escapeReturnsToTheClockWithTheChosenTime() throws {
         var session = TimeFormatSelectionSession()

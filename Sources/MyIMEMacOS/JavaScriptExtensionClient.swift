@@ -197,7 +197,7 @@ actor JavaScriptExtensionClient {
         ).map(\.value)
     }
 
-    /// The formats `time.js` offers for a range chosen on the clock's rail
+    /// The formats `time.js` offers for a range chosen on the time rail
     func timeRangeFormats(_ range: TimeRangeSelection) async -> [String] {
         await candidates(
             for: "time",

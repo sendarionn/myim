@@ -1,30 +1,31 @@
-/// The rail of a time range showing one hour while a knob is held still,
-/// so the knob moves in five-minute steps; it starts with the knob where it was on
-/// the whole day, and only horizontal movement after that changes the time
+/// The fixed 60-minute window used while a physical handle is held still
+///
+/// AppKit owns the timer and pointer events  This value owns all coordinate,
+/// accumulation, rounding and boundary calculations used by the view
 public struct TimeRangeFineDrag: Equatable, Sendable {
     public static let windowMinutes = 60
 
-    public let edge: TimeRangeSelection.Edge
-    /// The time at the left end of the rail; may lie before 0:00 or end
-    /// after 24:00, which cannot be chosen
+    public let handle: TimeInputState.Handle
     public let windowStart: Double
     private let railWidth: Double
     private var lastX: Double
-    /// Kept below the five-minute step so small movements add up
     private var exactMinutes: Double
 
-    /// `knobFraction` is where the knob is on the rail, from 0 to 1, and
-    /// `cursorX` where the cursor is when the rail changes
     public init(
-        edge: TimeRangeSelection.Edge,
-        range: TimeRangeSelection,
+        handle: TimeInputState.Handle,
+        state: TimeInputState,
         knobFraction: Double,
         cursorX: Double,
         railWidth: Double
     ) {
-        self.edge = edge
-        let minutes = Double(range.minutes(of: edge))
-        windowStart = minutes - Double(Self.windowMinutes) * knobFraction
+        self.handle = handle
+        let minutes = Double(state.minutes(of: handle))
+        let unclampedStart = minutes
+            - Double(Self.windowMinutes) * knobFraction
+        windowStart = min(
+            max(unclampedStart, 0),
+            Double(TimeRangeSelection.dayMinutes - Self.windowMinutes)
+        )
         self.railWidth = max(railWidth, 1)
         lastX = cursorX
         exactMinutes = minutes
@@ -32,8 +33,6 @@ public struct TimeRangeFineDrag: Equatable, Sendable {
 
     public var windowEnd: Double { windowStart + Double(Self.windowMinutes) }
 
-    /// Where `minutes` is on the rail, from 0 to 1; outside it when the
-    /// time is not shown
     public func fraction(forMinutes minutes: Double) -> Double {
         (minutes - windowStart) / Double(Self.windowMinutes)
     }
@@ -42,41 +41,31 @@ public struct TimeRangeFineDrag: Equatable, Sendable {
         Double(minutes) >= windowStart && Double(minutes) <= windowEnd
     }
 
-    /// Moves the held end in five-minute steps while preserving sub-step
-    /// pointer movement
-    public mutating func drag(toX x: Double, range: inout TimeRangeSelection) {
+    /// Moves the held physical handle while preserving movement below one
+    /// selectable step and keeping the zoom window fixed across a crossing
+    @discardableResult
+    public mutating func drag(
+        toX x: Double,
+        state: inout TimeInputState
+    ) -> Bool {
         let delta = (x - lastX) * Double(Self.windowMinutes) / railWidth
         lastX = x
-        let bounds = allowedMinutes(in: range)
+        let bounds = allowedMinutes(in: state)
         exactMinutes = min(max(exactMinutes + delta, bounds.lowerBound),
                            bounds.upperBound)
-        let step = Double(TimeRangeSelection.dragStep)
-        range.move(edge, to: Int((exactMinutes / step).rounded() * step))
+        return state.move(handle, to: exactMinutes)
     }
 
     private func allowedMinutes(
-        in range: TimeRangeSelection
+        in state: TimeInputState
     ) -> ClosedRange<Double> {
-        let lower: Double
-        let upper: Double
-        switch edge {
-        case .start:
-            lower = max(windowStart, 0)
-            upper = min(
-                windowEnd,
-                Double(range.end - TimeRangeSelection.dragStep)
-            )
-        case .end:
-            lower = max(
-                windowStart,
-                Double(range.start + TimeRangeSelection.dragStep)
-            )
-            upper = min(windowEnd, Double(TimeRangeSelection.dayMinutes))
-        }
+        let stateBounds = state.allowedMinutes(for: handle)
+        let lower = max(windowStart, Double(stateBounds.lowerBound))
+        let upper = min(windowEnd, Double(stateBounds.upperBound))
         let step = Double(TimeRangeSelection.dragStep)
         let low = (lower / step).rounded(.up) * step
         let high = (upper / step).rounded(.down) * step
-        let current = Double(range.minutes(of: edge))
+        let current = Double(state.minutes(of: handle))
         return low <= high ? low...high : current...current
     }
 }

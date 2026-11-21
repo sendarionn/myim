@@ -1,11 +1,23 @@
 @preconcurrency import AppKit
 import MyIMECore
 
+private final class TimeHandleAccessibilityElement: NSAccessibilityElement {
+    var incrementAction: (() -> Bool)?
+    var decrementAction: (() -> Bool)?
+
+    override func accessibilityPerformIncrement() -> Bool {
+        incrementAction?() ?? false
+    }
+
+    override func accessibilityPerformDecrement() -> Bool {
+        decrementAction?() ?? false
+    }
+}
+
 /// A single 24-hour rail used for both a time and a time range
 final class TimeRangeView: NSView {
-    typealias Edge = TimeRangeSelection.Edge
-
-    enum Mode: Equatable { case time, range }
+    typealias Handle = TimeInputState.Handle
+    typealias Role = TimeInputState.Role
 
     static let height: CGFloat = 132
 
@@ -13,43 +25,29 @@ final class TimeRangeView: NSView {
     var rangeAction: ((TimeRangeSelection) -> Void)?
     var cancelAction: (() -> Void)?
 
-    private(set) var mode: Mode = .time
-    private(set) var startMinutes = 0
-    private(set) var endMinutes = 0
-    private var focusedEdge: Edge = .start
+    private(set) var state = TimeInputState(
+        time: TimeSelectionState(hour: 0, minute: 0)!
+    )
+    private var focusedHandle: Handle = .upper
     private var editingText: String?
     private var showsInvalidText = false
-    private var draggingEdge: Edge?
+    private var draggingHandle: Handle?
     private var dragOriginX: CGFloat = 0
     private var dragOriginMinutes: Double = 0
     private var exactDragMinutes: Double = 0
-    private var fineDrag: FineDrag?
+    private var fineDrag: TimeRangeFineDrag?
     private var stillnessTimer: Timer?
     private var stillOrigin: NSPoint = .zero
     private var stillSince: TimeInterval = 0
     private var lastDragPoint: NSPoint = .zero
     private static let stillDuration: TimeInterval = 0.4
     private static let stillTolerance: CGFloat = 3
-    private static let step = 5
-
-    private struct FineDrag {
-        let windowStart: Double
-        let edge: Edge
-        let railWidth: Double
-        var lastX: Double
-        var exactMinutes: Double
-
-        var windowEnd: Double { windowStart + 60 }
-        func fraction(for minutes: Double) -> Double { (minutes - windowStart) / 60 }
-        func contains(_ minutes: Int) -> Bool {
-            Double(minutes) >= windowStart && Double(minutes) <= windowEnd
-        }
-    }
+    private static let step = TimeRangeSelection.dragStep
 
     private let startFieldElement = NSAccessibilityElement()
     private let endFieldElement = NSAccessibilityElement()
-    private let startKnobElement = NSAccessibilityElement()
-    private let endKnobElement = NSAccessibilityElement()
+    private let upperKnobElement = TimeHandleAccessibilityElement()
+    private let lowerKnobElement = TimeHandleAccessibilityElement()
     private let railY: CGFloat = 48
     private let knobOffset: CGFloat = 13
     private let knobRadius: CGFloat = 7
@@ -58,21 +56,22 @@ final class TimeRangeView: NSView {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        for (element, label) in [
-            (startFieldElement, "時刻"),
-            (endFieldElement, "終了時刻")
-        ] {
+        for (element, label) in [(startFieldElement, "時刻"),
+                                 (endFieldElement, "終了時刻")] {
             element.setAccessibilityRole(.textField)
             element.setAccessibilityLabel(label)
             element.setAccessibilityParent(self)
         }
-        for (element, label) in [
-            (startKnobElement, "開始時刻のつまみ"),
-            (endKnobElement, "終了時刻のつまみ")
-        ] {
+        for (element, handle) in [(upperKnobElement, Handle.upper),
+                                  (lowerKnobElement, .lower)] {
             element.setAccessibilityRole(.slider)
-            element.setAccessibilityLabel(label)
             element.setAccessibilityParent(self)
+            element.incrementAction = { [weak self] in
+                self?.adjust(handle, by: Self.step) ?? false
+            }
+            element.decrementAction = { [weak self] in
+                self?.adjust(handle, by: -Self.step) ?? false
+            }
         }
     }
 
@@ -81,35 +80,31 @@ final class TimeRangeView: NSView {
     override var isFlipped: Bool { false }
 
     func begin(with time: TimeSelectionState) {
-        let minutes = Self.roundedSelectableMinutes(time.hour * 60 + time.minute)
-        mode = .time
-        startMinutes = minutes
-        endMinutes = minutes
-        focusedEdge = .start
+        state = TimeInputState(time: time)
+        focusedHandle = .upper
         resetInteraction()
     }
 
     func begin(with range: TimeRangeSelection) {
-        mode = .range
-        startMinutes = range.start
-        endMinutes = range.end
-        focusedEdge = .start
+        state = TimeInputState(range: range)
+        focusedHandle = state.handle(for: .start)
         resetInteraction()
     }
 
     @discardableResult
     func returnToTimeMode() -> Bool {
-        guard mode == .range else { return false }
+        guard state.mode == .range else { return false }
         endDrag()
-        mode = .time
-        endMinutes = startMinutes
-        focusedEdge = .start
+        _ = state.returnToTimeMode()
+        focusedHandle = .upper
         editingText = nil
         showsInvalidText = false
         updateAccessibility()
         needsDisplay = true
         return true
     }
+
+    var isDragging: Bool { draggingHandle != nil }
 
     private func resetInteraction() {
         editingText = nil
@@ -129,7 +124,8 @@ final class TimeRangeView: NSView {
             confirm()
         case 48:
             guard commitEditing() else { return }
-            focusedEdge = focusedEdge == .start ? .end : .start
+            focusedHandle = focusedHandle == .upper ? .lower : .upper
+            updateAccessibility()
             needsDisplay = true
         case 123, 125:
             moveFocusedEdge(by: -Self.step)
@@ -156,11 +152,8 @@ final class TimeRangeView: NSView {
     private func edit(_ text: String) {
         editingText = text
         showsInvalidText = false
-        if focusedEdge == .end, mode == .time, !text.isEmpty {
-            mode = .range
-        }
-        if let minutes = validMinutes(from: text, for: focusedEdge) {
-            apply(minutes, to: focusedEdge, entersRange: focusedEdge == .end)
+        if let minutes = validMinutes(from: text, for: focusedHandle) {
+            _ = state.set(focusedHandle, to: minutes)
         }
         updateAccessibility()
         needsDisplay = true
@@ -168,55 +161,51 @@ final class TimeRangeView: NSView {
 
     private func commitEditing() -> Bool {
         guard let editingText else { return true }
-        guard let minutes = validMinutes(from: editingText, for: focusedEdge) else {
+        guard let minutes = validMinutes(from: editingText, for: focusedHandle) else {
             showsInvalidText = true
             needsDisplay = true
             NSSound.beep()
             return false
         }
-        apply(minutes, to: focusedEdge, entersRange: focusedEdge == .end)
+        _ = state.set(focusedHandle, to: minutes)
         self.editingText = nil
         showsInvalidText = false
+        updateAccessibility()
         needsDisplay = true
         return true
     }
 
-    private func validMinutes(from text: String, for edge: Edge) -> Int? {
+    private func validMinutes(from text: String, for handle: Handle) -> Int? {
         guard let minutes = TimeRangeSelection.minutes(from: text),
               minutes.isMultiple(of: Self.step) else { return nil }
-        switch edge {
-        case .start:
-            guard minutes < TimeRangeSelection.dayMinutes,
-                  mode == .time || minutes <= endMinutes else { return nil }
-        case .end:
-            guard minutes >= startMinutes else { return nil }
-        }
-        return minutes
+        return state.allowedMinutes(for: handle).contains(minutes)
+            ? minutes
+            : nil
     }
 
     private func moveFocusedEdge(by delta: Int) {
         guard commitEditing() else { return }
-        let edge = focusedEdge
-        let current = minutes(of: edge)
-        let bounds = allowedMinutes(for: edge)
-        let value = min(max(current + delta, bounds.lowerBound), bounds.upperBound)
-        guard value != current else { return }
-        apply(value, to: edge, entersRange: edge == .end)
-        needsDisplay = true
+        _ = adjust(focusedHandle, by: delta)
+    }
+
+    @discardableResult
+    private func adjust(_ handle: Handle, by delta: Int) -> Bool {
+        discardEditing()
+        focusedHandle = handle
+        guard state.move(handle, by: delta) else { return false }
         updateAccessibility()
+        needsDisplay = true
+        return true
     }
 
     private func confirm() {
         guard commitEditing() else { return }
-        switch mode {
+        switch state.mode {
         case .time:
-            guard let time = TimeSelectionState(
-                hour: startMinutes / 60,
-                minute: startMinutes % 60
-            ) else { return }
+            guard let time = state.timeSelection else { return }
             timeAction?(time)
         case .range:
-            guard let range = TimeRangeSelection(start: startMinutes, end: endMinutes) else {
+            guard let range = state.rangeSelection else {
                 NSSound.beep()
                 return
             }
@@ -228,25 +217,28 @@ final class TimeRangeView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        if let edge = fieldEdge(at: point) {
-            if edge != focusedEdge { discardEditing() }
-            focusedEdge = edge
+        if let role = fieldRole(at: point) {
+            let handle = state.handle(for: role)
+            if handle != focusedHandle { discardEditing() }
+            focusedHandle = handle
+            updateAccessibility()
             needsDisplay = true
             return
         }
-        guard let edge = knobEdge(at: point) else { return }
+        guard let handle = knobHandle(at: point) else { return }
         discardEditing()
-        focusedEdge = edge
-        draggingEdge = edge
+        focusedHandle = handle
+        draggingHandle = handle
         dragOriginX = point.x
-        dragOriginMinutes = Double(minutes(of: edge))
+        dragOriginMinutes = Double(state.minutes(of: handle))
         exactDragMinutes = dragOriginMinutes
         startStillnessTracking(at: point)
+        updateAccessibility()
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let edge = draggingEdge else { return }
+        guard let handle = draggingHandle else { return }
         let point = convert(event.locationInWindow, from: nil)
         lastDragPoint = point
         if fineDrag != nil {
@@ -255,7 +247,7 @@ final class TimeRangeView: NSView {
             let delta = Double(point.x - dragOriginX)
                 * Double(TimeRangeSelection.dayMinutes) / Double(max(railRect.width, 1))
             exactDragMinutes = dragOriginMinutes + delta
-            applyDragged(exactDragMinutes, to: edge)
+            applyDragged(exactDragMinutes, to: handle)
             if hypot(point.x - stillOrigin.x, point.y - stillOrigin.y) > Self.stillTolerance {
                 stillOrigin = point
                 stillSince = ProcessInfo.processInfo.systemUptime
@@ -268,7 +260,7 @@ final class TimeRangeView: NSView {
     func endDrag() {
         stillnessTimer?.invalidate()
         stillnessTimer = nil
-        draggingEdge = nil
+        draggingHandle = nil
         if fineDrag != nil {
             fineDrag = nil
             updateAccessibility()
@@ -291,7 +283,7 @@ final class TimeRangeView: NSView {
     }
 
     private func checkStillness() {
-        guard let edge = draggingEdge, fineDrag == nil else {
+        guard let handle = draggingHandle, fineDrag == nil else {
             stillnessTimer?.invalidate()
             stillnessTimer = nil
             return
@@ -299,18 +291,14 @@ final class TimeRangeView: NSView {
         guard ProcessInfo.processInfo.systemUptime - stillSince >= Self.stillDuration else { return }
         stillnessTimer?.invalidate()
         stillnessTimer = nil
-        let minutes = Double(self.minutes(of: edge))
+        let minutes = Double(state.minutes(of: handle))
         let fraction = minutes / Double(TimeRangeSelection.dayMinutes)
-        let start = min(
-            max(minutes - 60 * fraction, 0),
-            Double(TimeRangeSelection.dayMinutes - 60)
-        )
-        fineDrag = FineDrag(
-            windowStart: start,
-            edge: edge,
+        fineDrag = TimeRangeFineDrag(
+            handle: handle,
+            state: state,
+            knobFraction: fraction,
+            cursorX: Double(lastDragPoint.x),
             railWidth: Double(max(railRect.width, 1)),
-            lastX: Double(lastDragPoint.x),
-            exactMinutes: minutes
         )
         updateAccessibility()
         needsDisplay = true
@@ -318,61 +306,32 @@ final class TimeRangeView: NSView {
 
     private func dragFinely(to point: NSPoint) {
         guard var fineDrag else { return }
-        let delta = (Double(point.x) - fineDrag.lastX) * 60 / fineDrag.railWidth
-        fineDrag.lastX = Double(point.x)
-        fineDrag.exactMinutes += delta
-        let bounds = allowedMinutes(for: fineDrag.edge)
-        fineDrag.exactMinutes = min(
-            max(fineDrag.exactMinutes, Double(bounds.lowerBound)),
-            Double(bounds.upperBound)
-        )
-        applyDragged(fineDrag.exactMinutes, to: fineDrag.edge)
+        let changed = fineDrag.drag(toX: Double(point.x), state: &state)
         self.fineDrag = fineDrag
-    }
-
-    private func applyDragged(_ exactMinutes: Double, to edge: Edge) {
-        let rounded = Int((exactMinutes / Double(Self.step)).rounded()) * Self.step
-        let bounds = allowedMinutes(for: edge)
-        let value = min(max(rounded, bounds.lowerBound), bounds.upperBound)
-        guard value != minutes(of: edge) else { return }
-        apply(value, to: edge, entersRange: edge == .end)
+        guard changed else { return }
         updateAccessibility()
         needsDisplay = true
     }
 
-    private func apply(_ minutes: Int, to edge: Edge, entersRange: Bool) {
-        if entersRange, mode == .time { mode = .range }
-        switch edge {
-        case .start:
-            startMinutes = minutes
-            if mode == .time { endMinutes = minutes }
-        case .end:
-            endMinutes = minutes
-        }
+    private func applyDragged(_ exactMinutes: Double, to handle: Handle) {
+        guard state.move(handle, to: exactMinutes) else { return }
+        updateAccessibility()
+        needsDisplay = true
     }
-
-    private func allowedMinutes(for edge: Edge) -> ClosedRange<Int> {
-        switch edge {
-        case .start:
-            return 0...(mode == .time ? 1435 : min(endMinutes, 1435))
-        case .end:
-            return startMinutes...TimeRangeSelection.dayMinutes
-        }
-    }
-
-    private func minutes(of edge: Edge) -> Int { edge == .start ? startMinutes : endMinutes }
     private func discardEditing() { editingText = nil; showsInvalidText = false }
 
-    private func fieldEdge(at point: NSPoint) -> Edge? {
+    private func fieldRole(at point: NSPoint) -> Role? {
         if fieldRect(for: .start).contains(point) { return .start }
-        if mode == .range, fieldRect(for: .end).contains(point) { return .end }
+        if state.mode == .range, fieldRect(for: .end).contains(point) { return .end }
         return nil
     }
 
-    private func knobEdge(at point: NSPoint) -> Edge? {
-        for edge in [Edge.start, .end] where showsKnob(edge) {
-            let center = knobCenter(for: edge)
-            if hypot(point.x - center.x, point.y - center.y) <= knobHitRadius { return edge }
+    private func knobHandle(at point: NSPoint) -> Handle? {
+        for handle in Handle.allCases where showsKnob(handle) {
+            let center = knobCenter(for: handle)
+            if hypot(point.x - center.x, point.y - center.y) <= knobHitRadius {
+                return handle
+            }
         }
         return nil
     }
@@ -383,31 +342,31 @@ final class TimeRangeView: NSView {
         NSRect(x: 28, y: railY - 2, width: bounds.width - 56, height: 4)
     }
 
-    private func fieldRect(for edge: Edge) -> NSRect {
+    private func fieldRect(for role: Role) -> NSRect {
         let width: CGFloat = 92
-        if mode == .time {
+        if state.mode == .time {
             return NSRect(x: bounds.midX - width / 2, y: 88, width: width, height: 30)
         }
-        let x = edge == .start ? bounds.midX - 14 - width : bounds.midX + 14
+        let x = role == .start ? bounds.midX - 14 - width : bounds.midX + 14
         return NSRect(x: x, y: 88, width: width, height: 30)
     }
 
     private func x(forMinutes minutes: Int) -> CGFloat {
         let rail = railRect
-        let fraction = fineDrag?.fraction(for: Double(minutes))
+        let fraction = fineDrag?.fraction(forMinutes: Double(minutes))
             ?? Double(minutes) / Double(TimeRangeSelection.dayMinutes)
         return rail.minX + rail.width * CGFloat(fraction)
     }
 
-    private func showsKnob(_ edge: Edge) -> Bool {
-        guard let fineDrag, fineDrag.edge != edge else { return true }
-        return fineDrag.contains(minutes(of: edge))
+    private func showsKnob(_ handle: Handle) -> Bool {
+        guard let fineDrag, fineDrag.handle != handle else { return true }
+        return fineDrag.contains(minutes: state.minutes(of: handle))
     }
 
-    private func knobCenter(for edge: Edge) -> NSPoint {
+    private func knobCenter(for handle: Handle) -> NSPoint {
         NSPoint(
-            x: x(forMinutes: minutes(of: edge)),
-            y: edge == .start ? railY + knobOffset : railY - knobOffset
+            x: x(forMinutes: state.minutes(of: handle)),
+            y: handle == .upper ? railY + knobOffset : railY - knobOffset
         )
     }
 
@@ -425,7 +384,7 @@ final class TimeRangeView: NSView {
         background.stroke()
 
         drawField(.start)
-        if mode == .range {
+        if state.mode == .range {
             drawCentered(
                 "〜",
                 at: NSPoint(x: bounds.midX, y: fieldRect(for: .start).midY),
@@ -437,20 +396,23 @@ final class TimeRangeView: NSView {
         drawRail()
     }
 
-    private func fieldText(for edge: Edge) -> String {
-        if edge == focusedEdge, let editingText { return editingText }
-        return TimeRangeSelection.text(forMinutes: minutes(of: edge))
+    private func fieldText(for role: Role) -> String {
+        if state.mode == .time, let editingText { return editingText }
+        let handle = state.handle(for: role)
+        if handle == focusedHandle, let editingText { return editingText }
+        return TimeRangeSelection.text(forMinutes: state.minutes(for: role))
     }
 
-    private func drawField(_ edge: Edge) {
-        let rect = fieldRect(for: edge)
-        let focused = edge == focusedEdge
+    private func drawField(_ role: Role) {
+        let rect = fieldRect(for: role)
+        let focused = state.mode == .time
+            || state.handle(for: role) == focusedHandle
         if focused {
             let path = NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6)
             NSColor.controlAccentColor.withAlphaComponent(0.12).setFill()
             path.fill()
         }
-        let text = fieldText(for: edge)
+        let text = fieldText(for: role)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: fieldFont,
             .foregroundColor: focused && showsInvalidText ? NSColor.systemRed : NSColor.labelColor
@@ -477,9 +439,9 @@ final class TimeRangeView: NSView {
         let rail = railRect
         NSColor.separatorColor.setFill()
         NSBezierPath(roundedRect: rail, xRadius: 2, yRadius: 2).fill()
-        if mode == .range, endMinutes > startMinutes {
-            let startX = x(forMinutes: startMinutes)
-            let endX = x(forMinutes: endMinutes)
+        if state.mode == .range, state.end > state.start {
+            let startX = x(forMinutes: state.start)
+            let endX = x(forMinutes: state.end)
             NSColor.controlAccentColor.setFill()
             NSBezierPath(
                 roundedRect: NSRect(
@@ -507,8 +469,8 @@ final class TimeRangeView: NSView {
             }
         }
 
-        for edge in [Edge.start, .end] where showsKnob(edge) {
-            let center = knobCenter(for: edge)
+        for handle in Handle.allCases where showsKnob(handle) {
+            let center = knobCenter(for: handle)
             let stem = NSBezierPath()
             stem.move(to: NSPoint(x: center.x, y: railY))
             stem.line(to: center)
@@ -521,7 +483,7 @@ final class TimeRangeView: NSView {
                 width: knobRadius * 2,
                 height: knobRadius * 2
             ))
-            if mode == .time, edge == .end {
+            if state.mode == .time, handle == .lower {
                 NSColor.windowBackgroundColor.setFill()
                 knob.fill()
                 NSColor.controlAccentColor.setStroke()
@@ -530,7 +492,7 @@ final class TimeRangeView: NSView {
             } else {
                 NSColor.controlAccentColor.setFill()
                 knob.fill()
-                if edge == focusedEdge {
+                if handle == focusedHandle {
                     NSColor.labelColor.setStroke()
                     knob.lineWidth = 1.5
                     knob.stroke()
@@ -576,25 +538,41 @@ final class TimeRangeView: NSView {
 
     override func accessibilityChildren() -> [Any]? {
         var children: [Any] = [startFieldElement]
-        if mode == .range { children.append(endFieldElement) }
-        children.append(contentsOf: [startKnobElement, endKnobElement])
+        if state.mode == .range { children.append(endFieldElement) }
+        if showsKnob(.upper) { children.append(upperKnobElement) }
+        if showsKnob(.lower) { children.append(lowerKnobElement) }
         return children
     }
 
     private func updateAccessibility() {
-        for (element, edge) in [
-            (startFieldElement, Edge.start),
+        for (element, role) in [
+            (startFieldElement, Role.start),
             (endFieldElement, .end)
         ] {
-            element.setAccessibilityValue(fieldText(for: edge))
-            element.setAccessibilityFrameInParentSpace(fieldRect(for: edge))
+            element.setAccessibilityLabel(
+                state.mode == .time ? "時刻" : role == .start ? "開始時刻" : "終了時刻"
+            )
+            element.setAccessibilityValue(fieldText(for: role))
+            element.setAccessibilityFrameInParentSpace(fieldRect(for: role))
         }
-        for (element, edge) in [
-            (startKnobElement, Edge.start),
-            (endKnobElement, .end)
+        for (element, handle) in [
+            (upperKnobElement, Handle.upper),
+            (lowerKnobElement, .lower)
         ] {
-            let center = knobCenter(for: edge)
-            element.setAccessibilityValue(TimeRangeSelection.text(forMinutes: minutes(of: edge)))
+            let role = state.role(of: handle)
+            let label: String
+            if state.mode == .time {
+                label = handle == .upper
+                    ? "時刻のつまみ"
+                    : "終了時刻のつまみ。値を変えると時間帯を選択"
+            } else {
+                label = role == .start ? "開始時刻のつまみ" : "終了時刻のつまみ"
+            }
+            let center = knobCenter(for: handle)
+            element.setAccessibilityLabel(label)
+            element.setAccessibilityValue(
+                TimeRangeSelection.text(forMinutes: state.minutes(of: handle))
+            )
             element.setAccessibilityFrameInParentSpace(NSRect(
                 x: center.x - knobHitRadius,
                 y: center.y - knobHitRadius,
@@ -602,9 +580,5 @@ final class TimeRangeView: NSView {
                 height: knobHitRadius * 2
             ))
         }
-    }
-
-    private static func roundedSelectableMinutes(_ minutes: Int) -> Int {
-        min(max(Int((Double(minutes) / Double(step)).rounded()) * step, 0), 1435)
     }
 }

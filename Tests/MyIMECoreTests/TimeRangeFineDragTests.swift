@@ -11,12 +11,14 @@ struct TimeRangeFineDragTests {
     /// the same place, so neither the knob nor the time moves
     @Test
     func showsTheHourAroundTheKnobWhereItWas() throws {
-        let range = try #require(TimeRangeSelection(start: 780, end: 900))
+        let state = TimeInputState(
+            range: try #require(TimeRangeSelection(start: 780, end: 900))
+        )
         let knobFraction = 780.0 / 1440
 
         let drag = TimeRangeFineDrag(
-            edge: .start,
-            range: range,
+            handle: .upper,
+            state: state,
             knobFraction: knobFraction,
             cursorX: 100,
             railWidth: railWidth
@@ -29,78 +31,90 @@ struct TimeRangeFineDragTests {
 
     @Test
     func movesInFiveMinuteStepsFromWhereTheCursorWas() throws {
-        var range = try #require(TimeRangeSelection(start: 780, end: 900))
+        var state = TimeInputState(
+            range: try #require(TimeRangeSelection(start: 780, end: 900))
+        )
         var drag = TimeRangeFineDrag(
-            edge: .start,
-            range: range,
+            handle: .upper,
+            state: state,
             knobFraction: 0.5,
             cursorX: 100,
             railWidth: railWidth
         )
 
-        drag.drag(toX: 100 + minute * 3, range: &range)
-        #expect(range.start == 785)
+        drag.drag(toX: 100 + minute * 3, state: &state)
+        #expect(state.start == 785)
 
-        drag.drag(toX: 100 + minute * 2, range: &range)
-        #expect(range.start == 780)
+        drag.drag(toX: 100 + minute * 2, state: &state)
+        #expect(state.start == 780)
     }
 
     /// Movements below a selectable step add up instead of being lost
     @Test
     func smallMovementsAddUp() throws {
-        var range = try #require(TimeRangeSelection(start: 780, end: 900))
+        var state = TimeInputState(
+            range: try #require(TimeRangeSelection(start: 780, end: 900))
+        )
         var drag = TimeRangeFineDrag(
-            edge: .start,
-            range: range,
+            handle: .upper,
+            state: state,
             knobFraction: 0.5,
             cursorX: 0,
             railWidth: railWidth
         )
 
         for step in 1...10 {
-            drag.drag(toX: minute * 0.3 * Double(step), range: &range)
+            drag.drag(toX: minute * 0.3 * Double(step), state: &state)
         }
 
-        #expect(range.start == 785)
+        #expect(state.start == 785)
     }
 
-    /// Past the other end the knob stops five minutes away, and turning back
-    /// moves it at once
+    /// The fixed zoom window stays unchanged while a physical handle crosses
+    /// the other one
     @Test
-    func stopsFiveMinutesBeforeTheOtherEndWithoutKeepingTheOvershoot() throws {
-        var range = try #require(TimeRangeSelection(start: 780, end: 790))
+    func crossingSwapsRolesWithoutChangingTheHeldHandle() throws {
+        var state = TimeInputState(
+            range: try #require(TimeRangeSelection(start: 780, end: 790))
+        )
         var drag = TimeRangeFineDrag(
-            edge: .start,
-            range: range,
+            handle: .upper,
+            state: state,
             knobFraction: 0.5,
             cursorX: 0,
             railWidth: railWidth
         )
 
-        drag.drag(toX: minute * 30, range: &range)
-        #expect(range.start == 785)
+        drag.drag(toX: minute * 30, state: &state)
+        #expect(state.minutes(of: .upper) == 810)
+        #expect(state.role(of: .upper) == .end)
+        #expect(state.start == 790)
+        #expect(state.end == 810)
 
-        drag.drag(toX: minute * 25, range: &range)
-        #expect(range.start == 780)
-        #expect(range.end == 790)
+        drag.drag(toX: minute * 25, state: &state)
+        #expect(state.minutes(of: .upper) == 805)
+        #expect(state.start == 790)
+        #expect(state.end == 805)
     }
 
     @Test
     func stopsAtTheEdgeOfTheShownHour() throws {
-        var range = try #require(TimeRangeSelection(start: 780, end: 1200))
+        var state = TimeInputState(
+            range: try #require(TimeRangeSelection(start: 780, end: 1200))
+        )
         var drag = TimeRangeFineDrag(
-            edge: .start,
-            range: range,
+            handle: .upper,
+            state: state,
             knobFraction: 0.5,
             cursorX: 0,
             railWidth: railWidth
         )
 
-        drag.drag(toX: minute * 45, range: &range)
-        #expect(range.start == 810)
+        drag.drag(toX: minute * 45, state: &state)
+        #expect(state.start == 810)
 
-        drag.drag(toX: minute * 40, range: &range)
-        #expect(range.start == 805)
+        drag.drag(toX: minute * 40, state: &state)
+        #expect(state.start == 805)
     }
 
     /// The knob's place on the whole day decides the hour shown, which
@@ -112,10 +126,11 @@ struct TimeRangeFineDragTests {
                 ? TimeRangeSelection(start: 1435, end: 1440)
                 : TimeRangeSelection(start: minutes, end: minutes + 5)
         )
-        let edge: TimeRangeSelection.Edge = minutes == 1440 ? .end : .start
+        let state = TimeInputState(range: range)
+        let handle: TimeInputState.Handle = minutes == 1440 ? .lower : .upper
         let drag = TimeRangeFineDrag(
-            edge: edge,
-            range: range,
+            handle: handle,
+            state: state,
             knobFraction: Double(minutes) / 1440,
             cursorX: 0,
             railWidth: railWidth
@@ -128,17 +143,19 @@ struct TimeRangeFineDragTests {
     /// Moving up or down alone changes nothing
     @Test
     func ignoresVerticalMovement() throws {
-        var range = try #require(TimeRangeSelection(start: 780, end: 900))
+        var state = TimeInputState(
+            range: try #require(TimeRangeSelection(start: 780, end: 900))
+        )
         var drag = TimeRangeFineDrag(
-            edge: .end,
-            range: range,
+            handle: .lower,
+            state: state,
             knobFraction: 900.0 / 1440,
             cursorX: 50,
             railWidth: railWidth
         )
 
-        drag.drag(toX: 50, range: &range)
+        drag.drag(toX: 50, state: &state)
 
-        #expect(range == TimeRangeSelection(start: 780, end: 900))
+        #expect(state.rangeSelection == TimeRangeSelection(start: 780, end: 900))
     }
 }

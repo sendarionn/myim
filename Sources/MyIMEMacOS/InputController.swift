@@ -3378,7 +3378,7 @@ final class InputController: IMKInputController {
             clearTimeSelection()
             commit(value, to: sender)
         case 53:
-            // Esc while the formats load or are shown goes back to the clock
+            // Esc while the formats load or are shown goes back to the rail
             DispatchQueue.main.async { [weak self] in
                 self?.returnToTimeSelection(client: sender)
             }
@@ -3415,9 +3415,8 @@ final class InputController: IMKInputController {
         recordCandidateSelection(value)
     }
 
-    /// Goes back from the formats to the clock at the time chosen before, or
-    /// to the rail at the range chosen before; formats still loading are
-    /// discarded
+    /// Goes back from the formats to the rail at the time or range chosen
+    /// before; formats still loading are discarded
     private func returnToTimeSelection(client sender: Any) {
         // The formats' own session returns when it ends, so the panel is
         // not opened inside it

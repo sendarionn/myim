@@ -173,16 +173,14 @@ final class InputPanelCoordinator {
         return time.runSelection(near: timeAnchorFrame ?? anchorFrame)
     }
 
-    /// Reopens the clock where it was, at the time chosen before
+    /// Reopens the rail where it was, at the time chosen before
     func resumeTimeSelection(
         at initialTime: TimeSelectionState,
-        fallback: NSRect,
-        stage: TimeInputStage = .minute
+        fallback: NSRect
     ) -> TimePanelResult? {
         time.runSelection(
             near: timeAnchorFrame ?? fallback,
-            initialTime: initialTime,
-            initialStage: stage
+            initialTime: initialTime
         )
     }
 

@@ -102,7 +102,6 @@ final class TimeWindowController: NSObject {
     func runSelection(
         near anchorFrame: NSRect,
         initialTime: TimeSelectionState? = nil,
-        initialStage: TimeInputStage = .period,
         initialRange: TimeRangeSelection? = nil,
         initialDate: Date = Date()
     ) -> TimePanelResult? {
@@ -277,7 +276,9 @@ final class TimeWindowController: NSObject {
     }
 
     private func cancelIfOutside(_ point: NSPoint) {
-        guard panel.isVisible, !panel.frame.contains(point) else { return }
+        guard panel.isVisible,
+              !rangeView.isDragging,
+              !panel.frame.contains(point) else { return }
         cancelSelection()
     }
 }

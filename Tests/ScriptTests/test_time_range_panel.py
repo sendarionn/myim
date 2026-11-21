@@ -17,6 +17,12 @@ class TimeRangePanelTests(unittest.TestCase):
         self.controller = (SOURCES / "InputController.swift").read_text(
             encoding="utf-8"
         )
+        self.state = (
+            Path(__file__).parents[2]
+            / "Sources"
+            / "MyIMECore"
+            / "TimeInputState.swift"
+        ).read_text(encoding="utf-8")
 
     def body(self, source, signature):
         start = source.index(signature)
@@ -79,6 +85,8 @@ class TimeRangePanelTests(unittest.TestCase):
         dragged = self.body(self.view, "override func mouseDragged(")
         self.assertIn("> Self.stillTolerance", dragged)
         self.assertIn("dragFinely(to: point)", dragged)
+        self.assertIn("TimeRangeFineDrag(", self.view)
+        self.assertNotIn("private struct FineDrag", self.view)
 
     def test_every_end_of_a_drag_drops_the_timer_and_the_hour(self):
         end = self.body(self.view, "func endDrag()")
@@ -101,8 +109,8 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertNotIn('"↵"', self.view)
 
     def test_each_knob_uses_its_own_center_as_the_hit_target(self):
-        knob = self.body(self.view, "private func knobEdge(")
-        self.assertIn("knobCenter(for: edge)", knob)
+        knob = self.body(self.view, "private func knobHandle(")
+        self.assertIn("knobCenter(for: handle)", knob)
         self.assertIn("<= knobHitRadius", knob)
 
     def test_grabbing_a_knob_does_not_move_it(self):
@@ -111,10 +119,23 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertNotIn("apply(", down)
 
     def test_every_value_path_uses_five_minute_steps(self):
-        self.assertIn("private static let step = 5", self.view)
+        self.assertIn(
+            "private static let step = TimeRangeSelection.dragStep",
+            self.view,
+        )
         self.assertIn("minutes.isMultiple(of: Self.step)", self.view)
         self.assertIn("moveFocusedEdge(by: -Self.step)", self.view)
         self.assertIn("moveFocusedEdge(by: Self.step)", self.view)
+
+    def test_physical_handles_are_separate_from_chronological_roles(self):
+        self.assertIn("enum Handle", self.state)
+        self.assertIn("enum Role", self.state)
+        self.assertIn("upperRoleAtEquality", self.state)
+        self.assertIn("state.role(of: handle)", self.view)
+
+    def test_dragging_outside_does_not_close_the_panel(self):
+        cancel = self.body(self.window, "private func cancelIfOutside(")
+        self.assertIn("!rangeView.isDragging", cancel)
 
 
 if __name__ == "__main__":

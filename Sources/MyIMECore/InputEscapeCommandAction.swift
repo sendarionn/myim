@@ -4,7 +4,7 @@ public enum InputEscapeCommandAction: Equatable, Sendable {
     case closeCalendar
     case cancelCalendarFormat
     case closeTime
-    /// Esc on the time formats goes back to the clock with the same time
+    /// Esc on the time formats goes back to the rail with the same time
     case returnToTimeSelection
     case leaveTranslation
     case leaveFuzzyCandidate
