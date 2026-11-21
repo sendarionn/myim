@@ -127,11 +127,29 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertIn('return "\\(start) 〜 \\(end)"', preview)
         self.assertIn("guard state.mode == .range else { return start }", preview)
 
-    def test_panel_background_has_square_corners(self):
+    def test_transparent_parent_has_no_outer_background_or_shadow(self):
         draw = self.body(self.view, "override func draw(")
-        self.assertIn("NSBezierPath(rect:", draw)
-        self.assertNotIn("roundedRect: bounds", draw)
-        self.assertNotIn("xRadius: 14", draw)
+        self.assertIn("drawPreview()", draw)
+        self.assertIn("drawRail()", draw)
+        self.assertNotIn("bounds.insetBy", draw)
+        self.assertIn("panel.backgroundColor = .clear", self.window)
+        self.assertIn("panel.hasShadow = false", self.window)
+
+    def test_preview_and_slider_are_separate_minimal_regions(self):
+        preview = self.body(self.view, "private var previewRect:")
+        self.assertIn("textSize.width", preview)
+        self.assertIn("+ 24", preview)
+        rail = self.body(self.view, "private var railRect:")
+        self.assertIn("width: 276", rail)
+        self.assertIn("height: 56", rail)
+
+    def test_day_ticks_and_zoom_ticks_follow_the_spec(self):
+        ticks = self.body(self.view, "private func tickMarks(")
+        self.assertIn("by: 180", ticks)
+        self.assertIn("minutes.isMultiple(of: 360)", ticks)
+        self.assertIn("stride(from: first, through: last, by: 5)", ticks)
+        self.assertIn('label = "\\(minutes / 60)時"', ticks)
+        self.assertIn("minutes.isMultiple(of: 10)", ticks)
 
     def test_each_knob_uses_its_own_center_as_the_hit_target(self):
         knob = self.body(self.view, "private func knobHandle(")

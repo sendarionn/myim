@@ -14,16 +14,14 @@ public struct TimeRangeFineDrag: Equatable, Sendable {
     public init(
         handle: TimeInputState.Handle,
         state: TimeInputState,
-        knobFraction: Double,
         cursorX: Double,
         railWidth: Double
     ) {
         self.handle = handle
         let minutes = Double(state.minutes(of: handle))
-        let unclampedStart = minutes
-            - Double(Self.windowMinutes) * knobFraction
         windowStart = min(
-            max(unclampedStart, 0),
+            (minutes / Double(Self.windowMinutes)).rounded(.down)
+                * Double(Self.windowMinutes),
             Double(TimeRangeSelection.dayMinutes - Self.windowMinutes)
         )
         self.railWidth = max(railWidth, 1)

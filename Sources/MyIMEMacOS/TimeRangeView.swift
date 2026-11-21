@@ -45,11 +45,10 @@ final class TimeRangeView: NSView {
     private let previewElement = NSAccessibilityElement()
     private let upperKnobElement = TimeHandleAccessibilityElement()
     private let lowerKnobElement = TimeHandleAccessibilityElement()
-    private let railY: CGFloat = 48
-    private let knobOffset: CGFloat = 13
     private let knobRadius: CGFloat = 7
     private let knobHitRadius: CGFloat = 14
     private let previewFont = NSFont.monospacedDigitSystemFont(ofSize: 20, weight: .semibold)
+    private let tickFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -224,12 +223,9 @@ final class TimeRangeView: NSView {
         guard ProcessInfo.processInfo.systemUptime - stillSince >= Self.stillDuration else { return }
         stillnessTimer?.invalidate()
         stillnessTimer = nil
-        let minutes = Double(state.minutes(of: handle))
-        let fraction = minutes / Double(TimeRangeSelection.dayMinutes)
         fineDrag = TimeRangeFineDrag(
             handle: handle,
             state: state,
-            knobFraction: fraction,
             cursorX: Double(lastDragPoint.x),
             railWidth: Double(max(railRect.width, 1)),
         )
@@ -264,11 +260,13 @@ final class TimeRangeView: NSView {
     // MARK: Geometry and drawing
 
     private var railRect: NSRect {
-        NSRect(x: 28, y: railY - 2, width: bounds.width - 56, height: 4)
+        NSRect(x: 28, y: 18, width: 276, height: 56)
     }
 
     private var previewRect: NSRect {
-        NSRect(x: 28, y: 88, width: bounds.width - 56, height: 30)
+        let textSize = (previewText as NSString).size(withAttributes: [.font: previewFont])
+        let width = ceil(textSize.width) + 24
+        return NSRect(x: bounds.midX - width / 2, y: 96, width: width, height: 30)
     }
 
     private func x(forMinutes minutes: Int) -> CGFloat {
@@ -284,28 +282,36 @@ final class TimeRangeView: NSView {
     }
 
     private func knobCenter(for handle: Handle) -> NSPoint {
-        NSPoint(
+        let rail = railRect
+        return NSPoint(
             x: x(forMinutes: state.minutes(of: handle)),
-            y: handle == .upper ? railY + knobOffset : railY - knobOffset
+            y: handle == .upper ? rail.maxY + 8 : rail.minY - 8
         )
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        let background = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
-        NSColor.windowBackgroundColor.setFill()
-        background.fill()
-        NSColor.separatorColor.setStroke()
-        background.lineWidth = 1
-        background.stroke()
+        drawPreview()
+        drawRail()
+    }
 
+    private var panelBackgroundColor: NSColor {
+        NSColor(calibratedWhite: 0.18, alpha: 0.98)
+    }
+
+    private func drawPreview() {
+        let panel = NSBezierPath(rect: previewRect)
+        panelBackgroundColor.setFill()
+        panel.fill()
+        NSColor.separatorColor.setStroke()
+        panel.lineWidth = 1
+        panel.stroke()
         drawCentered(
             previewText,
             at: NSPoint(x: previewRect.midX, y: previewRect.midY),
             font: previewFont,
-            color: .labelColor
+            color: .white
         )
-        drawRail()
     }
 
     private var previewText: String {
@@ -317,82 +323,176 @@ final class TimeRangeView: NSView {
 
     private func drawRail() {
         let rail = railRect
-        NSColor.separatorColor.setFill()
-        NSBezierPath(roundedRect: rail, xRadius: 2, yRadius: 2).fill()
+        panelBackgroundColor.setFill()
+        NSBezierPath(rect: rail).fill()
         if state.mode == .range, state.end > state.start {
             let startX = x(forMinutes: state.start)
             let endX = x(forMinutes: state.end)
-            NSColor.controlAccentColor.setFill()
-            NSBezierPath(
-                roundedRect: NSRect(
-                    x: startX,
-                    y: rail.minY,
-                    width: max(endX - startX, 0),
-                    height: rail.height
-                ),
-                xRadius: 2,
-                yRadius: 2
+            NSColor.controlAccentColor.withAlphaComponent(0.20).setFill()
+            NSRect(
+                x: startX,
+                y: rail.minY,
+                width: max(endX - startX, 0),
+                height: rail.height
             ).fill()
         }
 
-        for tick in tickMarks() {
+        NSColor.separatorColor.setStroke()
+        for y in [rail.minY, rail.maxY] {
+            let border = NSBezierPath()
+            border.move(to: NSPoint(x: rail.minX, y: y))
+            border.line(to: NSPoint(x: rail.maxX, y: y))
+            border.lineWidth = 1
+            border.stroke()
+        }
+
+        let ticks = tickMarks()
+        for tick in ticks where !tick.isEndpoint {
             let tickX = x(forMinutes: tick.minutes)
-            NSColor.tertiaryLabelColor.setFill()
-            NSRect(x: tickX - 0.5, y: rail.minY - 4, width: 1, height: 3).fill()
-            if let label = tick.label {
-                drawCentered(
-                    label,
-                    at: NSPoint(x: tickX, y: 15),
-                    font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular),
-                    color: .secondaryLabelColor
-                )
-            }
+            drawTickLine(atX: tickX, label: tick.label)
         }
 
         for handle in Handle.allCases where showsKnob(handle) {
-            let center = knobCenter(for: handle)
-            let stem = NSBezierPath()
-            stem.move(to: NSPoint(x: center.x, y: railY))
-            stem.line(to: center)
+            drawHandleLine(handle, ticks: ticks)
+        }
+        for tick in ticks {
+            guard let label = tick.label else { continue }
+            drawTickLabel(label, atX: x(forMinutes: tick.minutes), isEndpoint: tick.isEndpoint)
+        }
+        for handle in Handle.allCases where showsKnob(handle) {
+            drawKnob(handle)
+        }
+    }
+
+    private func drawTickLine(atX x: CGFloat, label: String?) {
+        let rail = railRect
+        let color = NSColor.white.withAlphaComponent(0.28)
+        if let label {
+            let rect = labelRect(label, atX: x)
+            strokeVertical(x: x, from: rail.minY, to: rect.minY - 3, color: color)
+            strokeVertical(x: x, from: rect.maxY + 3, to: rail.maxY, color: color)
+        } else {
+            strokeVertical(x: x, from: rail.minY, to: rail.minY + 8, color: color)
+            strokeVertical(x: x, from: rail.maxY - 8, to: rail.maxY, color: color)
+        }
+    }
+
+    private func drawHandleLine(_ handle: Handle, ticks: [TickMark]) {
+        let center = knobCenter(for: handle)
+        let rail = railRect
+        let color = NSColor.controlAccentColor
+        if handle == .upper {
+            strokeVertical(x: center.x, from: rail.maxY, to: center.y, color: color, width: 1.5)
+        } else {
+            strokeVertical(x: center.x, from: center.y, to: rail.minY, color: color, width: 1.5)
+        }
+        let label = ticks.first(where: { $0.minutes == state.minutes(of: handle) })?.label
+        if let label {
+            let rect = labelRect(label, atX: center.x)
+            strokeVertical(x: center.x, from: rail.minY, to: rect.minY - 3, color: color, width: 1.5)
+            strokeVertical(x: center.x, from: rect.maxY + 3, to: rail.maxY, color: color, width: 1.5)
+        } else {
+            strokeVertical(x: center.x, from: rail.minY, to: rail.maxY, color: color, width: 1.5)
+        }
+    }
+
+    private func drawKnob(_ handle: Handle) {
+        let center = knobCenter(for: handle)
+        let knob = NSBezierPath(ovalIn: NSRect(
+            x: center.x - knobRadius,
+            y: center.y - knobRadius,
+            width: knobRadius * 2,
+            height: knobRadius * 2
+        ))
+        if state.mode == .time, handle == .lower {
+            NSColor.clear.setFill()
+            knob.fill()
             NSColor.controlAccentColor.setStroke()
-            stem.lineWidth = 1.5
-            stem.stroke()
-            let knob = NSBezierPath(ovalIn: NSRect(
-                x: center.x - knobRadius,
-                y: center.y - knobRadius,
-                width: knobRadius * 2,
-                height: knobRadius * 2
-            ))
-            if state.mode == .time, handle == .lower {
-                NSColor.windowBackgroundColor.setFill()
-                knob.fill()
-                NSColor.controlAccentColor.setStroke()
+            knob.lineWidth = 1.5
+            knob.stroke()
+        } else {
+            NSColor.controlAccentColor.setFill()
+            knob.fill()
+            if handle == focusedHandle {
+                NSColor.white.setStroke()
                 knob.lineWidth = 1.5
                 knob.stroke()
-            } else {
-                NSColor.controlAccentColor.setFill()
-                knob.fill()
-                if handle == focusedHandle {
-                    NSColor.labelColor.setStroke()
-                    knob.lineWidth = 1.5
-                    knob.stroke()
-                }
             }
         }
     }
 
-    private func tickMarks() -> [(minutes: Int, label: String?)] {
+    private struct TickMark {
+        let minutes: Int
+        let label: String?
+        let isEndpoint: Bool
+    }
+
+    private func tickMarks() -> [TickMark] {
         guard let fineDrag else {
-            return stride(from: 0, through: 24, by: 6).map { ($0 * 60, String($0)) }
+            return stride(from: 0, through: TimeRangeSelection.dayMinutes, by: 180)
+                .map { minutes in
+                    TickMark(
+                        minutes: minutes,
+                        label: minutes.isMultiple(of: 360) ? String(minutes / 60) : nil,
+                        isEndpoint: minutes == 0 || minutes == TimeRangeSelection.dayMinutes
+                    )
+                }
         }
-        let first = Int((fineDrag.windowStart / 5).rounded(.up)) * 5
-        return stride(from: first, through: Int(fineDrag.windowEnd), by: 5)
-            .filter { (0...TimeRangeSelection.dayMinutes).contains($0) }
+        let first = Int(fineDrag.windowStart)
+        let last = Int(fineDrag.windowEnd)
+        return stride(from: first, through: last, by: 5)
             .map { minutes in
-                (minutes, minutes.isMultiple(of: 10)
-                    ? TimeRangeSelection.text(forMinutes: minutes)
-                    : nil)
+                let isEndpoint = minutes == first || minutes == last
+                let label: String?
+                if isEndpoint {
+                    label = "\(minutes / 60)時"
+                } else if minutes.isMultiple(of: 10) {
+                    label = String(format: "%02d", minutes % 60)
+                } else {
+                    label = nil
+                }
+                return TickMark(minutes: minutes, label: label, isEndpoint: isEndpoint)
             }
+    }
+
+    private func labelRect(_ label: String, atX x: CGFloat) -> NSRect {
+        let attributes: [NSAttributedString.Key: Any] = [.font: tickFont]
+        let size = (label as NSString).size(withAttributes: attributes)
+        return NSRect(
+            x: x - size.width / 2,
+            y: railRect.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    private func drawTickLabel(_ label: String, atX x: CGFloat, isEndpoint: Bool) {
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: tickFont,
+            .foregroundColor: NSColor.white.withAlphaComponent(0.82)
+        ]
+        if isEndpoint {
+            attributes[.strokeColor] = panelBackgroundColor
+            attributes[.strokeWidth] = -3
+        }
+        let rect = labelRect(label, atX: x)
+        (label as NSString).draw(at: rect.origin, withAttributes: attributes)
+    }
+
+    private func strokeVertical(
+        x: CGFloat,
+        from start: CGFloat,
+        to end: CGFloat,
+        color: NSColor,
+        width: CGFloat = 1
+    ) {
+        guard end > start else { return }
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: x, y: start))
+        path.line(to: NSPoint(x: x, y: end))
+        color.setStroke()
+        path.lineWidth = width
+        path.stroke()
     }
 
     private func drawCentered(

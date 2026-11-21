@@ -62,6 +62,7 @@ final class TimeWindowController: NSObject {
         ]
         panel.isOpaque = false
         panel.backgroundColor = .clear
+        panel.hasShadow = false
         panel.contentView?.addSubview(rangeView)
         rangeView.autoresizingMask = [.width, .height]
         panel.cancelAction = { [weak self] in self?.handleEscape() }
