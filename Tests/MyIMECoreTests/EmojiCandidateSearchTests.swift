@@ -70,4 +70,29 @@ struct EmojiCandidateSearchTests {
     func typedRomajiIsSearchedWithItsKana() {
         #expect(EmojiCandidateSearch.queries(for: "sushi") == ["sushi", "すし", "スシ"])
     }
+
+    /// The index finds what reading every entry finds
+    @Test
+    func indexFindsWhatEveryEntryNames() {
+        let index = EmojiCandidateSearch.Index(entries: entries)
+        for queries in [["猫"], ["cat"], ["neko", "ねこ", "ネコ", "猫"], ["本", "boo"], ["すし", "寿"], ["の", "ca"]] {
+            let expected = entries.enumerated()
+                .compactMap { offset, entry -> (EmojiCandidateSearch.Relevance, Int, String)? in
+                    let found = queries.compactMap { query -> EmojiCandidateSearch.Relevance? in
+                        let ascii = query.allSatisfy(\.isASCII)
+                        guard let relevance = EmojiCandidateSearch.relevance(of: entry, queries: [query]) else { return nil }
+                        if query.count == 1 && !ascii { return relevance == .exact ? relevance : nil }
+                        guard ascii ? query.count >= 3 : query.count >= 2 else { return nil }
+                        return relevance <= .prefix ? relevance : nil
+                    }.min()
+                    return found.map { ($0, offset, entry.emoji) }
+                }
+                .sorted { ($0.0, $0.1) < ($1.0, $1.1) }
+                .map(\.2)
+            #expect(
+                EmojiCandidateSearch.candidates(in: index, queries: queries, excluding: [], limit: 10) == expected,
+                "\(queries)"
+            )
+        }
+    }
 }

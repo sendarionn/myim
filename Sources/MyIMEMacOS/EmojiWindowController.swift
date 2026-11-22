@@ -182,6 +182,10 @@ final class EmojiWindowController: NSObject {
         )
     }
 
+    private static let searchIndex = EmojiCandidateSearch.Index(
+        entries: searchEntries
+    )
+
     /// Emoji offered among the conversion candidates for the typed input
     /// and the words it converts to, such as 猫 for `neko`
     static func conversionCandidates(
@@ -193,7 +197,7 @@ final class EmojiWindowController: NSObject {
         let queries = EmojiCandidateSearch.queries(for: input)
             + words.map(EmojiSearchMatcher.normalized).filter { !$0.isEmpty }
         return EmojiCandidateSearch.candidates(
-            in: searchEntries,
+            in: searchIndex,
             queries: queries,
             excluding: existing,
             limit: limit

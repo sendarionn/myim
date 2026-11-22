@@ -62,6 +62,62 @@ public enum EmojiCandidateSearch {
         return best
     }
 
+    /// The terms of the entries sorted for lookup, so the conversion
+    /// candidates, searched on every key, need not read every entry
+    public struct Index: Sendable {
+        fileprivate let emojis: [String]
+        /// Each term with the entry it describes, by its precomposed UTF-8
+        fileprivate let terms: [(key: [UInt8], term: String, entry: Int)]
+
+        public init(entries: [Entry]) {
+            emojis = entries.map(\.emoji)
+            terms = entries.enumerated()
+                .flatMap { index, entry in
+                    entry.terms.map { (Index.key($0), $0, index) }
+                }
+                .sorted { $0.key.lexicographicallyPrecedes($1.key) }
+        }
+
+        fileprivate static func key(_ value: String) -> [UInt8] {
+            Array(value.precomposedStringWithCanonicalMapping.utf8)
+        }
+
+        /// The entries with a term the query names whole, or also begins
+        fileprivate func matches(
+            _ query: String,
+            includingPrefixes: Bool,
+            into best: inout [Int: Relevance]
+        ) {
+            let key = Index.key(query)
+            var low = 0
+            var high = terms.count
+            while low < high {
+                let middle = (low + high) / 2
+                if terms[middle].key.lexicographicallyPrecedes(key) {
+                    low = middle + 1
+                } else {
+                    high = middle
+                }
+            }
+            var position = low
+            while position < terms.count, terms[position].key.starts(with: key) {
+                let item = terms[position]
+                position += 1
+                let relevance: Relevance
+                if item.term == query {
+                    relevance = .exact
+                } else if includingPrefixes, item.term.hasPrefix(query) {
+                    relevance = .prefix
+                } else {
+                    continue
+                }
+                if best[item.entry].map({ relevance < $0 }) ?? true {
+                    best[item.entry] = relevance
+                }
+            }
+        }
+    }
+
     /// Emoji for the conversion candidates: only terms the queries name
     /// whole or begin, closest first and in catalog order otherwise. A
     /// single character only names a term whole, and ASCII shorter than
@@ -73,26 +129,32 @@ public enum EmojiCandidateSearch {
         excluding existing: Set<String>,
         limit: Int
     ) -> [String] {
-        let wholeOnly = queries.filter { query in
-            query.count == 1 && !query.allSatisfy(\.isASCII)
-        }
-        let beginning = queries.filter { query in
-            query.allSatisfy(\.isASCII) ? query.count >= 3 : query.count >= 2
-        }
-        guard !wholeOnly.isEmpty || !beginning.isEmpty else { return [] }
-        var ranked: [(relevance: Relevance, index: Int, emoji: String)] = []
-        for (index, entry) in entries.enumerated()
-        where !existing.contains(entry.emoji) {
-            let whole = relevance(of: entry, queries: wholeOnly)
-                .flatMap { $0 == .exact ? $0 : nil }
-            let begun = relevance(of: entry, queries: beginning)
-                .flatMap { $0 <= .prefix ? $0 : nil }
-            guard let best = [whole, begun].compactMap({ $0 }).min() else { continue }
-            ranked.append((best, index, entry.emoji))
+        candidates(
+            in: Index(entries: entries),
+            queries: queries,
+            excluding: existing,
+            limit: limit
+        )
+    }
+
+    public static func candidates(
+        in index: Index,
+        queries: [String],
+        excluding existing: Set<String>,
+        limit: Int
+    ) -> [String] {
+        var best: [Int: Relevance] = [:]
+        for query in unique(queries) {
+            if query.allSatisfy(\.isASCII) ? query.count >= 3 : query.count >= 2 {
+                index.matches(query, includingPrefixes: true, into: &best)
+            } else if query.count == 1, !query.allSatisfy(\.isASCII) {
+                index.matches(query, includingPrefixes: false, into: &best)
+            }
         }
         return unique(
-            ranked.sorted { ($0.relevance, $0.index) < ($1.relevance, $1.index) }
-                .map(\.emoji)
+            best.filter { !existing.contains(index.emojis[$0.key]) }
+                .sorted { ($0.value, $0.key) < ($1.value, $1.key) }
+                .map { index.emojis[$0.key] }
         ).prefix(limit).map { $0 }
     }
 
