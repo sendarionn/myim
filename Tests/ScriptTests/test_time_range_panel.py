@@ -110,6 +110,17 @@ class TimeRangePanelTests(unittest.TestCase):
                 self.assertIn("rangeView.endDrag()",
                               self.body(self.window, caller))
 
+    def test_each_knob_receives_clicks_on_its_whole_hit_circle(self):
+        # The transparent panel let clicks on undrawn pixels through to the
+        # application below, which made the hollow lower knob unusable
+        area = self.body(self.view, "private func drawKnobHitArea(")
+        self.assertIn("withAlphaComponent(0.02)", area)
+        self.assertIn("knobHitRadius * 2", area)
+        hit = self.body(self.view, "private func knobHandle(")
+        self.assertIn("<= knobHitRadius", hit)
+        self.assertLess(self.view.index("drawKnobHitArea(handle)"),
+                        self.view.index("drawKnob(handle)\n"))
+
     def test_only_voiceover_names_describe_the_parts(self):
         for label in ["選択時刻", "時刻のつまみ", "終了時刻のつまみ"]:
             self.assertIn(f'"{label}"', self.view)

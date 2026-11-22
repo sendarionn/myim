@@ -393,6 +393,7 @@ final class TimeRangeView: NSView {
             drawTickLabel(label, atX: x(forMinutes: tick.minutes), isEndpoint: tick.isEndpoint)
         }
         for handle in Handle.allCases where showsKnob(handle) {
+            drawKnobHitArea(handle)
             drawKnob(handle)
         }
     }
@@ -427,6 +428,21 @@ final class TimeRangeView: NSView {
         } else {
             strokeVertical(x: center.x, from: rail.minY, to: rail.maxY, color: color, width: 1.5)
         }
+    }
+
+    /// The panel is transparent, and macOS passes a click on a pixel with
+    /// nothing drawn to the application below; the hollow lower knob let
+    /// nearly every click through. A fill too faint to see makes the whole
+    /// circle `knobHandle(at:)` accepts receive the click
+    private func drawKnobHitArea(_ handle: Handle) {
+        let center = knobCenter(for: handle)
+        NSColor.black.withAlphaComponent(0.02).setFill()
+        NSBezierPath(ovalIn: NSRect(
+            x: center.x - knobHitRadius,
+            y: center.y - knobHitRadius,
+            width: knobHitRadius * 2,
+            height: knobHitRadius * 2
+        )).fill()
     }
 
     private func drawKnob(_ handle: Handle) {
