@@ -3642,9 +3642,12 @@ final class InputController: IMKInputController {
 
     private func handleBookmarkEscape(client sender: Any) {
         if bookmarkSearchSession.isSelectingFormat {
+            // Back to the titles, with the search, selection and preview
             candidateSearchCoordinator.cancel(.bookmarkFormat)
             bookmarkSearchSession.returnToSearch()
+            bookmarkPanel.hideFormats()
             showBookmarkCandidates()
+            updateBookmarkPreview()
         } else {
             clearBookmarkSearch(client: sender)
         }
@@ -3689,6 +3692,7 @@ final class InputController: IMKInputController {
                 self.bookmarkSearchSession.replaceFormats(supportedFormats)
                 if supportedFormats.isEmpty {
                     self.bookmarkSearchSession.returnToSearch()
+                    self.bookmarkPanel.hideFormats()
                     NSSound.beep()
                     self.showBookmarkCandidates()
                 } else {
@@ -3752,6 +3756,7 @@ final class InputController: IMKInputController {
         return result
     }
 
+    /// The titles found, kept while a format is chosen beside them
     private func showBookmarkCandidates() {
         guard let context = bookmarkInsertionContext else { return }
         let candidates = bookmarkSearchSession.filteredBookmarks
@@ -3761,37 +3766,50 @@ final class InputController: IMKInputController {
         let selectedIndex = bookmarkSearchSession.selectedBookmarkIndex.map {
             $0 - pageRange.lowerBound
         }
-        bookmarkPanel.onSelectionChanged = { [weak self] localIndex in
-            guard let self else { return }
-            self.bookmarkSearchSession.selectBookmark(
-                at: localIndex.map { pageRange.lowerBound + $0 }
-            )
-            // A click changes the preview as the arrow keys do
-            self.updateBookmarkPreview()
+        bookmarkPanel.onListSelectionChanged = { [weak self] localIndex in
+            self?.selectBookmarkTitle(at: localIndex.map { pageRange.lowerBound + $0 })
         }
         let displayedCandidates: [String]
-        let bookmarkRows: [Bool]
-        if let emptyMessage = bookmarkSearchSession.emptyMessage {
+        if bookmarkSearchSession.isSearching,
+           let emptyMessage = bookmarkSearchSession.emptyMessage {
             displayedCandidates = [emptyMessage]
-            bookmarkRows = [false]
         } else {
-            displayedCandidates = candidates[pageRange].map(\.displayText)
-            // Every listed row is a bookmark of the search result
-            bookmarkRows = Array(repeating: true, count: displayedCandidates.count)
+            // Only what the choice needs; the search text is in the input
+            // position already
+            displayedCandidates = candidates[pageRange].map {
+                $0.title.isEmpty ? $0.url : $0.title
+            }
         }
-        bookmarkPanel.show(
+        bookmarkPanel.showList(
             candidates: displayedCandidates,
-            bookmarkRows: bookmarkRows,
             selectedIndex: selectedIndex,
-            caption: "ブックマーク検索: \(bookmarkSearchSession.searchText)",
             reservesEmptyRow: bookmarkSearchSession.stage == .loadingBookmarks,
             near: context.anchorFrame,
             beside: occupiedConversionFrame
         )
     }
 
+    /// A title clicked: while formats are listed, they follow the new title
+    private func selectBookmarkTitle(at index: Int?) {
+        if bookmarkSearchSession.isSelectingFormat {
+            guard let index,
+                  index != bookmarkSearchSession.selectedBookmarkIndex,
+                  let client = activeInputClient ?? (client() as Any?) else {
+                return
+            }
+            candidateSearchCoordinator.cancel(.bookmarkFormat)
+            bookmarkSearchSession.returnToSearch()
+            bookmarkSearchSession.selectBookmark(at: index)
+            beginBookmarkFormatSelection(client: client)
+        } else {
+            bookmarkSearchSession.selectBookmark(at: index)
+        }
+        updateBookmarkPreview()
+    }
+
+    /// The formats in their own panel beside the titles
     private func showBookmarkFormats() {
-        guard let context = bookmarkInsertionContext else { return }
+        showBookmarkCandidates()
         let formats = bookmarkSearchSession.formats
         let pageRange = bookmarkSearchSession.formatPageRange(
             pageSize: Self.maximumCandidateCount
@@ -3799,20 +3817,19 @@ final class InputController: IMKInputController {
         let selectedIndex = bookmarkSearchSession.selectedFormatIndex.map {
             $0 - pageRange.lowerBound
         }
-        bookmarkPanel.onSelectionChanged = { [weak self] localIndex in
+        bookmarkPanel.onFormatSelectionChanged = { [weak self] localIndex in
             guard let self else { return }
             self.bookmarkSearchSession.selectFormat(
                 at: localIndex.map { pageRange.lowerBound + $0 }
             )
         }
-        bookmarkPanel.show(
-            candidates: formats[pageRange].map { "\($0.label) — \($0.text)" },
+        bookmarkPanel.showFormats(
+            // Only the text each format inserts
+            candidates: formats[pageRange].map(\.text),
             selectedIndex: selectedIndex,
-            caption: bookmarkSearchSession.formatBookmark?.title ?? "書式",
-            reservesEmptyRow: bookmarkSearchSession.stage == .loadingFormats,
-            near: context.anchorFrame,
-            beside: occupiedConversionFrame
+            reservesEmptyRow: bookmarkSearchSession.stage == .loadingFormats
         )
+        updateBookmarkPreview()
     }
 
     /// Shows the search text, the committed query and what is being typed,
@@ -3871,16 +3888,23 @@ final class InputController: IMKInputController {
     /// search text is converted, the preview belongs to the conversion
     /// candidates, so it closes; formats and no selection close it too
     private func updateBookmarkPreview() {
-        guard bookmarkSearchSession.stage == .searching,
+        // The bookmark whose title is chosen, also while its formats are
+        let bookmark = bookmarkSearchSession.formatBookmark
+            ?? bookmarkSearchSession.selectedBookmark
+        guard bookmarkSearchSession.isActive,
               inputBuffer.isEmpty,
-              let bookmark = bookmarkSearchSession.selectedBookmark,
+              let bookmark,
               let url = URL(string: bookmark.url),
-              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              url.scheme?.lowercased() == "https",
               let panelFrame = bookmarkPanel.visibleFrame else {
             closeBookmarkPreview()
             return
         }
-        guard url != bookmarkPreviewURL else { return }
+        // Only a new title loads a page; panels that moved move it only
+        guard url != bookmarkPreviewURL else {
+            previewWindow.moveInformationPanel(beside: panelFrame)
+            return
+        }
         bookmarkPreviewURL = url
         _ = previewWindow.show(
             url: url,

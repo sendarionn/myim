@@ -258,6 +258,18 @@ final class ExternalInformationWindowController: NSObject {
         )
     }
 
+    /// Moves the page shown now beside other panels, without loading it
+    /// again; the browser keeps a page whose URL is unchanged
+    func moveInformationPanel(beside candidateFrame: NSRect) {
+        guard informationPanelIsVisible, let displayedURL else { return }
+        positionInformationPanel(near: candidateFrame)
+        externalBrowser.send(browserCommand(
+            url: displayedURL,
+            title: displayedPanelTitle,
+            isVisible: true
+        ))
+    }
+
     func hide() {
         if definitionPanel.isVisible {
             onDiagnosticEvent?("dictionaryPanel.hide")

@@ -196,9 +196,19 @@ class BookmarkPanelKeyCaptureTests(unittest.TestCase):
 
     def test_bookmarks_have_their_own_panel_beside_the_candidates(self):
         show = self.body("private func showBookmarkCandidates()")
-        self.assertIn("bookmarkPanel.show(", show)
+        self.assertIn("bookmarkPanel.showList(", show)
         self.assertIn("beside: occupiedConversionFrame", show)
         self.assertNotIn("primaryCandidatePanel.show(", show)
+        self.assertNotIn("caption:", show)
+
+    def test_formats_open_beside_the_titles_and_keep_the_preview(self):
+        formats = self.body("private func showBookmarkFormats()")
+        self.assertLess(formats.index("showBookmarkCandidates()"),
+                        formats.index("bookmarkPanel.showFormats("))
+        preview = self.body("private func updateBookmarkPreview()")
+        self.assertIn("bookmarkSearchSession.formatBookmark", preview)
+        self.assertIn("previewWindow.moveInformationPanel(beside: panelFrame)",
+                      preview)
 
     def test_ending_the_search_removes_the_search_text(self):
         clear = self.body("private func clearBookmarkSearch(")

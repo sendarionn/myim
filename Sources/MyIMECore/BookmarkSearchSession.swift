@@ -200,11 +200,13 @@ public struct BookmarkSearchSession: Equatable, Sendable {
         if bookmarks.isEmpty {
             return Self.syncedButEmptyMessage
         }
-        return "「\(searchText)」に一致するブックマークがありません"
+        // The search text is in the input position, so it is not repeated
+        return Self.noMatchMessage
     }
 
     public static let notSyncedMessage =
         "Chrome拡張機能からまだ同期されていません"
+    public static let noMatchMessage = "一致するブックマークがありません"
     public static let syncedButEmptyMessage =
         "同期済みのブックマークが0件です"
 

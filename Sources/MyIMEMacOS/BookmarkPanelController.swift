@@ -1,49 +1,81 @@
 import AppKit
 
-/// The bookmark search's own panel, listing the bookmarks and then their
-/// formats. It stays shown while the search text is typed and converted,
-/// beside the conversion candidates so the two never overlap
+/// The bookmark search's own panels: the titles found, and beside them the
+/// formats of the chosen bookmark. The titles stay shown while the search
+/// text is typed and converted and while a format is chosen
 final class BookmarkPanelController {
-    private let panel = CandidatePanelController()
+    private let listPanel = CandidatePanelController()
+    private let formatPanel = CandidatePanelController()
     private static let spacing: CGFloat = 8
 
-    var onSelectionChanged: ((Int?) -> Void)? {
-        get { panel.onSelectionChanged }
-        set { panel.onSelectionChanged = newValue }
+    var onListSelectionChanged: ((Int?) -> Void)? {
+        get { listPanel.onSelectionChanged }
+        set { listPanel.onSelectionChanged = newValue }
     }
 
-    var isVisible: Bool { panel.isVisible }
-    var visibleFrame: NSRect? { panel.visibleFrame }
+    var onFormatSelectionChanged: ((Int?) -> Void)? {
+        get { formatPanel.onSelectionChanged }
+        set { formatPanel.onSelectionChanged = newValue }
+    }
+
+    var isVisible: Bool { listPanel.isVisible }
+
+    /// Both panels together, which the preview and other panels avoid
+    var visibleFrame: NSRect? {
+        switch (listPanel.visibleFrame, formatPanel.visibleFrame) {
+        case let (list?, format?): list.union(format)
+        case let (list?, nil): list
+        case let (nil, format?): format
+        case (nil, nil): nil
+        }
+    }
 
     /// `occupiedFrame` is what the conversion panels cover now; without it
-    /// the panel opens below the input position as the candidates do
-    /// `bookmarkRows` tells which rows are bookmarks, marked with the
-    /// bookmark symbol; formats and messages are not
-    func show(
+    /// the titles open below the input position as the candidates do
+    func showList(
         candidates: [String],
-        bookmarkRows: [Bool] = [],
         selectedIndex: Int?,
-        caption: String,
         reservesEmptyRow: Bool = false,
         near anchorFrame: NSRect,
         beside occupiedFrame: NSRect?
     ) {
-        panel.show(
+        listPanel.show(
             candidates: candidates,
-            bookmarkIndicators: bookmarkRows,
             selectedIndex: selectedIndex,
             near: anchorFrame,
-            caption: caption,
-            reservesEmptyRow: reservesEmptyRow,
-            minimumPanelText: "ブックマーク検索"
+            reservesEmptyRow: reservesEmptyRow
         )
         if let occupiedFrame {
-            panel.placeBeside(occupiedFrame, spacing: Self.spacing)
+            listPanel.placeBeside(occupiedFrame, spacing: Self.spacing)
+        }
+        if formatPanel.isVisible {
+            formatPanel.placeBeside(listPanel.frame, spacing: Self.spacing)
         }
     }
 
+    /// The formats beside the titles, which stay as they are
+    func showFormats(
+        candidates: [String],
+        selectedIndex: Int?,
+        reservesEmptyRow: Bool = false
+    ) {
+        formatPanel.show(
+            candidates: candidates,
+            selectedIndex: selectedIndex,
+            near: listPanel.frame,
+            reservesEmptyRow: reservesEmptyRow
+        )
+        formatPanel.placeBeside(listPanel.frame, spacing: Self.spacing)
+    }
+
+    func hideFormats() {
+        formatPanel.onSelectionChanged = nil
+        formatPanel.hide()
+    }
+
     func hide() {
-        panel.onSelectionChanged = nil
-        panel.hide()
+        hideFormats()
+        listPanel.onSelectionChanged = nil
+        listPanel.hide()
     }
 }

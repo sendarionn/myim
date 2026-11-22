@@ -104,6 +104,6 @@ struct SyncedBookmarkStoreTests {
 
         #expect(notSynced.emptyMessage == BookmarkSearchSession.notSyncedMessage)
         #expect(empty.emptyMessage == BookmarkSearchSession.syncedButEmptyMessage)
-        #expect(unmatched.emptyMessage == "「zzz」に一致するブックマークがありません")
+        #expect(unmatched.emptyMessage == BookmarkSearchSession.noMatchMessage)
     }
 }
