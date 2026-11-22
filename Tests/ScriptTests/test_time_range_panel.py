@@ -181,6 +181,12 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertIn("knobCenter(for: handle)", knob)
         self.assertIn("<= knobHitRadius", knob)
 
+    def test_lower_knob_hit_area_stays_inside_the_panel(self):
+        rail = self.body(self.view, "private var railRect:")
+        self.assertIn("y: knobHitRadius + 8", rail)
+        center = self.body(self.view, "private func knobCenter(")
+        self.assertIn("rail.minY - 8", center)
+
     def test_grabbing_a_knob_does_not_move_it(self):
         down = self.body(self.view, "override func mouseDown(")
         self.assertNotIn("applyDragged", down)

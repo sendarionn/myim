@@ -292,13 +292,14 @@ final class TimeRangeView: NSView {
     // MARK: Geometry and drawing
 
     private var railRect: NSRect {
-        NSRect(x: 28, y: 18, width: 276, height: 56)
+        // Keep the lower knob's complete hit circle inside the view
+        NSRect(x: 28, y: knobHitRadius + 8, width: 276, height: 56)
     }
 
     private var previewRect: NSRect {
         let textSize = (previewText as NSString).size(withAttributes: [.font: previewFont])
         let width = ceil(textSize.width) + 24
-        return NSRect(x: bounds.midX - width / 2, y: 96, width: width, height: 30)
+        return NSRect(x: bounds.midX - width / 2, y: 100, width: width, height: 30)
     }
 
     private func x(forMinutes minutes: Int) -> CGFloat {
