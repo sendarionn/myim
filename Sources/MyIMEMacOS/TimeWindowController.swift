@@ -67,6 +67,7 @@ final class TimeWindowController: NSObject {
         rangeView.autoresizingMask = [.width, .height]
         panel.cancelAction = { [weak self] in self?.handleEscape() }
         rangeView.cancelAction = { [weak self] in self?.handleEscape() }
+        rangeView.closeAction = { [weak self] in self?.cancelSelection() }
         rangeView.timeAction = { [weak self] time in
             self?.selectedTime = time
             NSApp.stopModal(withCode: .OK)
@@ -93,6 +94,12 @@ final class TimeWindowController: NSObject {
         }
         if event.keyCode == 53 {
             handleEscape()
+            return true
+        }
+        // Delete closes without choosing a time and never reaches the
+        // application, where it would delete text
+        if event.keyCode == 51 {
+            cancelSelection()
             return true
         }
         rangeView.handleKey(event)

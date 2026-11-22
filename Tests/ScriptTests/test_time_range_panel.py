@@ -27,6 +27,14 @@ class TimeRangePanelTests(unittest.TestCase):
         start = source.index(signature)
         return source[start:source.index("\n    }\n", start)]
 
+    def test_delete_closes_the_panel_from_either_route(self):
+        handle = self.body(self.window, "func handleKeyEvent(")
+        self.assertIn("if event.keyCode == 51 {\n            cancelSelection()", handle)
+        keys = self.body(self.view, "func handleKey(_ event: NSEvent)")
+        self.assertIn("case 51:\n            closeAction?()", keys)
+        self.assertIn("rangeView.closeAction = { [weak self] in self?.cancelSelection() }",
+                      self.window)
+
     def test_keys_the_input_method_receives_go_to_the_rail(self):
         handle = self.body(self.window, "func handleKeyEvent(")
         self.assertIn("rangeView.handleKey(event)", handle)

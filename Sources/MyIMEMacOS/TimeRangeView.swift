@@ -25,6 +25,8 @@ final class TimeRangeView: NSView {
     var timeAction: ((TimeSelectionState) -> Void)?
     var rangeAction: ((TimeRangeSelection) -> Void)?
     var cancelAction: (() -> Void)?
+    /// Delete closes the whole panel at once, unlike Esc's steps back
+    var closeAction: (() -> Void)?
 
     private(set) var state = TimeInputState(
         time: TimeSelectionState(hour: 0, minute: 0)!
@@ -111,6 +113,8 @@ final class TimeRangeView: NSView {
         switch event.keyCode {
         case 53:
             cancelAction?()
+        case 51:
+            closeAction?()
         case 36, 76:
             confirm()
         case 48:
