@@ -3,31 +3,38 @@ import Testing
 @testable import MyIMECore
 
 @Suite struct InputLocationQueryPolicyTests {
-    @Test func queriesMarkedTextBeforeTheSelection() {
+    @Test func queriesTheSelectionRelativeToMarkedText() {
         #expect(InputLocationQueryPolicy.characterIndices(
             markedRange: NSRange(location: 80, length: 4),
             selectedRange: NSRange(location: 84, length: 0)
-        ) == [80, 84])
+        ) == [4, 0])
     }
 
-    @Test func fallsBackToTheSelectionWithoutMarkedText() {
+    @Test func usesZeroWithoutMarkedText() {
         #expect(InputLocationQueryPolicy.characterIndices(
             markedRange: NSRange(location: NSNotFound, length: 0),
             selectedRange: NSRange(location: 42, length: 0)
-        ) == [42])
+        ) == [0])
     }
 
-    @Test func avoidsQueryingTheSameIndexTwice() {
+    @Test func avoidsQueryingTheSameRelativeIndexTwice() {
         #expect(InputLocationQueryPolicy.characterIndices(
             markedRange: NSRange(location: 42, length: 4),
             selectedRange: NSRange(location: 42, length: 0)
-        ) == [42])
+        ) == [0, 4])
     }
 
-    @Test func queriesTheCurrentInsertionLocation() {
+    @Test func ignoresSelectionOutsideMarkedText() {
+        #expect(InputLocationQueryPolicy.characterIndices(
+            markedRange: NSRange(location: 80, length: 4),
+            selectedRange: NSRange(location: 120, length: 0)
+        ) == [4, 0])
+    }
+
+    @Test func usesZeroForAnIMKSessionWithoutMarkedText() {
         #expect(InputLocationQueryPolicy.characterIndex(
             for: NSRange(location: 42, length: 0)
-        ) == 42)
+        ) == 0)
     }
 
     @Test func fallsBackOnlyWhenSelectionLocationIsUnavailable() {

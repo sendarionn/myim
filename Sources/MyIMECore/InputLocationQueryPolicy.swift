@@ -5,19 +5,26 @@ public enum InputLocationQueryPolicy {
         markedRange: NSRange,
         selectedRange: NSRange
     ) -> [Int] {
+        guard markedRange.location != NSNotFound else {
+            // IMKTextInput expects 0 when there is no inline session
+            return [0]
+        }
+
         var indices: [Int] = []
-        if markedRange.location != NSNotFound {
-            indices.append(markedRange.location)
+        if selectedRange.location != NSNotFound {
+            let relativeSelection = selectedRange.location - markedRange.location
+            if relativeSelection >= 0, relativeSelection <= markedRange.length {
+                indices.append(relativeSelection)
+            }
         }
-        if selectedRange.location != NSNotFound,
-           !indices.contains(selectedRange.location) {
-            indices.append(selectedRange.location)
+        for fallback in [markedRange.length, 0] where !indices.contains(fallback) {
+            indices.append(fallback)
         }
-        return indices.isEmpty ? [0] : indices
+        return indices
     }
 
     public static func characterIndex(for selectedRange: NSRange) -> Int {
-        selectedRange.location == NSNotFound ? 0 : selectedRange.location
+        0
     }
 
     public static func isValidRectangle(
