@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Records myim's features on a test TextEdit document and updates the
+# Records myim's features in a plain recording window and updates the
 # images README.md shows for them. Run only when README.md is to be
 # updated; normal development never runs it.
 #
@@ -22,11 +22,12 @@ scenario_directory="Scripts/readme/scenarios"
 asset_directory="docs/assets"
 tool_directory=".build/readme-tools"
 gui="$tool_directory/gui"
-editor_bundle="com.apple.TextEdit"
+stage_app="$tool_directory/myim-readme-stage.app"
+editor_bundle="io.github.sendarionn.myim.readme-stage"
 myim_bundle="io.github.sendarionn.inputmethod.myime"
 myim_input_source="io.github.sendarionn.inputmethod.myime.Japanese"
-# Where the test document is placed, in points from the top left; only
-# this rectangle is recorded
+# Where the recording window is placed, in points from the top left; only
+# this rectangle is recorded, with room below the text for myim's panels
 window_rect=(120 140 640 420)
 
 features=()
@@ -84,6 +85,27 @@ mkdir -p "$tool_directory" "$asset_directory"
 if [[ ! -x "$gui" || Scripts/readme/gui.swift -nt "$gui" ]]; then
     swiftc -O Scripts/readme/gui.swift -o "$gui" || exit 3
 fi
+if [[ ! -d "$stage_app" || Scripts/readme/stage.swift -nt "$stage_app/Contents/MacOS/myim-readme-stage" ]]; then
+    rm -rf "$stage_app"
+    mkdir -p "$stage_app/Contents/MacOS"
+    swiftc -O Scripts/readme/stage.swift \
+        -o "$stage_app/Contents/MacOS/myim-readme-stage" || exit 3
+    # myim tells input targets apart by bundle identifier
+    cat > "$stage_app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>$editor_bundle</string>
+    <key>CFBundleName</key><string>myim README Stage</string>
+    <key>CFBundleExecutable</key><string>myim-readme-stage</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+</dict>
+</plist>
+PLIST
+    codesign --force --sign - "$stage_app" >/dev/null 2>&1 || exit 3
+fi
 "$gui" check || exit 3
 
 if (( ! skip_install )); then
@@ -103,18 +125,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# A new, empty TextEdit document at window_rect, with myim selected
+# The recording window at window_rect, started empty, with myim selected
 open_editor() {
-    osascript >/dev/null <<APPLESCRIPT || return 1
-tell application "TextEdit"
-    activate
-    set testDocument to make new document
-    set bounds of front window to {${window_rect[1]}, ${window_rect[2]}, $(( window_rect[1] + window_rect[3] )), $(( window_rect[2] + window_rect[4] ))}
-end tell
-APPLESCRIPT
-    sleep 1
+    close_editor
+    stage_text_file="$work_directory/stage-text"
+    open -n "$stage_app" --args \
+        --frame "${window_rect[@]}" --text-file "$stage_text_file" || return 1
+    local attempt
+    for attempt in {1..20}; do
+        [[ "$("$gui" frontmost)" == "$editor_bundle" ]] && break
+        sleep 0.25
+    done
     [[ "$("$gui" frontmost)" == "$editor_bundle" ]] || {
-        echo "TextEditを前面にできません" >&2
+        echo "撮影用ウィンドウを前面にできません" >&2
         return 1
     }
     "$gui" select-input-source "$myim_input_source" >/dev/null || return 1
@@ -122,18 +145,21 @@ APPLESCRIPT
 }
 
 close_editor() {
-    osascript -e 'tell application "TextEdit" to if (count of documents) > 0 then close front document saving no' \
-        >/dev/null 2>&1
+    pkill -x myim-readme-stage 2>/dev/null
+    sleep 0.3
 }
 
 editor_text() {
-    osascript -e 'tell application "TextEdit" to get text of front document'
+    cat "$stage_text_file" 2>/dev/null
 }
 
-# Records window_rect in the background for at most `seconds`
+# Records window_rect in the background for at most `seconds`; the cursor
+# and clicks are shown only when the scenario passes `cursor`
 scenario_record() {
-    local movie=$1 seconds=$2
-    screencapture -v -k -x -C -V"$seconds" \
+    local movie=$1 seconds=$2 cursor=${3:-}
+    local -a cursor_options=()
+    [[ "$cursor" == cursor ]] && cursor_options=(-C -k)
+    screencapture -v -x "${cursor_options[@]}" -V"$seconds" \
         -R"${window_rect[1]},${window_rect[2]},${window_rect[3]},${window_rect[4]}" \
         "$movie" &
     recording_pid=$!

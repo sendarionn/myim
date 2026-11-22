@@ -30,8 +30,8 @@
 1. `README.md`、`DESIGN.md`、`MISCELLANEOUS.md`、現行実装を確認し、READMEに掲載すべき機能と既存の説明・画像を照合して更新対象を決める
 2. ユーザーに、撮影中はマウスとキーボードを操作しないよう伝えてから`./Scripts/update-readme.sh`を実行する
    - 特定の機能だけは`--feature <名前>`、撮影シナリオの一覧は`--list`
-   - 最新のmyimをインストールし、TextEditの新規書類だけでGUIを操作して`docs/assets/<名前>.gif`を撮影する
-   - キーとマウスの操作は、前面アプリがTextEditまたはmyimでなければ送信せずに中止する
+   - 最新のmyimをインストールし、撮影用アプリ（`Scripts/readme/stage.swift`、枠のない単色のウィンドウとNSTextView）だけでGUIを操作して`docs/assets/<名前>.gif`を撮影する
+   - キーとマウスの操作は、前面アプリが撮影用アプリまたはmyimでなければ送信せずに中止する
    - 権限が不足している場合は終了コード3で停止するため、ユーザーに通知する
 3. 出力の`CAPTURED`、`CAPTURE_FAILED`、`README_SECTION_MISSING`を確認する
    - `CAPTURE_FAILED`の機能は既存画像を維持し、失敗した旨を報告する

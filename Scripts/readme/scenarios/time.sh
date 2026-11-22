@@ -1,6 +1,6 @@
 # Scenario for the time input UI, sourced by Scripts/update-readme.sh.
-# Draws on a new TextEdit document only, and checks what was inserted
-# before reporting success.
+# Types into the recording window only, and checks what was inserted before
+# reporting success. The pins are dragged, so the cursor is recorded.
 #
 # Uses: $gui, $editor_bundle, $myim_bundle, scenario_record, editor_text
 
@@ -12,7 +12,7 @@ capture_time() {
     local frame x y w h
     local -a upper lower
 
-    scenario_record "$movie" 16 || return 1
+    scenario_record "$movie" 13 cursor || return 1
     sleep 1
 
     # ⌥T opens the rail at the current time
