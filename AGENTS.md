@@ -33,6 +33,9 @@
    - 最新のmyimをインストールし、撮影用アプリ（`Scripts/readme/stage.swift`、枠のない単色のウィンドウとNSTextView）だけでGUIを操作して`docs/assets/<名前>.gif`を撮影する
    - キーとマウスの操作は、前面アプリが撮影用アプリまたはmyimでなければ送信せずに中止する
    - 権限が不足している場合は終了コード3で停止するため、ユーザーに通知する
+   - 撮影前にmyimのユーザーデータ（`credentials`を除く）と設定を退避し、エラーや中断を含む終了時と、データを変えるシナリオの直後に元へ戻して一致を確認する
+   - 戻せなかった退避は次回の開始時に戻し、`--restore`だけでも戻せる
+   - 戻す直前の内容が退避と異なる場合は`.build/readme-tools/restore/replaced-*`に残してから戻す
 3. 出力の`CAPTURED`、`CAPTURE_FAILED`、`README_SECTION_MISSING`を確認する
    - `CAPTURE_FAILED`の機能は既存画像を維持し、失敗した旨を報告する
    - 撮影したGIFを開き、意図した操作と結果が写っていることを確認してから文章を更新する

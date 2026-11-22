@@ -60,7 +60,8 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 確定した直後に、入力履歴から次の入力を予測して候補に表示します。不要な候補は選択中に`⌘X`で削除でき、履歴は設定からまとめて削除できます。
 
-![次の入力の予測](https://gyazo.com/b8f6001f989132355b1c6665d77ef05c.gif)
+<!-- readme-media: nextinput -->
+![次の入力の予測](docs/assets/nextinput.gif)
 
 ## 再変換
 
@@ -78,9 +79,10 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 ## 辞書登録
 
-欲しい候補が辞書にないときは、入力中に`⌥D`で辞書登録を開始できます。候補に表示する文字列と挿入する文字列を分けて登録でき、両者が異なる候補には候補パネルの右端に`●`が付きます。登録した候補は選択中に`⌘X`で削除できます。
+欲しい候補が辞書にないときは、読みを入力して`⌥D`で辞書登録を開始し、登録する文字列を入力して`Return`で登録します。候補に表示する文字列と挿入する文字列を分けて登録でき、両者が異なる候補には候補パネルの右端に`●`が付きます。登録した候補は選択中に`⌘X`で削除できます。
 
-![辞書登録](https://gyazo.com/463f422c915f0db1357492bb97805535.gif)
+<!-- readme-media: registration -->
+![辞書登録](docs/assets/registration.gif)
 
 ## 語義の確認
 
@@ -89,9 +91,10 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 <!-- readme-media: dictionary -->
 ![語義の確認](docs/assets/dictionary.gif)
 
-外部情報パネルを有効にすると、外部Webサイトの検索結果も並べて表示します。検索先は`external-information.js`に検索子`%s`付きのURLで指定し、表示中のページは`⌥O`でブラウザで開けます。
+外部情報パネルを有効にすると、外部Webサイトの検索結果も並べて表示します。検索先は`external-information.js`に検索子`%s`付きのURLで指定し（初期値はWikipedia）、表示中のページは`⌥O`でブラウザで開けます。
 
-![外部情報パネル](https://gyazo.com/55f609194a329b05c061008d230ffccd.gif)
+<!-- readme-media: external -->
+![外部情報パネル](docs/assets/external.gif)
 
 ## 翻訳
 
@@ -161,6 +164,9 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 `⌥B`でChromeのブックマークを検索し、URLやMarkdownリンクの書式を選んで入力できます。同梱のChrome拡張機能でブックマークを同期しておく必要があります。手順は[Chromeブックマークの同期](docs/DEVELOPMENT_INSTALLATION.md#chromeブックマークの同期)を参照してください。
 
+<!-- readme-media: bookmark -->
+![ブックマーク検索](docs/assets/bookmark.gif)
+
 ## JavaScript拡張
 
 `.js`ファイルを追加すると、入力に応じた候補を生成できます。拡張は入力メニューの「JavaScript拡張フォルダを開く」から開ける次のフォルダに置き、「JavaScript拡張を管理」で有効・無効を切り替えます。
@@ -188,6 +194,9 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 ## 辞書の追加と更新
 
 設定の「辞書管理」から、SKK辞書をインポートして候補に加えたり、同梱の基本辞書（TKGJE）を最新版へ更新したりできます。インポートした辞書は辞書ごとに有効・無効を切り替えられます。
+
+<!-- readme-media: dictionaries -->
+![辞書の追加と更新](docs/assets/dictionaries.gif)
 
 ## インストールと動作環境
 

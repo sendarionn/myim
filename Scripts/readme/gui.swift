@@ -11,7 +11,11 @@
 //   gui key <keycode> [option|shift|command|control ...] --expect <ids>
 //   gui type <ascii text> [--delay <milliseconds>] --expect <ids>
 //   gui element-frame <process name> <label prefix>
+//   gui ax-press <process name> <label prefix> [--menu-bar-extra]
+//   gui ax-dump <process name> [depth]
 //   gui drag <x1> <y1> <x2> <y2> --expect <ids>
+//   gui click <x> <y> --expect <ids>
+//   gui scroll <x> <y> <lines> --expect <ids>   negative lines scroll down
 //
 // Coordinates are global and top-left based, as Quartz and screencapture
 // use them. `<ids>` is a comma-separated list of bundle identifiers.
@@ -131,11 +135,24 @@ func frame(of element: AXUIElement) -> CGRect? {
     return CGRect(origin: position, size: size)
 }
 
+func dump(_ element: AXUIElement, depth: Int, limit: Int) {
+    let role = attribute(element, kAXRoleAttribute) as? String ?? "?"
+    let title = attribute(element, kAXTitleAttribute) as? String ?? ""
+    let description = attribute(element, kAXDescriptionAttribute) as? String ?? ""
+    print(String(repeating: "  ", count: depth) + "\(role) [\(title)] [\(description)]")
+    guard depth < limit else { return }
+    for name in [kAXChildrenAttribute, kAXWindowsAttribute, "AXExtrasMenuBar"] {
+        for child in attribute(element, name) as? [AXUIElement] ?? [] {
+            dump(child, depth: depth + 1, limit: limit)
+        }
+    }
+}
+
 /// Depth-first search for the first element whose description or title
 /// starts with `prefix`
 func findElement(in element: AXUIElement, prefix: String, depth: Int = 0)
     -> AXUIElement? {
-    for name in [kAXDescriptionAttribute, kAXTitleAttribute] {
+    for name in [kAXDescriptionAttribute, kAXTitleAttribute, kAXValueAttribute] {
         if let text = attribute(element, name) as? String,
            text.hasPrefix(prefix) {
             return element
@@ -143,7 +160,7 @@ func findElement(in element: AXUIElement, prefix: String, depth: Int = 0)
     }
     guard depth < 12 else { return nil }
     var children: [AXUIElement] = []
-    for name in [kAXChildrenAttribute, kAXWindowsAttribute] {
+    for name in [kAXChildrenAttribute, kAXWindowsAttribute, "AXExtrasMenuBar"] {
         if let values = attribute(element, name) as? [AXUIElement] {
             children += values
         }
@@ -246,6 +263,65 @@ case "element-frame":
         fail("element not found: \(arguments[2])", code: 5)
     }
     print("\(Int(rect.minX)) \(Int(rect.minY)) \(Int(rect.width)) \(Int(rect.height))")
+
+case "ax-dump", "ax-press":
+    guard arguments.count >= 2 else { fail("usage: \(command) <process name> ...") }
+    guard let application = NSWorkspace.shared.runningApplications.first(where: {
+        $0.executableURL?.lastPathComponent == arguments[1]
+    }) else { fail("process not running: \(arguments[1])") }
+    let application_root = AXUIElementCreateApplication(application.processIdentifier)
+    // Only the menu bar extras, such as the input menu, so an item of the
+    // same name in the Apple menu's recent items is never pressed
+    let root: AXUIElement
+    if arguments.contains("--menu-bar-extra") {
+        guard let extras = attribute(application_root, "AXExtrasMenuBar") else {
+            fail("no menu bar extras: \(arguments[1])", code: 5)
+        }
+        root = extras as! AXUIElement
+    } else {
+        root = application_root
+    }
+    if command == "ax-dump" {
+        dump(root, depth: 0, limit: arguments.count > 2 ? Int(arguments[2]) ?? 6 : 6)
+    } else {
+        guard arguments.count >= 3,
+              let element = findElement(in: root, prefix: arguments[2]) else {
+            fail("element not found: \(arguments.dropFirst(2).first ?? "")", code: 5)
+        }
+        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        // Opening a menu waits while it is open and reports it cannot
+        // complete; whether it opened shows in what can be pressed next
+        guard result == .success || result == .cannotComplete else {
+            fail("press failed: \(arguments[2]) (\(result.rawValue))")
+        }
+    }
+
+case "click":
+    requireFrontmost(arguments)
+    let point = arguments.dropFirst().prefix(2).compactMap(Double.init)
+    guard point.count == 2 else { fail("usage: click <x> <y> --expect <ids>") }
+    let location = CGPoint(x: point[0], y: point[1])
+    // Moved there first, so the cursor is seen reaching it
+    postMouse(.mouseMoved, at: location)
+    usleep(300_000)
+    postMouse(.leftMouseDown, at: location)
+    usleep(80_000)
+    postMouse(.leftMouseUp, at: location)
+
+case "scroll":
+    requireFrontmost(arguments)
+    let values = arguments.dropFirst().prefix(3).compactMap(Double.init)
+    guard values.count == 3 else { fail("usage: scroll <x> <y> <lines> --expect <ids>") }
+    postMouse(.mouseMoved, at: CGPoint(x: values[0], y: values[1]))
+    usleep(150_000)
+    CGEvent(
+        scrollWheelEvent2Source: CGEventSource(stateID: .hidSystemState),
+        units: .line,
+        wheelCount: 1,
+        wheel1: Int32(values[2]),
+        wheel2: 0,
+        wheel3: 0
+    )?.post(tap: .cghidEventTap)
 
 case "drag":
     requireFrontmost(arguments)
