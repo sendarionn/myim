@@ -3646,6 +3646,7 @@ final class InputController: IMKInputController {
             candidateSearchCoordinator.cancel(.bookmarkFormat)
             bookmarkSearchSession.returnToSearch()
             bookmarkPanel.hideFormats()
+            showBookmarkSearchText(in: sender)
             showBookmarkCandidates()
             updateBookmarkPreview()
         } else {
@@ -3822,6 +3823,7 @@ final class InputController: IMKInputController {
             self.bookmarkSearchSession.selectFormat(
                 at: localIndex.map { pageRange.lowerBound + $0 }
             )
+            self.showBookmarkFormatInInputPosition()
         }
         bookmarkPanel.showFormats(
             // Only the text each format inserts
@@ -3829,7 +3831,20 @@ final class InputController: IMKInputController {
             selectedIndex: selectedIndex,
             reservesEmptyRow: bookmarkSearchSession.stage == .loadingFormats
         )
+        showBookmarkFormatInInputPosition()
         updateBookmarkPreview()
+    }
+
+    /// The text the selected format inserts, shown where it will go while
+    /// formats are chosen; the search text comes back with the titles
+    private func showBookmarkFormatInInputPosition() {
+        guard let sender = activeInputClient ?? (client() as Any?) else { return }
+        if bookmarkSearchSession.isSelectingFormat,
+           let format = bookmarkSearchSession.selectedFormat {
+            setMarkedText(format.text, in: sender)
+        } else {
+            showBookmarkSearchText(in: sender)
+        }
     }
 
     /// Shows the search text, the committed query and what is being typed,
@@ -3929,7 +3944,9 @@ final class InputController: IMKInputController {
     private func clearBookmarkSearch(client sender: Any? = nil) {
         let wasActive = bookmarkSearchSession.isActive
             || bookmarkInsertionContext != nil
+        // A format shown in the input position counts as search text
         let hadSearchText = !bookmarkSearchSession.searchText.isEmpty
+            || bookmarkSearchSession.isSelectingFormat
         candidateSearchCoordinator.cancel(.bookmarkLoad)
         candidateSearchCoordinator.cancel(.bookmarkFormat)
         bookmarkSearchSession.reset()
