@@ -5,7 +5,7 @@ scenario_changes_data=1
 capture_registration() {
     scenario_record "$1" 12 || return 1
     sleep 0.4
-    type_text "maiaimu" || return 1
+    type_text "maimu" || return 1
     sleep 0.8
     press 2 option || return 1
     sleep 0.8
@@ -18,7 +18,7 @@ capture_registration() {
     sleep 0.8
     press 36 || return 1
     sleep 1
-    type_text "maiaimu" || return 1
+    type_text "maimu" || return 1
     sleep 1
     press 48 || return 1
     sleep 0.6

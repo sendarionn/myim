@@ -143,6 +143,20 @@ stop_myim() {
     return 1
 }
 
+# Restoring stops myim, and selecting the input source does not always
+# start it again, so it is started here; otherwise typing stops working
+start_myim() {
+    pgrep -x myim >/dev/null && return 0
+    open "$HOME/Library/Input Methods/myim.app"
+    local attempt
+    for attempt in {1..20}; do
+        pgrep -x myim >/dev/null && return 0
+        sleep 0.25
+    done
+    echo "MYIM_NOT_STARTED=open ~/Library/Input Methods/myim.app を実行してください" >&2
+    return 1
+}
+
 backup_state() {
     rm -rf "$pending_state"
     mkdir -p "$pending_state/files"
@@ -231,6 +245,7 @@ if [[ -d "$pending_state" ]]; then
     restore_state || exit 3
 fi
 if (( restore_only )); then
+    start_myim
     rm -rf "$work_directory"
     echo "RESTORE_ONLY=done"
     exit 0
@@ -292,6 +307,7 @@ cleanup() {
     close_editor
     restore_settings
     restore_state
+    start_myim
     if [[ -n "$previous_shows_clicks" ]]; then
         defaults write com.apple.screencapture showsClicks -int "$previous_shows_clicks"
     else
