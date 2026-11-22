@@ -153,6 +153,19 @@ class TimeRangePanelTests(unittest.TestCase):
         self.assertIn('label = "\\(minutes / 60)時"', ticks)
         self.assertIn("minutes.isMultiple(of: 10)", ticks)
 
+    def test_zoom_warps_cursor_and_rebases_fine_drag(self):
+        stillness = self.body(self.view, "private func checkStillness(")
+        self.assertIn("zoomedKnobCenter = knobCenter(for: handle)", stillness)
+        self.assertIn("warpCursor(to: zoomedKnobCenter)", stillness)
+        self.assertIn("cursorX: Double(zoomedKnobCenter.x)", stillness)
+        self.assertIn("ignoreDraggedEventsThrough", stillness)
+
+        warp = self.body(self.view, "private func warpCursor(")
+        self.assertIn("convert(localPoint, to: nil)", warp)
+        self.assertIn("window.convertPoint(toScreen: windowPoint)", warp)
+        self.assertIn("CGDisplayBounds(CGMainDisplayID())", warp)
+        self.assertIn("CGWarpMouseCursorPosition", warp)
+
     def test_each_knob_uses_its_own_center_as_the_hit_target(self):
         knob = self.body(self.view, "private func knobHandle(")
         self.assertIn("knobCenter(for: handle)", knob)

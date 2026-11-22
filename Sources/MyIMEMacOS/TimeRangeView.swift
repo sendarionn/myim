@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import CoreGraphics
 import MyIMECore
 
 private final class TimeHandleAccessibilityElement: NSAccessibilityElement {
@@ -38,6 +39,7 @@ final class TimeRangeView: NSView {
     private var stillOrigin: NSPoint = .zero
     private var stillSince: TimeInterval = 0
     private var lastDragPoint: NSPoint = .zero
+    private var ignoreDraggedEventsThrough: TimeInterval?
     private static let stillDuration: TimeInterval = 0.4
     private static let stillTolerance: CGFloat = 3
     private static let step = TimeRangeSelection.dragStep
@@ -171,6 +173,11 @@ final class TimeRangeView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         guard let handle = draggingHandle else { return }
+        if let ignoreDraggedEventsThrough,
+           event.timestamp <= ignoreDraggedEventsThrough {
+            return
+        }
+        ignoreDraggedEventsThrough = nil
         let point = convert(event.locationInWindow, from: nil)
         lastDragPoint = point
         if fineDrag != nil {
@@ -192,6 +199,7 @@ final class TimeRangeView: NSView {
     func endDrag() {
         stillnessTimer?.invalidate()
         stillnessTimer = nil
+        ignoreDraggedEventsThrough = nil
         draggingHandle = nil
         if fineDrag != nil {
             fineDrag = nil
@@ -223,14 +231,38 @@ final class TimeRangeView: NSView {
         guard ProcessInfo.processInfo.systemUptime - stillSince >= Self.stillDuration else { return }
         stillnessTimer?.invalidate()
         stillnessTimer = nil
-        fineDrag = TimeRangeFineDrag(
+        let initialFineDrag = TimeRangeFineDrag(
             handle: handle,
             state: state,
             cursorX: Double(lastDragPoint.x),
             railWidth: Double(max(railRect.width, 1)),
         )
+        fineDrag = initialFineDrag
+        let zoomedKnobCenter = knobCenter(for: handle)
+        if warpCursor(to: zoomedKnobCenter) {
+            fineDrag = TimeRangeFineDrag(
+                handle: handle,
+                state: state,
+                cursorX: Double(zoomedKnobCenter.x),
+                railWidth: Double(max(railRect.width, 1)),
+            )
+            lastDragPoint = zoomedKnobCenter
+            ignoreDraggedEventsThrough = ProcessInfo.processInfo.systemUptime
+        }
         updateAccessibility()
         needsDisplay = true
+    }
+
+    private func warpCursor(to localPoint: NSPoint) -> Bool {
+        guard let window else { return false }
+        let windowPoint = convert(localPoint, to: nil)
+        let appKitScreenPoint = window.convertPoint(toScreen: windowPoint)
+        let mainDisplayBounds = CGDisplayBounds(CGMainDisplayID())
+        let quartzScreenPoint = CGPoint(
+            x: appKitScreenPoint.x,
+            y: mainDisplayBounds.maxY - appKitScreenPoint.y
+        )
+        return CGWarpMouseCursorPosition(quartzScreenPoint) == .success
     }
 
     private func dragFinely(to point: NSPoint) {
