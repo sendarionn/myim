@@ -90,7 +90,8 @@ final class StageDelegate: NSObject, NSApplicationDelegate, NSTextViewDelegate {
         textView.textColor = .textColor
         textView.backgroundColor = .textBackgroundColor
         textView.drawsBackground = true
-        textView.textContainerInset = NSSize(width: 56, height: 48)
+        // Room above the text for panels myim opens over it
+        textView.textContainerInset = NSSize(width: 56, height: 76)
         textView.isRichText = false
         textView.allowsUndo = false
         textView.isAutomaticQuoteSubstitutionEnabled = false

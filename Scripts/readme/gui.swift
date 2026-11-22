@@ -9,6 +9,7 @@
 //   gui input-source
 //   gui select-input-source <id>
 //   gui key <keycode> [option|shift|command|control ...] --expect <ids>
+//   gui type <ascii text> [--delay <milliseconds>] --expect <ids>
 //   gui element-frame <process name> <label prefix>
 //   gui drag <x1> <y1> <x2> <y2> --expect <ids>
 //
@@ -54,7 +55,8 @@ func keyLabel(_ keyCode: UInt16, flags: CGEventFlags) -> String {
     let names: [UInt16: String] = [
         36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Esc",
         76: "Enter", 123: "←", 124: "→", 125: "↓", 126: "↑",
-        17: "T", 8: "C", 11: "B", 12: "Q"
+        97: "F6", 98: "F7", 100: "F8",
+        17: "T", 8: "C", 11: "B", 12: "Q", 14: "E", 3: "F", 2: "D"
     ]
     parts.append(names[keyCode] ?? "Key \(keyCode)")
     return parts.joined(separator: " ")
@@ -73,6 +75,33 @@ func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
         usleep(30_000)
     }
 }
+
+/// US layout key codes for the characters scenarios type
+let typedKeys: [Character: (code: CGKeyCode, shift: Bool)] = {
+    var keys: [Character: (CGKeyCode, Bool)] = [:]
+    let plain: [(Character, CGKeyCode)] = [
+        ("a", 0), ("s", 1), ("d", 2), ("f", 3), ("h", 4), ("g", 5), ("z", 6),
+        ("x", 7), ("c", 8), ("v", 9), ("b", 11), ("q", 12), ("w", 13),
+        ("e", 14), ("r", 15), ("y", 16), ("t", 17), ("1", 18), ("2", 19),
+        ("3", 20), ("4", 21), ("6", 22), ("5", 23), ("=", 24), ("9", 25),
+        ("7", 26), ("-", 27), ("8", 28), ("0", 29), ("]", 30), ("o", 31),
+        ("u", 32), ("[", 33), ("i", 34), ("p", 35), ("l", 37), ("j", 38),
+        ("'", 39), ("k", 40), (";", 41), (",", 43), ("/", 44), ("n", 45),
+        ("m", 46), (".", 47), ("`", 50), (" ", 49)
+    ]
+    for (character, code) in plain {
+        keys[character] = (code, false)
+        if character.isLetter {
+            keys[Character(character.uppercased())] = (code, true)
+        }
+    }
+    let shifted: [(Character, CGKeyCode)] = [
+        ("*", 28), ("+", 24), ("(", 25), (")", 29), (":", 41), ("~", 50),
+        ("?", 44), ("!", 18), ("_", 27)
+    ]
+    for (character, code) in shifted { keys[character] = (code, true) }
+    return keys
+}()
 
 func postMouse(_ type: CGEventType, at point: CGPoint) {
     CGEvent(
@@ -183,6 +212,26 @@ case "key":
         deliverImmediately: true
     )
     postKey(code, flags: flags)
+
+case "type":
+    requireFrontmost(arguments)
+    guard arguments.count >= 2 else { fail("usage: type <text> --expect <ids>") }
+    let text = arguments[1]
+    guard text.allSatisfy({ typedKeys[$0] != nil }) else {
+        fail("cannot type: \(text)")
+    }
+    var delay: UInt32 = 70
+    if let index = arguments.firstIndex(of: "--delay"), index + 1 < arguments.count,
+       let value = UInt32(arguments[index + 1]) {
+        delay = value
+    }
+    for character in text {
+        // Checked before every key, so typing stops if focus moves away
+        requireFrontmost(arguments)
+        let key = typedKeys[character]!
+        postKey(key.code, flags: key.shift ? .maskShift : [])
+        usleep(delay * 1000)
+    }
 
 case "element-frame":
     guard arguments.count == 3 else {

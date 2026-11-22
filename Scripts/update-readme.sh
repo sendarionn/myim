@@ -8,6 +8,8 @@
 #   ./Scripts/update-readme.sh --list          features with a scenario
 #   ./Scripts/update-readme.sh --check         README image references only
 #   --skip-install                             use the installed myim
+#   --keep-failed                              keep failed recordings in
+#                                              .build/readme-tools to inspect
 #
 # The mouse and keyboard are driven while it runs; nothing should be
 # touched until it finishes. Text in README.md is written by the agent
@@ -33,10 +35,12 @@ window_rect=(120 140 640 420)
 features=()
 skip_install=0
 check_only=0
+keep_failed=0
 while (( $# > 0 )); do
     case "$1" in
         --feature) features+=("$2"); shift 2 ;;
         --skip-install) skip_install=1; shift ;;
+        --keep-failed) keep_failed=1; shift ;;
         --check) check_only=1; shift ;;
         --list)
             for file in "$scenario_directory"/*.sh; do print -r -- "${file:t:r}"; done
@@ -120,8 +124,49 @@ recording_pid=""
 previous_shows_clicks=$(defaults read com.apple.screencapture showsClicks 2>/dev/null)
 defaults write com.apple.screencapture showsClicks -bool false
 
+# myim features that would show the user's own data or other pages: the
+# external page, learned and next input suggestions, and panels a scenario
+# does not show. They are off while recording, a scenario turns on only
+# what it shows in `scenario_enables`, and every value is put back
+myim_domain="$myim_bundle"
+quiet_settings=(
+    ExternalInformationPanelEnabled
+    FuzzySuggestionsEnabled
+    NextInputPredictionEnabled
+    SystemDictionaryPreviewEnabled
+    AppleTranslationEnabled
+)
+typeset -A saved_settings
+for key in "${quiet_settings[@]}"; do
+    saved_settings[$key]=$(defaults read "$myim_domain" "$key" 2>/dev/null || print -r -- __absent__)
+done
+
+apply_scenario_settings() {
+    local key
+    for key in "${quiet_settings[@]}"; do
+        if (( ${scenario_enables[(Ie)$key]} )); then
+            defaults write "$myim_domain" "$key" -bool true
+        else
+            defaults write "$myim_domain" "$key" -bool false
+        fi
+    done
+    sleep 0.5
+}
+
+restore_settings() {
+    local key
+    for key in "${quiet_settings[@]}"; do
+        if [[ "${saved_settings[$key]}" == __absent__ ]]; then
+            defaults delete "$myim_domain" "$key" 2>/dev/null
+        else
+            defaults write "$myim_domain" "$key" -int "${saved_settings[$key]}"
+        fi
+    done
+}
+
 cleanup() {
     [[ -n "$recording_pid" ]] && kill "$recording_pid" 2>/dev/null
+    restore_settings
     if [[ -n "$previous_shows_clicks" ]]; then
         defaults write com.apple.screencapture showsClicks -int "$previous_shows_clicks"
     else
@@ -150,7 +195,8 @@ open_editor() {
         return 1
     }
     "$gui" select-input-source "$myim_input_source" >/dev/null || return 1
-    sleep 0.5
+    # Until macOS's input source indicator near the caret fades
+    sleep 1.5
 }
 
 close_editor() {
@@ -180,6 +226,29 @@ scenario_wait_recording() {
     local result=$?
     recording_pid=""
     return $result
+}
+
+# Helpers for scenarios: keys and text go only to the recording window or
+# myim's panels
+press() {
+    "$gui" key "$@" --expect "$editor_bundle,$myim_bundle"
+}
+
+# `type_text <text> [milliseconds between keys]`
+type_text() {
+    "$gui" type "$1" ${2:+--delay "$2"} --expect "$editor_bundle,$myim_bundle"
+}
+
+# Fails unless the recording window holds every given text
+expect_text() {
+    local text needle
+    text=$(editor_text)
+    for needle in "$@"; do
+        [[ "$text" == *"$needle"* ]] || {
+            echo "「$needle」が入力されていません: '$text'" >&2
+            return 1
+        }
+    done
 }
 
 convert_to_gif() {
@@ -212,7 +281,9 @@ PYTHON
 
 failed=()
 for feature in "${features[@]}"; do
+    scenario_enables=()
     source "$scenario_directory/$feature.sh"
+    apply_scenario_settings
     movie="$work_directory/$feature.mov"
     gif="$work_directory/$feature.gif"
     if open_editor && "capture_$feature" "$movie" && convert_to_gif "$movie" "$gif"; then
@@ -222,6 +293,11 @@ for feature in "${features[@]}"; do
     else
         # The image already in README.md stays
         echo "CAPTURE_FAILED=$feature" >&2
+        if (( keep_failed )) && [[ -f "$movie" ]]; then
+            scenario_wait_recording 2>/dev/null
+            convert_to_gif "$movie" "$tool_directory/failed-$feature.gif" \
+                && echo "FAILED_RECORDING=$tool_directory/failed-$feature.gif"
+        fi
         failed+=("$feature")
     fi
     [[ -n "$recording_pid" ]] && kill "$recording_pid" 2>/dev/null
