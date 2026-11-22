@@ -1248,6 +1248,7 @@ final class InputController: IMKInputController {
             nextInputPrediction: Self.featureSettings.isNextInputPredictionEnabled,
             fuzzyCandidates: Self.featureSettings.isFuzzyCandidatesEnabled,
             dateTimeCandidates: Self.featureSettings.isDateTimeCandidatesEnabled,
+            emojiCandidates: Self.featureSettings.isEmojiCandidatesEnabled,
             passwordInputSourceRecovery:
                 Self.featureSettings.isPasswordInputSourceRecoveryEnabled,
             passwordInputSourceRecoveryStatus:
@@ -1281,6 +1282,7 @@ final class InputController: IMKInputController {
             toggleNextInputPrediction: #selector(toggleNextInputPrediction(_:)),
             toggleFuzzyCandidates: #selector(toggleFuzzyCandidates(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
+            toggleEmojiCandidates: #selector(toggleEmojiCandidates(_:)),
             togglePasswordInputSourceRecovery: #selector(
                 togglePasswordInputSourceRecovery(_:)
             ),
@@ -1879,6 +1881,16 @@ final class InputController: IMKInputController {
     private func toggleDateTimeCandidates(_ sender: Any?) {
         let enabled = checkboxValue(sender, current: Self.featureSettings.isDateTimeCandidatesEnabled)
         Self.featureSettings.isDateTimeCandidatesEnabled = enabled
+        guard !inputBuffer.isEmpty, let inputClient = client() else {
+            return
+        }
+        refreshCandidates(client: inputClient)
+    }
+
+    @objc
+    private func toggleEmojiCandidates(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isEmojiCandidatesEnabled)
+        Self.featureSettings.isEmojiCandidatesEnabled = enabled
         guard !inputBuffer.isEmpty, let inputClient = client() else {
             return
         }
@@ -4202,7 +4214,11 @@ final class InputController: IMKInputController {
         ))
         sourceDuration = performanceClock.now - sourceStart
         let presentationStart = performanceClock.now
-        replaceCurrentCandidates(with: orderedCandidates)
+        replaceCurrentCandidates(with: CandidateListInsertion.inserting(
+            emojiCandidates(after: orderedCandidates),
+            into: orderedCandidates,
+            afterFirst: Self.maximumCandidateCount
+        ))
 
         guard !currentCandidates.isEmpty else {
             selectedCandidateIndex = nil
@@ -4222,6 +4238,26 @@ final class InputController: IMKInputController {
         updateFuzzyCandidatesIfNeeded()
         showInputPreview(client: sender)
         presentationDuration = performanceClock.now - presentationStart
+    }
+
+    /// Emoji the emoji search finds for the input and its first conversions,
+    /// placed after the first page of dictionary candidates; an emoji
+    /// already listed, such as one chosen before, keeps its place
+    private func emojiCandidates(after candidates: [Candidate]) -> [Candidate] {
+        // While the emoji panel searches by the input, its candidates leave
+        // emoji out, and the panel lists them instead
+        guard Self.featureSettings.isEmojiCandidatesEnabled,
+              !bookmarkSearchSession.isSearching,
+              !emojiWindow.isVisible else { return [] }
+        let emojis = EmojiWindowController.conversionCandidates(
+            input: conversionReading,
+            words: candidates.prefix(3).map(\.storageText),
+            excluding: Set(candidates.map(\.storageText)),
+            limit: Self.maximumCandidateCount
+        )
+        return emojis.map {
+            Candidate(storageText: $0, source: .emoji, reading: conversionReading)
+        }
     }
 
     /// The first panel's candidate generation; the second panel orders the

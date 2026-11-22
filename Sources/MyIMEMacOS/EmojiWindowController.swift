@@ -172,6 +172,33 @@ final class EmojiWindowController: NSObject {
             .split(separator: " ").map(String.init)
     )
     private static let entries = loadEntries()
+    /// The main entries as the shared search reads them
+    private static let searchEntries: [EmojiCandidateSearch.Entry] = mainEntries.map {
+        EmojiCandidateSearch.Entry(
+            emoji: $0.emoji,
+            terms: $0.normalizedSearchText
+                .split(separator: "\t")
+                .map(String.init)
+        )
+    }
+
+    /// Emoji offered among the conversion candidates for the typed input
+    /// and the words it converts to, such as 猫 for `neko`
+    static func conversionCandidates(
+        input: String,
+        words: [String],
+        excluding existing: Set<String>,
+        limit: Int
+    ) -> [String] {
+        let queries = EmojiCandidateSearch.queries(for: input)
+            + words.map(EmojiSearchMatcher.normalized).filter { !$0.isEmpty }
+        return EmojiCandidateSearch.candidates(
+            in: searchEntries,
+            queries: queries,
+            excluding: existing,
+            limit: limit
+        )
+    }
     private static let entriesByCode = Dictionary(
         uniqueKeysWithValues: entries.map { ($0.code, $0) }
     )
@@ -694,19 +721,20 @@ final class EmojiWindowController: NSObject {
     private func setSearchQuery(_ query: String) {
         resetVariationPresentation()
         searchQuery = query
-        var queries = [query]
-        if let hiragana = romajiConverter.hiragana(from: query) {
-            queries.append(hiragana)
-        }
-        if let katakana = romajiConverter.katakana(from: query) {
-            queries.append(katakana)
-        }
-        let normalizedQueries = queries
-            .map(EmojiSearchMatcher.normalized)
-            .filter { !$0.isEmpty }
-        let matches = normalizedQueries.isEmpty ? Self.mainEntries : Self.mainEntries.filter { entry in
-            normalizedQueries.contains { entry.normalizedSearchText.contains($0) }
-        }
+        // The same search the conversion candidates use, matching any part
+        // of a term here
+        let normalizedQueries = EmojiCandidateSearch.queries(
+            for: query,
+            converter: romajiConverter
+        )
+        let matches = normalizedQueries.isEmpty
+            ? Self.mainEntries
+            : zip(Self.mainEntries, Self.searchEntries).filter { _, entry in
+                EmojiCandidateSearch.relevance(
+                    of: entry,
+                    queries: normalizedQueries
+                ) != nil
+            }.map(\.0)
         visibleEntries = matches
         selectedIndex = nil
         selectedRecentIndex = nil

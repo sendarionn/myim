@@ -19,6 +19,8 @@ public enum CandidateSourceKind: String, CaseIterable, Sendable {
     case fuzzyCandidate
     case nextInput
     case specialConversion
+    /// An emoji found by the emoji search for the typed input
+    case emoji
 }
 
 public struct CandidateOrigin: Equatable, Sendable {

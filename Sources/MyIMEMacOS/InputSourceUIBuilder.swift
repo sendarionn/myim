@@ -80,6 +80,7 @@ enum SettingsWindowBuilder {
         let nextInputPrediction: Bool
         let fuzzyCandidates: Bool
         let dateTimeCandidates: Bool
+        let emojiCandidates: Bool
         let passwordInputSourceRecovery: Bool
         let passwordInputSourceRecoveryStatus: String
         let passwordInputSourceRecoveryNeedsPermission: Bool
@@ -96,6 +97,7 @@ enum SettingsWindowBuilder {
         let toggleNextInputPrediction: Selector
         let toggleFuzzyCandidates: Selector
         let toggleDateTimeCandidates: Selector
+        let toggleEmojiCandidates: Selector
         let togglePasswordInputSourceRecovery: Selector
         let requestAccessibilityPermission: Selector
         let clearNextInputHistory: Selector
@@ -145,7 +147,8 @@ enum SettingsWindowBuilder {
             ("英語候補を表示", actions.toggleEnglishCompletion, states.englishCompletion),
             ("次入力候補を表示", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("曖昧候補を表示", actions.toggleFuzzyCandidates, states.fuzzyCandidates),
-            ("日時候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates)
+            ("日時候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates),
+            ("絵文字候補を表示", actions.toggleEmojiCandidates, states.emojiCandidates)
         ], target: target, to: stack)
         addSection("翻訳", to: stack)
         addCheckboxes([

@@ -13,6 +13,7 @@ public struct InputFeatureSettings {
         static let systemDictionaryNames = "SystemDictionaryNames"
         static let fuzzyCandidates = "FuzzySuggestionsEnabled"
         static let dateTimeCandidates = "DateTimeCandidatesEnabled"
+        static let emojiCandidates = "EmojiCandidatesEnabled"
         static let passwordInputSourceRecovery =
             "PasswordInputSourceRecoveryEnabled"
         static let disabledImportedDictionaries = "DisabledImportedDictionaries"
@@ -57,6 +58,12 @@ public struct InputFeatureSettings {
     public var isFuzzyCandidatesEnabled: Bool {
         get { flag(Key.fuzzyCandidates, default: false) }
         nonmutating set { setFlag(Key.fuzzyCandidates, newValue) }
+    }
+
+    /// Emoji among the conversion candidates
+    public var isEmojiCandidatesEnabled: Bool {
+        get { flag(Key.emojiCandidates, default: true) }
+        nonmutating set { setFlag(Key.emojiCandidates, newValue) }
     }
 
     public var isDateTimeCandidatesEnabled: Bool {
