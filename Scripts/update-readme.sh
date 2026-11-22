@@ -115,9 +115,18 @@ fi
 work_directory=$(mktemp -d -t myim-readme)
 previous_input_source=$("$gui" input-source)
 recording_pid=""
+# Screenshot's "Show Mouse Clicks" also circles clicks in screencapture
+# recordings; it is turned off only while this runs
+previous_shows_clicks=$(defaults read com.apple.screencapture showsClicks 2>/dev/null)
+defaults write com.apple.screencapture showsClicks -bool false
 
 cleanup() {
     [[ -n "$recording_pid" ]] && kill "$recording_pid" 2>/dev/null
+    if [[ -n "$previous_shows_clicks" ]]; then
+        defaults write com.apple.screencapture showsClicks -int "$previous_shows_clicks"
+    else
+        defaults delete com.apple.screencapture showsClicks 2>/dev/null
+    fi
     close_editor
     [[ -n "$previous_input_source" ]] \
         && "$gui" select-input-source "$previous_input_source" >/dev/null
@@ -154,11 +163,12 @@ editor_text() {
 }
 
 # Records window_rect in the background for at most `seconds`; the cursor
-# and clicks are shown only when the scenario passes `cursor`
+# is shown only when the scenario passes `cursor`. Clicks are never drawn,
+# since screencapture -k would circle every click
 scenario_record() {
     local movie=$1 seconds=$2 cursor=${3:-}
     local -a cursor_options=()
-    [[ "$cursor" == cursor ]] && cursor_options=(-C -k)
+    [[ "$cursor" == cursor ]] && cursor_options=(-C)
     screencapture -v -x "${cursor_options[@]}" -V"$seconds" \
         -R"${window_rect[1]},${window_rect[2]},${window_rect[3]},${window_rect[4]}" \
         "$movie" &

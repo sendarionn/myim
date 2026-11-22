@@ -44,6 +44,22 @@ func requireFrontmost(_ arguments: [String]) {
     }
 }
 
+/// What the recording window shows for a key, such as `⌥ T` or `Tab`
+func keyLabel(_ keyCode: UInt16, flags: CGEventFlags) -> String {
+    var parts: [String] = []
+    if flags.contains(.maskControl) { parts.append("⌃") }
+    if flags.contains(.maskAlternate) { parts.append("⌥") }
+    if flags.contains(.maskShift) { parts.append("⇧") }
+    if flags.contains(.maskCommand) { parts.append("⌘") }
+    let names: [UInt16: String] = [
+        36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Esc",
+        76: "Enter", 123: "←", 124: "→", 125: "↓", 126: "↑",
+        17: "T", 8: "C", 11: "B", 12: "Q"
+    ]
+    parts.append(names[keyCode] ?? "Key \(keyCode)")
+    return parts.joined(separator: " ")
+}
+
 func postKey(_ keyCode: CGKeyCode, flags: CGEventFlags) {
     let source = CGEventSource(stateID: .hidSystemState)
     for isDown in [true, false] {
@@ -159,6 +175,13 @@ case "key":
         default: break
         }
     }
+    // The recording window shows the key as it is pressed
+    DistributedNotificationCenter.default().postNotificationName(
+        Notification.Name("io.github.sendarionn.myim.readme-stage.key"),
+        object: keyLabel(code, flags: flags),
+        userInfo: nil,
+        deliverImmediately: true
+    )
     postKey(code, flags: flags)
 
 case "element-frame":
