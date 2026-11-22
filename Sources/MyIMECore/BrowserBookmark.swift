@@ -26,6 +26,12 @@ public struct BrowserBookmark: Equatable, Hashable, Sendable {
         return location.isEmpty ? "\(name) — \(url)" : "\(name) — \(location) — \(url)"
     }
 
+    /// A bookmarklet runs script instead of opening a page, so it is not
+    /// offered to insert or preview
+    public var isBookmarklet: Bool {
+        url.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("javascript:")
+    }
+
     public func matches(_ query: String) -> Bool {
         let normalizedQuery = Self.normalized(query)
         guard !normalizedQuery.isEmpty else { return true }

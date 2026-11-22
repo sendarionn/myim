@@ -210,12 +210,12 @@ class BookmarkPanelKeyCaptureTests(unittest.TestCase):
                       handler)
         self.assertIn("controller.clearBookmarkSearch()", handler)
 
-    def test_a_captured_key_is_not_handled_twice(self):
+    def test_a_key_the_hot_key_missed_is_still_handled(self):
+        # A key taken as a hot key never reaches the input method, so one
+        # that does, such as an arrow the hot key missed, is handled there
         event = self.body("private func handleBookmarkSearchEvent(")
-        self.assertLess(
-            event.index("PanelKeyCapture.capturedKeyCodes.contains"),
-            event.index("switch event.keyCode"),
-        )
+        self.assertNotIn("PanelKeyCapture.capturedKeyCodes.contains", event)
+        self.assertIn("handleBookmarkCommand(.next, client: sender)", event)
         escape = self.controller[
             self.controller.index('"cancelOperation:",\n           bookmarkSearchSession.isActive'):
         ][:300]

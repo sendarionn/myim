@@ -22,6 +22,9 @@ public struct BookmarkSearchSession: Equatable, Sendable {
     /// the list narrows by it as typed, so ASCII searches work without
     /// converting
     public private(set) var composition = ""
+    /// What the conversion offers for the composition, such as 利用者 for
+    /// `riyousha`, also searched before it is committed
+    public private(set) var compositionConversions: [String] = []
 
     public init() {}
 
@@ -30,10 +33,19 @@ public struct BookmarkSearchSession: Equatable, Sendable {
     /// What the list is narrowed by
     public var searchText: String { query + composition }
 
-    /// The input being typed, as the normal conversion holds it
-    public mutating func setComposition(_ text: String) {
-        guard isSearching, composition != text else { return }
+    /// The input being typed, as the normal conversion holds it, and the
+    /// conversions it offers
+    public mutating func setComposition(
+        _ text: String,
+        conversions: [String] = []
+    ) {
+        let conversions = text.isEmpty ? [] : conversions
+        guard isSearching,
+              composition != text || compositionConversions != conversions else {
+            return
+        }
         composition = text
+        compositionConversions = conversions
         refilter()
     }
 
@@ -85,6 +97,7 @@ public struct BookmarkSearchSession: Equatable, Sendable {
     }
 
     public mutating func replaceBookmarks(_ bookmarks: [BrowserBookmark]) {
+        let bookmarks = bookmarks.filter { !$0.isBookmarklet }
         guard stage == .loadingBookmarks || stage == .searching else { return }
         self.bookmarks = bookmarks
         stage = .searching
@@ -215,6 +228,7 @@ public struct BookmarkSearchSession: Equatable, Sendable {
         stage = .inactive
         query = ""
         composition = ""
+        compositionConversions = []
         loadError = nil
         bookmarks = []
         filteredBookmarks = []
@@ -225,7 +239,11 @@ public struct BookmarkSearchSession: Equatable, Sendable {
     }
 
     private mutating func applyQuery(preserving bookmark: BrowserBookmark?) {
-        filteredBookmarks = bookmarks.filter { $0.matches(searchText) }
+        // The typed text or any of its conversions after the query
+        let searches = [searchText] + compositionConversions.map { query + $0 }
+        filteredBookmarks = bookmarks.filter { bookmark in
+            searches.contains { bookmark.matches($0) }
+        }
         if let bookmark,
            let index = filteredBookmarks.firstIndex(of: bookmark) {
             selectedBookmarkIndex = index

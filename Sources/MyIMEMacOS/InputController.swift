@@ -3549,6 +3549,8 @@ final class InputController: IMKInputController {
                     self.bookmarkSearchSession.replaceBookmarks(bookmarks)
                 }
                 self.showBookmarkCandidates()
+                // The first bookmark is previewed once the list is there
+                self.updateBookmarkPreview()
             },
             retainQueryAfterCompletion: false
         )
@@ -3614,11 +3616,8 @@ final class InputController: IMKInputController {
         _ event: NSEvent,
         client sender: Any
     ) -> Bool {
-        // A captured key that still arrives was handled as a hot key
-        if PanelKeyCapture.bookmark.isCapturing,
-           PanelKeyCapture.capturedKeyCodes.contains(event.keyCode) {
-            return true
-        }
+        // A key taken as a hot key never reaches here, so a key that does
+        // was not handled yet, such as an arrow the hot key missed
         switch event.keyCode {
         case 53:
             handleBookmarkCommand(.cancel, client: sender)
@@ -3767,6 +3766,8 @@ final class InputController: IMKInputController {
             self.bookmarkSearchSession.selectBookmark(
                 at: localIndex.map { pageRange.lowerBound + $0 }
             )
+            // A click changes the preview as the arrow keys do
+            self.updateBookmarkPreview()
         }
         let displayedCandidates: [String]
         let bookmarkRows: [Bool]
@@ -3831,7 +3832,11 @@ final class InputController: IMKInputController {
     private func updateBookmarkSearchPresentation() {
         guard bookmarkSearchSession.isActive else { return }
         if bookmarkSearchSession.isSearching {
-            bookmarkSearchSession.setComposition(inputBuffer)
+            // The conversions offered now are searched before one is chosen
+            bookmarkSearchSession.setComposition(
+                inputBuffer,
+                conversions: Array(currentCandidates.prefix(Self.maximumCandidateCount))
+            )
         }
         let capturesKeys = inputBuffer.isEmpty
         if capturesKeys, !PanelKeyCapture.bookmark.isCapturing {
@@ -3844,6 +3849,55 @@ final class InputController: IMKInputController {
         } else {
             showBookmarkCandidates()
         }
+        updateBookmarkPreview()
+    }
+
+    /// Moves the bookmark panel beside panels that opened after it, such as
+    /// the second panel of corrected candidates
+    private func realignBookmarkPanel() {
+        guard bookmarkSearchSession.isActive else { return }
+        if bookmarkSearchSession.isSelectingFormat {
+            showBookmarkFormats()
+        } else {
+            showBookmarkCandidates()
+        }
+    }
+
+    /// The URL the bookmark preview shows now, nil while it is closed
+    private var bookmarkPreviewURL: URL?
+
+    /// The selected bookmark's page beside the panel, opened directly
+    /// without a search engine and without the default browser. While the
+    /// search text is converted, the preview belongs to the conversion
+    /// candidates, so it closes; formats and no selection close it too
+    private func updateBookmarkPreview() {
+        guard bookmarkSearchSession.stage == .searching,
+              inputBuffer.isEmpty,
+              let bookmark = bookmarkSearchSession.selectedBookmark,
+              let url = URL(string: bookmark.url),
+              ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
+              let panelFrame = bookmarkPanel.visibleFrame else {
+            closeBookmarkPreview()
+            return
+        }
+        guard url != bookmarkPreviewURL else { return }
+        bookmarkPreviewURL = url
+        _ = previewWindow.show(
+            url: url,
+            panelTitle: url.host ?? bookmark.title,
+            definitions: [],
+            definitionsPending: false,
+            showExternalInformation: true,
+            presentsDefinitionPanel: false,
+            presentsExternalInformationPanel: true,
+            beside: panelFrame
+        )
+    }
+
+    private func closeBookmarkPreview() {
+        guard bookmarkPreviewURL != nil else { return }
+        bookmarkPreviewURL = nil
+        previewWindow.hide()
     }
 
     /// `client` removes the search text from the input position; without
@@ -3863,6 +3917,7 @@ final class InputController: IMKInputController {
             Self.bookmarkPanelController = nil
         }
         guard wasActive else { return }
+        closeBookmarkPreview()
         bookmarkPanel.hide()
         if let sender, hadSearchText || !inputBuffer.isEmpty {
             // The document is left as it was before the search
@@ -4453,6 +4508,8 @@ final class InputController: IMKInputController {
             isAccented: false,
             prepareAnchor: prepareAnchorForSecondaryCandidatePanel
         )
+        // The second panel opens after the bookmark panel was placed
+        realignBookmarkPanel()
     }
 
     /// Without standard candidates the secondary panel takes the primary panel's
@@ -4480,6 +4537,8 @@ final class InputController: IMKInputController {
             avoidingFrames: [inputFrame],
             isAccented: false
         )
+        // The second panel opens after the bookmark panel was placed
+        realignBookmarkPanel()
     }
 
     private func handleFuzzyCandidateSelection(
@@ -4786,6 +4845,8 @@ final class InputController: IMKInputController {
             isAccented: false,
             prepareAnchor: prepareAnchorForSecondaryCandidatePanel
         )
+        // The second panel opens after the bookmark panel was placed
+        realignBookmarkPanel()
     }
 
     private func prepareAnchorForSecondaryCandidatePanel(

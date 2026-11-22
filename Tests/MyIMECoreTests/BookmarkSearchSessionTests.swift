@@ -150,4 +150,39 @@ struct BookmarkSearchSessionTests {
         #expect(session.composition.isEmpty)
         #expect(!session.isComposing)
     }
+
+    @Test
+    func bookmarkletsAreNotListed() {
+        var session = BookmarkSearchSession()
+        session.begin()
+        session.replaceBookmarks([swift, BrowserBookmark(
+            title: "Share",
+            url: "javascript:void(0)",
+            folderPath: "",
+            profile: "Personal"
+        )])
+
+        #expect(session.filteredBookmarks == [swift])
+    }
+
+    /// `riyousha` finds 利用者 before the conversion is committed
+    @Test
+    func conversionsOfTheTypedTextAreSearchedToo() {
+        let guide = BrowserBookmark(
+            title: "利用者ガイド",
+            url: "https://example.com/guide",
+            folderPath: "",
+            profile: "Work"
+        )
+        var session = BookmarkSearchSession()
+        session.begin()
+        session.replaceBookmarks([swift, guide])
+
+        session.setComposition("riyousha", conversions: ["利用者", "りようしゃ"])
+        let found = session.filteredBookmarks
+        session.setComposition("")
+
+        #expect(found == [guide])
+        #expect(session.compositionConversions.isEmpty)
+    }
 }
