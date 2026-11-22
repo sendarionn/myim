@@ -24,16 +24,20 @@ final class BookmarkInsertionContext {
         self.anchorFrame = anchorFrame
     }
 
+    /// The same input target, with the cursor where the search began; the
+    /// search text may be shown there as marked text
     func matches(_ client: Any) -> Bool {
         guard let object = client as AnyObject?,
               object === clientObject,
               let textClient = client as? IMKTextInput,
-              textClient.bundleIdentifier() == bundleIdentifier,
-              textClient.selectedRange() == selectedRange else {
+              textClient.bundleIdentifier() == bundleIdentifier else {
             return false
         }
         let markedRange = textClient.markedRange()
-        return markedRange.location == NSNotFound || markedRange.length == 0
+        if markedRange.location != NSNotFound, markedRange.length > 0 {
+            return markedRange.location == selectedRange.location
+        }
+        return textClient.selectedRange() == selectedRange
     }
 }
 

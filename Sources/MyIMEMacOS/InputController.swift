@@ -381,6 +381,9 @@ final class InputController: IMKInputController {
         let tracesNavigation = beginNavigationTrace(for: event)
         let handled = handleUnmeasured(event, client: sender)
         updateCandidateDeletionShortcutCapture()
+        // Once the key is handled, so the list, the keys the panel takes,
+        // and its place beside the candidates follow it
+        updateBookmarkSearchPresentation()
         if tracesNavigation {
             endNavigationTrace(handled: handled)
         }
@@ -553,10 +556,19 @@ final class InputController: IMKInputController {
         }
 
         if bookmarkSearchSession.isActive {
-            if bookmarkInsertionContext?.matches(sender) == true {
+            guard bookmarkInsertionContext?.matches(sender) == true else {
+                clearBookmarkSearch(client: sender)
+                return false
+            }
+            // The search text is typed and converted as usual; the panel
+            // takes its keys only with nothing being converted
+            if !bookmarkSearchSession.isSearching
+                || (inputBuffer.isEmpty && isBookmarkPanelKey(event)) {
                 return handleBookmarkSearchEvent(event, client: sender)
             }
-            clearBookmarkSearch()
+            if MyIMFeatureShortcut.bookmarks.shortcut.matches(event) {
+                return true
+            }
         }
 
         if MyIMFeatureShortcut.bookmarks.shortcut.matches(event) {
@@ -1114,10 +1126,13 @@ final class InputController: IMKInputController {
         }
         if let aSelector,
            NSStringFromSelector(aSelector) == "cancelOperation:",
-           bookmarkSearchSession.isActive {
-            // Esc taken as a hot key has been handled already
-            if !PanelKeyCapture.bookmark.isCapturing {
-                handleBookmarkEscape()
+           bookmarkSearchSession.isActive,
+           inputBuffer.isEmpty {
+            // Esc taken as a hot key has been handled already; while the
+            // search text is converted, Esc cancels the conversion below
+            if !PanelKeyCapture.bookmark.isCapturing,
+               let inputClient = activeInputClient ?? client() {
+                handleBookmarkEscape(client: inputClient)
             }
             return
         }
@@ -1572,7 +1587,7 @@ final class InputController: IMKInputController {
             return
         }
         if bookmarkSearchSession.isActive {
-            clearBookmarkSearch()
+            clearBookmarkSearch(client: sender)
             return
         }
         guard !isInsertingCommittedText else {
@@ -3548,62 +3563,16 @@ final class InputController: IMKInputController {
         controller.handleBookmarkCommand(command, client: client)
     }
 
-    /// While romaji is composed, Tab lists its conversions and Return adds
-    /// the selected one to the query; with nothing composed the keys choose
-    /// the bookmark and its format as before
+    /// Keys for the bookmark panel, taken while nothing is being converted;
+    /// conversion keys reach the normal handling instead
     private func handleBookmarkCommand(
         _ command: PanelKeyCommand,
         client sender: Any
     ) {
-        let session = bookmarkSearchSession
-        if session.isSearching, session.isComposing {
-            switch command {
-            case .tab, .backTab:
-                if session.isConverting {
-                    bookmarkSearchSession.moveConversionSelection(
-                        by: command == .tab ? 1 : -1
-                    )
-                } else {
-                    bookmarkSearchSession.beginConversion(
-                        bookmarkConversionCandidates(for: session.composition)
-                    )
-                }
-                showBookmarkCandidates()
-                return
-            case .previous where session.isConverting,
-                 .next where session.isConverting:
-                bookmarkSearchSession.moveConversionSelection(
-                    by: command == .next ? 1 : -1
-                )
-                showBookmarkCandidates()
-                return
-            case .apply:
-                bookmarkSearchSession.commitComposition()
-                showBookmarkCandidates()
-                // Typed as is, the bookmark is chosen as before
-                if !session.isConverting {
-                    beginBookmarkFormatSelection(client: sender)
-                }
-                return
-            case .cancel:
-                if session.isConverting {
-                    bookmarkSearchSession.cancelConversion()
-                } else {
-                    bookmarkSearchSession.cancelComposition()
-                }
-                showBookmarkCandidates()
-                return
-            case .deleteBackward:
-                bookmarkSearchSession.deleteBackward()
-                showBookmarkCandidates()
-                return
-            case .previous, .next:
-                break
-            }
-        }
+        defer { updateBookmarkSearchPresentation() }
         switch command {
         case .cancel:
-            handleBookmarkEscape()
+            handleBookmarkEscape(client: sender)
         case .apply:
             // The first press lists the formats, the second inserts
             if bookmarkSearchSession.stage == .searching {
@@ -3616,37 +3585,19 @@ final class InputController: IMKInputController {
         case .next, .tab:
             moveBookmarkSelection(by: 1)
         case .deleteBackward:
+            guard bookmarkSearchSession.isSearching else { return }
             bookmarkSearchSession.deleteBackward()
-            showBookmarkCandidates()
+            showBookmarkSearchText(in: sender)
         }
     }
 
-    /// The conversions the first panel offers for the romaji, from the same
-    /// candidate generation; choosing one is not recorded in any history
-    private func bookmarkConversionCandidates(for composition: String) -> [String] {
-        let reading = ConversionReadingResolver.resolve(composition)
-        let englishCandidates = Self.featureSettings.isEnglishCompletionEnabled
-            ? englishCompletions(for: reading)
-            : []
-        let candidates = makeStandardConversionCandidateSource().candidates(for: .init(
-            input: composition,
-            conversionReading: reading,
-            javaScriptCandidates: [],
-            englishCandidates: englishCandidates,
-            selectionHistory: candidateSelectionHistoryStore.snapshot,
-            contextualCandidates: [],
-            learningEnabled: Self.diagnosticConfiguration.enables(.learning)
-        ))
-        var values: [String] = []
-        for candidate in candidates {
-            let value = candidateValueForCommit(candidate.storageText)
-            if !value.isEmpty, !values.contains(value) {
-                values.append(value)
-            }
-        }
-        return values
+    private func isBookmarkPanelKey(_ event: NSEvent) -> Bool {
+        [36, 76, 48, 51, 53, 123, 124, 125, 126].contains(event.keyCode)
     }
 
+    /// While the search text is typed and converted, keys go through the
+    /// normal handling and only the panel keys with nothing being converted
+    /// come here; formats take every key
     private func handleBookmarkSearchEvent(
         _ event: NSEvent,
         client sender: Any
@@ -3666,37 +3617,25 @@ final class InputController: IMKInputController {
                 event.modifierFlags.contains(.shift) ? .backTab : .tab,
                 client: sender
             )
-        case 125:
+        case 125, 124:
             handleBookmarkCommand(.next, client: sender)
         case 123, 126:
             handleBookmarkCommand(.previous, client: sender)
-        case 124:
-            handleBookmarkCommand(.next, client: sender)
         case 51:
             handleBookmarkCommand(.deleteBackward, client: sender)
         default:
-            guard bookmarkSearchSession.isSearching,
-                  event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
-                  let characters = event.characters,
-                  !characters.isEmpty,
-                  characters.unicodeScalars.allSatisfy({
-                      !CharacterSet.controlCharacters.contains($0)
-                  })
-            else { return true }
-            // Composed first, so it can be converted before searching
-            bookmarkSearchSession.appendComposition(characters)
-            showBookmarkCandidates()
+            break
         }
         return true
     }
 
-    private func handleBookmarkEscape() {
+    private func handleBookmarkEscape(client sender: Any) {
         if bookmarkSearchSession.isSelectingFormat {
             candidateSearchCoordinator.cancel(.bookmarkFormat)
             bookmarkSearchSession.returnToSearch()
             showBookmarkCandidates()
         } else {
-            clearBookmarkSearch()
+            clearBookmarkSearch(client: sender)
         }
     }
 
@@ -3773,39 +3712,37 @@ final class InputController: IMKInputController {
         } else {
             insertedValue = format.text
         }
+        // The format replaces the search text in the input position
+        let markedRange = textClient.markedRange()
+        let replacementRange = markedRange.location != NSNotFound
+            && markedRange.length > 0
+            ? markedRange
+            : NSRange(location: NSNotFound, length: 0)
         clearBookmarkSearch()
         isInsertingCommittedText = true
-        textClient.insertText(
-            insertedValue,
-            replacementRange: NSRange(location: NSNotFound, length: 0)
-        )
+        textClient.insertText(insertedValue, replacementRange: replacementRange)
         isInsertingCommittedText = false
+    }
+
+    private var bookmarkPanel: BookmarkPanelController {
+        panelCoordinator.bookmarkPanel
+    }
+
+    /// What the conversion panels cover now, so the bookmark panel opens
+    /// beside them instead of over them
+    private var occupiedConversionFrame: NSRect? {
+        var frames = [
+            primaryCandidatePanel.visibleFrame,
+            secondaryCandidatePanel.visibleFrame
+        ].compactMap { $0 }
+        frames += panelCoordinator.visibleTranslationCandidateFrames
+        guard var result = frames.first else { return nil }
+        for frame in frames.dropFirst() { result = result.union(frame) }
+        return result
     }
 
     private func showBookmarkCandidates() {
         guard let context = bookmarkInsertionContext else { return }
-        // The composition shows in the caption, never in the document
-        let caption = "ブックマーク検索: \(bookmarkSearchSession.searchText)"
-        if let conversions = bookmarkSearchSession.conversionCandidates {
-            let pageRange = bookmarkSearchSession.conversionPageRange(
-                pageSize: Self.maximumCandidateCount
-            )
-            primaryCandidatePanel.onSelectionChanged = { [weak self] localIndex in
-                self?.bookmarkSearchSession.selectConversion(
-                    at: localIndex.map { pageRange.lowerBound + $0 }
-                )
-            }
-            primaryCandidatePanel.show(
-                candidates: Array(conversions[pageRange]),
-                selectedIndex: bookmarkSearchSession.selectedConversionIndex.map {
-                    $0 - pageRange.lowerBound
-                },
-                near: context.anchorFrame,
-                caption: caption,
-                minimumPanelText: "ブックマーク検索"
-            )
-            return
-        }
         let candidates = bookmarkSearchSession.filteredBookmarks
         let pageRange = bookmarkSearchSession.bookmarkPageRange(
             pageSize: Self.maximumCandidateCount
@@ -3813,7 +3750,7 @@ final class InputController: IMKInputController {
         let selectedIndex = bookmarkSearchSession.selectedBookmarkIndex.map {
             $0 - pageRange.lowerBound
         }
-        primaryCandidatePanel.onSelectionChanged = { [weak self] localIndex in
+        bookmarkPanel.onSelectionChanged = { [weak self] localIndex in
             guard let self else { return }
             self.bookmarkSearchSession.selectBookmark(
                 at: localIndex.map { pageRange.lowerBound + $0 }
@@ -3825,13 +3762,13 @@ final class InputController: IMKInputController {
         } else {
             displayedCandidates = candidates[pageRange].map(\.displayText)
         }
-        primaryCandidatePanel.show(
+        bookmarkPanel.show(
             candidates: displayedCandidates,
             selectedIndex: selectedIndex,
-            near: context.anchorFrame,
-            caption: caption,
+            caption: "ブックマーク検索: \(bookmarkSearchSession.searchText)",
             reservesEmptyRow: bookmarkSearchSession.stage == .loadingBookmarks,
-            minimumPanelText: "ブックマーク検索"
+            near: context.anchorFrame,
+            beside: occupiedConversionFrame
         )
     }
 
@@ -3844,25 +3781,60 @@ final class InputController: IMKInputController {
         let selectedIndex = bookmarkSearchSession.selectedFormatIndex.map {
             $0 - pageRange.lowerBound
         }
-        primaryCandidatePanel.onSelectionChanged = { [weak self] localIndex in
+        bookmarkPanel.onSelectionChanged = { [weak self] localIndex in
             guard let self else { return }
             self.bookmarkSearchSession.selectFormat(
                 at: localIndex.map { pageRange.lowerBound + $0 }
             )
         }
-        primaryCandidatePanel.show(
+        bookmarkPanel.show(
             candidates: formats[pageRange].map { "\($0.label) — \($0.text)" },
             selectedIndex: selectedIndex,
-            near: context.anchorFrame,
             caption: bookmarkSearchSession.formatBookmark?.title ?? "書式",
             reservesEmptyRow: bookmarkSearchSession.stage == .loadingFormats,
-            minimumPanelText: "Markdownリンク"
+            near: context.anchorFrame,
+            beside: occupiedConversionFrame
         )
     }
 
-    private func clearBookmarkSearch() {
+    /// Shows the search text, the committed query and what is being typed,
+    /// in the input position; nothing of it is in the document until a
+    /// format replaces it
+    private func showBookmarkSearchText(in sender: Any) {
+        if inputBuffer.isEmpty {
+            setMarkedText(bookmarkSearchSession.query, in: sender)
+        } else {
+            updateMarkedText(in: sender)
+        }
+    }
+
+    /// After every key while searching: the list follows what is typed,
+    /// keys go to the panel only while nothing is being converted, and the
+    /// panel stays beside the conversion candidates
+    private func updateBookmarkSearchPresentation() {
+        guard bookmarkSearchSession.isActive else { return }
+        if bookmarkSearchSession.isSearching {
+            bookmarkSearchSession.setComposition(inputBuffer)
+        }
+        let capturesKeys = inputBuffer.isEmpty
+        if capturesKeys, !PanelKeyCapture.bookmark.isCapturing {
+            _ = PanelKeyCapture.bookmark.begin()
+        } else if !capturesKeys, PanelKeyCapture.bookmark.isCapturing {
+            PanelKeyCapture.bookmark.end()
+        }
+        if bookmarkSearchSession.isSelectingFormat {
+            showBookmarkFormats()
+        } else {
+            showBookmarkCandidates()
+        }
+    }
+
+    /// `client` removes the search text from the input position; without
+    /// it the search ends where the client is no longer reachable
+    private func clearBookmarkSearch(client sender: Any? = nil) {
         let wasActive = bookmarkSearchSession.isActive
             || bookmarkInsertionContext != nil
+        let hadSearchText = !bookmarkSearchSession.searchText.isEmpty
         candidateSearchCoordinator.cancel(.bookmarkLoad)
         candidateSearchCoordinator.cancel(.bookmarkFormat)
         bookmarkSearchSession.reset()
@@ -3873,9 +3845,11 @@ final class InputController: IMKInputController {
             PanelKeyCapture.bookmark.end()
             Self.bookmarkPanelController = nil
         }
-        if wasActive {
-            primaryCandidatePanel.onSelectionChanged = nil
-            primaryCandidatePanel.hide()
+        guard wasActive else { return }
+        bookmarkPanel.hide()
+        if let sender, hadSearchText || !inputBuffer.isEmpty {
+            // The document is left as it was before the search
+            clearCompositionForSystemPaste(in: sender)
         }
     }
 
@@ -5612,6 +5586,7 @@ final class InputController: IMKInputController {
         _ entry: UnselectedInputLearningEntry?
     ) {
         guard Self.diagnosticConfiguration.enables(.learning),
+              !bookmarkSearchSession.isSearching,
               let entry else {
             return
         }
@@ -5641,6 +5616,8 @@ final class InputController: IMKInputController {
     }
 
     private func recordSelectedCandidate() {
+        // Bookmark search text is not learned
+        guard !bookmarkSearchSession.isSearching else { return }
         guard
             let selectedCandidateIndex,
             currentCandidateModels.indices.contains(selectedCandidateIndex)
@@ -5697,7 +5674,8 @@ final class InputController: IMKInputController {
         isLearnable: Bool = false,
         inflectionBase: InflectionBaseIdentity? = nil
     ) {
-        guard Self.diagnosticConfiguration.enables(.learning) else { return }
+        guard Self.diagnosticConfiguration.enables(.learning),
+              !bookmarkSearchSession.isSearching else { return }
         let learnedReading = reading ?? candidateSelectionReading
         if isLearnable, !learnedReading.isEmpty,
            UnselectedInputLearningPolicy.requiresRepeatedSelection(candidate) {
@@ -5804,7 +5782,12 @@ final class InputController: IMKInputController {
         }
 
         guard selectedCandidateIndex != nil else {
-            discardComposition(in: sender)
+            if bookmarkSearchSession.isSearching {
+                // Only what is being typed goes; the search stays
+                discardBookmarkSearchComposition(in: sender)
+            } else {
+                discardComposition(in: sender)
+            }
             return true
         }
         selectedCandidateIndex = nil
@@ -5812,6 +5795,16 @@ final class InputController: IMKInputController {
         updateMarkedText(in: sender)
         showPrimaryCandidatePanel(client: sender)
         return true
+    }
+
+    private func discardBookmarkSearchComposition(in sender: Any) {
+        cancelInputCandidateSearches()
+        cancelCandidateTranslation()
+        clearInputBuffer()
+        clearCandidateState(includingFuzzy: true)
+        hideConversionPanels()
+        previewWindow.hide()
+        showBookmarkSearchText(in: sender)
     }
 
     private func discardComposition(in sender: Any) {
@@ -5935,6 +5928,12 @@ final class InputController: IMKInputController {
         preferredNextInputCandidates: [String] = []
     ) {
         guard let textClient = sender as? IMKTextInput else {
+            return
+        }
+        // While searching bookmarks, committed text goes to the search
+        // text in the input position, not into the document
+        if bookmarkSearchSession.isSearching {
+            commitToBookmarkSearch(value, client: sender)
             return
         }
         trace("insertText.request", sender: sender, detail: "value=\(value)")
@@ -6478,7 +6477,26 @@ final class InputController: IMKInputController {
             .confirmedCandidate {
             return confirmedCandidate
         }
+        // The bookmark search text committed so far stays before what is
+        // typed next
+        if bookmarkSearchSession.isSearching {
+            return bookmarkSearchSession.query
+        }
         return ""
+    }
+
+    private func commitToBookmarkSearch(_ value: String, client sender: Any) {
+        cancelInputCandidateSearches()
+        cancelCandidateTranslation()
+        clearInputBuffer()
+        reconversionOriginal = nil
+        clearCandidateState(includingFuzzy: true)
+        hideConversionPanels()
+        previewWindow.hide()
+        bookmarkSearchSession.setComposition("")
+        bookmarkSearchSession.appendToQuery(value)
+        showBookmarkSearchText(in: sender)
+        updateBookmarkSearchPresentation()
     }
 
     /// The rest of the input after the unit converted now, shown after it
@@ -6854,6 +6872,10 @@ final class InputController: IMKInputController {
         }
         if let symbolTipsFrame = symbolTipsWindow.visibleFrame {
             result = result.union(symbolTipsFrame)
+        }
+        // The bookmark panel beside the candidates during a bookmark search
+        if let bookmarkFrame = bookmarkPanel.visibleFrame {
+            result = result.union(bookmarkFrame)
         }
         return result
     }

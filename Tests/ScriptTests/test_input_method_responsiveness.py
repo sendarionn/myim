@@ -164,7 +164,7 @@ class BookmarkPanelKeyCaptureTests(unittest.TestCase):
 
     def test_every_close_releases_the_keys(self):
         self.assertIn("PanelKeyCapture.bookmark.end()",
-                      self.body("private func clearBookmarkSearch()"))
+                      self.body("private func clearBookmarkSearch("))
         for caller in [
             "private func resetTransientInteractionState()",
             "private func toggleEmojiWindow(client sender: Any)",
@@ -174,6 +174,35 @@ class BookmarkPanelKeyCaptureTests(unittest.TestCase):
         ]:
             with self.subTest(caller=caller):
                 self.assertIn("clearBookmarkSearch()", self.body(caller))
+
+    def test_search_text_is_converted_as_usual_and_kept_out_of_the_document(self):
+        commit = self.body("    private func commit(\n")
+        self.assertLess(commit.index("commitToBookmarkSearch(value, client: sender)"),
+                        commit.index("textClient.insertText("))
+        prefix = self.body("private var compositionPrefix: String {")
+        self.assertIn("return bookmarkSearchSession.query", prefix)
+        for recorder in ["private func recordSelectedCandidate()",
+                         "private func learnUnselectedInput("]:
+            with self.subTest(recorder=recorder):
+                self.assertIn("!bookmarkSearchSession.isSearching",
+                              self.body(recorder))
+
+    def test_panel_takes_keys_only_while_nothing_is_converted(self):
+        update = self.body("private func updateBookmarkSearchPresentation()")
+        self.assertIn("let capturesKeys = inputBuffer.isEmpty", update)
+        self.assertIn("PanelKeyCapture.bookmark.end()", update)
+        handle = self.body("override func handle(_ event")
+        self.assertIn("updateBookmarkSearchPresentation()", handle)
+
+    def test_bookmarks_have_their_own_panel_beside_the_candidates(self):
+        show = self.body("private func showBookmarkCandidates()")
+        self.assertIn("bookmarkPanel.show(", show)
+        self.assertIn("beside: occupiedConversionFrame", show)
+        self.assertNotIn("primaryCandidatePanel.show(", show)
+
+    def test_ending_the_search_removes_the_search_text(self):
+        clear = self.body("private func clearBookmarkSearch(")
+        self.assertIn("clearCompositionForSystemPaste(in: sender)", clear)
 
     def test_captured_keys_run_only_for_the_original_input_target(self):
         handler = self.body("static func handleBookmarkPanelCommand(")

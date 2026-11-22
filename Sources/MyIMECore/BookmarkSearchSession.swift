@@ -18,103 +18,38 @@ public struct BookmarkSearchSession: Equatable, Sendable {
     public private(set) var formatBookmark: BrowserBookmark?
     public private(set) var formats: [BookmarkFormatCandidate] = []
     public private(set) var selectedFormatIndex: Int?
-    /// Romaji typed but not yet committed to the query; the list narrows by
-    /// it as typed, so ASCII searches work without converting
+    /// What is being typed in the input position and not yet committed;
+    /// the list narrows by it as typed, so ASCII searches work without
+    /// converting
     public private(set) var composition = ""
-    /// The conversions of the composition while they are listed in place of
-    /// the bookmarks
-    public private(set) var conversionCandidates: [String]?
-    public private(set) var selectedConversionIndex: Int?
 
     public init() {}
 
     public var isActive: Bool { stage != .inactive }
     public var isComposing: Bool { !composition.isEmpty }
-    public var isConverting: Bool { conversionCandidates != nil }
     /// What the list is narrowed by
     public var searchText: String { query + composition }
 
-    public var selectedConversion: String? {
-        guard let selectedConversionIndex,
-              let conversionCandidates,
-              conversionCandidates.indices.contains(selectedConversionIndex) else {
-            return nil
-        }
-        return conversionCandidates[selectedConversionIndex]
-    }
-
-    public mutating func appendComposition(_ text: String) {
-        guard stage == .searching || stage == .loadingBookmarks else { return }
-        composition += text
-        conversionCandidates = nil
-        selectedConversionIndex = nil
+    /// The input being typed, as the normal conversion holds it
+    public mutating func setComposition(_ text: String) {
+        guard isSearching, composition != text else { return }
+        composition = text
         refilter()
     }
 
-    /// Lists the conversions of the composition, the first selected
-    public mutating func beginConversion(_ candidates: [String]) {
-        guard isSearching, isComposing, !candidates.isEmpty else { return }
-        conversionCandidates = candidates
-        selectedConversionIndex = 0
-    }
-
-    public mutating func moveConversionSelection(by offset: Int) {
-        guard let conversionCandidates else { return }
-        selectedConversionIndex = LinearCandidateNavigator.index(
-            from: selectedConversionIndex,
-            offset: offset,
-            candidateCount: conversionCandidates.count
-        )
-    }
-
-    public mutating func selectConversion(at index: Int?) {
-        guard let conversionCandidates else { return }
-        if let index, conversionCandidates.indices.contains(index) {
-            selectedConversionIndex = index
-        }
-    }
-
-    /// Adds the selected conversion, or the composition as typed when none
-    /// is listed, to the query
-    public mutating func commitComposition() {
-        guard isComposing else { return }
-        query += selectedConversion ?? composition
-        composition = ""
-        conversionCandidates = nil
-        selectedConversionIndex = nil
+    /// Text the normal conversion committed, added to the query instead of
+    /// the document
+    public mutating func appendToQuery(_ text: String) {
+        guard isSearching, !text.isEmpty else { return }
+        query += text
         refilter()
     }
 
-    /// Back from the conversions to the composition as typed
-    public mutating func cancelConversion() {
-        conversionCandidates = nil
-        selectedConversionIndex = nil
-    }
-
-    public mutating func cancelComposition() {
-        composition = ""
-        cancelConversion()
-        refilter()
-    }
-
-    /// Deletes from the composition first, then from the query
+    /// Deletes the last character of the query
     public mutating func deleteBackward() {
-        guard isSearching else { return }
-        cancelConversion()
-        if !composition.isEmpty {
-            composition.removeLast()
-        } else if !query.isEmpty {
-            query.removeLast()
-        }
+        guard isSearching, !query.isEmpty else { return }
+        query.removeLast()
         refilter()
-    }
-
-    public func conversionPageRange(pageSize: Int) -> Range<Int> {
-        LinearCandidateNavigator.pageRange(
-            containing: selectedConversionIndex,
-            pageSize: pageSize,
-            candidateCount: conversionCandidates?.count ?? 0
-        )
     }
 
     private mutating func refilter() {
@@ -122,6 +57,7 @@ public struct BookmarkSearchSession: Equatable, Sendable {
             applyQuery(preserving: nil)
         }
     }
+
     public var isSearching: Bool {
         stage == .loadingBookmarks || stage == .searching
     }
@@ -279,8 +215,6 @@ public struct BookmarkSearchSession: Equatable, Sendable {
         stage = .inactive
         query = ""
         composition = ""
-        conversionCandidates = nil
-        selectedConversionIndex = nil
         loadError = nil
         bookmarks = []
         filteredBookmarks = []

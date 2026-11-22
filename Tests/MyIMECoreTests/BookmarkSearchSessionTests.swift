@@ -82,7 +82,7 @@ struct BookmarkSearchSessionTests {
         #expect(session.formats.isEmpty)
     }
 
-    // MARK: Composing and converting the search text
+    // MARK: Searching with the normal conversion
 
     private let plan = BrowserBookmark(
         title: "構造計画 - 社内Wiki",
@@ -98,79 +98,56 @@ struct BookmarkSearchSessionTests {
         return session
     }
 
-    /// ASCII narrows the list as typed and is kept as typed, as before
+    /// ASCII narrows the list while it is still being typed, as before
     @Test
-    func typedRomajiNarrowsTheListBeforeItIsConverted() {
+    func inputBeingTypedNarrowsTheList() {
         var session = searchingSession()
 
-        session.appendComposition("swi")
-        let narrowed = session.filteredBookmarks
-        session.commitComposition()
+        session.setComposition("swi")
 
-        #expect(narrowed == [swift])
-        #expect(session.query == "swi")
-        #expect(!session.isComposing)
         #expect(session.filteredBookmarks == [swift])
+        #expect(session.searchText == "swi")
+        #expect(session.query.isEmpty)
     }
 
-    /// Each word is converted and added to the query, as 構造 and 計画
+    /// Words the conversion commits build the query, as 構造 and 計画
     @Test
-    func conversionsAreAddedToTheQueryWordByWord() {
+    func committedConversionsBuildTheQuery() {
         var session = searchingSession()
 
-        session.appendComposition("kouzou")
-        session.beginConversion(["構造", "こうぞう", "コウゾウ"])
-        let firstSelection = session.selectedConversion
-        session.commitComposition()
-        session.appendComposition("keikaku")
-        session.beginConversion(["けいかく", "計画"])
-        session.moveConversionSelection(by: 1)
-        session.commitComposition()
+        session.setComposition("kouzou")
+        session.setComposition("")
+        session.appendToQuery("構造")
+        session.setComposition("keikaku")
+        let whileTyping = session.filteredBookmarks
+        session.setComposition("")
+        session.appendToQuery("計画")
 
-        #expect(firstSelection == "構造")
+        #expect(whileTyping.isEmpty)
         #expect(session.query == "構造計画")
         #expect(session.filteredBookmarks == [plan])
         #expect(session.selectedBookmark == plan)
     }
 
     @Test
-    func escapeLeavesTheConversionThenTheComposition() {
+    func backspaceDeletesFromTheQuery() {
         var session = searchingSession()
-        session.appendComposition("kouzou")
-        session.beginConversion(["構造"])
+        session.appendToQuery("swi")
 
-        session.cancelConversion()
-        let stillComposing = session.isComposing
-        session.cancelComposition()
+        session.deleteBackward()
 
-        #expect(stillComposing)
-        #expect(!session.isConverting)
-        #expect(session.searchText.isEmpty)
-        #expect(session.filteredBookmarks.count == 3)
+        #expect(session.query == "sw")
     }
 
     @Test
-    func backspaceDeletesTheCompositionBeforeTheQuery() {
+    func nothingIsComposedOnceTheSearchEnds() {
         var session = searchingSession()
-        session.appendComposition("sw")
-        session.commitComposition()
-        session.appendComposition("i")
-        session.beginConversion(["い"])
+        session.setComposition("kouzou")
 
-        session.deleteBackward()
-        let afterComposition = (session.query, session.composition, session.isConverting)
-        session.deleteBackward()
+        session.reset()
+        session.setComposition("ki")
 
-        #expect(afterComposition == ("sw", "", false))
-        #expect(session.query == "s")
-    }
-
-    @Test
-    func noConversionIsListedWithoutAComposition() {
-        var session = searchingSession()
-
-        session.beginConversion(["構造"])
-
-        #expect(!session.isConverting)
+        #expect(session.composition.isEmpty)
+        #expect(!session.isComposing)
     }
 }

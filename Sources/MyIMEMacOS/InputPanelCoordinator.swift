@@ -3,6 +3,7 @@ import MyIMECore
 
 final class InputPanelCoordinator {
     let primaryCandidatePanel = CandidatePanelController()
+    let bookmarkPanel = BookmarkPanelController()
     let candidateFilterDraft = CandidatePanelController()
     private var candidateFilterConditions: [CandidatePanelController] = []
     let calendar = CalendarWindowController()
