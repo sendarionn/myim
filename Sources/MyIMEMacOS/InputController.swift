@@ -655,6 +655,16 @@ final class InputController: IMKInputController {
 
         commitSelectedNextInputBeforeNewInput(event, client: sender)
 
+        // Text deleted, in the composition or in the application, is being
+        // rewritten, so what was committed before it does not lead to what
+        // comes next
+        if TextDeletionKey.matches(
+            keyCode: event.keyCode,
+            control: event.modifierFlags.contains(.control)
+        ) {
+            nextInputCandidateCoordinator.breakSequence()
+        }
+
         if shouldDismissNextInputCandidates(for: event) {
             dismissNextInputCandidates(clearMarkedTextIn: sender)
         }
@@ -2054,8 +2064,33 @@ final class InputController: IMKInputController {
         }
     }
 
+    /// Cancel is the default, so Return or Esc leaves the history
+    private func confirmNextInputHistoryRemoval() -> Bool {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "次入力候補の履歴を削除しますか？"
+        alert.informativeText = "学習した次入力候補の履歴がすべて削除されます。この操作は取り消せません。"
+        let cancel = alert.addButton(withTitle: "キャンセル")
+        let remove = alert.addButton(withTitle: "削除")
+        cancel.keyEquivalent = "\r"
+        remove.keyEquivalent = ""
+        remove.hasDestructiveAction = true
+        // NSAlert gives Esc only to a button titled Cancel in English
+        let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 53, event.window == alert.window else {
+                return event
+            }
+            NSApp.stopModal(withCode: .alertFirstButtonReturn)
+            return nil
+        }
+        defer { escape.map(NSEvent.removeMonitor) }
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
     @objc
     private func clearNextInputPredictionHistory(_ sender: Any?) {
+        guard confirmNextInputHistoryRemoval() else { return }
         dismissNextInputCandidates(clearMarkedTextIn: client())
         do {
             try nextInputCandidateCoordinator.removeAllLearning()
