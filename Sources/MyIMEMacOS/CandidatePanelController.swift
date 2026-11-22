@@ -28,6 +28,11 @@ enum CandidatePanelItemStyle {
     static let verticalPadding: CGFloat = 9
     static let accessorySpacing: CGFloat = 8
     static let accessoryFont = NSFont.systemFont(ofSize: 8)
+    /// The bookmark symbol, sized like ● beside the candidate
+    static let bookmarkSymbol = NSImage(
+        systemSymbolName: "bookmark",
+        accessibilityDescription: "ブックマーク"
+    )?.withSymbolConfiguration(.init(pointSize: 9, weight: .regular))
     static let inputCaretWidth: CGFloat = 1
     static let inputCaretHeight: CGFloat = 16
     static let height = ceil(
@@ -149,9 +154,10 @@ final class CandidatePanelRowView: NSView {
     private let inlineCaretView = CandidateInlineCaretView()
     private let inputCaretTrailingSpacer = NSView()
     private let accessoryLabel = NSTextField(labelWithString: "●")
+    private let accessoryImageView = NSImageView()
     private let contentStack = NSStackView()
     private var text = ""
-    private var showsAlternateCommitIndicator = false
+    private var accessory = CandidateAccessory.none
     private var showsInputCaret = false
     private var fixedWidthConstraint: NSLayoutConstraint?
     private var fixedHeightConstraint: NSLayoutConstraint?
@@ -195,7 +201,15 @@ final class CandidatePanelRowView: NSView {
         contentStack.addArrangedSubview(label)
         contentStack.addArrangedSubview(inlineCaretView)
         contentStack.addArrangedSubview(inputCaretTrailingSpacer)
+        accessoryImageView.image = CandidatePanelItemStyle.bookmarkSymbol
+        accessoryImageView.imageScaling = .scaleNone
+        accessoryImageView.setContentHuggingPriority(.required, for: .horizontal)
+        accessoryImageView.setContentCompressionResistancePriority(
+            .required,
+            for: .horizontal
+        )
         contentStack.addArrangedSubview(accessoryLabel)
+        contentStack.addArrangedSubview(accessoryImageView)
         addSubview(contentStack)
         NSLayoutConstraint.activate([
             contentStack.leadingAnchor.constraint(
@@ -218,18 +232,19 @@ final class CandidatePanelRowView: NSView {
     func configure(
         text: String,
         isSelected: Bool,
-        showsAlternateCommitIndicator: Bool = false,
+        accessory: CandidateAccessory = .none,
         showsInputCaret: Bool = false
     ) {
         self.text = text
-        self.showsAlternateCommitIndicator = showsAlternateCommitIndicator
+        self.accessory = accessory
         self.showsInputCaret = showsInputCaret
         label.stringValue = text
         label.isHidden = showsInputCaret
         inlineCaretView.isHidden = !showsInputCaret
         contentStack.setCustomSpacing(0, after: inlineCaretView)
         inputCaretTrailingSpacer.isHidden = !showsInputCaret
-        accessoryLabel.isHidden = !showsAlternateCommitIndicator
+        accessoryLabel.isHidden = accessory != .alternateCommit
+        accessoryImageView.isHidden = accessory != .bookmark
         layer?.backgroundColor = isSelected
             ? NSColor.controlAccentColor.cgColor
             : NSColor.clear.cgColor
@@ -246,13 +261,14 @@ final class CandidatePanelRowView: NSView {
         accessoryLabel.textColor = isSelected
             ? .alternateSelectedControlTextColor
             : .secondaryLabelColor
+        accessoryImageView.contentTintColor = accessoryLabel.textColor
     }
 
     func updateSelection(_ isSelected: Bool) {
         configure(
             text: text,
             isSelected: isSelected,
-            showsAlternateCommitIndicator: showsAlternateCommitIndicator,
+            accessory: accessory,
             showsInputCaret: showsInputCaret
         )
     }
@@ -286,13 +302,13 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
 
     func configure(
         text: String,
-        showsAlternateCommitIndicator: Bool,
+        accessory: CandidateAccessory,
         showsInputCaret: Bool
     ) {
         rowView.configure(
             text: text,
             isSelected: isSelected,
-            showsAlternateCommitIndicator: showsAlternateCommitIndicator,
+            accessory: accessory,
             showsInputCaret: showsInputCaret
         )
     }
@@ -324,7 +340,7 @@ final class CandidatePanelController: NSObject {
     private let scrollView: NSScrollView
     private let guideLabel: NSTextView
     private var candidates: [String] = []
-    private var alternateCommitIndicators: [Bool] = []
+    private var accessories: [CandidateAccessory] = []
     private var inputCaretIndicators: [Bool] = []
     private var itemSizes: [NSSize] = []
     var onSelectionChanged: ((Int?) -> Void)?
@@ -546,6 +562,7 @@ final class CandidatePanelController: NSObject {
     func show(
         candidates: [String],
         alternateCommitIndicators: [Bool] = [],
+        bookmarkIndicators: [Bool] = [],
         inputCaretIndicators: [Bool] = [],
         selectedIndex: Int?,
         near anchorFrame: NSRect,
@@ -561,10 +578,14 @@ final class CandidatePanelController: NSObject {
             ? NSColor.controlAccentColor.cgColor
             : NSColor.clear.cgColor
         self.candidates = candidates
-        self.alternateCommitIndicators = candidates.indices.map {
-            alternateCommitIndicators.indices.contains($0)
-                ? alternateCommitIndicators[$0]
-                : false
+        // What each candidate is decides its mark, never its text
+        self.accessories = candidates.indices.map {
+            CandidateAccessory.resolve(
+                hasDistinctCommitText: alternateCommitIndicators.indices.contains($0)
+                    && alternateCommitIndicators[$0],
+                isBookmark: bookmarkIndicators.indices.contains($0)
+                    && bookmarkIndicators[$0]
+            )
         }
         self.inputCaretIndicators = candidates.indices.map {
             inputCaretIndicators.indices.contains($0)
@@ -574,7 +595,7 @@ final class CandidatePanelController: NSObject {
         let measuredItemSizes = candidates.indices.map {
             itemSize(
                 for: candidates[$0],
-                showsAlternateCommitIndicator: self.alternateCommitIndicators[$0],
+                accessory: self.accessories[$0],
                 showsInputCaret: self.inputCaretIndicators[$0]
             )
         }
@@ -631,7 +652,7 @@ final class CandidatePanelController: NSObject {
                 minimumPanelText.map {
                     itemSize(
                         for: $0,
-                        showsAlternateCommitIndicator: false,
+                        accessory: .none,
                         showsInputCaret: false
                     ).width
                 }
@@ -831,7 +852,7 @@ final class CandidatePanelController: NSObject {
 
     private func itemSize(
         for candidate: String,
-        showsAlternateCommitIndicator: Bool,
+        accessory: CandidateAccessory,
         showsInputCaret: Bool
     ) -> NSSize {
         let textWidth = showsInputCaret
@@ -840,12 +861,18 @@ final class CandidatePanelController: NSObject {
                 text: candidate,
                 font: CandidatePanelItemStyle.font
             )
-        let accessoryWidth = showsAlternateCommitIndicator
-            ? labelWidth(
+        let accessoryWidth: CGFloat = switch accessory {
+        case .none:
+            0
+        case .alternateCommit:
+            labelWidth(
                 text: "●",
                 font: CandidatePanelItemStyle.accessoryFont
             ) + CandidatePanelItemStyle.accessorySpacing
-            : 0
+        case .bookmark:
+            ceil(CandidatePanelItemStyle.bookmarkSymbol?.size.width ?? 0)
+                + CandidatePanelItemStyle.accessorySpacing
+        }
         return NSSize(
             width: CandidateRowWidth.resolve(
                 textWidth: textWidth,
@@ -945,8 +972,7 @@ extension CandidatePanelController: NSCollectionViewDataSource {
 
         candidateItem.configure(
             text: candidates[indexPath.item],
-            showsAlternateCommitIndicator:
-                alternateCommitIndicators[indexPath.item],
+            accessory: accessories[indexPath.item],
             showsInputCaret: inputCaretIndicators[indexPath.item]
         )
         return candidateItem

@@ -3757,13 +3757,18 @@ final class InputController: IMKInputController {
             )
         }
         let displayedCandidates: [String]
+        let bookmarkRows: [Bool]
         if let emptyMessage = bookmarkSearchSession.emptyMessage {
             displayedCandidates = [emptyMessage]
+            bookmarkRows = [false]
         } else {
             displayedCandidates = candidates[pageRange].map(\.displayText)
+            // Every listed row is a bookmark of the search result
+            bookmarkRows = Array(repeating: true, count: displayedCandidates.count)
         }
         bookmarkPanel.show(
             candidates: displayedCandidates,
+            bookmarkRows: bookmarkRows,
             selectedIndex: selectedIndex,
             caption: "ブックマーク検索: \(bookmarkSearchSession.searchText)",
             reservesEmptyRow: bookmarkSearchSession.stage == .loadingBookmarks,

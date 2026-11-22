@@ -17,8 +17,11 @@ final class BookmarkPanelController {
 
     /// `occupiedFrame` is what the conversion panels cover now; without it
     /// the panel opens below the input position as the candidates do
+    /// `bookmarkRows` tells which rows are bookmarks, marked with the
+    /// bookmark symbol; formats and messages are not
     func show(
         candidates: [String],
+        bookmarkRows: [Bool] = [],
         selectedIndex: Int?,
         caption: String,
         reservesEmptyRow: Bool = false,
@@ -27,6 +30,7 @@ final class BookmarkPanelController {
     ) {
         panel.show(
             candidates: candidates,
+            bookmarkIndicators: bookmarkRows,
             selectedIndex: selectedIndex,
             near: anchorFrame,
             caption: caption,
