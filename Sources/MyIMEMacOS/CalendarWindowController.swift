@@ -326,7 +326,7 @@ final class CalendarWindowController: NSObject {
     private var outsideClickTimer: Timer?
 
     override init() {
-        let gridSize = NSSize(width: 240, height: 234)
+        let gridSize = NSSize(width: 240, height: 240)
         let calendarGrid = CalendarGridView(frame: NSRect(origin: .zero, size: gridSize))
         calendarView = calendarGrid
 
