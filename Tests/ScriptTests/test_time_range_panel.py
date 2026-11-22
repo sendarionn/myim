@@ -74,8 +74,18 @@ class TimeRangePanelTests(unittest.TestCase):
         load = self.body(self.controller, "private func loadTimeFormats(")
         self.assertIn("timeRangeFormats(range)", load)
         self.assertIn("accepts(formatsFor: range)", load)
+        self.assertIn("candidateSelectionHistoryStore.snapshot.ranks", load)
         back = self.body(self.controller, "private func returnToTimeSelection(")
         self.assertIn("resumeTimeRangeSelection(", back)
+
+    def test_confirmed_time_formats_record_their_stable_id(self):
+        record = self.body(
+            self.controller,
+            "private func recordTimeFormatSelection("
+        )
+        self.assertIn("candidate.preferenceID", record)
+        self.assertIn("candidateSelectionHistoryStore.record", record)
+        self.assertNotIn("timeSelectionSession.range == nil", record)
 
     def test_holding_a_knob_still_is_checked_on_a_timer(self):
         start = self.body(self.view, "private func startStillnessTracking(")

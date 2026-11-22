@@ -7,8 +7,18 @@ public enum TimeFormatSelectionOutcome: Equatable, Sendable {
     case closed
 }
 
+public struct TimeFormatCandidate: Equatable, Sendable {
+    public let value: String
+    public let preferenceID: String?
+
+    public init(value: String, preferenceID: String? = nil) {
+        self.value = value
+        self.preferenceID = preferenceID
+    }
+}
+
 public struct TimeFormatSelectionSession: Equatable, Sendable {
-    public private(set) var candidates: [String]?
+    public private(set) var candidates: [TimeFormatCandidate]?
     public private(set) var selectedIndex: Int?
     public private(set) var isActive = false
     /// The time the formats are made for, kept for going back to the rail
@@ -19,6 +29,14 @@ public struct TimeFormatSelectionSession: Equatable, Sendable {
     public init() {}
 
     public var isSelectingFormat: Bool { candidates != nil }
+
+    public var selectedCandidate: TimeFormatCandidate? {
+        guard let candidates, let selectedIndex,
+              candidates.indices.contains(selectedIndex) else {
+            return nil
+        }
+        return candidates[selectedIndex]
+    }
 
     public mutating func beginTimeSelection() {
         candidates = nil
@@ -69,8 +87,15 @@ public struct TimeFormatSelectionSession: Equatable, Sendable {
         return time
     }
 
-    public mutating func replaceCandidates(_ values: [String]) {
-        candidates = values
+    public mutating func replaceCandidates(
+        _ candidates: [TimeFormatCandidate],
+        ranks: [String: Int] = [:]
+    ) {
+        let preferenceIDs = candidates.map { $0.preferenceID ?? "" }
+        self.candidates = CandidateRecencyOrderer.orderedIndices(
+            preferenceIDs,
+            ranks: ranks
+        ).map { candidates[$0] }
         selectedIndex = nil
     }
 

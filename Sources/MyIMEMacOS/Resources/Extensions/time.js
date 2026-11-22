@@ -8,7 +8,12 @@ function candidates(context) {
   if (!time) return []
 
   // HH:MM is offered unless it is exactly what was typed
-  return formatTime(time.hour, time.minute, !context.input.includes(":"))
+  return formatTime(
+    time.hour,
+    time.minute,
+    !context.input.includes(":"),
+    context.input === "time"
+  )
 }
 
 function parseTime(context) {
@@ -32,10 +37,16 @@ function parseTime(context) {
   return { hour: hour, minute: minute }
 }
 
-function formatTime(hour, minute, includesNumericFormat) {
+function formatTime(hour, minute, includesNumericFormat, includesPreferenceID) {
   return timeFormats(hour, minute).filter(function(format) {
     return includesNumericFormat || format.kind !== "numeric"
-  }).map(function(format) { return format.text })
+  }).map(function(format) {
+    if (!includesPreferenceID) return format.text
+    return {
+      value: format.text,
+      preferenceID: "time_ui:single:" + format.kind
+    }
+  })
 }
 
 // The clock's formats of a time, each with its kind so the two ends of a
@@ -58,7 +69,11 @@ function pad(value, length) {
 // of the clock, joined by each separator; a format that only one end has,
 // such as 半, is left out. Ranges on the hour also come as hours alone,
 // such as 13〜14時, ahead of them
-const rangeSeparators = ["〜", " - ", "から"]
+const rangeSeparators = [
+  { id: "wave", text: "〜" },
+  { id: "hyphen", text: " - " },
+  { id: "kara", text: "から" }
+]
 
 function timeRangeFormats(context) {
   const parameters = context.parameters || {}
@@ -71,7 +86,10 @@ function timeRangeFormats(context) {
   const results = []
   if (start % 60 === 0 && end % 60 === 0) {
     for (const separator of rangeSeparators) {
-      results.push(`${start / 60}${separator}${end / 60}時`)
+      results.push({
+        value: `${start / 60}${separator.text}${end / 60}時`,
+        preferenceID: `time_ui:range:hour:${separator.id}`
+      })
     }
   }
   const startFormats = rangeEndFormats(start)
@@ -82,7 +100,10 @@ function timeRangeFormats(context) {
         return format.kind === startFormat.kind
       })
       if (endFormat) {
-        results.push(`${startFormat.text}${separator}${endFormat.text}`)
+        results.push({
+          value: `${startFormat.text}${separator.text}${endFormat.text}`,
+          preferenceID: `time_ui:range:${startFormat.kind}:${separator.id}`
+        })
       }
     }
   }

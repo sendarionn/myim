@@ -3263,7 +3263,7 @@ final class InputController: IMKInputController {
     ) {
         candidateSearchCoordinator.cancel(.timeFormat)
         let query: String
-        let operation: @Sendable () async -> [String]
+        let operation: @Sendable () async -> [TimeFormatCandidate]
         switch target {
         case let .time(time):
             timeSelectionSession.beginFormatLoading(for: time)
@@ -3297,7 +3297,10 @@ final class InputController: IMKInputController {
             },
             apply: { [weak self] candidates in
                 guard let self else { return }
-                self.timeSelectionSession.replaceCandidates(candidates)
+                self.timeSelectionSession.replaceCandidates(
+                    candidates,
+                    ranks: self.candidateSelectionHistoryStore.snapshot.ranks
+                )
                 guard let ordered = self.timeSelectionSession.candidates,
                       !ordered.isEmpty else {
                     self.clearTimeSelection()
@@ -3332,10 +3335,10 @@ final class InputController: IMKInputController {
                     }
                     return
                 }
-                let value = ordered[selectedIndex]
-                self.recordTimeFormatSelection(value)
+                let candidate = ordered[selectedIndex]
+                self.recordTimeFormatSelection(candidate)
                 self.clearTimeSelection()
-                self.commit(value, to: sender)
+                self.commit(candidate.value, to: sender)
             },
             retainQueryAfterCompletion: false
         )
@@ -3373,10 +3376,10 @@ final class InputController: IMKInputController {
         case 36, 76:
             guard let index = timeSelectionSession.selectedIndex,
                   candidates.indices.contains(index) else { return true }
-            let value = candidates[index]
-            recordTimeFormatSelection(value)
+            let candidate = candidates[index]
+            recordTimeFormatSelection(candidate)
             clearTimeSelection()
-            commit(value, to: sender)
+            commit(candidate.value, to: sender)
         case 53:
             // Esc while the formats load or are shown goes back to the rail
             DispatchQueue.main.async { [weak self] in
@@ -3398,7 +3401,7 @@ final class InputController: IMKInputController {
             pageSize: Self.maximumCandidateCount
         )
         primaryCandidatePanel.show(
-            candidates: Array(candidates[pageRange]),
+            candidates: candidates[pageRange].map(\.value),
             selectedIndex: timeSelectionSession.selectedIndex.map {
                 $0 - pageRange.lowerBound
             },
@@ -3408,11 +3411,12 @@ final class InputController: IMKInputController {
         )
     }
 
-    /// The text of a range differs with every range, so only the formats of
-    /// a time are remembered as before
-    private func recordTimeFormatSelection(_ value: String) {
-        guard timeSelectionSession.range == nil else { return }
-        recordCandidateSelection(value)
+    private func recordTimeFormatSelection(_ candidate: TimeFormatCandidate) {
+        guard Self.diagnosticConfiguration.enables(.learning),
+              let preferenceID = candidate.preferenceID else {
+            return
+        }
+        candidateSelectionHistoryStore.record(preferenceID, readings: [])
     }
 
     /// Goes back from the formats to the rail at the time or range chosen

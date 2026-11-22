@@ -185,7 +185,7 @@ actor JavaScriptExtensionClient {
             }
     }
 
-    func timeCandidates(hour: Int, minute: Int) async -> [String] {
+    func timeCandidates(hour: Int, minute: Int) async -> [TimeFormatCandidate] {
         await candidates(
             for: "time",
             timestamp: Date(),
@@ -194,11 +194,18 @@ actor JavaScriptExtensionClient {
                 "hour": String(hour),
                 "minute": String(minute)
             ]
-        ).map(\.value)
+        ).map {
+            TimeFormatCandidate(
+                value: $0.value,
+                preferenceID: $0.preferenceID
+            )
+        }
     }
 
     /// The formats `time.js` offers for a range chosen on the time rail
-    func timeRangeFormats(_ range: TimeRangeSelection) async -> [String] {
+    func timeRangeFormats(
+        _ range: TimeRangeSelection
+    ) async -> [TimeFormatCandidate] {
         await candidates(
             for: "time",
             timestamp: Date(),
@@ -208,7 +215,12 @@ actor JavaScriptExtensionClient {
                 "end": String(range.end)
             ],
             functionName: "timeRangeFormats"
-        ).map(\.value)
+        ).map {
+            TimeFormatCandidate(
+                value: $0.value,
+                preferenceID: $0.preferenceID
+            )
+        }
     }
 
     func bookmarkFormats(

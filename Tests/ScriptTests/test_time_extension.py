@@ -15,7 +15,7 @@ SCRIPT = (
 
 
 class TimeExtensionTests(unittest.TestCase):
-    def candidates(self, hour, minute):
+    def time_candidate_entries(self, hour, minute):
         runner = f"""
 const fs = require("fs")
 eval(fs.readFileSync({json.dumps(str(SCRIPT))}, "utf8"))
@@ -32,7 +32,10 @@ process.stdout.write(JSON.stringify(candidates({{
         )
         return json.loads(completed.stdout)
 
-    def range_text(self, start, end):
+    def candidates(self, hour, minute):
+        return [entry["value"] for entry in self.time_candidate_entries(hour, minute)]
+
+    def range_entries(self, start, end):
         runner = f"""
 const fs = require("fs")
 eval(fs.readFileSync({json.dumps(str(SCRIPT))}, "utf8"))
@@ -48,6 +51,9 @@ process.stdout.write(JSON.stringify(timeRangeFormats({{
             text=True,
         )
         return json.loads(completed.stdout)
+
+    def range_text(self, start, end):
+        return [entry["value"] for entry in self.range_entries(start, end)]
 
     def test_range_on_the_hour_also_comes_as_hours_only(self):
         self.assertEqual(self.range_text(13 * 60, 14 * 60), [
@@ -74,6 +80,24 @@ process.stdout.write(JSON.stringify(timeRangeFormats({{
 
     def test_clock_formats_are_unchanged(self):
         self.assertEqual(self.candidates(9, 30), ["9時30分", "09:30", "9時半"])
+
+    def test_time_ui_candidates_have_stable_format_ids(self):
+        self.assertEqual(self.time_candidate_entries(9, 30), [
+            {"value": "9時30分", "preferenceID": "time_ui:single:kanji"},
+            {"value": "09:30", "preferenceID": "time_ui:single:numeric"},
+            {"value": "9時半", "preferenceID": "time_ui:single:half"},
+        ])
+
+    def test_range_candidates_identify_format_and_separator(self):
+        self.assertEqual(self.range_entries(13 * 60, 14 * 60)[:4], [
+            {"value": "13〜14時", "preferenceID": "time_ui:range:hour:wave"},
+            {"value": "13 - 14時", "preferenceID": "time_ui:range:hour:hyphen"},
+            {"value": "13から14時", "preferenceID": "time_ui:range:hour:kara"},
+            {
+                "value": "13時0分〜14時0分",
+                "preferenceID": "time_ui:range:kanji:wave",
+            },
+        ])
 
     def test_range_that_does_not_end_after_it_starts_gives_nothing(self):
         self.assertEqual(self.range_text(14 * 60, 13 * 60), [])
@@ -137,6 +161,12 @@ process.stdout.write(JSON.stringify(candidates({{
             with self.subTest(value=value):
                 self.assertEqual(self.direct_candidates(value), candidates)
                 self.assertNotIn(value, candidates)
+
+    def test_direct_time_candidates_remain_plain_strings(self):
+        self.assertTrue(all(
+            isinstance(candidate, str)
+            for candidate in self.direct_candidates("09:30")
+        ))
 
     def test_formats_direct_time_typed_without_the_colon(self):
         expected = {
