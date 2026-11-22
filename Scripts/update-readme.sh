@@ -136,9 +136,10 @@ quiet_settings=(
     SystemDictionaryPreviewEnabled
     AppleTranslationEnabled
 )
-typeset -A saved_settings
+typeset -A saved_settings saved_setting_types
 for key in "${quiet_settings[@]}"; do
     saved_settings[$key]=$(defaults read "$myim_domain" "$key" 2>/dev/null || print -r -- __absent__)
+    saved_setting_types[$key]=$(defaults read-type "$myim_domain" "$key" 2>/dev/null)
 done
 
 apply_scenario_settings() {
@@ -158,6 +159,9 @@ restore_settings() {
     for key in "${quiet_settings[@]}"; do
         if [[ "${saved_settings[$key]}" == __absent__ ]]; then
             defaults delete "$myim_domain" "$key" 2>/dev/null
+        elif [[ "${saved_setting_types[$key]}" == *boolean* ]]; then
+            # Written back with the type it had
+            defaults write "$myim_domain" "$key" -bool "${saved_settings[$key]}"
         else
             defaults write "$myim_domain" "$key" -int "${saved_settings[$key]}"
         fi

@@ -103,6 +103,18 @@ final class ExternalInformationWindowController: NSObject {
         scrollView.onInteraction = { [weak self] in
             self?.beginInteraction()
         }
+        // Created with no size, the text view would keep a zero width and
+        // lay out no text; it follows the scroll view's width and grows
+        // with the definitions
+        definitionTextView.minSize = .zero
+        definitionTextView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        definitionTextView.isVerticallyResizable = true
+        definitionTextView.isHorizontallyResizable = false
+        definitionTextView.autoresizingMask = [.width]
+        definitionTextView.textContainer?.widthTracksTextView = true
         scrollView.documentView = definitionTextView
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
@@ -393,6 +405,12 @@ final class ExternalInformationWindowController: NSObject {
             height: min(Self.informationPanelSize.height, visibleFrame.height)
         )
         definitionPanel.setContentSize(panelSize)
+        if let scrollView = definitionPanel.contentView as? NSScrollView {
+            definitionTextView.setFrameSize(NSSize(
+                width: scrollView.contentSize.width,
+                height: definitionTextView.frame.height
+            ))
+        }
         let aboveY = candidateFrame.maxY + Self.spacing
         let belowY = candidateFrame.minY - panelSize.height - Self.spacing
         let preferredY = aboveY + panelSize.height <= visibleFrame.maxY ? aboveY : belowY
