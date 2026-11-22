@@ -81,4 +81,96 @@ struct BookmarkSearchSessionTests {
         session.replaceFormats([.init(id: "url", label: "URL", text: swift.url)])
         #expect(session.formats.isEmpty)
     }
+
+    // MARK: Composing and converting the search text
+
+    private let plan = BrowserBookmark(
+        title: "構造計画 - 社内Wiki",
+        url: "https://wiki.example.com/plan",
+        folderPath: "仕事",
+        profile: "Work"
+    )
+
+    private func searchingSession() -> BookmarkSearchSession {
+        var session = BookmarkSearchSession()
+        session.begin()
+        session.replaceBookmarks([swift, issue, plan])
+        return session
+    }
+
+    /// ASCII narrows the list as typed and is kept as typed, as before
+    @Test
+    func typedRomajiNarrowsTheListBeforeItIsConverted() {
+        var session = searchingSession()
+
+        session.appendComposition("swi")
+        let narrowed = session.filteredBookmarks
+        session.commitComposition()
+
+        #expect(narrowed == [swift])
+        #expect(session.query == "swi")
+        #expect(!session.isComposing)
+        #expect(session.filteredBookmarks == [swift])
+    }
+
+    /// Each word is converted and added to the query, as 構造 and 計画
+    @Test
+    func conversionsAreAddedToTheQueryWordByWord() {
+        var session = searchingSession()
+
+        session.appendComposition("kouzou")
+        session.beginConversion(["構造", "こうぞう", "コウゾウ"])
+        let firstSelection = session.selectedConversion
+        session.commitComposition()
+        session.appendComposition("keikaku")
+        session.beginConversion(["けいかく", "計画"])
+        session.moveConversionSelection(by: 1)
+        session.commitComposition()
+
+        #expect(firstSelection == "構造")
+        #expect(session.query == "構造計画")
+        #expect(session.filteredBookmarks == [plan])
+        #expect(session.selectedBookmark == plan)
+    }
+
+    @Test
+    func escapeLeavesTheConversionThenTheComposition() {
+        var session = searchingSession()
+        session.appendComposition("kouzou")
+        session.beginConversion(["構造"])
+
+        session.cancelConversion()
+        let stillComposing = session.isComposing
+        session.cancelComposition()
+
+        #expect(stillComposing)
+        #expect(!session.isConverting)
+        #expect(session.searchText.isEmpty)
+        #expect(session.filteredBookmarks.count == 3)
+    }
+
+    @Test
+    func backspaceDeletesTheCompositionBeforeTheQuery() {
+        var session = searchingSession()
+        session.appendComposition("sw")
+        session.commitComposition()
+        session.appendComposition("i")
+        session.beginConversion(["い"])
+
+        session.deleteBackward()
+        let afterComposition = (session.query, session.composition, session.isConverting)
+        session.deleteBackward()
+
+        #expect(afterComposition == ("sw", "", false))
+        #expect(session.query == "s")
+    }
+
+    @Test
+    func noConversionIsListedWithoutAComposition() {
+        var session = searchingSession()
+
+        session.beginConversion(["構造"])
+
+        #expect(!session.isConverting)
+    }
 }

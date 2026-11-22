@@ -6,6 +6,10 @@ import os
 enum PanelKeyCommand: Equatable {
     case previous
     case next
+    /// Tab and Shift+Tab, told apart from the arrows for panels where Tab
+    /// also starts a conversion
+    case tab
+    case backTab
     case apply
     case cancel
     case deleteBackward
@@ -24,8 +28,8 @@ final class PanelKeyCapture {
         (kVK_UpArrow, 0, .previous),
         (kVK_RightArrow, 0, .next),
         (kVK_DownArrow, 0, .next),
-        (kVK_Tab, 0, .next),
-        (kVK_Tab, shiftKey, .previous),
+        (kVK_Tab, 0, .tab),
+        (kVK_Tab, shiftKey, .backTab),
         (kVK_Return, 0, .apply),
         (kVK_ANSI_KeypadEnter, 0, .apply),
         (kVK_Escape, 0, .cancel)

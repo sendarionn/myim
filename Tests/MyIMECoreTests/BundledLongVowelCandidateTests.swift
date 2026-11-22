@@ -86,6 +86,16 @@ struct BundledLongVowelCandidateTests {
         }
     }
 
+    /// The words of a bookmark search are converted one by one, as typed
+    /// input is everywhere
+    @Test
+    func wordsOfASearchConvertOneByOne() throws {
+        let source = try makeSource()
+
+        #expect(visibleCandidates(source, input: "kouzou").contains("構造"))
+        #expect(visibleCandidates(source, input: "keikaku").contains("計画"))
+    }
+
     private func makeSource() throws -> StandardConversionCandidateSource {
         let basicEntries = try #require(Self.basicEntries)
         return StandardConversionCandidateSource(

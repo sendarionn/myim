@@ -2446,8 +2446,8 @@ final class InputController: IMKInputController {
     static func handleSelectionBracketCommand(_ key: PanelKeyCommand) {
         let command: SelectionBracketCommand
         switch key {
-        case .previous: command = .previous
-        case .next: command = .next
+        case .previous, .backTab: command = .previous
+        case .next, .tab: command = .next
         case .apply: command = .apply
         case .cancel: command = .cancel
         case .deleteBackward: return
@@ -3548,10 +3548,59 @@ final class InputController: IMKInputController {
         controller.handleBookmarkCommand(command, client: client)
     }
 
+    /// While romaji is composed, Tab lists its conversions and Return adds
+    /// the selected one to the query; with nothing composed the keys choose
+    /// the bookmark and its format as before
     private func handleBookmarkCommand(
         _ command: PanelKeyCommand,
         client sender: Any
     ) {
+        let session = bookmarkSearchSession
+        if session.isSearching, session.isComposing {
+            switch command {
+            case .tab, .backTab:
+                if session.isConverting {
+                    bookmarkSearchSession.moveConversionSelection(
+                        by: command == .tab ? 1 : -1
+                    )
+                } else {
+                    bookmarkSearchSession.beginConversion(
+                        bookmarkConversionCandidates(for: session.composition)
+                    )
+                }
+                showBookmarkCandidates()
+                return
+            case .previous where session.isConverting,
+                 .next where session.isConverting:
+                bookmarkSearchSession.moveConversionSelection(
+                    by: command == .next ? 1 : -1
+                )
+                showBookmarkCandidates()
+                return
+            case .apply:
+                bookmarkSearchSession.commitComposition()
+                showBookmarkCandidates()
+                // Typed as is, the bookmark is chosen as before
+                if !session.isConverting {
+                    beginBookmarkFormatSelection(client: sender)
+                }
+                return
+            case .cancel:
+                if session.isConverting {
+                    bookmarkSearchSession.cancelConversion()
+                } else {
+                    bookmarkSearchSession.cancelComposition()
+                }
+                showBookmarkCandidates()
+                return
+            case .deleteBackward:
+                bookmarkSearchSession.deleteBackward()
+                showBookmarkCandidates()
+                return
+            case .previous, .next:
+                break
+            }
+        }
         switch command {
         case .cancel:
             handleBookmarkEscape()
@@ -3562,19 +3611,40 @@ final class InputController: IMKInputController {
             } else if bookmarkSearchSession.stage == .selectingFormat {
                 commitSelectedBookmarkFormat(client: sender)
             }
-        case .previous:
+        case .previous, .backTab:
             moveBookmarkSelection(by: -1)
-        case .next:
+        case .next, .tab:
             moveBookmarkSelection(by: 1)
         case .deleteBackward:
-            guard bookmarkSearchSession.isSearching else { return }
-            var query = bookmarkSearchSession.query
-            if !query.isEmpty {
-                query.removeLast()
-                bookmarkSearchSession.updateQuery(query)
-                showBookmarkCandidates()
+            bookmarkSearchSession.deleteBackward()
+            showBookmarkCandidates()
+        }
+    }
+
+    /// The conversions the first panel offers for the romaji, from the same
+    /// candidate generation; choosing one is not recorded in any history
+    private func bookmarkConversionCandidates(for composition: String) -> [String] {
+        let reading = ConversionReadingResolver.resolve(composition)
+        let englishCandidates = Self.featureSettings.isEnglishCompletionEnabled
+            ? englishCompletions(for: reading)
+            : []
+        let candidates = makeStandardConversionCandidateSource().candidates(for: .init(
+            input: composition,
+            conversionReading: reading,
+            javaScriptCandidates: [],
+            englishCandidates: englishCandidates,
+            selectionHistory: candidateSelectionHistoryStore.snapshot,
+            contextualCandidates: [],
+            learningEnabled: Self.diagnosticConfiguration.enables(.learning)
+        ))
+        var values: [String] = []
+        for candidate in candidates {
+            let value = candidateValueForCommit(candidate.storageText)
+            if !value.isEmpty, !values.contains(value) {
+                values.append(value)
             }
         }
+        return values
     }
 
     private func handleBookmarkSearchEvent(
@@ -3591,11 +3661,13 @@ final class InputController: IMKInputController {
             handleBookmarkCommand(.cancel, client: sender)
         case 36, 76:
             handleBookmarkCommand(.apply, client: sender)
-        case 48, 125:
+        case 48:
             handleBookmarkCommand(
-                event.modifierFlags.contains(.shift) ? .previous : .next,
+                event.modifierFlags.contains(.shift) ? .backTab : .tab,
                 client: sender
             )
+        case 125:
+            handleBookmarkCommand(.next, client: sender)
         case 123, 126:
             handleBookmarkCommand(.previous, client: sender)
         case 124:
@@ -3611,9 +3683,8 @@ final class InputController: IMKInputController {
                       !CharacterSet.controlCharacters.contains($0)
                   })
             else { return true }
-            bookmarkSearchSession.updateQuery(
-                bookmarkSearchSession.query + characters
-            )
+            // Composed first, so it can be converted before searching
+            bookmarkSearchSession.appendComposition(characters)
             showBookmarkCandidates()
         }
         return true
@@ -3713,6 +3784,28 @@ final class InputController: IMKInputController {
 
     private func showBookmarkCandidates() {
         guard let context = bookmarkInsertionContext else { return }
+        // The composition shows in the caption, never in the document
+        let caption = "ブックマーク検索: \(bookmarkSearchSession.searchText)"
+        if let conversions = bookmarkSearchSession.conversionCandidates {
+            let pageRange = bookmarkSearchSession.conversionPageRange(
+                pageSize: Self.maximumCandidateCount
+            )
+            primaryCandidatePanel.onSelectionChanged = { [weak self] localIndex in
+                self?.bookmarkSearchSession.selectConversion(
+                    at: localIndex.map { pageRange.lowerBound + $0 }
+                )
+            }
+            primaryCandidatePanel.show(
+                candidates: Array(conversions[pageRange]),
+                selectedIndex: bookmarkSearchSession.selectedConversionIndex.map {
+                    $0 - pageRange.lowerBound
+                },
+                near: context.anchorFrame,
+                caption: caption,
+                minimumPanelText: "ブックマーク検索"
+            )
+            return
+        }
         let candidates = bookmarkSearchSession.filteredBookmarks
         let pageRange = bookmarkSearchSession.bookmarkPageRange(
             pageSize: Self.maximumCandidateCount
@@ -3736,7 +3829,7 @@ final class InputController: IMKInputController {
             candidates: displayedCandidates,
             selectedIndex: selectedIndex,
             near: context.anchorFrame,
-            caption: "ブックマーク検索: \(bookmarkSearchSession.query)",
+            caption: caption,
             reservesEmptyRow: bookmarkSearchSession.stage == .loadingBookmarks,
             minimumPanelText: "ブックマーク検索"
         )
