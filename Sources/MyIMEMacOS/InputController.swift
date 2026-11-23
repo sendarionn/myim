@@ -2367,6 +2367,9 @@ final class InputController: IMKInputController {
         let readings = reconversionReadings(for: candidate)
         guard let reading = readings.first else { return false }
 
+        // Next input candidates shown before do not stay over the
+        // reconversion
+        dismissNextInputCandidates(clearMarkedTextIn: nil)
         reconversionOriginal = candidate
         replaceInputBuffer(reading, cursorPosition: reading.count)
         selectedCandidateIndex = nil
@@ -6174,6 +6177,10 @@ final class InputController: IMKInputController {
         cancelInputCandidateSearches()
         cancelCandidateTranslation()
         clearInputBuffer()
+        // Text reconverted, or put back on cancel, replaces text already in
+        // the document rather than continuing what was typed, so it offers
+        // no next input; its conversion is still learned on selection
+        let isReconversion = reconversionOriginal != nil
         reconversionOriginal = nil
         dictionaryRegistrationSession = nil
         clearCandidateState(includingFuzzy: true)
@@ -6183,7 +6190,10 @@ final class InputController: IMKInputController {
         clearCalendarSelection()
         clearTimeSelection()
         resetCandidateFilters()
-        if inputHistoryValue.allSatisfy({ $0.isWhitespace }),
+        if isReconversion {
+            dismissNextInputCandidates(clearMarkedTextIn: nil)
+            nextInputCandidateCoordinator.breakSequence()
+        } else if inputHistoryValue.allSatisfy({ $0.isWhitespace }),
            !inputHistoryValue.isEmpty {
             nextInputCandidateCoordinator.appendSeparatorToLastInput(
                 inputHistoryValue

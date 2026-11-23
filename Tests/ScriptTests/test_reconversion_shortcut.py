@@ -37,6 +37,18 @@ class ReconversionShortcutTests(unittest.TestCase):
         self.assertIn("beginReconversionIfPossible(client: sender)", branch)
         self.assertIn("return true", branch)
 
+    def test_reconversion_commits_offer_no_next_input(self):
+        commit = self.body("    private func commit(\n")
+        captured = commit.index("let isReconversion = reconversionOriginal != nil")
+        self.assertLess(captured, commit.index("reconversionOriginal = nil"))
+        branch = commit[commit.index("if isReconversion {"):]
+        self.assertLess(branch.index("dismissNextInputCandidates"),
+                        branch.index("recordCommittedInput("))
+        self.assertIn("} else if", branch[:branch.index("recordCommittedInput(")])
+        begin = self.body("private func beginReconversionIfPossible(")
+        self.assertLess(begin.index("dismissNextInputCandidates"),
+                        begin.index("reconversionOriginal = candidate"))
+
 
 if __name__ == "__main__":
     unittest.main()
