@@ -3,6 +3,9 @@ import MyIMECore
 
 final class InputPanelCoordinator {
     let primaryCandidatePanel = CandidatePanelController()
+    /// The entry being registered, apart from the conversion candidates
+    /// typed for it, which open beside it
+    let dictionaryRegistrationPanel = CandidatePanelController()
     let bookmarkPanel = BookmarkPanelController()
     let candidateFilterDraft = CandidatePanelController()
     private var candidateFilterConditions: [CandidatePanelController] = []

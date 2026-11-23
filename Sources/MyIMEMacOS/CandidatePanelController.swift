@@ -474,6 +474,37 @@ final class CandidatePanelController: NSObject {
             || (guidePanel.isVisible && guidePanel.frame.contains(screenPoint))
     }
 
+    /// Beside `anchorFrame` with the tops aligned, on the right when this
+    /// panel and `trailingWidth` more after it fit there and on the left
+    /// otherwise, so a panel opening after this one does not push it over
+    /// the anchor
+    func placeBeside(
+        _ anchorFrame: NSRect,
+        keepingRoomOnRight trailingWidth: CGFloat,
+        spacing: CGFloat = 8
+    ) {
+        let visibleFrame = screenContaining(anchorFrame)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+        let width = panel.frame.width
+        let right = anchorFrame.maxX + spacing
+        let x = right + width + trailingWidth <= visibleFrame.maxX
+            ? right
+            : max(anchorFrame.minX - spacing - width - trailingWidth, visibleFrame.minX)
+        let y = min(
+            max(anchorFrame.maxY - panel.frame.height, visibleFrame.minY),
+            visibleFrame.maxY - panel.frame.height
+        )
+        let deltaX = x - panel.frame.minX
+        let deltaY = y - panel.frame.minY
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        if guidePanel.isVisible {
+            guidePanel.setFrameOrigin(NSPoint(
+                x: guidePanel.frame.minX + deltaX,
+                y: guidePanel.frame.minY + deltaY
+            ))
+        }
+    }
+
     func placeBeside(_ anchorFrame: NSRect, spacing: CGFloat = 8) {
         let visibleFrame = screenContaining(anchorFrame)?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)

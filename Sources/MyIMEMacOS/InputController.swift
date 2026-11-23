@@ -156,7 +156,18 @@ final class InputController: IMKInputController {
     private var javaScriptExtensionCandidates: [JavaScriptExtensionCandidate] = []
     private var postalAddressCandidates: [String] = []
     private var postalAddressCache: [String: [String]] = [:]
-    private var dictionaryRegistrationSession: DictionaryRegistrationSession?
+    private var dictionaryRegistrationSession: DictionaryRegistrationSession? {
+        didSet {
+            // Registered, cancelled or ended with the composition
+            if dictionaryRegistrationSession == nil {
+                panelCoordinator.dictionaryRegistrationPanel.hide()
+                dictionaryRegistrationAnchor = nil
+            }
+        }
+    }
+    /// Where the registration panel stays while the entry is edited, so
+    /// the candidates opening and closing beside it do not move it
+    private var dictionaryRegistrationAnchor: NSRect?
     private var basicDictionaryStatus = BasicDictionaryStatus.unchecked
     private let panelCoordinator = InputPanelCoordinator()
     private let locationCoordinator = InputLocationCoordinator(
@@ -2897,7 +2908,10 @@ final class InputController: IMKInputController {
         guard let registration = dictionaryRegistrationSession else {
             return
         }
-        let pending = registration.pastedCandidate ?? inputBuffer.nilIfEmpty
+        // A candidate chosen shows in the field it will go to
+        let pending = registration.pastedCandidate
+            ?? selectedCandidateValue
+            ?? inputBuffer.nilIfEmpty
         let fields: [(DictionaryRegistrationInputField, String, String)] = [
             (.displayText, "表示", registration.displayText(pending: pending)),
             (
@@ -2909,8 +2923,11 @@ final class InputController: IMKInputController {
         let activeRow = fields.firstIndex {
             $0.0 == registration.activeInputField
         }
-        logPanelSnapshot(event: "candidatePanel.beforeShow", sender: sender)
-        primaryCandidatePanel.show(
+        let registrationPanel = panelCoordinator.dictionaryRegistrationPanel
+        if !registrationPanel.isVisible || dictionaryRegistrationAnchor == nil {
+            dictionaryRegistrationAnchor = inputLocation(for: sender)
+        }
+        registrationPanel.show(
             candidates: ["読み: \(registration.reading)"] + fields.map {
                 "\($0.1): \($0.2)"
             },
@@ -2918,9 +2935,33 @@ final class InputController: IMKInputController {
                 $0.0 == registration.activeInputField
             },
             selectedIndex: activeRow.map { $0 + 1 },
-            near: inputLocation(for: sender),
+            near: dictionaryRegistrationAnchor ?? inputLocation(for: sender),
             isAccented: true
         )
+        // Candidates of text already added to the entry, or of the input
+        // before registering began, do not stay beside it
+        if currentCandidates.isEmpty {
+            primaryCandidatePanel.hide()
+            secondaryCandidatePanel.hide()
+        }
+        placeCandidatesBesideDictionaryRegistration()
+    }
+
+    /// While registering, the conversion candidates go beside the entry,
+    /// which keeps its place
+    private func placeCandidatesBesideDictionaryRegistration() {
+        let registrationPanel = panelCoordinator.dictionaryRegistrationPanel
+        guard dictionaryRegistrationSession != nil,
+              registrationPanel.isVisible,
+              primaryCandidatePanel.isVisible else { return }
+        primaryCandidatePanel.placeBeside(
+            registrationPanel.frame,
+            keepingRoomOnRight: secondaryCandidatePanel.isVisible
+                ? secondaryCandidatePanel.panelWidth
+                    + secondaryCandidatePanel.spacingFromCandidatePanel
+                : 0
+        )
+        panelCoordinator.alignSecondaryCandidatePanelToPrimary()
     }
 
     private func shouldSuppressActivationSpace(_ event: NSEvent) -> Bool {
@@ -5183,6 +5224,13 @@ final class InputController: IMKInputController {
     }
 
     private func alignSecondaryCandidatePanelToPrimary() {
+        // Beside the entry being registered, both are placed together
+        if dictionaryRegistrationSession != nil,
+           panelCoordinator.dictionaryRegistrationPanel.isVisible,
+           primaryCandidatePanel.isVisible {
+            placeCandidatesBesideDictionaryRegistration()
+            return
+        }
         panelCoordinator.alignSecondaryCandidatePanelToPrimary()
     }
 
@@ -5909,6 +5957,11 @@ final class InputController: IMKInputController {
                     + secondaryCandidatePanel.spacingFromCandidatePanel
                 : 0
         )
+        // The entry being registered shows what the chosen candidate would
+        // add, and the candidates go beside it
+        if dictionaryRegistrationSession != nil {
+            showDictionaryRegistration(client: sender)
+        }
         Self.lifecycleLogger.notice(
             "candidate panel positioned anchor=\(String(describing: anchorFrame), privacy: .public) frame=\(String(describing: self.primaryCandidatePanel.frame), privacy: .public)"
         )
