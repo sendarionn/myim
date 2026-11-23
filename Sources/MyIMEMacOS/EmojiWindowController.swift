@@ -2,6 +2,10 @@
 import CoreText
 import MyIMECore
 
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 private final class EmojiCellButton: NSButton {
     /// Only the variations follow the pointer
     var onHover: (() -> Void)? {
@@ -258,7 +262,7 @@ final class EmojiWindowController: NSObject {
     private let layout: BottomUpEmojiFlowLayout
     private let scrollView: NSScrollView
     private let comparisonStack: NSStackView
-    private let variationStack = NSStackView()
+    private let variationContainer = FlippedView()
     private var selectedIndex: Int?
     private var selectedRecentIndex: Int?
     private var selectedVariationIndex: Int?
@@ -737,16 +741,7 @@ final class EmojiWindowController: NSObject {
         comparisonStack.spacing = 8
         comparisonStack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
         comparisonPanel.contentView = comparisonStack
-        variationStack.orientation = .vertical
-        variationStack.alignment = .leading
-        variationStack.spacing = Self.spacing
-        variationStack.edgeInsets = NSEdgeInsets(
-            top: Self.outerPadding,
-            left: Self.outerPadding,
-            bottom: Self.outerPadding,
-            right: Self.outerPadding
-        )
-        variationPanel.contentView = variationStack
+        variationPanel.contentView = variationContainer
         recentStack.orientation = .vertical
         recentStack.alignment = .leading
         recentStack.spacing = Self.spacing
@@ -1183,78 +1178,47 @@ final class EmojiWindowController: NSObject {
     private func showVariations(_ entries: [Entry], near anchor: NSRect) {
         variationEntries = entries
         selectedVariationIndex = 0
-        variationStack.arrangedSubviews.forEach {
-            variationStack.removeArrangedSubview($0)
-            $0.removeFromSuperview()
-        }
+        variationContainer.subviews.forEach { $0.removeFromSuperview() }
         variationButtons = []
         // The variations open diagonally away from the comparison, in the
-        // direction the emoji panel itself opened, with the base emoji at
-        // the end nearest the selected emoji; only the order shown changes,
-        // and each button keeps its entry's index as its tag
+        // direction the emoji panel itself opened, with the base emoji in
+        // the corner nearest the selected emoji; only where each is shown
+        // changes, and each button keeps its entry's index as its tag
         let expandsLeft = variationExpandsLeft
         let expandsDown = !layout.displaysBottomUp
         variationLayout = (expandsLeft, expandsDown)
-        variationStack.alignment = expandsLeft ? .trailing : .leading
-        var rowViews: [NSStackView] = []
-
-        for rowStart in stride(
-            from: 0,
-            to: entries.count,
-            by: Self.columnCount
-        ) {
-            let row = NSStackView()
-            row.orientation = .horizontal
-            row.spacing = Self.spacing
-            let rowEnd = min(rowStart + Self.columnCount, entries.count)
-            let indices = Array(rowStart..<rowEnd)
-            for index in expandsLeft ? indices.reversed() : indices {
-                let button = EmojiCellButton(
-                    title: entries[index].emoji,
-                    target: self,
-                    action: #selector(commitClickedVariation(_:))
-                )
-                button.tag = index
-                button.onHover = { [weak self] in
-                    self?.selectVariation(index: index)
-                }
-                button.font = NSFont(name: "Apple Color Emoji", size: 22)
-                button.alignment = .center
-                button.isBordered = false
-                button.focusRingType = .none
-                button.wantsLayer = true
-                button.layer?.cornerRadius = 0
-                button.widthAnchor.constraint(
-                    equalToConstant: Self.cellSize
-                ).isActive = true
-                button.heightAnchor.constraint(
-                    equalToConstant: Self.cellSize
-                ).isActive = true
-                row.addArrangedSubview(button)
-                variationButtons.append(button)
-            }
-            rowViews.append(row)
-        }
-        // The row of the base emoji is the one nearest the selected emoji
-        for row in expandsDown ? rowViews : rowViews.reversed() {
-            variationStack.addArrangedSubview(row)
-        }
-        selectVariation(index: 0)
-
-        let columns = min(entries.count, Self.columnCount)
-        let rows = Int(ceil(
-            Double(entries.count) / Double(Self.columnCount)
-        ))
-        let size = NSSize(
-            width: Self.outerPadding * 2
-                + Self.cellSize * CGFloat(columns)
-                + Self.spacing * CGFloat(max(columns - 1, 0)),
-            height: Self.outerPadding * 2
-                + Self.cellSize * CGFloat(rows)
-                + Self.spacing * CGFloat(max(rows - 1, 0))
+        let grid = EmojiVariationGrid.layout(
+            count: entries.count,
+            columns: Self.columnCount,
+            cellSize: Self.cellSize,
+            spacing: Self.spacing,
+            padding: Self.outerPadding,
+            expandsLeft: expandsLeft,
+            expandsDown: expandsDown
         )
-        variationPanel.setContentSize(size)
-        variationStack.frame = NSRect(origin: .zero, size: size)
+        for (index, entry) in entries.enumerated() {
+            let button = EmojiCellButton(
+                title: entry.emoji,
+                target: self,
+                action: #selector(commitClickedVariation(_:))
+            )
+            button.tag = index
+            button.onHover = { [weak self] in
+                self?.selectVariation(index: index)
+            }
+            button.font = NSFont(name: "Apple Color Emoji", size: 22)
+            button.alignment = .center
+            button.isBordered = false
+            button.focusRingType = .none
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 0
+            button.frame = grid.frames[index]
+            variationContainer.addSubview(button)
+            variationButtons.append(button)
+        }
+        variationPanel.setContentSize(grid.size)
+        variationContainer.frame = NSRect(origin: .zero, size: grid.size)
+        selectVariation(index: 0)
         positionVariationPanel(near: anchor)
         variationPanel.orderFrontRegardless()
         comparisonPanel.orderFrontRegardless()
@@ -1290,9 +1254,9 @@ final class EmojiWindowController: NSObject {
         variationPanel.setFrameOrigin(EmojiSidePanelLayout.variationFrame(
             cell: variationAnchor,
             size: size,
-            baseCenterX: variationExpandsLeft
-                ? size.width - Self.outerPadding - Self.cellSize / 2
-                : Self.outerPadding + Self.cellSize / 2,
+            // Where the base emoji's button actually is
+            baseCenterX: variationButtons.first { $0.tag == 0 }?.frame.midX
+                ?? size.width / 2,
             expandsLeft: variationExpandsLeft,
             expandsDown: !layout.displaysBottomUp,
             baseOffset: Self.variationBaseOffset,
