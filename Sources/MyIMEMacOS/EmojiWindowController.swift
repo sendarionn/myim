@@ -192,6 +192,10 @@ final class EmojiWindowController: NSObject {
     private static let maximumListHeight = panelWidth - panelChromeHeight
     private static let comparisonPanelSize = NSSize(width: 240, height: 88)
     private static let sidePanelSpacing: CGFloat = 8
+    /// The widest variations, a full row of cells
+    private static let variationColumnWidth = outerPadding * 2
+        + cellSize * CGFloat(columnCount)
+        + spacing * CGFloat(columnCount - 1)
     private static let fallbackEmojis = Array(
         "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪"
             .split(separator: " ").map(String.init)
@@ -261,6 +265,12 @@ final class EmojiWindowController: NSObject {
     private var selectedVariationIndex: Int?
     /// The emoji the variations belong to, on screen
     private var variationAnchor: NSRect?
+    /// The column beside the panel stays kept while the variations of the
+    /// selected emoji are about to show, so the comparison does not move in
+    /// and back out
+    private var keepsVariationColumn = false
+    /// The side the side panels went on, kept while it fits
+    private var sidePanelSide: EmojiSidePanelLayout.Side?
     private var variationEntries: [Entry] = []
     private var variationButtons: [NSButton] = []
     private var variationSelectionState = EmojiVariationSelectionState()
@@ -472,6 +482,8 @@ final class EmojiWindowController: NSObject {
         variationSelectionState.reset()
         cancelVariationPresentation()
         isSearchConfirmed = false
+        keepsVariationColumn = false
+        sidePanelSide = nil
         avoidedFrames = []
         presentationAnchor = nil
         presentationScreens = nil
@@ -1084,6 +1096,7 @@ final class EmojiWindowController: NSObject {
             presentsImmediately: presentsImmediately
         ) {
         case let .schedule(baseCode, generation):
+            keepsVariationColumn = true
             clearVariationPanel()
             showComparison(for: entry)
             scheduleVariationPresentation(
@@ -1096,6 +1109,7 @@ final class EmojiWindowController: NSObject {
         case .keep:
             positionVariationPanel(near: anchor)
         case .hide:
+            keepsVariationColumn = false
             cancelVariationPresentation()
             clearVariationPanel()
             showComparison(for: entry)
@@ -1139,6 +1153,13 @@ final class EmojiWindowController: NSObject {
     private func cancelVariationPresentation() {
         cancelVariationPresentationWorkItem()
         variationSelectionState.cancelPendingPresentation()
+        // Variations that will not show no longer keep their column
+        if variationEntries.isEmpty, keepsVariationColumn {
+            keepsVariationColumn = false
+            if comparisonPanel.isVisible {
+                layoutSidePanels(includingComparison: true)
+            }
+        }
     }
 
     private func cancelVariationPresentationWorkItem() {
@@ -1258,12 +1279,18 @@ final class EmojiWindowController: NSObject {
             panel: panel.frame,
             variationSize: showsVariations ? variationPanel.frame.size : nil,
             variationTop: (variationAnchor ?? panel.frame).maxY,
+            variationColumnWidth: Self.variationColumnWidth,
+            keepsVariationColumn: keepsVariationColumn,
             comparisonSize: includingComparison
                 ? comparisonPanel.frame.size
                 : nil,
+            preferredSide: sidePanelSide,
             visibleFrame: visible,
             spacing: Self.sidePanelSpacing
         )
+        if let side = frames.side {
+            sidePanelSide = side
+        }
         if let frame = frames.variation {
             variationPanel.setFrameOrigin(frame.origin)
         }
@@ -1273,6 +1300,7 @@ final class EmojiWindowController: NSObject {
     }
 
     private func dismissVariationPresentation() {
+        keepsVariationColumn = false
         cancelVariationPresentation()
         variationSelectionState.dismissCurrent()
         clearVariationPanel()
@@ -1283,6 +1311,7 @@ final class EmojiWindowController: NSObject {
     }
 
     private func resetVariationPresentation() {
+        keepsVariationColumn = false
         cancelVariationPresentation()
         variationSelectionState.reset()
         clearVariationPanel()
