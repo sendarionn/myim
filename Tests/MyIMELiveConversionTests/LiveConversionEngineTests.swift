@@ -52,4 +52,31 @@ struct LiveConversionEngineTests {
         #expect(sentence.candidates.contains("駅前のコーヒースタンドで、コーヒーを買った。"))
         #expect(try #require(typed("3.14", in: engine)).reading == "3.14")
     }
+
+    /// Capitals, digits and symbols among the letters leave the rest
+    /// converted
+    @Test
+    func mixedLettersDigitsAndSymbolsAreConverted() throws {
+        try #require(FileManager.default.fileExists(atPath: Self.dictionaryURL.path))
+        let engine = LiveConversionEngine(
+            dictionaryURL: Self.dictionaryURL,
+            workingDirectoryURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("myim-live-conversion-tests", isDirectory: true)
+        )
+        let capital = try #require(typed("Kyou", in: engine))
+        #expect(capital.status == .converted)
+        #expect(capital.candidates.contains("今日"))
+        let year = try #require(typed("nihon2026nenn", in: engine))
+        #expect(year.status == .converted)
+        #expect(year.candidates.contains("日本2026年"))
+        let mark = try #require(typed("kyou!tenki", in: engine))
+        #expect(mark.status == .converted)
+        #expect(mark.candidates.contains("今日!天気"))
+        let product = try #require(typed("iPhone,wokatta", in: engine))
+        #expect(product.status == .converted)
+        #expect(product.candidates.first?.hasPrefix("iPhone,") == true)
+        #expect(try #require(typed("3.14", in: engine)).candidates.first == "3.14")
+        #expect(try #require(typed("example.com", in: engine)).status != .converted
+            || typed("example.com", in: engine)?.candidates.first == "example.com")
+    }
 }

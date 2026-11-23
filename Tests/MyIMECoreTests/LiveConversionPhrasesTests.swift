@@ -4,8 +4,8 @@ import Testing
 
 @Suite
 struct LiveConversionPhrasesTests {
-    private func phrases() -> LiveConversionPhrases {
-        LiveConversionPhrases(segments: LiveConversionSegment.phrases(of: [
+    private func phrases() -> LiveConversionPreview {
+        LiveConversionPreview(segments: LiveConversionSegment.phrases(of: [
             .init(surface: "今日", reading: "きょう"),
             .init(surface: "は", reading: "は"),
             .init(surface: "良い", reading: "よい"),
@@ -38,77 +38,88 @@ struct LiveConversionPhrasesTests {
         #expect(phrases.map(\.surface) == ["今日は", "いい", "天気", "お茶"])
     }
 
-    /// Kana the selection takes from a phrase that ends in it leaves the
-    /// rest of that phrase converted
-    @Test
-    func takingTrailingKanaKeepsTheConversionBefore() {
-        var editing = LiveConversionPhrases(segments: [
-            .init(surface: "今日は", reading: "きょうは"),
-            .init(surface: "いい", reading: "いい"),
-            .init(surface: "天気", reading: "てんき")
-        ])
-        editing.selectPrevious()
-        editing.adjust(toward: .left)
-        #expect(editing.segments.map(\.surface) == ["今日は", "い", "いてんき"])
-        #expect(editing.phraseToConvert == nil)
-    }
-
     @Test
     func kanaWordsGoWithTheWordBefore() {
         #expect(phrases().segments.map(\.surface) == ["今日は", "良い", "転機"])
         #expect(phrases().reading == "きょうはよいてんき")
     }
 
+    /// Letters kept as typed, which the converter gives a character at a
+    /// time, stay one phrase
     @Test
-    func theArrowsMoveFromTheLastPhrase() {
-        var editing = phrases()
-        editing.selectPrevious()
-        #expect(editing.selectedSegment?.surface == "転機")
-        editing.selectPrevious()
-        #expect(editing.selectedSegment?.surface == "良い")
-        editing.selectNext()
-        #expect(editing.selectedSegment?.surface == "転機")
-        #expect(editing.selectedTextRange == NSRange(location: 5, length: 2))
+    func lettersKeptAsTypedAreOnePhrase() {
+        let words: [LiveConversionSegment] = "iPhone".map { .init(surface: String($0), reading: String($0)) }
+            + [.init(surface: "を買った", reading: "をかった")]
+        let phrases = LiveConversionSegment.phrases(
+            of: words,
+            functionWords: Array(repeating: false, count: 6) + [true]
+        )
+        #expect(phrases.map(\.surface) == ["iPhoneを", "買った"])
     }
 
-    /// A corrected phrase changes only itself, and it and those before it
-    /// are kept from the conversion of what is typed next
+    /// The arrows move a cursor from the end, and Shift with them selects
+    /// from it as in a text field
     @Test
-    func aCorrectionChangesOnlyItsPhraseAndFixesIt() {
+    func theArrowsMoveACursorAndShiftSelects() {
         var editing = phrases()
-        editing.selectPrevious()
-        editing.commitSelected("天気")
+        #expect(editing.cursor == 7)
+        #expect(editing.selection == nil)
+        editing.moveCursor(by: -1)
+        editing.moveCursor(by: -1)
+        #expect(editing.cursor == 5)
+        #expect(editing.selection == nil)
+        editing.extendSelection(by: -1)
+        editing.extendSelection(by: -1)
+        #expect(editing.selection == 3..<5)
+        #expect(editing.selectedTextRange == NSRange(location: 3, length: 2))
+        editing.extendSelection(by: 1)
+        #expect(editing.selection == 4..<5)
+        // Without Shift the selection ends at the side moved to
+        editing.moveCursor(by: -1)
+        #expect(editing.selection == nil)
+        #expect(editing.cursor == 4)
+    }
+
+    /// A selection inside kanji widens to the phrase, since the kanji
+    /// cannot be told apart in the reading; kana written as they read
+    /// can be selected alone
+    @Test
+    func aSelectionConvertsTheKanaItReads() throws {
+        var editing = phrases()
+        // 天 of 転機
+        editing.moveCursor(by: -1)
+        editing.extendSelection(by: -1)
+        #expect(try #require(editing.conversionTarget).reading == "てんき")
+        #expect(try #require(editing.conversionTarget).range == 5..<7)
+        // は of 今日は; the first arrow ends the selection
+        editing.moveCursor(by: -1)
+        editing.moveCursor(by: -10)
+        editing.moveCursor(by: 2)
+        editing.extendSelection(by: 1)
+        #expect(try #require(editing.conversionTarget).reading == "は")
+        #expect(try #require(editing.conversionTarget).range == 2..<3)
+    }
+
+    /// Only the selection changes, and the rest keeps its text and reading
+    @Test
+    func aConversionReplacesOnlyTheSelection() {
+        var editing = phrases()
+        editing.moveCursor(by: -1)
+        editing.extendSelection(by: -1)
+        editing.replaceSelection(with: "天気", keepsSelected: true)
         #expect(editing.text == "今日は良い天気")
-        #expect(editing.fixedReading == "きょうはよいてんき")
-        editing.replaceUnfixed(with: [.init(surface: "です", reading: "です")])
-        #expect(editing.text == "今日は良い天気です")
-    }
-
-    @Test
-    func shiftMovesOneEndByAKanaAndBack() {
-        var editing = phrases()
-        editing.selectPrevious()
-        editing.selectPrevious()
-        // 良い: its left end takes は from 今日は, which stays in kana
-        editing.adjust(toward: .left)
-        #expect(editing.segments.map(\.reading) == ["きょう", "はよい", "てんき"])
-        // 今日は gave its last kana away and stays converted as 今日
-        #expect(editing.segments[0].surface == "今日")
-        #expect(editing.phraseToConvert == nil)
-        #expect(editing.selectedSegment?.reading == "はよい")
-        // The opposite arrow gives it back
-        editing.adjust(toward: .right)
-        #expect(editing.selectedSegment?.reading == "よい")
-        #expect(editing.segments[0].reading == "きょうは")
-    }
-
-    @Test
-    func theRightEndTakesFromThePhraseAfter() {
-        var editing = phrases()
-        editing.selectPrevious()
-        editing.selectPrevious()
-        editing.adjust(toward: .right)
-        #expect(editing.segments.map(\.reading) == ["きょうは", "よいて", "んき"])
+        #expect(editing.selection == 5..<7)
+        editing.replaceSelection(with: "てんき")
+        #expect(editing.text == "今日は良いてんき")
         #expect(editing.reading == "きょうはよいてんき")
+        #expect(editing.selection == nil)
+        #expect(editing.cursor == 8)
+        // Part of a phrase in kana
+        editing.moveCursor(by: -10)
+        editing.moveCursor(by: 2)
+        editing.extendSelection(by: 1)
+        editing.replaceSelection(with: "葉")
+        #expect(editing.text == "今日葉良いてんき")
+        #expect(editing.segments.map(\.reading) == ["きょう", "は", "よい", "てんき"])
     }
 }

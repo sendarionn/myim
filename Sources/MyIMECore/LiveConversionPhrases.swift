@@ -24,6 +24,13 @@ public struct LiveConversionSegment: Equatable, Sendable {
     ) -> [LiveConversionSegment] {
         var phrases: [LiveConversionSegment] = []
         for (index, word) in words.enumerated() where !word.reading.isEmpty {
+            // Letters, digits and symbols kept as typed, which the
+            // converter gives a character at a time, stay one phrase
+            if word.isKeptAsTyped, let last = phrases.last, last.isKeptAsTyped {
+                phrases[phrases.count - 1].surface += word.surface
+                phrases[phrases.count - 1].reading += word.reading
+                continue
+            }
             let isFunctionWord = functionWords.indices.contains(index) && functionWords[index]
             let kana = word.surface.commonPrefix(with: word.reading)
             let rest = LiveConversionSegment(
@@ -45,174 +52,166 @@ public struct LiveConversionSegment: Equatable, Sendable {
         }
         return phrases
     }
+
+    private var isKeptAsTyped: Bool {
+        surface == reading && surface.unicodeScalars.allSatisfy(\.isASCII)
+    }
 }
 
-/// The phrases of a live conversion being corrected: one phrase is
-/// selected with the arrows, its range in the reading adjusted with Shift
-/// and the arrows, and its conversion replaced. Phrases up to one corrected
-/// by hand are fixed, so the conversion of what is typed next leaves them
-public struct LiveConversionPhrases: Equatable, Sendable {
-    public enum Edge: Equatable, Sendable {
-        case left
-        case right
-    }
-
+/// A live conversion chosen among the candidates and shown in place of the
+/// letters, to be corrected before it is committed. ← and → move a cursor
+/// in its text, Shift with them selects from it as in a text field, and
+/// the selection is converted again from the kana it reads
+public struct LiveConversionPreview: Equatable, Sendable {
     public private(set) var segments: [LiveConversionSegment]
-    /// Leading phrases corrected by hand, or before one that was
-    public private(set) var fixedCount = 0
-    public private(set) var selectedIndex: Int?
-    /// The edge Shift and the arrows move, chosen by the first of them
-    public private(set) var activeEdge: Edge?
+    /// In characters of `text`; at its end to begin with
+    public private(set) var cursor: Int
+    /// Where the selection began, while there is one
+    public private(set) var anchor: Int?
 
     public init(segments: [LiveConversionSegment]) {
-        self.segments = segments
+        self.segments = segments.filter { !$0.surface.isEmpty || !$0.reading.isEmpty }
+        cursor = self.segments.map(\.surface.count).reduce(0, +)
     }
 
     public var text: String { segments.map(\.surface).joined() }
     public var reading: String { segments.map(\.reading).joined() }
-    public var fixedSegments: [LiveConversionSegment] { Array(segments.prefix(fixedCount)) }
-    public var fixedReading: String { fixedSegments.map(\.reading).joined() }
-    public var isSelecting: Bool { selectedIndex != nil }
-    public var hasCorrections: Bool { fixedCount > 0 }
+    private var length: Int { segments.map(\.surface.count).reduce(0, +) }
 
-    public var selectedSegment: LiveConversionSegment? {
-        selectedIndex.map { segments[$0] }
+    /// The selected characters of `text`, if any are
+    public var selection: Range<Int>? {
+        guard let anchor, anchor != cursor else { return nil }
+        return min(anchor, cursor)..<max(anchor, cursor)
     }
 
-    /// The selected phrase's range in the text, in UTF-16 units for the
-    /// marked text
+    /// The selection in UTF-16 units, for the marked text
     public var selectedTextRange: NSRange? {
-        guard let selectedIndex else { return nil }
-        let before = segments.prefix(selectedIndex).map(\.surface).joined()
-        return NSRange(
-            location: before.utf16.count,
-            length: segments[selectedIndex].surface.utf16.count
-        )
+        selection.map { utf16Range($0) }
     }
 
-    /// The conversion of the text typed after the fixed phrases
-    public mutating func replaceUnfixed(with segments: [LiveConversionSegment]) {
-        self.segments = fixedSegments + segments
-        selectedIndex = nil
-        activeEdge = nil
+    /// The cursor in UTF-16 units
+    public var cursorOffset: Int { utf16Range(0..<cursor).length }
+
+    /// ← and → move the cursor, or from a selection to its end that way
+    public mutating func moveCursor(by offset: Int) {
+        if let selection {
+            cursor = offset < 0 ? selection.lowerBound : selection.upperBound
+        } else {
+            cursor = min(max(cursor + offset, 0), length)
+        }
+        anchor = nil
     }
 
-    /// ← with nothing selected selects the last phrase, then the one before
-    public mutating func selectPrevious() {
-        guard !segments.isEmpty else { return }
-        selectedIndex = selectedIndex.map { max($0 - 1, 0) } ?? segments.count - 1
-        activeEdge = nil
-    }
-
-    public mutating func selectNext() {
-        guard let selectedIndex else { return }
-        self.selectedIndex = min(selectedIndex + 1, segments.count - 1)
-        activeEdge = nil
+    /// Shift with ← and → moves the cursor and keeps where the selection
+    /// began
+    public mutating func extendSelection(by offset: Int) {
+        if anchor == nil { anchor = cursor }
+        cursor = min(max(cursor + offset, 0), length)
+        if anchor == cursor { anchor = nil }
     }
 
     public mutating func clearSelection() {
-        selectedIndex = nil
-        activeEdge = nil
+        anchor = nil
     }
 
-    /// A phrase beside the selection that lost a kana to it, whose
-    /// conversion no longer fits and is to be converted again
-    public private(set) var phraseToConvert: Int?
-
-    public mutating func replaceSurface(at index: Int, with surface: String) {
-        guard segments.indices.contains(index) else { return }
-        segments[index].surface = surface
+    /// The part a selection converts again: the selection widened to where
+    /// the text can be told from its reading, as the end of a phrase or
+    /// kana written as it reads, with the kana that part reads
+    public var conversionTarget: (range: Range<Int>, reading: String)? {
+        guard let selection else { return nil }
+        let start = position(selection.lowerBound, widening: .backward)
+        let end = position(selection.upperBound, widening: .forward)
+        guard start.text < end.text else { return nil }
+        let reading = Array(self.reading)
+        return (start.text..<end.text, String(reading[start.reading..<end.reading]))
     }
 
-    /// Shift and an arrow move one end of the selected phrase by one kana:
-    /// the first of them picks the end, its opposite then shrinks it back.
-    /// A phrase beside it that gives a kana is left to be converted again
-    /// (`phraseToConvert`); one that takes a kana keeps its conversion with
-    /// the kana after or before it. Returns whether the selection changed,
-    /// so it is converted again
-    @discardableResult
-    public mutating func adjust(toward direction: Edge) -> Bool {
-        phraseToConvert = nil
-        guard let index = selectedIndex else { return false }
-        let edge = activeEdge ?? direction
-        activeEdge = edge
-        switch (edge, direction) {
-        case (.left, .left):
-            guard index > 0 else { return false }
-            let character = segments[index - 1].reading.removeLast()
-            // Kana written as it reads leaves the conversion before it as
-            // it is; otherwise what is left is converted again
-            let keepsConversion = segments[index - 1].surface.last == character
-            if keepsConversion {
-                segments[index - 1].surface.removeLast()
-            } else {
-                segments[index - 1].surface = segments[index - 1].reading
+    /// The selection, widened as `conversionTarget`, takes `surface`.
+    /// Kept selected, it is a conversion being chosen; otherwise the cursor
+    /// goes after it
+    public mutating func replaceSelection(with surface: String, keepsSelected: Bool = false) {
+        guard let selection else { return }
+        let start = position(selection.lowerBound, widening: .backward)
+        let end = position(selection.upperBound, widening: .forward)
+        guard start.text < end.text else { return }
+        let allReading = Array(reading)
+        var replaced: [LiveConversionSegment] = []
+        var offset = 0
+        var readingOffset = 0
+        for segment in segments {
+            let range = offset..<(offset + segment.surface.count)
+            let readingRange = readingOffset..<(readingOffset + segment.reading.count)
+            offset = range.upperBound
+            readingOffset = readingRange.upperBound
+            if range.upperBound <= start.text || range.lowerBound >= end.text {
+                replaced.append(segment)
+                continue
             }
-            segments[index].reading.insert(character, at: segments[index].reading.startIndex)
-            segments[index].surface = segments[index].reading
-            if segments[index - 1].reading.isEmpty {
-                segments.remove(at: index - 1)
-                selectedIndex = index - 1
-                fixedCount = max(fixedCount - 1, 0)
-            } else if !keepsConversion {
-                phraseToConvert = index - 1
+            if range.lowerBound < start.text {
+                replaced.append(LiveConversionSegment(
+                    surface: String(segment.surface.prefix(start.text - range.lowerBound)),
+                    reading: String(segment.reading.prefix(start.reading - readingRange.lowerBound))
+                ))
             }
-        case (.left, .right):
-            guard segments[index].reading.count > 1 else { return false }
-            let character = segments[index].reading.removeFirst()
-            segments[index].surface = segments[index].reading
-            if index > 0 {
-                segments[index - 1].reading.append(character)
-                segments[index - 1].surface.append(character)
-            } else {
-                segments.insert(
-                    LiveConversionSegment(surface: String(character), reading: String(character)),
-                    at: 0
-                )
-                selectedIndex = 1
+            if range.lowerBound <= start.text {
+                replaced.append(LiveConversionSegment(
+                    surface: surface,
+                    reading: String(allReading[start.reading..<end.reading])
+                ))
             }
-        case (.right, .right):
-            guard index + 1 < segments.count else { return false }
-            let character = segments[index + 1].reading.removeFirst()
-            let keepsConversion = segments[index + 1].surface.first == character
-            if keepsConversion {
-                segments[index + 1].surface.removeFirst()
-            } else {
-                segments[index + 1].surface = segments[index + 1].reading
-            }
-            segments[index].reading.append(character)
-            segments[index].surface = segments[index].reading
-            if segments[index + 1].reading.isEmpty {
-                segments.remove(at: index + 1)
-            } else if !keepsConversion {
-                phraseToConvert = index + 1
-            }
-        case (.right, .left):
-            guard segments[index].reading.count > 1 else { return false }
-            let character = segments[index].reading.removeLast()
-            segments[index].surface = segments[index].reading
-            if index + 1 < segments.count {
-                segments[index + 1].reading.insert(character, at: segments[index + 1].reading.startIndex)
-                segments[index + 1].surface.insert(character, at: segments[index + 1].surface.startIndex)
-            } else {
-                segments.append(LiveConversionSegment(surface: String(character), reading: String(character)))
+            if range.upperBound > end.text {
+                replaced.append(LiveConversionSegment(
+                    surface: String(segment.surface.suffix(range.upperBound - end.text)),
+                    reading: String(segment.reading.suffix(readingRange.upperBound - end.reading))
+                ))
             }
         }
-        return true
+        segments = replaced.filter { !$0.surface.isEmpty || !$0.reading.isEmpty }
+        cursor = start.text + surface.count
+        anchor = keepsSelected && !surface.isEmpty ? start.text : nil
     }
 
-    /// Shows a conversion in place of the selected phrase while it is chosen
-    public mutating func previewSelected(_ surface: String) {
-        guard let selectedIndex else { return }
-        segments[selectedIndex].surface = surface
+    private enum Widening {
+        case backward
+        case forward
     }
 
-    /// The selected phrase takes the conversion chosen for it, and it and
-    /// the phrases before it are fixed
-    public mutating func commitSelected(_ surface: String) {
-        guard let selectedIndex else { return }
-        segments[selectedIndex].surface = surface
-        fixedCount = max(fixedCount, selectedIndex + 1)
-        clearSelection()
+    /// A position in the text and the reading. One inside a phrase stays
+    /// where the kana before or after it are written as they read, and
+    /// otherwise moves to the phrase's start or end
+    private func position(_ text: Int, widening: Widening) -> (text: Int, reading: Int) {
+        var offset = 0
+        var readingOffset = 0
+        for segment in segments {
+            let surface = Array(segment.surface)
+            let end = offset + surface.count
+            if text <= end {
+                let inside = text - offset
+                let kana = Array(segment.reading)
+                let prefix = zip(surface, kana).prefix { $0 == $1 }.count
+                let suffix = zip(surface.reversed(), kana.reversed()).prefix { $0 == $1 }.count
+                if inside <= prefix {
+                    return (text, readingOffset + inside)
+                }
+                if surface.count - inside <= suffix {
+                    return (text, readingOffset + kana.count - (surface.count - inside))
+                }
+                return widening == .backward
+                    ? (offset, readingOffset)
+                    : (end, readingOffset + kana.count)
+            }
+            offset = end
+            readingOffset += segment.reading.count
+        }
+        return (offset, readingOffset)
+    }
+
+    private func utf16Range(_ range: Range<Int>) -> NSRange {
+        let characters = Array(text)
+        let before = String(characters[0..<range.lowerBound]).utf16.count
+        return NSRange(
+            location: before,
+            length: String(characters[range]).utf16.count
+        )
     }
 }

@@ -731,7 +731,7 @@ final class InputController: IMKInputController {
             return selectFuzzyCandidate(index: 0, client: sender)
         }
 
-        if let handled = handleLivePhraseKey(event, client: sender) {
+        if let handled = handleLivePreviewKey(event, client: sender) {
             return handled
         }
 
@@ -1562,15 +1562,8 @@ final class InputController: IMKInputController {
         ) else { return }
         selectedCandidateIndex = index
         let candidate = currentCandidateModels[index]
-        if let inputClient = client(), !usesLiveConversion {
-            setMarkedText(
-                CandidateSelectionProjection.markedText(
-                    for: candidate,
-                    prefix: compositionPrefix,
-                    suffix: conversionSuffix + compositionSuffix
-                ),
-                in: inputClient
-            )
+        if let inputClient = client() {
+            showSelectedCandidateInComposition(candidate, in: inputClient)
         }
         showPreview(for: candidate.storageText)
     }
@@ -2984,22 +2977,7 @@ final class InputController: IMKInputController {
         selectedCandidateIndex = index
         selectedFuzzyCandidateIndex = nil
         showPrimaryCandidatePanel(client: sender)
-        let registrationPrefix = dictionaryRegistrationSession?
-            .confirmedCandidate ?? compositionPrefix
-        // With live conversion the letters stay as typed; the conversion
-        // is seen in the candidates and inserted on commit
-        if usesLiveConversion {
-            updateMarkedText(in: sender)
-        } else {
-            setMarkedText(
-                CandidateSelectionProjection.markedText(
-                    for: candidate,
-                    prefix: registrationPrefix,
-                    suffix: conversionSuffix + compositionSuffix
-                ),
-                in: sender
-            )
-        }
+        showSelectedCandidateInComposition(candidate, in: sender)
         showPreview(for: candidate.storageText)
         if !translationCandidateSession.contains(
             candidate.storageText,
@@ -4530,17 +4508,13 @@ final class InputController: IMKInputController {
     private func requestLiveConversion(client sender: Any) {
         guard usesLiveConversion, let engine = Self.liveConversionEngine else { return }
         let input = inputBuffer
-        // Letters already converted keep their conversion and its phrases,
-        // corrected or not
+        // Letters already converted keep their conversions
         if !liveConversion.candidates(for: input).isEmpty {
-            if !liveConversion.isSelectingPhrase {
-                presentLiveConversion(client: sender)
-            }
+            presentLiveConversion(client: sender)
             return
         }
-        let fixedReading = liveConversion.fixedReading
         Self.liveConversionQueue.async { [weak self] in
-            let result = engine.convert(romaji: input, fixedReading: fixedReading)
+            let result = engine.convert(romaji: input)
             DispatchQueue.main.async {
                 guard let self, self.usesLiveConversion,
                       self.inputBuffer == input, let result else { return }
@@ -4549,21 +4523,18 @@ final class InputController: IMKInputController {
         }
     }
 
-    /// The conversions go first among the candidates, and the best is shown
-    /// in place of the letters while nothing is chosen
+    /// The conversions go first among the candidates; the letters stay as
+    /// typed until one is chosen
     private func presentLiveConversion(client sender: Any) {
         let converted = liveConversion.candidates(for: inputBuffer)
-        guard !converted.isEmpty else { return }
+        // A conversion being corrected keeps its place
+        guard !converted.isEmpty, livePreview == nil else { return }
         let others = currentCandidateModels.filter {
             !$0.hasSource(.liveConversion) && !converted.contains($0.storageText)
         }
-        let selected = selectedCandidateIndex
         replaceCurrentCandidates(with: converted.map {
             Candidate(storageText: $0, source: .liveConversion, reading: inputBuffer)
         } + others)
-        if selected == nil {
-            updateMarkedText(in: sender)
-        }
         showPrimaryCandidatePanel(client: sender)
     }
 
@@ -4572,24 +4543,22 @@ final class InputController: IMKInputController {
               liveConversion.candidates(for: inputBuffer).isEmpty,
               let engine = Self.liveConversionEngine else { return }
         let input = inputBuffer
-        let fixedReading = liveConversion.fixedReading
         let result = Self.liveConversionQueue.sync {
-            engine.convert(romaji: input, fixedReading: fixedReading)
+            engine.convert(romaji: input)
         }
         guard let result else { return }
         applyLiveConversion(result, for: input, client: sender)
     }
 
-    /// A conversion of letters that are all kana is shown; with romaji
-    /// still being typed at the end the last one stays with the letters
-    /// after it, and with letters that are not romaji, such as an English
-    /// word, the letters are shown as typed
+    /// A conversion of letters read as kana, around words kept as typed, is
+    /// offered; with romaji still being typed at the end the last one
+    /// stays, and with romaji the converter did not read none is offered
     private func applyLiveConversion(
         _ result: LiveConversionResult,
         for input: String,
         client sender: Any
     ) {
-        switch LiveConversionInput.reading(result.reading) {
+        switch result.status {
         case .converted:
             guard !result.candidates.isEmpty else { return }
             liveConversion.update(
@@ -4607,155 +4576,218 @@ final class InputController: IMKInputController {
             replaceCurrentCandidates(with: currentCandidateModels.filter {
                 !$0.hasSource(.liveConversion)
             })
-            if selectedCandidateIndex == nil {
-                updateMarkedText(in: sender)
-            }
             showPrimaryCandidatePanel(client: sender)
         }
     }
 
-    // MARK: Correcting a phrase of a live conversion
+    // MARK: Correcting a chosen live conversion
 
-    /// Conversions of the phrase being corrected, listed with Space
-    private var livePhraseCandidates: [String]?
-    private var livePhraseCandidateIndex = 0
-    /// The phrase as it was before its conversions were listed, for Esc
-    private var livePhraseSurfaceBeforeList: String?
+    /// The live conversion chosen among the candidates, shown in place of
+    /// the letters with a cursor and a selection
+    private var livePreview: LiveConversionPreview?
+    /// Conversions of the selection, listed with Space
+    private var livePartCandidates: [String]?
+    private var livePartCandidateIndex = 0
+    /// The conversion as it was before the list, for Esc
+    private var livePreviewBeforeList: LiveConversionPreview?
 
-    /// ← selects the last phrase and then the one before, → the next;
-    /// Shift with them moves an end of the selection by a kana; Space lists
-    /// the phrase's conversions and goes through them, ↑↓ too; Return takes
-    /// the one chosen, or with none listed commits the whole; Esc closes the
-    /// list, then the selection. Any other key ends the selection and is
-    /// typed as usual
-    private func handleLivePhraseKey(_ event: NSEvent, client sender: Any) -> Bool? {
-        guard usesLiveConversion, selectedCandidateIndex == nil,
-              liveConversion.canSelectPhrase(for: inputBuffer) else { return nil }
+    /// A live conversion chosen is shown in place of the letters to be
+    /// corrected; any other candidate as ordinary conversion shows it
+    private func showSelectedCandidateInComposition(_ candidate: Candidate, in sender: Any) {
+        if usesLiveConversion, candidate.hasSource(.liveConversion) {
+            if livePreview?.text != candidate.storageText {
+                closeLivePartCandidates(restoring: false)
+                livePreview = liveConversion.preview(of: candidate.storageText, for: inputBuffer)
+            }
+            if let livePreview {
+                setLivePreviewMarkedText(livePreview, in: sender)
+                return
+            }
+        } else {
+            closeLivePartCandidates(restoring: false)
+            livePreview = nil
+        }
+        setMarkedText(
+            CandidateSelectionProjection.markedText(
+                for: candidate,
+                prefix: dictionaryRegistrationSession?.confirmedCandidate ?? compositionPrefix,
+                suffix: conversionSuffix + compositionSuffix
+            ),
+            in: sender
+        )
+    }
+
+    /// While a live conversion chosen is shown: ← and → move the cursor,
+    /// Shift with them selects; Space lists the conversions of the
+    /// selection and goes through them, ↑↓ too; Return takes the one
+    /// chosen; Esc closes the list, then the selection. With no list or
+    /// selection the keys work on the candidates as usual
+    private func handleLivePreviewKey(_ event: NSEvent, client sender: Any) -> Bool? {
+        guard usesLiveConversion, let index = selectedCandidateIndex,
+              currentCandidateModels.indices.contains(index),
+              currentCandidateModels[index].hasSource(.liveConversion),
+              var preview = livePreview,
+              preview.text == currentCandidateModels[index].storageText
+                || livePartCandidates != nil
+        else { return nil }
         let modifiers = event.shortcutModifiers.intersection([.shift, .command, .option, .control])
-        let selecting = liveConversion.isSelectingPhrase
         switch (event.keyCode, modifiers) {
-        case (123, []):
-            closeLivePhraseCandidates(restoring: true)
-            liveConversion.selectPreviousPhrase()
-        case (124, []):
-            guard selecting else { return nil }
-            closeLivePhraseCandidates(restoring: true)
-            liveConversion.selectNextPhrase()
+        case (123, []), (124, []):
+            closeLivePartCandidates(restoring: true)
+            preview = livePreview ?? preview
+            preview.moveCursor(by: event.keyCode == 123 ? -1 : 1)
+            livePreview = preview
         case (123, [.shift]), (124, [.shift]):
-            guard selecting else { return selecting ? true : nil }
-            closeLivePhraseCandidates(restoring: true)
-            if liveConversion.adjustPhrase(toward: event.keyCode == 123 ? .left : .right) {
-                if let first = convertSelectedPhrase().first {
-                    liveConversion.previewPhrase(first)
-                }
-                // The phrase that gave the selection a kana is converted
-                // again from what it still reads
-                if let neighbor = liveConversion.phraseToConvert,
-                   let engine = Self.liveConversionEngine,
-                   let first = Self.liveConversionQueue.sync(execute: {
-                       engine.candidates(forReading: neighbor.reading, limit: 1)
-                   }).first {
-                    liveConversion.convertAdjacentPhrase(first)
-                }
-            }
+            closeLivePartCandidates(restoring: true)
+            preview = livePreview ?? preview
+            preview.extendSelection(by: event.keyCode == 123 ? -1 : 1)
+            livePreview = preview
         case (49, []):
-            guard selecting else { return nil }
-            if livePhraseCandidates == nil {
-                let candidates = convertSelectedPhrase()
+            if livePartCandidates != nil {
+                moveLivePartCandidate(by: 1)
+            } else {
+                guard let target = preview.conversionTarget,
+                      let engine = Self.liveConversionEngine else { return nil }
+                let candidates = Self.liveConversionQueue.sync {
+                    engine.candidates(forReading: target.reading)
+                }
                 guard !candidates.isEmpty else { return true }
-                livePhraseSurfaceBeforeList = liveConversion.phrases.selectedSegment?.surface
-                livePhraseCandidates = candidates
+                let shown = String(Array(preview.text)[target.range])
+                livePreviewBeforeList = preview
+                livePartCandidates = candidates
                 // The first conversion other than the one shown
-                livePhraseCandidateIndex = candidates.firstIndex {
-                    $0 != livePhraseSurfaceBeforeList
-                } ?? 0
-            } else {
-                moveLivePhraseCandidate(by: 1)
+                livePartCandidateIndex = candidates.firstIndex { $0 != shown } ?? 0
             }
-            previewLivePhraseCandidate()
+            previewLivePartCandidate()
         case (125, []), (126, []):
-            guard livePhraseCandidates != nil else { return selecting ? true : nil }
-            moveLivePhraseCandidate(by: event.keyCode == 125 ? 1 : -1)
-            previewLivePhraseCandidate()
+            guard livePartCandidates != nil else { return nil }
+            moveLivePartCandidate(by: event.keyCode == 125 ? 1 : -1)
+            previewLivePartCandidate()
         case (36, []), (76, []):
-            if let candidates = livePhraseCandidates {
-                liveConversion.commitPhrase(candidates[livePhraseCandidateIndex])
-                closeLivePhraseCandidates(restoring: false)
-                break
-            }
-            // The whole is committed as shown
-            liveConversion.clearPhraseSelection()
-            return nil
+            guard let candidates = livePartCandidates,
+                  var applied = livePreviewBeforeList else { return nil }
+            applied.replaceSelection(with: candidates[livePartCandidateIndex])
+            closeLivePartCandidates(restoring: false)
+            livePreview = applied
+            replaceSelectedCandidate(with: applied.text, at: index)
         case (53, []):
-            guard selecting else { return nil }
-            if livePhraseCandidates != nil {
-                closeLivePhraseCandidates(restoring: true)
+            if livePartCandidates != nil {
+                closeLivePartCandidates(restoring: true)
+            } else if preview.selection != nil {
+                preview.clearSelection()
+                livePreview = preview
             } else {
-                liveConversion.clearPhraseSelection()
+                return nil
             }
         default:
-            guard selecting else { return nil }
-            closeLivePhraseCandidates(restoring: true)
-            liveConversion.clearPhraseSelection()
-            presentLiveConversion(client: sender)
+            closeLivePartCandidates(restoring: true)
             return nil
         }
-        if let candidates = livePhraseCandidates {
-            showLivePhraseCandidates(candidates, client: sender)
+        if let livePreview {
+            setLivePreviewMarkedText(livePreview, in: sender)
+        }
+        if let candidates = livePartCandidates {
+            showLivePartCandidates(candidates, client: sender)
         } else {
-            presentLiveConversion(client: sender)
+            showPrimaryCandidatePanel(client: sender)
         }
         return true
     }
 
-    /// Conversions of the selected phrase's reading
-    private func convertSelectedPhrase() -> [String] {
-        guard let reading = liveConversion.selectedReading,
-              let engine = Self.liveConversionEngine else { return [] }
-        return Self.liveConversionQueue.sync { engine.candidates(forReading: reading) }
+    /// The selected candidate becomes the corrected conversion, so it is
+    /// what is committed; it stays a live conversion and is not learned
+    private func replaceSelectedCandidate(with text: String, at index: Int) {
+        var models = currentCandidateModels
+        var selected = index
+        models[selected] = Candidate(storageText: text, source: .liveConversion, reading: inputBuffer)
+        if let duplicate = models.indices.first(where: {
+            $0 != selected && models[$0].storageText == text
+        }) {
+            models.remove(at: duplicate)
+            if duplicate < selected { selected -= 1 }
+        }
+        currentCandidateModels = models
+        selectedCandidateIndex = selected
     }
 
-    private func moveLivePhraseCandidate(by offset: Int) {
-        guard let candidates = livePhraseCandidates, !candidates.isEmpty else { return }
-        livePhraseCandidateIndex = (livePhraseCandidateIndex + offset + candidates.count)
+    private func moveLivePartCandidate(by offset: Int) {
+        guard let candidates = livePartCandidates, !candidates.isEmpty else { return }
+        livePartCandidateIndex = (livePartCandidateIndex + offset + candidates.count)
             % candidates.count
     }
 
-    private func previewLivePhraseCandidate() {
-        guard let candidates = livePhraseCandidates,
-              candidates.indices.contains(livePhraseCandidateIndex) else { return }
-        liveConversion.previewPhrase(candidates[livePhraseCandidateIndex])
+    private func previewLivePartCandidate() {
+        guard let candidates = livePartCandidates,
+              candidates.indices.contains(livePartCandidateIndex),
+              var preview = livePreviewBeforeList else { return }
+        preview.replaceSelection(with: candidates[livePartCandidateIndex], keepsSelected: true)
+        livePreview = preview
     }
 
-    private func closeLivePhraseCandidates(restoring: Bool) {
-        if restoring, livePhraseCandidates != nil, let surface = livePhraseSurfaceBeforeList {
-            liveConversion.previewPhrase(surface)
+    private func closeLivePartCandidates(restoring: Bool) {
+        if restoring, livePartCandidates != nil, let before = livePreviewBeforeList {
+            livePreview = before
         }
-        livePhraseCandidates = nil
-        livePhraseCandidateIndex = 0
-        livePhraseSurfaceBeforeList = nil
+        livePartCandidates = nil
+        livePartCandidateIndex = 0
+        livePreviewBeforeList = nil
     }
 
-    /// The phrase's conversions under the whole sentence, which shows the
-    /// one chosen in place with the phrase marked
-    private func showLivePhraseCandidates(_ candidates: [String], client sender: Any) {
+    private func showLivePartCandidates(_ candidates: [String], client sender: Any) {
         let pageRange = LinearCandidateNavigator.pageRange(
-            containing: livePhraseCandidateIndex,
-            pageSize: Self.maximumCandidateCount - 1,
+            containing: livePartCandidateIndex,
+            pageSize: Self.maximumCandidateCount,
             candidateCount: candidates.count
         )
         guard !pageRange.isEmpty else { return }
         secondaryCandidatePanel.hide()
         primaryCandidatePanel.show(
-            candidates: [liveConversion.phrases.text] + Array(candidates[pageRange]),
-            selectedIndex: 1 + livePhraseCandidateIndex - pageRange.lowerBound,
-            near: inputLocation(for: sender),
-            highlightedRanges: liveConversion.selectedTextRange.map { [0: $0] } ?? [:]
+            candidates: Array(candidates[pageRange]),
+            selectedIndex: livePartCandidateIndex - pageRange.lowerBound,
+            near: inputLocation(for: sender)
+        )
+    }
+
+    /// The conversion as converted clauses, the selection as the selected
+    /// one, with the cursor where it is
+    private func setLivePreviewMarkedText(_ preview: LiveConversionPreview, in sender: Any) {
+        guard let textClient = sender as? IMKTextInput else { return }
+        let value = preview.text
+        let text = NSMutableAttributedString(string: value)
+        let whole = NSRange(location: 0, length: value.utf16.count)
+        var clauses = [(Int(kTSMHiliteConvertedText), whole)]
+        if let selected = preview.selectedTextRange {
+            clauses = [
+                (Int(kTSMHiliteConvertedText), NSRange(location: 0, length: selected.location)),
+                (Int(kTSMHiliteSelectedConvertedText), selected),
+                (Int(kTSMHiliteConvertedText), NSRange(
+                    location: NSMaxRange(selected),
+                    length: whole.length - NSMaxRange(selected)
+                ))
+            ].filter { $0.1.length > 0 }
+        }
+        for (style, range) in clauses {
+            let attributes = mark(forStyle: style, at: range) ?? [:]
+            text.setAttributes(
+                Dictionary(uniqueKeysWithValues: attributes.compactMap { key, value in
+                    (key as? String).map { (NSAttributedString.Key($0), value) }
+                }),
+                range: range
+            )
+        }
+        let markedRange = textClient.markedRange()
+        textClient.setMarkedText(
+            text,
+            selectionRange: NSRange(location: preview.cursorOffset, length: 0),
+            replacementRange: markedRange.location != NSNotFound && markedRange.length > 0
+                ? markedRange
+                : NSRange(location: NSNotFound, length: NSNotFound)
         )
     }
 
     private func endLiveConversion() {
-        closeLivePhraseCandidates(restoring: false)
+        closeLivePartCandidates(restoring: false)
+        livePreview = nil
         guard liveConversion != LiveConversionState() else { return }
         liveConversion.reset()
         if let engine = Self.liveConversionEngine {
@@ -6048,16 +6080,6 @@ final class InputController: IMKInputController {
         }
         let pageStart = pageRange.lowerBound
         let pageCandidates = Array(currentCandidateModels[pageRange])
-        // The phrase of the live conversion being corrected is marked in
-        // the sentence it belongs to
-        var highlightedRanges: [Int: NSRange] = [:]
-        if usesLiveConversion, let range = liveConversion.selectedTextRange,
-           let row = pageCandidates.firstIndex(where: {
-               $0.hasSource(.liveConversion)
-                   && $0.storageText == liveConversion.phrases.text
-           }) {
-            highlightedRanges[row] = range
-        }
         primaryCandidatePanel.show(
             candidates: pageCandidates.map(\.displayText),
             alternateCommitIndicators: pageCandidates.map(
@@ -6069,8 +6091,7 @@ final class InputController: IMKInputController {
             reservedRightWidth: secondaryCandidatePanel.isVisible
                 ? secondaryCandidatePanel.panelWidth
                     + secondaryCandidatePanel.spacingFromCandidatePanel
-                : 0,
-            highlightedRanges: highlightedRanges
+                : 0
         )
         // The entry being registered shows what the chosen candidate would
         // add, and the candidates go beside it
@@ -6379,6 +6400,8 @@ final class InputController: IMKInputController {
             return true
         }
         selectedCandidateIndex = nil
+        closeLivePartCandidates(restoring: false)
+        livePreview = nil
         primaryCandidatePanel.clearSelection()
         updateMarkedText(in: sender)
         showPrimaryCandidatePanel(client: sender)
