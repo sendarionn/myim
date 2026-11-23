@@ -1,4 +1,4 @@
-# Selected text converted again with Tab
+# Selected text converted again with ⌥R
 capture_reconversion() {
     scenario_record "$1" 9 || return 1
     sleep 0.4
@@ -11,7 +11,7 @@ capture_reconversion() {
     press 123 shift || return 1
     press 123 shift || return 1
     sleep 0.6
-    press 48 || return 1
+    press 15 option || return 1
     sleep 1
     press 48 || return 1
     sleep 0.6

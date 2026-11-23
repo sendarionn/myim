@@ -621,6 +621,16 @@ final class InputController: IMKInputController {
             return handleDictionaryRegistration(event, client: sender)
         }
 
+        // The shortcut reconverts the selected text when nothing is being
+        // typed; it is taken either way, so the application does not type
+        // the character the key produces, such as ®
+        if MyIMFeatureShortcut.reconversion.shortcut.matches(event) {
+            if inputBuffer.isEmpty {
+                _ = beginReconversionIfPossible(client: sender)
+            }
+            return true
+        }
+
         if isUserDictionaryDeletionShortcut(event) {
             if removeSelectedCandidate(client: sender) {
                 return true
@@ -2329,10 +2339,6 @@ final class InputController: IMKInputController {
             if nextInputCandidateCoordinator.selectedIndex != nil,
                flags.isEmpty {
                 return selectNextInputCandidate(offset: 1, client: sender)
-            }
-            if flags.isEmpty,
-               beginReconversionIfPossible(client: sender) {
-                return true
             }
             if flags.isEmpty, nextInputCandidateCoordinator.hasCandidates {
                 return selectNextInputCandidate(offset: 1, client: sender)
