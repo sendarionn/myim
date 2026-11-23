@@ -67,9 +67,10 @@ public struct InputFeatureSettings {
         nonmutating set { setFlag(Key.emojiCandidates, newValue) }
     }
 
-    /// Experimental: the composition shown converted as it is typed
+    /// The composition converted as it is typed, offered as a candidate;
+    /// on unless turned off
     public var isLiveConversionEnabled: Bool {
-        get { flag(Key.liveConversion, default: false) }
+        get { flag(Key.liveConversion, default: true) }
         nonmutating set { setFlag(Key.liveConversion, newValue) }
     }
 

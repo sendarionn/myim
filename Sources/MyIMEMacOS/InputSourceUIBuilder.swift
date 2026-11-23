@@ -154,7 +154,7 @@ enum SettingsWindowBuilder {
         ], target: target, to: stack)
         addSection("入力方式", to: stack)
         addCheckboxes([
-            ("ライブ変換（実験的）", actions.toggleLiveConversion, states.liveConversion)
+            ("ライブ変換", actions.toggleLiveConversion, states.liveConversion)
         ], target: target, to: stack)
         addSection("翻訳", to: stack)
         addCheckboxes([

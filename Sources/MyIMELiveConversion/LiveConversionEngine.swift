@@ -137,7 +137,13 @@ public final class LiveConversionEngine: @unchecked Sendable {
         guard words.map(\.reading).joined() == reading else {
             return [LiveConversionSegment(surface: candidate.text, reading: reading)]
         }
-        return LiveConversionSegment.phrases(of: words)
+        // The converter's words are near phrases, as 今日は or いい天気, and
+        // the part of speech of a word is that of its start; it numbers
+        // particles 147 to 368 and auxiliaries 369 to 554
+        return LiveConversionSegment.phrases(
+            of: words,
+            functionWords: candidate.data.map { (147...554).contains($0.lcid) }
+        )
     }
 
     /// Ends the composition, as after a commit

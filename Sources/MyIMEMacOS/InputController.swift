@@ -811,9 +811,6 @@ final class InputController: IMKInputController {
                 removeLastCandidateFilter(client: sender)
                 return true
             }
-            if declineLiveConversion(client: sender) {
-                return true
-            }
             return cancelInput(in: sender)
         case .inputFormFunction, .other:
             return nil
@@ -1565,7 +1562,7 @@ final class InputController: IMKInputController {
         ) else { return }
         selectedCandidateIndex = index
         let candidate = currentCandidateModels[index]
-        if let inputClient = client() {
+        if let inputClient = client(), !usesLiveConversion {
             setMarkedText(
                 CandidateSelectionProjection.markedText(
                     for: candidate,
@@ -2989,14 +2986,20 @@ final class InputController: IMKInputController {
         showPrimaryCandidatePanel(client: sender)
         let registrationPrefix = dictionaryRegistrationSession?
             .confirmedCandidate ?? compositionPrefix
-        setMarkedText(
-            CandidateSelectionProjection.markedText(
-                for: candidate,
-                prefix: registrationPrefix,
-                suffix: conversionSuffix + compositionSuffix
-            ),
-            in: sender
-        )
+        // With live conversion the letters stay as typed; the conversion
+        // is seen in the candidates and inserted on commit
+        if usesLiveConversion {
+            updateMarkedText(in: sender)
+        } else {
+            setMarkedText(
+                CandidateSelectionProjection.markedText(
+                    for: candidate,
+                    prefix: registrationPrefix,
+                    suffix: conversionSuffix + compositionSuffix
+                ),
+                in: sender
+            )
+        }
         showPreview(for: candidate.storageText)
         if !translationCandidateSession.contains(
             candidate.storageText,
@@ -4516,7 +4519,6 @@ final class InputController: IMKInputController {
     private var usesLiveConversion: Bool {
         Self.featureSettings.isLiveConversionEnabled
             && reconversionOriginal == nil
-            && !liveConversion.isDeclined
             && !bookmarkSearchSession.isSearching
             && !emojiWindow.isVisible
             && dictionaryRegistrationSession == nil
@@ -4695,16 +4697,11 @@ final class InputController: IMKInputController {
             guard selecting else { return nil }
             closeLivePhraseCandidates(restoring: true)
             liveConversion.clearPhraseSelection()
-            updateMarkedText(in: sender)
             presentLiveConversion(client: sender)
             return nil
         }
-        updateMarkedText(in: sender)
         if let candidates = livePhraseCandidates {
             showLivePhraseCandidates(candidates, client: sender)
-        } else if liveConversion.isSelectingPhrase {
-            primaryCandidatePanel.hide()
-            secondaryCandidatePanel.hide()
         } else {
             presentLiveConversion(client: sender)
         }
@@ -4739,32 +4736,22 @@ final class InputController: IMKInputController {
         livePhraseSurfaceBeforeList = nil
     }
 
+    /// The phrase's conversions under the whole sentence, which shows the
+    /// one chosen in place with the phrase marked
     private func showLivePhraseCandidates(_ candidates: [String], client sender: Any) {
         let pageRange = LinearCandidateNavigator.pageRange(
             containing: livePhraseCandidateIndex,
-            pageSize: Self.maximumCandidateCount,
+            pageSize: Self.maximumCandidateCount - 1,
             candidateCount: candidates.count
         )
         guard !pageRange.isEmpty else { return }
         secondaryCandidatePanel.hide()
         primaryCandidatePanel.show(
-            candidates: Array(candidates[pageRange]),
-            selectedIndex: livePhraseCandidateIndex - pageRange.lowerBound,
-            near: inputLocation(for: sender)
+            candidates: [liveConversion.phrases.text] + Array(candidates[pageRange]),
+            selectedIndex: 1 + livePhraseCandidateIndex - pageRange.lowerBound,
+            near: inputLocation(for: sender),
+            highlightedRanges: liveConversion.selectedTextRange.map { [0: $0] } ?? [:]
         )
-    }
-
-    /// Esc first goes back to the letters as typed
-    private func declineLiveConversion(client sender: Any) -> Bool {
-        guard selectedCandidateIndex == nil,
-              liveConversion.displayText(for: inputBuffer) != nil else { return false }
-        liveConversion.decline()
-        replaceCurrentCandidates(with: currentCandidateModels.filter {
-            !$0.hasSource(.liveConversion)
-        })
-        updateMarkedText(in: sender)
-        showPrimaryCandidatePanel(client: sender)
-        return true
     }
 
     private func endLiveConversion() {
@@ -6061,6 +6048,16 @@ final class InputController: IMKInputController {
         }
         let pageStart = pageRange.lowerBound
         let pageCandidates = Array(currentCandidateModels[pageRange])
+        // The phrase of the live conversion being corrected is marked in
+        // the sentence it belongs to
+        var highlightedRanges: [Int: NSRange] = [:]
+        if usesLiveConversion, let range = liveConversion.selectedTextRange,
+           let row = pageCandidates.firstIndex(where: {
+               $0.hasSource(.liveConversion)
+                   && $0.storageText == liveConversion.phrases.text
+           }) {
+            highlightedRanges[row] = range
+        }
         primaryCandidatePanel.show(
             candidates: pageCandidates.map(\.displayText),
             alternateCommitIndicators: pageCandidates.map(
@@ -6072,7 +6069,8 @@ final class InputController: IMKInputController {
             reservedRightWidth: secondaryCandidatePanel.isVisible
                 ? secondaryCandidatePanel.panelWidth
                     + secondaryCandidatePanel.spacingFromCandidatePanel
-                : 0
+                : 0,
+            highlightedRanges: highlightedRanges
         )
         // The entry being registered shows what the chosen candidate would
         // add, and the candidates go beside it
@@ -7038,12 +7036,6 @@ final class InputController: IMKInputController {
     }
 
     private func updateMarkedText(in sender: Any) {
-        // The live conversion is shown in place of the letters; the caret
-        // goes to its end, as only typing on at the end is supported
-        if let converted = liveConversion.displayText(for: inputBuffer) {
-            setLiveConversionMarkedText(compositionPrefix + converted, in: sender)
-            return
-        }
         setMarkedText(
             CandidateSelectionProjection.unconvertedMarkedText(
                 input: inputBuffer,
@@ -7094,8 +7086,7 @@ final class InputController: IMKInputController {
 
     private var sequentialConversionSplit: SequentialConversionSplit? {
         // A live conversion takes the whole composition, punctuation and
-        // all, so nothing is left for a next step; declined with Esc, the
-        // composition splits as it otherwise does
+        // all, so nothing is left for a next step
         guard dictionaryRegistrationSession == nil, !usesLiveConversion else {
             return nil
         }
@@ -7168,48 +7159,6 @@ final class InputController: IMKInputController {
             replacementRange: replacementRange
         )
         trace("setMarkedText.complete", sender: sender, detail: "value=\(value)")
-    }
-
-    /// A live conversion as converted text, the phrase being corrected as
-    /// the selected clause; the caret stays at the end
-    private func setLiveConversionMarkedText(_ value: String, in sender: Any) {
-        guard let textClient = sender as? IMKTextInput else { return }
-        let text = NSMutableAttributedString(string: value)
-        let whole = NSRange(location: 0, length: value.utf16.count)
-        var clauses = [(Int(kTSMHiliteConvertedText), whole)]
-        if liveConversion.isSelectingPhrase,
-           var selected = liveConversion.selectedTextRange {
-            selected.location += compositionPrefix.utf16.count
-            if NSMaxRange(selected) <= whole.length {
-                let before = NSRange(location: 0, length: selected.location)
-                let after = NSRange(
-                    location: NSMaxRange(selected),
-                    length: whole.length - NSMaxRange(selected)
-                )
-                clauses = [
-                    (Int(kTSMHiliteConvertedText), before),
-                    (Int(kTSMHiliteSelectedConvertedText), selected),
-                    (Int(kTSMHiliteConvertedText), after)
-                ].filter { $0.1.length > 0 }
-            }
-        }
-        for (style, range) in clauses {
-            let attributes = mark(forStyle: style, at: range) ?? [:]
-            text.setAttributes(
-                Dictionary(uniqueKeysWithValues: attributes.compactMap { key, value in
-                    (key as? String).map { (NSAttributedString.Key($0), value) }
-                }),
-                range: range
-            )
-        }
-        let markedRange = textClient.markedRange()
-        textClient.setMarkedText(
-            text,
-            selectionRange: NSRange(location: whole.length, length: 0),
-            replacementRange: markedRange.location != NSNotFound && markedRange.length > 0
-                ? markedRange
-                : NSRange(location: NSNotFound, length: NSNotFound)
-        )
     }
 
     /// The text being converted and the trailing punctuation waiting

@@ -14,17 +14,4 @@ struct LiveConversionStateTests {
         #expect(state.candidates(for: "kaiginos").isEmpty)
         #expect(state.displayText(for: "kaigi") == nil)
     }
-
-    @Test
-    func declinedTheLettersStayUntilTheCompositionEnds() {
-        var state = LiveConversionState()
-        state.update(input: "kaigino", candidates: ["会議の"])
-        state.decline()
-        #expect(state.displayText(for: "kaigino") == nil)
-        state.update(input: "kaiginos", candidates: ["会議のs"])
-        #expect(state.candidates(for: "kaiginos").isEmpty)
-        state.reset()
-        state.update(input: "a", candidates: ["亜"])
-        #expect(state.displayText(for: "a") == "亜")
-    }
 }

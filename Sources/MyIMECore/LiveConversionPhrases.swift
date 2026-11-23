@@ -12,26 +12,35 @@ public struct LiveConversionSegment: Equatable, Sendable {
         self.reading = reading
     }
 
-    /// Words joined into phrases: kana written as it reads, such as は, を
-    /// or します, goes with the word before it, also where the converter
-    /// puts it at the start of the next word, so 今日|は良い|転機 becomes
-    /// 今日は|良い|転機
-    public static func phrases(of words: [LiveConversionSegment]) -> [LiveConversionSegment] {
+    /// The converter's words made phrases. A word that starts with a
+    /// particle or auxiliary (`functionWords`) gives the kana it starts
+    /// with to the phrase before, so 強|は良い becomes 強は|良い and 準備し|ます
+    /// becomes 準備します. Another word that starts with two or more kana
+    /// written as they read and goes on in kanji is split there, so いい天気
+    /// becomes いい|天気 and この本 この|本, while お茶 stays whole
+    public static func phrases(
+        of words: [LiveConversionSegment],
+        functionWords: [Bool] = []
+    ) -> [LiveConversionSegment] {
         var phrases: [LiveConversionSegment] = []
-        for word in words where !word.reading.isEmpty {
-            guard !phrases.isEmpty else {
-                phrases.append(word)
-                continue
-            }
+        for (index, word) in words.enumerated() where !word.reading.isEmpty {
+            let isFunctionWord = functionWords.indices.contains(index) && functionWords[index]
             let kana = word.surface.commonPrefix(with: word.reading)
-            phrases[phrases.count - 1].surface += kana
-            phrases[phrases.count - 1].reading += kana
             let rest = LiveConversionSegment(
                 surface: String(word.surface.dropFirst(kana.count)),
                 reading: String(word.reading.dropFirst(kana.count))
             )
-            if !rest.reading.isEmpty {
+            if isFunctionWord, !phrases.isEmpty, !kana.isEmpty {
+                phrases[phrases.count - 1].surface += kana
+                phrases[phrases.count - 1].reading += kana
+                if !rest.reading.isEmpty {
+                    phrases.append(rest)
+                }
+            } else if !isFunctionWord, kana.count >= 2, !rest.reading.isEmpty {
+                phrases.append(LiveConversionSegment(surface: kana, reading: kana))
                 phrases.append(rest)
+            } else {
+                phrases.append(word)
             }
         }
         return phrases
@@ -131,14 +140,21 @@ public struct LiveConversionPhrases: Equatable, Sendable {
         case (.left, .left):
             guard index > 0 else { return false }
             let character = segments[index - 1].reading.removeLast()
-            segments[index - 1].surface = segments[index - 1].reading
+            // Kana written as it reads leaves the conversion before it as
+            // it is; otherwise what is left is converted again
+            let keepsConversion = segments[index - 1].surface.last == character
+            if keepsConversion {
+                segments[index - 1].surface.removeLast()
+            } else {
+                segments[index - 1].surface = segments[index - 1].reading
+            }
             segments[index].reading.insert(character, at: segments[index].reading.startIndex)
             segments[index].surface = segments[index].reading
             if segments[index - 1].reading.isEmpty {
                 segments.remove(at: index - 1)
                 selectedIndex = index - 1
                 fixedCount = max(fixedCount - 1, 0)
-            } else {
+            } else if !keepsConversion {
                 phraseToConvert = index - 1
             }
         case (.left, .right):
@@ -158,12 +174,17 @@ public struct LiveConversionPhrases: Equatable, Sendable {
         case (.right, .right):
             guard index + 1 < segments.count else { return false }
             let character = segments[index + 1].reading.removeFirst()
-            segments[index + 1].surface = segments[index + 1].reading
+            let keepsConversion = segments[index + 1].surface.first == character
+            if keepsConversion {
+                segments[index + 1].surface.removeFirst()
+            } else {
+                segments[index + 1].surface = segments[index + 1].reading
+            }
             segments[index].reading.append(character)
             segments[index].surface = segments[index].reading
             if segments[index + 1].reading.isEmpty {
                 segments.remove(at: index + 1)
-            } else {
+            } else if !keepsConversion {
                 phraseToConvert = index + 1
             }
         case (.right, .left):

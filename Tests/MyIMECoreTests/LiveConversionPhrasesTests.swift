@@ -10,7 +10,7 @@ struct LiveConversionPhrasesTests {
             .init(surface: "は", reading: "は"),
             .init(surface: "良い", reading: "よい"),
             .init(surface: "転機", reading: "てんき")
-        ]))
+        ], functionWords: [false, true, false, false]))
     }
 
     @Test
@@ -21,9 +21,36 @@ struct LiveConversionPhrasesTests {
             .init(surface: "天気", reading: "てんき"),
             .init(surface: "コーヒー", reading: "こーひー"),
             .init(surface: "を飲む", reading: "をのむ")
-        ])
+        ], functionWords: [false, true, false, false, true])
         #expect(phrases.map(\.surface) == ["強は", "良い", "天気", "コーヒーを", "飲む"])
         #expect(phrases.map(\.reading) == ["きょうは", "よい", "てんき", "こーひーを", "のむ"])
+    }
+
+    /// The converter's 今日は|いい天気: いい is no particle and is split
+    /// from 天気, not given to 今日は; お茶 stays whole
+    @Test
+    func kanaStartingAWordThatIsNoParticleStaysApart() {
+        let phrases = LiveConversionSegment.phrases(of: [
+            .init(surface: "今日は", reading: "きょうは"),
+            .init(surface: "いい天気", reading: "いいてんき"),
+            .init(surface: "お茶", reading: "おちゃ")
+        ], functionWords: [false, false, false])
+        #expect(phrases.map(\.surface) == ["今日は", "いい", "天気", "お茶"])
+    }
+
+    /// Kana the selection takes from a phrase that ends in it leaves the
+    /// rest of that phrase converted
+    @Test
+    func takingTrailingKanaKeepsTheConversionBefore() {
+        var editing = LiveConversionPhrases(segments: [
+            .init(surface: "今日は", reading: "きょうは"),
+            .init(surface: "いい", reading: "いい"),
+            .init(surface: "天気", reading: "てんき")
+        ])
+        editing.selectPrevious()
+        editing.adjust(toward: .left)
+        #expect(editing.segments.map(\.surface) == ["今日は", "い", "いてんき"])
+        #expect(editing.phraseToConvert == nil)
     }
 
     @Test
@@ -65,8 +92,9 @@ struct LiveConversionPhrasesTests {
         // 良い: its left end takes は from 今日は, which stays in kana
         editing.adjust(toward: .left)
         #expect(editing.segments.map(\.reading) == ["きょう", "はよい", "てんき"])
-        // 今日は gave は away and is to be converted again from きょう
-        #expect(editing.phraseToConvert == 0)
+        // 今日は gave its last kana away and stays converted as 今日
+        #expect(editing.segments[0].surface == "今日")
+        #expect(editing.phraseToConvert == nil)
         #expect(editing.selectedSegment?.reading == "はよい")
         // The opposite arrow gives it back
         editing.adjust(toward: .right)

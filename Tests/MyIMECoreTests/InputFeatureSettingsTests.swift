@@ -17,6 +17,15 @@ struct InputFeatureSettingsTests {
         #expect(!settings.isFuzzyCandidatesEnabled)
         #expect(!settings.isDateTimeCandidatesEnabled)
         #expect(settings.isPasswordInputSourceRecoveryEnabled)
+        #expect(settings.isLiveConversionEnabled)
+    }
+
+    /// Live conversion turned off by hand stays off now that it is on by default
+    @Test
+    func keepsLiveConversionTurnedOff() {
+        let defaults = makeDefaults()
+        defaults.set(false, forKey: "LiveConversionEnabled")
+        #expect(!InputFeatureSettings(defaults: defaults).isLiveConversionEnabled)
     }
 
     @Test

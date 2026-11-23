@@ -13,8 +13,6 @@ public struct LiveConversionState: Equatable, Sendable {
     public private(set) var candidates: [String] = []
     /// The conversion shown, in phrases
     public private(set) var phrases = LiveConversionPhrases(segments: [])
-    /// Declined with Esc: the letters are shown until the composition ends
-    public private(set) var isDeclined = false
 
     public init() {}
 
@@ -47,10 +45,6 @@ public struct LiveConversionState: Equatable, Sendable {
         }
     }
 
-    public mutating func decline() {
-        isDeclined = true
-    }
-
     public mutating func reset() {
         self = LiveConversionState()
     }
@@ -58,7 +52,7 @@ public struct LiveConversionState: Equatable, Sendable {
     /// The conversions offered for the composition as it is now: what is
     /// shown first, then the others
     public func candidates(for composition: String) -> [String] {
-        guard !isDeclined, !composition.isEmpty, composition == input else { return [] }
+        guard !composition.isEmpty, composition == input else { return [] }
         let shown = phrases.segments.isEmpty ? candidates.first : phrases.text
         guard let shown else { return candidates }
         return [shown] + candidates.filter { $0 != shown }
@@ -68,7 +62,7 @@ public struct LiveConversionState: Equatable, Sendable {
     /// until the letters typed since are converted, the last conversion
     /// with them after it
     public func displayText(for composition: String) -> String? {
-        guard !isDeclined, !input.isEmpty, composition.hasPrefix(input),
+        guard !input.isEmpty, composition.hasPrefix(input),
               let shown = phrases.segments.isEmpty ? candidates.first : phrases.text
         else { return nil }
         return shown + composition.dropFirst(input.count)
@@ -82,7 +76,7 @@ public struct LiveConversionState: Equatable, Sendable {
 
     /// Phrases can be selected once the letters are converted
     public func canSelectPhrase(for composition: String) -> Bool {
-        !isDeclined && composition == input && !phrases.segments.isEmpty
+        composition == input && !phrases.segments.isEmpty
     }
 
     public mutating func selectPreviousPhrase() { phrases.selectPrevious() }

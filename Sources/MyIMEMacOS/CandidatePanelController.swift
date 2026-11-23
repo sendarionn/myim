@@ -159,6 +159,9 @@ final class CandidatePanelRowView: NSView {
     private var text = ""
     private var accessory = CandidateAccessory.none
     private var showsInputCaret = false
+    /// Part of the text marked, as the phrase of a live conversion being
+    /// corrected, in UTF-16 units
+    private var highlightedRange: NSRange?
     private var fixedWidthConstraint: NSLayoutConstraint?
     private var fixedHeightConstraint: NSLayoutConstraint?
 
@@ -233,11 +236,13 @@ final class CandidatePanelRowView: NSView {
         text: String,
         isSelected: Bool,
         accessory: CandidateAccessory = .none,
-        showsInputCaret: Bool = false
+        showsInputCaret: Bool = false,
+        highlightedRange: NSRange? = nil
     ) {
         self.text = text
         self.accessory = accessory
         self.showsInputCaret = showsInputCaret
+        self.highlightedRange = highlightedRange
         label.stringValue = text
         label.isHidden = showsInputCaret
         inlineCaretView.isHidden = !showsInputCaret
@@ -251,6 +256,25 @@ final class CandidatePanelRowView: NSView {
         label.textColor = isSelected
             ? .alternateSelectedControlTextColor
             : .labelColor
+        if let highlightedRange,
+           NSMaxRange(highlightedRange) <= (text as NSString).length {
+            // The phrase stands out by a thick underline and, outside a
+            // selected row, a tint of the accent color
+            let attributed = NSMutableAttributedString(
+                string: text,
+                attributes: [.font: label.font as Any, .foregroundColor: label.textColor as Any]
+            )
+            attributed.addAttributes([
+                .underlineStyle: NSUnderlineStyle.thick.rawValue,
+                .underlineColor: isSelected
+                    ? NSColor.alternateSelectedControlTextColor
+                    : NSColor.controlAccentColor,
+                .backgroundColor: isSelected
+                    ? NSColor.clear
+                    : NSColor.controlAccentColor.withAlphaComponent(0.25)
+            ], range: highlightedRange)
+            label.attributedStringValue = attributed
+        }
         inlineCaretView.configure(
             text: text,
             color: isSelected
@@ -269,7 +293,8 @@ final class CandidatePanelRowView: NSView {
             text: text,
             isSelected: isSelected,
             accessory: accessory,
-            showsInputCaret: showsInputCaret
+            showsInputCaret: showsInputCaret,
+            highlightedRange: highlightedRange
         )
     }
 
@@ -303,13 +328,15 @@ private final class CandidateCollectionItem: NSCollectionViewItem {
     func configure(
         text: String,
         accessory: CandidateAccessory,
-        showsInputCaret: Bool
+        showsInputCaret: Bool,
+        highlightedRange: NSRange? = nil
     ) {
         rowView.configure(
             text: text,
             isSelected: isSelected,
             accessory: accessory,
-            showsInputCaret: showsInputCaret
+            showsInputCaret: showsInputCaret,
+            highlightedRange: highlightedRange
         )
     }
 
@@ -342,6 +369,7 @@ final class CandidatePanelController: NSObject {
     private var candidates: [String] = []
     private var accessories: [CandidateAccessory] = []
     private var inputCaretIndicators: [Bool] = []
+    private var highlightedRanges: [Int: NSRange] = [:]
     private var itemSizes: [NSSize] = []
     var onSelectionChanged: ((Int?) -> Void)?
 
@@ -602,8 +630,10 @@ final class CandidatePanelController: NSObject {
         isAccented: Bool = false,
         reservedRightWidth: CGFloat = 0,
         reservesEmptyRow: Bool = false,
-        minimumPanelText: String? = nil
+        minimumPanelText: String? = nil,
+        highlightedRanges: [Int: NSRange] = [:]
     ) {
+        self.highlightedRanges = highlightedRanges
         panel.contentView?.layer?.borderWidth = isAccented ? 2 : 0
         panel.contentView?.layer?.borderColor = isAccented
             ? NSColor.controlAccentColor.cgColor
@@ -1004,7 +1034,8 @@ extension CandidatePanelController: NSCollectionViewDataSource {
         candidateItem.configure(
             text: candidates[indexPath.item],
             accessory: accessories[indexPath.item],
-            showsInputCaret: inputCaretIndicators[indexPath.item]
+            showsInputCaret: inputCaretIndicators[indexPath.item],
+            highlightedRange: highlightedRanges[indexPath.item]
         )
         return candidateItem
     }
