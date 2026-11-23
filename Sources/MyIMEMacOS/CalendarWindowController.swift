@@ -278,6 +278,18 @@ private final class CalendarGridView: NSView {
         yearField.selectText(nil)
     }
 
+    func moveDisplayedMonthForRuntimeVerification() {
+        changeMonth(by: 1)
+    }
+
+    func showYearMonthInputForRuntimeVerification() {
+        showYearMonthMenu()
+    }
+
+    func finishYearMonthInputForRuntimeVerification() {
+        applyEnteredYearMonth()
+    }
+
     @objc private func applyEnteredYearMonth() {
         guard let year = Int(yearField.stringValue),
               let month = Int(monthField.stringValue),
@@ -339,13 +351,10 @@ final class CalendarWindowController: NSObject {
         formatKeyPanel = FormatKeyPanel()
         super.init()
 
-        panel.animationBehavior = .none
+        panel.applyInputPanelStyle()
         panel.isMovableByWindowBackground = true
         panel.contentView?.wantsLayer = true
         panel.contentView?.layer?.cornerRadius = 0
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.collectionBehavior = [
             .moveToActiveSpace, .transient, .fullScreenAuxiliary
@@ -369,6 +378,37 @@ final class CalendarWindowController: NSObject {
                 copiedEvent.post(tap: .cgSessionEventTap)
             }
         }
+    }
+
+    func runtimePanelMeasurements(
+        keepsPanelVisible: Bool = false
+    ) -> [InputPanelRuntimeSnapshot] {
+        var results = [panel.inputPanelRuntimeSnapshot(label: "calendar-created")]
+        panel.orderFrontRegardless()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.displayIfNeeded()
+        results.append(panel.inputPanelRuntimeSnapshot(label: "calendar-visible"))
+
+        panel.setFrameOrigin(NSPoint(x: 80, y: 152))
+        results.append(panel.inputPanelRuntimeSnapshot(label: "calendar-positioned"))
+
+        calendarView.moveDisplayedMonthForRuntimeVerification()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        results.append(panel.inputPanelRuntimeSnapshot(label: "calendar-month-moved"))
+
+        calendarView.showYearMonthInputForRuntimeVerification()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        results.append(panel.inputPanelRuntimeSnapshot(label: "calendar-year-month-input"))
+
+        calendarView.finishYearMonthInputForRuntimeVerification()
+        panel.orderOut(nil)
+        panel.orderFrontRegardless()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        results.append(panel.inputPanelRuntimeSnapshot(label: "calendar-redisplayed"))
+        if !keepsPanelVisible {
+            panel.orderOut(nil)
+        }
+        return results
     }
 
     var isVisible: Bool {

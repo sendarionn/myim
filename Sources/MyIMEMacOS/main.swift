@@ -41,6 +41,8 @@ if let command = CommandLine.arguments.dropFirst().first {
                     ]
                 )
             }
+        case "--verify-panel-runtime":
+            try InputPanelRuntimeVerifier.verify()
         default:
             throw NSError(
                 domain: "myim.command",

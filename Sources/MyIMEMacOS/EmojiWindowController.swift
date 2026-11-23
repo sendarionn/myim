@@ -324,6 +324,45 @@ final class EmojiWindowController: NSObject {
         return selectedIndex.map { visibleEntries[$0].emoji }
     }
 
+    func runtimePanelMeasurements(
+        keepsPanelVisible: Bool = false
+    ) -> [InputPanelRuntimeSnapshot] {
+        let originalHistory = recentHistory
+        if recentHistory.emojis.isEmpty {
+            recentHistory = RecentEmojiHistory(emojis: ["😀"])
+        }
+        presentationAnchor = NSRect(x: 340, y: 400, width: 1, height: 20)
+        presentationVisibleFrame = NSRect(x: 0, y: 0, width: 1200, height: 900)
+
+        var results = [panel.inputPanelRuntimeSnapshot(label: "emoji-created")]
+        panel.orderFrontRegardless()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        panel.displayIfNeeded()
+        results.append(panel.inputPanelRuntimeSnapshot(label: "emoji-visible"))
+
+        setSearchQuery("")
+        panel.contentView?.layoutSubtreeIfNeeded()
+        results.append(panel.inputPanelRuntimeSnapshot(label: "emoji-positioned-recent"))
+
+        setSearchQuery("ねこ")
+        panel.contentView?.layoutSubtreeIfNeeded()
+        results.append(panel.inputPanelRuntimeSnapshot(label: "emoji-searching"))
+
+        panel.orderOut(nil)
+        setSearchQuery("")
+        panel.orderFrontRegardless()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        results.append(panel.inputPanelRuntimeSnapshot(label: "emoji-redisplayed"))
+        if !keepsPanelVisible {
+            panel.orderOut(nil)
+        }
+
+        recentHistory = originalHistory
+        presentationAnchor = nil
+        presentationVisibleFrame = nil
+        return results
+    }
+
     func show(
         near anchor: NSRect,
         onEmojiClicked: @escaping (String) -> Void
