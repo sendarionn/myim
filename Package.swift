@@ -26,12 +26,29 @@ let package = Package(
             targets: ["MyIMBookmarkHost"]
         )
     ],
-    dependencies: [],
+    dependencies: [
+        // Experimental live conversion; minor versions may break the API
+        .package(
+            url: "https://github.com/azooKey/AzooKeyKanaKanjiConverter",
+            .upToNextMinor(from: "0.11.2")
+        )
+    ],
     targets: [
         .target(name: "MyIMECore"),
+        // The live conversion engine, kept apart so only the input method
+        // links the converter
+        .target(
+            name: "MyIMELiveConversion",
+            dependencies: [
+                .product(
+                    name: "KanaKanjiConverterModule",
+                    package: "AzooKeyKanaKanjiConverter"
+                )
+            ]
+        ),
         .executableTarget(
             name: "MyIMEMacOS",
-            dependencies: ["MyIMECore"],
+            dependencies: ["MyIMECore", "MyIMELiveConversion"],
             exclude: [
                 "Resources"
             ],
@@ -80,6 +97,10 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v5)
             ]
+        ),
+        .testTarget(
+            name: "MyIMELiveConversionTests",
+            dependencies: ["MyIMELiveConversion"]
         ),
         .testTarget(
             name: "MyIMECoreTests",

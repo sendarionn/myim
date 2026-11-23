@@ -21,6 +21,8 @@ public enum CandidateSourceKind: String, CaseIterable, Sendable {
     case specialConversion
     /// An emoji found by the emoji search for the typed input
     case emoji
+    /// The whole composition converted by the experimental live conversion
+    case liveConversion
 }
 
 public struct CandidateOrigin: Equatable, Sendable {

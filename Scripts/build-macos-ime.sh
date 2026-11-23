@@ -192,6 +192,22 @@ cp -R \
 cp \
     "Sources/MyIMEMacOS/Resources/mozc-LICENSE.txt" \
     "$resources_directory/mozc-LICENSE.txt"
+# The experimental live conversion's dictionary and licenses, from the
+# AzooKeyKanaKanjiConverter checkout SwiftPM made for the build
+azookey_checkout=".build/checkouts/AzooKeyKanaKanjiConverter"
+azookey_dictionary="$azookey_checkout/Sources/KanaKanjiConverterModuleWithDefaultDictionary/azooKey_dictionary_storage"
+if [[ ! -d "$azookey_dictionary/Dictionary" ]]; then
+    echo "ライブ変換の辞書がありません: $azookey_dictionary/Dictionary" >&2
+    exit 1
+fi
+rm -rf "$resources_directory/azooKey-dictionary"
+cp -R "$azookey_dictionary/Dictionary" "$resources_directory/azooKey-dictionary"
+# SwiftPM leaves checkouts read-only; the copy is signed and cleaned with the app
+chmod -R u+w "$resources_directory/azooKey-dictionary"
+cp "$azookey_dictionary/LICENSE" "$resources_directory/azooKey-dictionary-LICENSE.txt"
+cp "$azookey_checkout/LICENSE" "$resources_directory/AzooKeyKanaKanjiConverter-LICENSE.txt"
+chmod u+w "$resources_directory/azooKey-dictionary-LICENSE.txt" \
+    "$resources_directory/AzooKeyKanaKanjiConverter-LICENSE.txt"
 cp \
     "Sources/MyIMEMacOS/Resources/candidate-filter-aliases.tsv" \
     "$resources_directory/candidate-filter-aliases.tsv"

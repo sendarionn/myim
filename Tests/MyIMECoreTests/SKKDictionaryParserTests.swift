@@ -28,7 +28,7 @@ struct SKKDictionaryParserTests {
     }
 
     @Test
-    func skipsOkuriAriAndExecutableCandidates() {
+    func keepsOkuriAriApartAndSkipsExecutableCandidates() {
         let result = SKKDictionaryParser().parse("""
         かk /書/
         きょう /今日/(concat "危険")/
@@ -37,7 +37,11 @@ struct SKKDictionaryParserTests {
         #expect(result.entries == [
             DictionaryEntry(reading: "きょう", candidates: ["今日"])
         ])
-        #expect(result.skippedEntryCount == 1)
+        // Okuri-ari entries are kept for SKK mode, not skipped
+        #expect(result.okuriAriEntries == [
+            DictionaryEntry(reading: "かk", candidates: ["書"])
+        ])
+        #expect(result.skippedEntryCount == 0)
     }
 
     @Test

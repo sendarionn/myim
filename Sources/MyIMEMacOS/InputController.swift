@@ -1,6 +1,7 @@
 @preconcurrency import AppKit
 @preconcurrency import InputMethodKit
 import MyIMECore
+import MyIMELiveConversion
 import OSLog
 
 @objc(MyIMEInputController)
@@ -118,6 +119,10 @@ final class InputController: IMKInputController {
     private var inputBuffer: String { inputSession.input }
     private var inputCursor: Int { inputSession.cursorPosition }
     private var reconversionOriginal: String?
+    /// What the capitals said of the composition, in SKK mode
+    private var skkComposition: SKKComposition?
+    /// The live conversion of the composition, when it is on
+    private var liveConversion = LiveConversionState()
     private var translationCandidateSession = TranslationCandidateSession()
     private var recentCommittedContext = ""
     private var secureInputPassthroughActive = false
@@ -750,12 +755,39 @@ final class InputController: IMKInputController {
             return false
         }
 
-        insertIntoInputBuffer(characters)
+        insertIntoInputBuffer(skkTypedCharacters(characters))
         selectedCandidateIndex = nil
         previewWindow.hide()
         updateMarkedText(in: sender)
         refreshCandidates(client: sender)
         return true
+    }
+
+    /// In SKK mode a capital typed with nothing composed starts an SKK
+    /// composition and the next marks its okurigana; its letters go into
+    /// the composition in lowercase, so only the candidates differ
+    private func skkTypedCharacters(_ characters: String) -> String {
+        guard Self.featureSettings.isSKKModeEnabled,
+              characters.count == 1,
+              let character = characters.first else {
+            skkComposition = nil
+            return characters
+        }
+        if inputBuffer.isEmpty {
+            skkComposition = character.isUppercase && character.isLetter
+                ? SKKComposition(firstLetter: character)
+                : nil
+        } else if var composition = skkComposition {
+            // Typed elsewhere than at the end, the okurigana would not stay
+            // where they were marked
+            guard inputCursor == inputBuffer.count else {
+                skkComposition = nil
+                return characters
+            }
+            composition.type(character, at: inputBuffer.count)
+            skkComposition = composition
+        }
+        return skkComposition == nil ? characters : characters.lowercased()
     }
 
     private func handleStandardKeyEvent(
@@ -791,6 +823,9 @@ final class InputController: IMKInputController {
         case .escape:
             if candidateSession.unfilteredCandidates != nil {
                 removeLastCandidateFilter(client: sender)
+                return true
+            }
+            if declineLiveConversion(client: sender) {
                 return true
             }
             return cancelInput(in: sender)
@@ -873,6 +908,16 @@ final class InputController: IMKInputController {
         if candidateSession.unfilteredCandidates != nil,
            currentCandidates.isEmpty {
             return true
+        }
+        // A conversion begun with a capital in SKK mode commits its first
+        // candidate, not the letters typed, and so does a live conversion
+        // shown in their place, waited for if the last letters are not
+        // converted yet
+        finishPendingLiveConversion(client: sender)
+        if skkComposition != nil || !liveConversion.candidates(for: inputBuffer).isEmpty,
+           selectedCandidateIndex == nil,
+           !currentCandidates.isEmpty {
+            selectedCandidateIndex = 0
         }
         return commitFirstCandidateOrInput(to: sender)
     }
@@ -1261,6 +1306,8 @@ final class InputController: IMKInputController {
             fuzzyCandidates: Self.featureSettings.isFuzzyCandidatesEnabled,
             dateTimeCandidates: Self.featureSettings.isDateTimeCandidatesEnabled,
             emojiCandidates: Self.featureSettings.isEmojiCandidatesEnabled,
+            liveConversion: Self.featureSettings.isLiveConversionEnabled,
+            skkMode: Self.featureSettings.isSKKModeEnabled,
             passwordInputSourceRecovery:
                 Self.featureSettings.isPasswordInputSourceRecoveryEnabled,
             passwordInputSourceRecoveryStatus:
@@ -1295,6 +1342,8 @@ final class InputController: IMKInputController {
             toggleFuzzyCandidates: #selector(toggleFuzzyCandidates(_:)),
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
             toggleEmojiCandidates: #selector(toggleEmojiCandidates(_:)),
+            toggleLiveConversion: #selector(toggleLiveConversion(_:)),
+            toggleSKKMode: #selector(toggleSKKMode(_:)),
             togglePasswordInputSourceRecovery: #selector(
                 togglePasswordInputSourceRecovery(_:)
             ),
@@ -1347,6 +1396,7 @@ final class InputController: IMKInputController {
                     dictionaries: InputMethodData.importedDictionaryStore.loadDictionaries()
                 )
                 Self.sharedImportedDictionaryRuntime = imported
+                Self.loadedSKKOkuriAriCandidates = nil
                 dictionaryRuntime.replaceImported(
                     imported,
                     userEntries: userDictionaryStore.entries,
@@ -1378,6 +1428,7 @@ final class InputController: IMKInputController {
     private func toggleImportedDictionary(_ sender: NSButton) {
         guard let filename = sender.identifier?.rawValue else { return }
         Self.featureSettings.setImportedDictionary(filename, enabled: sender.state == .on)
+        Self.loadedSKKOkuriAriCandidates = nil
         rebuildConversionEngine()
     }
 
@@ -1897,6 +1948,28 @@ final class InputController: IMKInputController {
             return
         }
         refreshCandidates(client: inputClient)
+    }
+
+    /// A changed input method applies from the next composition; what is
+    /// being typed is committed as it stands rather than lost
+    @objc
+    private func toggleLiveConversion(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isLiveConversionEnabled)
+        commitCompositionBeforeInputMethodChange()
+        Self.featureSettings.isLiveConversionEnabled = enabled
+    }
+
+    @objc
+    private func toggleSKKMode(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isSKKModeEnabled)
+        commitCompositionBeforeInputMethodChange()
+        Self.featureSettings.isSKKModeEnabled = enabled
+    }
+
+    private func commitCompositionBeforeInputMethodChange() {
+        guard !inputBuffer.isEmpty,
+              let inputClient = activeInputClient ?? client() else { return }
+        commitCurrentCompositionFromSystem(to: inputClient)
     }
 
     @objc
@@ -4384,9 +4457,10 @@ final class InputController: IMKInputController {
         ))
         sourceDuration = performanceClock.now - sourceStart
         let presentationStart = performanceClock.now
+        let conversionCandidates = skkCandidates(standard: orderedCandidates)
         replaceCurrentCandidates(with: CandidateListInsertion.inserting(
-            emojiCandidates(after: orderedCandidates),
-            into: orderedCandidates,
+            emojiCandidates(after: conversionCandidates),
+            into: conversionCandidates,
             afterFirst: Self.maximumCandidateCount
         ))
 
@@ -4408,6 +4482,138 @@ final class InputController: IMKInputController {
         updateFuzzyCandidatesIfNeeded()
         showInputPreview(client: sender)
         presentationDuration = performanceClock.now - presentationStart
+        requestLiveConversion(client: sender)
+    }
+
+    /// The engine and the queue it runs on, made when live conversion is
+    /// first used; nil when its dictionary is missing
+    private static let liveConversionQueue = DispatchQueue(
+        label: "myim.live-conversion",
+        qos: .userInitiated
+    )
+    private static let liveConversionEngine: LiveConversionEngine? = {
+        guard let dictionaryURL = Bundle.main.resourceURL?
+            .appendingPathComponent("azooKey-dictionary", isDirectory: true),
+              FileManager.default.fileExists(atPath: dictionaryURL.path)
+        else {
+            NSLog("ライブ変換の辞書が見つかりません")
+            return nil
+        }
+        return LiveConversionEngine(
+            dictionaryURL: dictionaryURL,
+            workingDirectoryURL: FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(
+                    "Library/Application Support/myim/live-conversion",
+                    isDirectory: true
+                )
+        )
+    }()
+
+    /// Live conversion is used for an ordinary composition being typed,
+    /// not one begun with a capital in SKK mode or one of the panels'
+    private var usesLiveConversion: Bool {
+        Self.featureSettings.isLiveConversionEnabled
+            && skkComposition == nil
+            && reconversionOriginal == nil
+            && !liveConversion.isDeclined
+            && !bookmarkSearchSession.isSearching
+            && !emojiWindow.isVisible
+            && dictionaryRegistrationSession == nil
+            && !inputBuffer.isEmpty
+    }
+
+    /// Converts the whole composition off the main thread; a result for
+    /// letters since changed is dropped
+    private func requestLiveConversion(client sender: Any) {
+        guard usesLiveConversion, let engine = Self.liveConversionEngine else { return }
+        let input = inputBuffer
+        Self.liveConversionQueue.async { [weak self] in
+            let result = engine.convert(romaji: input)
+            DispatchQueue.main.async {
+                guard let self, self.usesLiveConversion,
+                      self.inputBuffer == input, let result,
+                      !result.candidates.isEmpty else { return }
+                self.liveConversion.update(input: input, candidates: result.candidates)
+                self.presentLiveConversion(client: sender)
+            }
+        }
+    }
+
+    /// The conversions go first among the candidates, and the best is shown
+    /// in place of the letters while nothing is chosen
+    private func presentLiveConversion(client sender: Any) {
+        let converted = liveConversion.candidates(for: inputBuffer)
+        guard !converted.isEmpty else { return }
+        let others = currentCandidateModels.filter {
+            !$0.hasSource(.liveConversion) && !converted.contains($0.storageText)
+        }
+        let selected = selectedCandidateIndex
+        replaceCurrentCandidates(with: converted.map {
+            Candidate(storageText: $0, source: .liveConversion, reading: inputBuffer)
+        } + others)
+        if selected == nil {
+            updateMarkedText(in: sender)
+        }
+        showPrimaryCandidatePanel(client: sender)
+    }
+
+    private func finishPendingLiveConversion(client sender: Any) {
+        guard usesLiveConversion,
+              liveConversion.candidates(for: inputBuffer).isEmpty,
+              let engine = Self.liveConversionEngine else { return }
+        let input = inputBuffer
+        let result = Self.liveConversionQueue.sync { engine.convert(romaji: input) }
+        guard let result, !result.candidates.isEmpty else { return }
+        liveConversion.update(input: input, candidates: result.candidates)
+        presentLiveConversion(client: sender)
+    }
+
+    /// Esc first goes back to the letters as typed
+    private func declineLiveConversion(client sender: Any) -> Bool {
+        guard selectedCandidateIndex == nil,
+              liveConversion.displayText(for: inputBuffer) != nil else { return false }
+        liveConversion.decline()
+        replaceCurrentCandidates(with: currentCandidateModels.filter {
+            !$0.hasSource(.liveConversion)
+        })
+        updateMarkedText(in: sender)
+        showPrimaryCandidatePanel(client: sender)
+        return true
+    }
+
+    private func endLiveConversion() {
+        guard liveConversion != LiveConversionState() else { return }
+        liveConversion.reset()
+        if let engine = Self.liveConversionEngine {
+            Self.liveConversionQueue.async { engine.reset() }
+        }
+    }
+
+    /// The candidates of an SKK composition: with okurigana, those that
+    /// convert the stem and end in the typed okurigana
+    private func skkCandidates(standard: [Candidate]) -> [Candidate] {
+        guard Self.featureSettings.isSKKModeEnabled,
+              let skkComposition else { return standard }
+        return SKKCandidateComposer.candidates(
+            input: inputBuffer,
+            composition: skkComposition,
+            standard: standard,
+            okuriAri: { Self.skkOkuriAriCandidates[$0] ?? [] }
+        )
+    }
+
+    /// Okuri-ari entries of the imported SKK dictionaries, read when SKK
+    /// mode first needs them and again after an import
+    private static var loadedSKKOkuriAriCandidates: [String: [String]]?
+
+    private static var skkOkuriAriCandidates: [String: [String]] {
+        if let loadedSKKOkuriAriCandidates { return loadedSKKOkuriAriCandidates }
+        let candidates = InputMethodData.importedDictionaryStore
+            .loadOkuriAriCandidates(
+                excludingFilenames: featureSettings.disabledImportedDictionaryFilenames
+            )
+        loadedSKKOkuriAriCandidates = candidates
+        return candidates
     }
 
     /// Emoji the emoji search finds for the input and its first conversions,
@@ -4478,8 +4684,10 @@ final class InputController: IMKInputController {
     }
 
     private func updateFuzzyCandidatesIfNeeded() {
+        // Okurigana marked in SKK mode already say what the conversion is
         guard Self.diagnosticConfiguration.enables(.fuzzyCandidate),
               Self.featureSettings.isFuzzyCandidatesEnabled,
+              skkComposition?.okuriganaStart == nil,
               !fuzzyQuery.isEmpty else {
             candidateSearchCoordinator.cancel(.fuzzy)
             secondaryCandidatePanel.hide()
@@ -5851,7 +6059,9 @@ final class InputController: IMKInputController {
     private func recordCandidateSelectionForCurrentInput(
         _ candidate: Candidate
     ) {
-        guard !candidate.hasSource(.translation),
+        // A whole sentence from live conversion is not learned as a word
+        guard !candidate.hasSource(.liveConversion),
+              !candidate.hasSource(.translation),
               !translationCandidateSession.contains(
                 candidate.storageText,
                 in: .standard
@@ -5965,6 +6175,8 @@ final class InputController: IMKInputController {
         if inputSession.deleteBackward(unit: unit) {
             cancelCandidateLocationRetry()
         }
+        skkComposition?.shortened(to: inputBuffer.count)
+        if inputBuffer.isEmpty { skkComposition = nil }
         selectedCandidateIndex = nil
         previewWindow.hide()
         setMarkedText(
@@ -6195,9 +6407,12 @@ final class InputController: IMKInputController {
         cancelCandidateTranslation()
         clearInputBuffer()
         // Text reconverted, or put back on cancel, replaces text already in
-        // the document rather than continuing what was typed, so it offers
-        // no next input; its conversion is still learned on selection
+        // the document rather than continuing what was typed, and a whole
+        // sentence from live conversion is not one word; neither offers or
+        // learns a next input. A reconverted word is still learned on
+        // selection
         let isReconversion = reconversionOriginal != nil
+            || candidateSession.selectedCandidate?.hasSource(.liveConversion) == true
         reconversionOriginal = nil
         dictionaryRegistrationSession = nil
         clearCandidateState(includingFuzzy: true)
@@ -6655,6 +6870,16 @@ final class InputController: IMKInputController {
     }
 
     private func updateMarkedText(in sender: Any) {
+        // The live conversion is shown in place of the letters; the caret
+        // goes to its end, as only typing on at the end is supported
+        if let converted = liveConversion.displayText(for: inputBuffer) {
+            setMarkedText(
+                compositionPrefix + converted,
+                in: sender,
+                selectionOffset: (compositionPrefix + converted).utf16.count
+            )
+            return
+        }
         setMarkedText(
             CandidateSelectionProjection.unconvertedMarkedText(
                 input: inputBuffer,
@@ -6910,6 +7135,8 @@ final class InputController: IMKInputController {
 
     private func clearInputBuffer() {
         cancelCandidateLocationRetry()
+        skkComposition = nil
+        endLiveConversion()
         inputSession.clear()
         locationCoordinator.clearCompositionAnchor()
     }

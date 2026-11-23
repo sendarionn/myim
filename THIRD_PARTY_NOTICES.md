@@ -56,6 +56,21 @@ CHISE-IDSとCJKVI-IDSのデータは同梱していません
 - 辞書固有の通知: `mozc-dictionary-NOTICE.txt`
 - 生成情報: `mozc-dictionary-source.json`
 
+## AzooKeyKanaKanjiConverter
+
+- 用途: 実験的なライブ変換のかな漢字変換エンジン
+- 取得元: https://github.com/azooKey/AzooKeyKanaKanjiConverter （v0.11系、Swift Packageとして取得）
+- ライセンス: MIT License
+- 同梱ライセンス: `AzooKeyKanaKanjiConverter-LICENSE.txt`
+
+## azooKey辞書
+
+- 用途: 実験的なライブ変換の辞書
+- 取得元: https://github.com/azooKey/azooKey_dictionary_storage （AzooKeyKanaKanjiConverterのサブモジュール）
+- ライセンス: Apache License 2.0
+- 同梱ライセンス: `azooKey-dictionary-LICENSE.txt`
+- 同梱先: `azooKey-dictionary`
+
 ## TKG Japanese-English Learner's Dictionary
 
 - 用途: 基本辞書の日本語候補
