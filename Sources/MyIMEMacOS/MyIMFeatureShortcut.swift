@@ -173,3 +173,16 @@ struct MyIMShortcut {
         return characters
     }
 }
+
+extension MyIMFeatureShortcut {
+    /// The emoji shortcut; unchanged, Option and the E key on any layout
+    static func matchesEmoji(_ event: NSEvent) -> Bool {
+        if UserDefaults.standard.object(forKey: emoji.defaultsKey) == nil {
+            let modifiers = event.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .subtracting([.capsLock, .numericPad])
+            return event.keyCode == 14 && modifiers == [.option]
+        }
+        return emoji.shortcut.matches(event)
+    }
+}

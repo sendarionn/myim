@@ -17,6 +17,7 @@ private final class CalendarGridView: NSView {
     var confirmAction: (() -> Void)?
     var cancelAction: (() -> Void)?
     var passthroughAction: ((NSEvent) -> Void)?
+    var emojiAction: (() -> Void)?
     private(set) var selectedDate = Date()
     private var displayedMonth = Date()
     private var calendar: Calendar = {
@@ -181,6 +182,10 @@ private final class CalendarGridView: NSView {
             cancelAction?()
             return
         }
+        if MyIMFeatureShortcut.matchesEmoji(event) {
+            emojiAction?()
+            return
+        }
         switch event.keyCode {
         case 36, 76:
             confirmAction?()
@@ -336,6 +341,7 @@ final class CalendarWindowController: NSObject {
     private var outsideLocalMonitor: Any?
     private var outsideGlobalMonitor: Any?
     private var outsideClickTimer: Timer?
+    private var requestsEmoji = false
 
     override init() {
         let gridSize = InputPanelPositioning.panelSize
@@ -369,6 +375,9 @@ final class CalendarWindowController: NSObject {
         }
         calendarView.cancelAction = { [weak self] in
             self?.cancelSelection()
+        }
+        calendarView.emojiAction = { [weak self] in
+            self?.switchToEmoji()
         }
         calendarView.passthroughAction = { [weak self] event in
             self?.cancelSelection()
@@ -420,6 +429,19 @@ final class CalendarWindowController: NSObject {
         panel.isVisible
     }
 
+    /// Ends the selection without a date; the input method then opens
+    /// the emoji panel
+    func switchToEmoji() {
+        guard NSApp.modalWindow === panel else { return }
+        requestsEmoji = true
+        cancelSelection()
+    }
+
+    func takeEmojiSwitchRequest() -> Bool {
+        defer { requestsEmoji = false }
+        return requestsEmoji
+    }
+
     func handleKeyEvent(_ event: NSEvent) -> Bool {
         guard panel.isVisible else { return false }
         let handledKeyCodes: Set<UInt16> = [36, 53, 76, 123, 124, 125, 126]
@@ -438,6 +460,7 @@ final class CalendarWindowController: NSObject {
         initialDate: Date = Date()
     ) -> Date? {
         selectedDate = nil
+        requestsEmoji = false
         calendarView.setDate(initialDate)
         calendarView.updateShortcutGuide()
         position(near: anchorFrame)

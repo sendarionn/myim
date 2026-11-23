@@ -518,6 +518,13 @@ final class InputController: IMKInputController {
             return true
         }
 
+        // The calendar shortcut switches from the emoji panel, ahead of
+        // the panel's own keys
+        if emojiWindow.isVisible, isCalendarShortcut(event) {
+            switchFromEmojiToCalendar(client: sender)
+            return true
+        }
+
         if emojiWindow.isVisible {
             return handleEmojiPanelEvent(event, client: sender)
         }
@@ -576,15 +583,7 @@ final class InputController: IMKInputController {
         }
 
         if isCalendarShortcut(event) {
-            let anchorFrame = inputLocation(for: sender)
-            let returnApplication = NSWorkspace.shared.frontmostApplication
-            DispatchQueue.main.async { [weak self] in
-                _ = self?.beginCalendarSelection(
-                    client: sender,
-                    anchorFrame: anchorFrame,
-                    returnApplication: returnApplication
-                )
-            }
+            openCalendar(client: sender)
             return true
         }
 
@@ -2963,18 +2962,16 @@ final class InputController: IMKInputController {
     }
 
     private func isEmojiShortcut(_ event: NSEvent) -> Bool {
-        if UserDefaults.standard.object(
-            forKey: MyIMFeatureShortcut.emoji.defaultsKey
-        ) == nil {
-            let modifiers = event.modifierFlags
-                .intersection(.deviceIndependentFlagsMask)
-                .subtracting([.capsLock, .numericPad])
-            return event.keyCode == 14 && modifiers == [.option]
-        }
-        return MyIMFeatureShortcut.emoji.shortcut.matches(event)
+        MyIMFeatureShortcut.matchesEmoji(event)
     }
 
     private func toggleEmojiWindow(client sender: Any) {
+        // From the calendar, its modal session ends first and the emoji
+        // panel opens once it has; the panels never stack
+        if calendarWindow.isVisible {
+            calendarWindow.switchToEmoji()
+            return
+        }
         // Every panel takes the same keys while shown
         finishSelectionBracketChoice()
         clearBookmarkSearch()
@@ -3067,6 +3064,25 @@ final class InputController: IMKInputController {
         emojiWindow.confirmSearch()
     }
 
+    private func openCalendar(client sender: Any) {
+        let anchorFrame = inputLocation(for: sender)
+        let returnApplication = NSWorkspace.shared.frontmostApplication
+        DispatchQueue.main.async { [weak self] in
+            _ = self?.beginCalendarSelection(
+                client: sender,
+                anchorFrame: anchorFrame,
+                returnApplication: returnApplication
+            )
+        }
+    }
+
+    /// The emoji search being typed is discarded, not inserted, and the
+    /// panel lets its keys go before the calendar opens
+    private func switchFromEmojiToCalendar(client sender: Any) {
+        toggleEmojiWindow(client: sender)
+        openCalendar(client: sender)
+    }
+
     private func beginCalendarSelection(
         client sender: Any,
         anchorFrame: NSRect,
@@ -3090,6 +3106,10 @@ final class InputController: IMKInputController {
             trace("calendar.dateCancelled", sender: sender)
             clearCalendarSelection()
             primaryCandidatePanel.hide()
+            // The emoji shortcut ended the calendar without a date
+            if calendarWindow.takeEmojiSwitchRequest() {
+                toggleEmojiWindow(client: sender)
+            }
             return true
         }
         loadCalendarFormats(for: date, client: sender)
