@@ -230,3 +230,16 @@ class BookmarkPanelKeyCaptureTests(unittest.TestCase):
             self.controller.index('"cancelOperation:",\n           bookmarkSearchSession.isActive'):
         ][:300]
         self.assertIn("if !PanelKeyCapture.bookmark.isCapturing", escape)
+
+    def test_delete_goes_back_or_closes_like_esc_once_the_text_is_gone(self):
+        command = self.body("private func handleBookmarkCommand(")
+        self.assertIn("handleBookmarkDelete(client: sender, isRepeat: isRepeat)",
+                      command)
+        delete = self.body("private func handleBookmarkDelete(")
+        self.assertLess(delete.index("bookmarkSearchSession.deleteBackward()"),
+                        delete.index("guard !isRepeat else { return }"))
+        self.assertLess(delete.index("guard !isRepeat else { return }"),
+                        delete.index("handleBookmarkEscape(client: sender)"))
+        event = self.body("private func handleBookmarkSearchEvent(")
+        self.assertIn("isRepeat: event.isARepeat", event)
+

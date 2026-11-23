@@ -3638,7 +3638,8 @@ final class InputController: IMKInputController {
     /// conversion keys reach the normal handling instead
     private func handleBookmarkCommand(
         _ command: PanelKeyCommand,
-        client sender: Any
+        client sender: Any,
+        isRepeat: Bool = false
     ) {
         defer { updateBookmarkSearchPresentation() }
         switch command {
@@ -3656,10 +3657,22 @@ final class InputController: IMKInputController {
         case .next, .tab:
             moveBookmarkSelection(by: 1)
         case .deleteBackward:
-            guard bookmarkSearchSession.isSearching else { return }
+            handleBookmarkDelete(client: sender, isRepeat: isRepeat)
+        }
+    }
+
+    /// Delete edits the search text; with none left, or while formats are
+    /// listed or loading, it goes back as Esc does. A held key only edits,
+    /// so it never goes back or closes the search on its own
+    private func handleBookmarkDelete(client sender: Any, isRepeat: Bool) {
+        if bookmarkSearchSession.isSearching,
+           !bookmarkSearchSession.query.isEmpty {
             bookmarkSearchSession.deleteBackward()
             showBookmarkSearchText(in: sender)
+            return
         }
+        guard !isRepeat else { return }
+        handleBookmarkEscape(client: sender)
     }
 
     private func isBookmarkPanelKey(_ event: NSEvent) -> Bool {
@@ -3690,7 +3703,11 @@ final class InputController: IMKInputController {
         case 123, 126:
             handleBookmarkCommand(.previous, client: sender)
         case 51:
-            handleBookmarkCommand(.deleteBackward, client: sender)
+            handleBookmarkCommand(
+                .deleteBackward,
+                client: sender,
+                isRepeat: event.isARepeat
+            )
         default:
             break
         }
