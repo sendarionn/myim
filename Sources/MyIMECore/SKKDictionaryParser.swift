@@ -2,18 +2,10 @@ import Foundation
 
 public struct SKKDictionaryImportResult: Equatable, Sendable {
     public let entries: [DictionaryEntry]
-    /// Okuri-ari entries, keyed as in SKK by the stem and the okurigana's
-    /// first letter (かk), kept apart from the ordinary entries
-    public let okuriAriEntries: [DictionaryEntry]
     public let skippedEntryCount: Int
 
-    public init(
-        entries: [DictionaryEntry],
-        okuriAriEntries: [DictionaryEntry] = [],
-        skippedEntryCount: Int
-    ) {
+    public init(entries: [DictionaryEntry], skippedEntryCount: Int) {
         self.entries = entries
-        self.okuriAriEntries = okuriAriEntries
         self.skippedEntryCount = skippedEntryCount
     }
 }
@@ -24,8 +16,6 @@ public struct SKKDictionaryParser: Sendable {
     public func parse(_ text: String) -> SKKDictionaryImportResult {
         var order: [String] = []
         var candidatesByReading: [String: [String]] = [:]
-        var okuriAriOrder: [String] = []
-        var okuriAriByKey: [String: [String]] = [:]
         var skippedEntryCount = 0
 
         for rawLine in text.components(separatedBy: .newlines) {
@@ -38,23 +28,10 @@ public struct SKKDictionaryParser: Sendable {
             let reading = String(line[..<separator])
             let candidateList = line[separator...]
                 .trimmingCharacters(in: .whitespaces)
-            guard candidateList.first == "/", candidateList.last == "/" else {
+            guard isOkuriNasi(reading),
+                  candidateList.first == "/",
+                  candidateList.last == "/" else {
                 skippedEntryCount += 1
-                continue
-            }
-            guard isOkuriNasi(reading) else {
-                let candidates = parseCandidates(candidateList)
-                guard isOkuriAri(reading), !candidates.isEmpty else {
-                    skippedEntryCount += 1
-                    continue
-                }
-                if okuriAriByKey[reading] == nil {
-                    okuriAriOrder.append(reading)
-                }
-                for candidate in candidates
-                where okuriAriByKey[reading, default: []].contains(candidate) == false {
-                    okuriAriByKey[reading, default: []].append(candidate)
-                }
                 continue
             }
             let candidates = parseCandidates(candidateList)
@@ -79,19 +56,8 @@ public struct SKKDictionaryParser: Sendable {
                     candidates: candidatesByReading[$0] ?? []
                 )
             },
-            okuriAriEntries: okuriAriOrder.map {
-                DictionaryEntry(reading: $0, candidates: okuriAriByKey[$0] ?? [])
-            },
             skippedEntryCount: skippedEntryCount
         )
-    }
-
-    /// Kana followed by one ASCII letter, as かk
-    private func isOkuriAri(_ reading: String) -> Bool {
-        guard let last = reading.unicodeScalars.last,
-              last.isASCII, CharacterSet.letters.contains(last) else { return false }
-        let stem = reading.unicodeScalars.dropLast()
-        return !stem.isEmpty && stem.allSatisfy { (0x3040...0x30FF).contains($0.value) }
     }
 
     private func isOkuriNasi(_ reading: String) -> Bool {

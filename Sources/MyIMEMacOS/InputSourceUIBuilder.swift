@@ -82,7 +82,6 @@ enum SettingsWindowBuilder {
         let dateTimeCandidates: Bool
         let emojiCandidates: Bool
         let liveConversion: Bool
-        let skkMode: Bool
         let passwordInputSourceRecovery: Bool
         let passwordInputSourceRecoveryStatus: String
         let passwordInputSourceRecoveryNeedsPermission: Bool
@@ -101,7 +100,6 @@ enum SettingsWindowBuilder {
         let toggleDateTimeCandidates: Selector
         let toggleEmojiCandidates: Selector
         let toggleLiveConversion: Selector
-        let toggleSKKMode: Selector
         let togglePasswordInputSourceRecovery: Selector
         let requestAccessibilityPermission: Selector
         let clearNextInputHistory: Selector
@@ -156,8 +154,7 @@ enum SettingsWindowBuilder {
         ], target: target, to: stack)
         addSection("入力方式", to: stack)
         addCheckboxes([
-            ("ライブ変換（実験的）", actions.toggleLiveConversion, states.liveConversion),
-            ("SKKモード（実験的）", actions.toggleSKKMode, states.skkMode)
+            ("ライブ変換（実験的）", actions.toggleLiveConversion, states.liveConversion)
         ], target: target, to: stack)
         addSection("翻訳", to: stack)
         addCheckboxes([

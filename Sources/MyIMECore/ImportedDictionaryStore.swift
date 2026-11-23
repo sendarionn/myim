@@ -70,18 +70,6 @@ public struct ImportedDictionaryStore: Sendable {
             atomically: true,
             encoding: .utf8
         )
-        // Okuri-ari entries go beside it, for SKK mode only; an extension
-        // other than tsv keeps them out of the ordinary dictionaries
-        let okuriURL = Self.okuriAriURL(for: fileURL)
-        if result.okuriAriEntries.isEmpty {
-            try? fileManager.removeItem(at: okuriURL)
-        } else {
-            try DictionarySerializer.text(from: result.okuriAriEntries).write(
-                to: okuriURL,
-                atomically: true,
-                encoding: .utf8
-            )
-        }
         return ImportedDictionarySummary(
             fileURL: fileURL,
             readingCount: result.entries.count,
@@ -140,41 +128,6 @@ public struct ImportedDictionaryStore: Sendable {
                       !entries.isEmpty else { return nil }
                 return ImportedDictionary(fileURL: url, entries: entries)
             }
-    }
-
-    /// The okuri-ari entries of the enabled dictionaries, by SKK key (かk),
-    /// in dictionary order
-    public func loadOkuriAriCandidates(
-        excludingFilenames disabled: Set<String> = [],
-        fileManager: FileManager = .default
-    ) -> [String: [String]] {
-        guard let urls = try? fileManager.contentsOfDirectory(
-            at: directoryURL,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        ) else { return [:] }
-        var candidates: [String: [String]] = [:]
-        for url in urls.filter({ $0.pathExtension == Self.okuriAriExtension })
-            .sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-            let dictionaryName = url.deletingPathExtension()
-                .appendingPathExtension("tsv").lastPathComponent
-            guard !disabled.contains(dictionaryName),
-                  let text = try? String(contentsOf: url, encoding: .utf8),
-                  let entries = try? DictionaryParser().parse(text) else { continue }
-            for entry in entries {
-                for candidate in entry.candidates
-                where candidates[entry.reading, default: []].contains(candidate) == false {
-                    candidates[entry.reading, default: []].append(candidate)
-                }
-            }
-        }
-        return candidates
-    }
-
-    private static let okuriAriExtension = "okuri"
-
-    private static func okuriAriURL(for dictionaryURL: URL) -> URL {
-        dictionaryURL.deletingPathExtension().appendingPathExtension(okuriAriExtension)
     }
 
     private func dictionaryURL(for sourceFilename: String) -> URL {
