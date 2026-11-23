@@ -33,24 +33,23 @@ final class InputController: IMKInputController {
     private static let candidatePanelAnchorSpacing: CGFloat = 8
     private static let fuzzyCandidateDisplayDelay = Duration.milliseconds(120)
     private static let maximumMozcDictionaryPrefixCandidates = 2048
-    private static let sharedBasicEntries = loadBasicEntries()
+    private static let sharedBasicEntries = InputMethodData.loadBasicEntries()
     private static let sharedBasicConversionEngine = ConversionEngine(
         entries: sharedBasicEntries
     )
     private static let sharedSymbolConversionEngine = ConversionEngine(
-        entries: loadBundledEntries(resource: "symbol-dictionary")
+        entries: InputMethodData.loadBundledEntries(resource: "symbol-dictionary")
     )
-    private static let sharedMozcConversionEngine = loadMozcDictionaryEngine()
+    private static let sharedMozcConversionEngine = InputMethodData.loadMozcDictionaryEngine()
     // Learning shared by every InputController; each controller only keeps
     // its own candidate session and typing context
-    private static let largeHistoryWriteDelay: TimeInterval = 5
     private static let sharedCandidateSelectionHistoryStore =
-        makeCandidateSelectionHistoryStore()
+        InputMethodData.makeCandidateSelectionHistoryStore()
     private static let sharedUnselectedInputLearningStore =
         UnselectedInputLearningStore(
-            history: loadUnselectedInputLearningHistory(),
+            history: InputMethodData.loadUnselectedInputLearningHistory(),
             writer: DeferredJSONFileWriter(
-                fileURL: unselectedInputLearningHistoryURL(),
+                fileURL: InputMethodData.unselectedInputLearningHistoryURL(),
                 queueLabel: "myim.unselected-input-learning",
                 errorHandler: {
                     NSLog(
@@ -61,12 +60,12 @@ final class InputController: IMKInputController {
             )
         )
     private static let sharedNextInputLearningStore = NextInputLearningStore(
-        model: loadNextInputPredictionModel(),
+        model: InputMethodData.loadNextInputPredictionModel(),
         writer: DeferredJSONFileWriter(
-            fileURL: nextInputPredictionModelURL(),
+            fileURL: InputMethodData.nextInputPredictionModelURL(),
             // The whole model is rewritten each time, so commits in quick
             // succession are written together
-            delay: largeHistoryWriteDelay,
+            delay: InputMethodData.largeHistoryWriteDelay,
             queueLabel: "myim.next-input-history",
             errorHandler: {
                 NSLog(
@@ -77,14 +76,14 @@ final class InputController: IMKInputController {
         )
     )
     private static let sharedDeferredSystemCandidates = DeferredSystemCandidates(
-        text: loadBundledText(resource: "mozc-person-name-hints") ?? ""
+        text: InputMethodData.loadBundledText(resource: "mozc-person-name-hints") ?? ""
     )
     /// Mozc verb classes plus the suru verbs the basic dictionary lists
     private static let sharedVerbConjugations = VerbConjugationDictionary(
-        text: loadBundledText(resource: "mozc-verb-classes") ?? ""
+        text: InputMethodData.loadBundledText(resource: "mozc-verb-classes") ?? ""
     ).addingSuruVerbs(from: sharedBasicEntries)
     private static let sharedAdjectiveDictionary = JapaneseAdjectiveDictionary(
-        text: loadBundledText(resource: "mozc-adjective-classes") ?? ""
+        text: InputMethodData.loadBundledText(resource: "mozc-adjective-classes") ?? ""
     )
     private static let sharedVerbInflectionGenerator =
         VerbInflectionCandidateGenerator(entries: sharedBasicEntries)
@@ -96,7 +95,7 @@ final class InputController: IMKInputController {
     private static let sharedBasicFuzzyKey = "bundled-\(sharedBasicEntries.count)-\(sharedBasicFuzzyEntries.count)"
     private nonisolated(unsafe) static var sharedImportedDictionaryRuntime =
         ImportedDictionaryRuntime(
-            dictionaries: importedDictionaryStore.loadDictionaries()
+            dictionaries: InputMethodData.importedDictionaryStore.loadDictionaries()
         )
     private static let fuzzyEngineRepository = FuzzyEngineRepository()
     private static let basicDictionaryUpdateCoordinator =
@@ -106,12 +105,12 @@ final class InputController: IMKInputController {
         CandidateFilterIDSStore.applicationSupport()
     private static var candidateFilterDatabaseCache =
         CandidateFilterDatabaseCache(
-            bundledText: loadBundledText(resource: "kanji-filter-data") ?? "",
+            bundledText: InputMethodData.loadBundledText(resource: "kanji-filter-data") ?? "",
             store: candidateFilterIDSStore
         )
     private static let candidateFilterChoiceGenerator =
         CandidateFilterChoiceGenerator(
-            aliasDictionaryText: loadBundledText(
+            aliasDictionaryText: InputMethodData.loadBundledText(
                 resource: "candidate-filter-aliases"
             ) ?? ""
         )
@@ -133,6 +132,8 @@ final class InputController: IMKInputController {
     private var selectionBracketChoice: SelectionBracketChoice?
     private var fuzzyCandidateSession = FuzzyCandidateSession()
     private let userDictionaryStore: UserDictionaryStore
+    /// The dictionary file as last read, so typing does not read it again
+    private var userDictionaryStamp: DictionaryCache.FileStamp?
     private var dictionaryRuntime: ConversionDictionaryRuntime
     private let shortcutSettingsController = ShortcutSettingsController()
     private lazy var javaScriptExtensionSettingsController =
@@ -294,14 +295,14 @@ final class InputController: IMKInputController {
     }
 
     override init!(server: IMKServer!, delegate: Any!, client inputClient: Any!) {
-        let cachedUserEntries = Self.loadUserEntries()
+        let cachedUserEntries = InputMethodData.loadUserEntries()
         let bundledEntries = Self.sharedBasicEntries
         let indexedMozcEngine = Self.sharedMozcConversionEngine
 
         userDictionaryStore = UserDictionaryStore(
             entries: cachedUserEntries,
             persist: { entries in
-                let cache = try Self.userDictionaryCache()
+                let cache = try InputMethodData.userDictionaryCache()
                 try cache.save(
                     dictionaryText: DictionarySerializer.text(from: entries),
                     metadata: DictionaryCacheMetadata(
@@ -488,14 +489,6 @@ final class InputController: IMKInputController {
             sender: sender,
             detail: "keyCode=\(event.keyCode) characters=\(event.characters ?? "")"
         )
-
-        if event.keyCode == 14 {
-            let modifiers = event.modifierFlags
-                .intersection(.deviceIndependentFlagsMask).rawValue
-            EmojiDiagnostics.logger.notice(
-                "E key reached handle modifiers=\(modifiers, privacy: .public)"
-            )
-        }
 
         if SecureInputDetector.isEnabled {
             beginSecureInputPassthroughIfNeeded(client: sender)
@@ -1332,7 +1325,7 @@ final class InputController: IMKInputController {
             [weak self] response in
             guard response == .OK, let self else { return }
             do {
-                let summary = try Self.importedDictionaryStore.importSKKFiles(
+                let summary = try InputMethodData.importedDictionaryStore.importSKKFiles(
                     panel.urls
                 ) {
                     Self.featureSettings.setImportedDictionary(
@@ -1341,7 +1334,7 @@ final class InputController: IMKInputController {
                     )
                 }
                 let imported = ImportedDictionaryRuntime(
-                    dictionaries: Self.importedDictionaryStore.loadDictionaries()
+                    dictionaries: InputMethodData.importedDictionaryStore.loadDictionaries()
                 )
                 Self.sharedImportedDictionaryRuntime = imported
                 dictionaryRuntime.replaceImported(
@@ -2124,8 +2117,8 @@ final class InputController: IMKInputController {
                     return
                 }
                 let updater = BasicDictionaryUpdater(
-                    cache: try Self.basicDictionaryCache(),
-                    bundledRevision: Self.bundledBasicDictionaryRevision()
+                    cache: try InputMethodData.basicDictionaryCache(),
+                    bundledRevision: InputMethodData.bundledBasicDictionaryRevision()
                 )
                 let result = try updater.apply(snapshot, syncedAt: Date())
                 guard let self else {
@@ -2161,7 +2154,7 @@ final class InputController: IMKInputController {
         _ snapshot: TKGDictionarySnapshot
     ) {
         dictionaryRuntime.replaceBasicEntries(
-            Self.addingBundledRequiredEntries(to: snapshot.entries)
+            InputMethodData.addingBundledRequiredEntries(to: snapshot.entries)
         )
         rebuildConversionEngine()
     }
@@ -4882,7 +4875,7 @@ final class InputController: IMKInputController {
                 "曖昧候補のユーザー辞書削除に失敗: %@",
                 error.localizedDescription
             )
-            userDictionaryStore.restore(Self.loadUserEntries())
+            userDictionaryStore.restore(InputMethodData.loadUserEntries())
             rebuildConversionEngine()
             NSSound.beep()
         }
@@ -4959,6 +4952,12 @@ final class InputController: IMKInputController {
         panelCoordinator.alignSecondaryCandidatePanelToPrimary()
     }
 
+    /// The spelling service answers in milliseconds, and the same input is
+    /// asked again whenever a later result refreshes the candidates
+    private static let englishCompletionCache = RecentValueCache<String, [String]>(
+        capacity: 64
+    )
+
     private func englishCompletions(for input: String) -> [String] {
         guard
             !input.isEmpty,
@@ -4970,15 +4969,17 @@ final class InputController: IMKInputController {
         }
 
         let lookupInput = input.lowercased()
-        let candidates = NSSpellChecker.shared.completions(
-            forPartialWordRange: NSRange(
-                location: 0,
-                length: lookupInput.utf16.count
-            ),
-            in: lookupInput,
-            language: "en",
-            inSpellDocumentWithTag: 0
-        ) ?? []
+        let candidates = Self.englishCompletionCache.value(for: lookupInput) {
+            NSSpellChecker.shared.completions(
+                forPartialWordRange: NSRange(
+                    location: 0,
+                    length: lookupInput.utf16.count
+                ),
+                in: lookupInput,
+                language: "en",
+                inSpellDocumentWithTag: 0
+            ) ?? []
+        }
         return candidates.map {
             EnglishCandidateCaseRestorer.restore(
                 typedInput: input,
@@ -5504,7 +5505,7 @@ final class InputController: IMKInputController {
                 "ユーザー辞書候補の削除に失敗: %@",
                 error.localizedDescription
             )
-            userDictionaryStore.restore(Self.loadUserEntries())
+            userDictionaryStore.restore(InputMethodData.loadUserEntries())
             rebuildConversionEngine()
             NSSound.beep()
         }
@@ -5599,9 +5600,7 @@ final class InputController: IMKInputController {
     }
 
     private func isSystemUndoRedoShortcut(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
+        let flags = event.shortcutModifiers
         guard flags == [.command] || flags == [.command, .shift] else {
             return false
         }
@@ -5612,9 +5611,7 @@ final class InputController: IMKInputController {
     private func isPasteShortcut(
         _ event: NSEvent
     ) -> Bool {
-        let deviceIndependentFlags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
+        let deviceIndependentFlags = event.shortcutModifiers
         guard deviceIndependentFlags == [.command] else {
             return false
         }
@@ -5623,9 +5620,7 @@ final class InputController: IMKInputController {
     }
 
     private func isUserDictionaryDeletionShortcut(_ event: NSEvent) -> Bool {
-        let deviceIndependentFlags = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
+        let deviceIndependentFlags = event.shortcutModifiers
         guard deviceIndependentFlags == [.command] else {
             return false
         }
@@ -5900,15 +5895,6 @@ final class InputController: IMKInputController {
                 for: learnedReading
             ),
             inflectionBase: inflectionBase
-        )
-    }
-
-    private func candidatesOrderedByRecency(
-        _ candidates: [String]
-    ) -> [String] {
-        CandidateRecencyOrderer.ordered(
-            candidates,
-            ranks: candidateSelectionRanks(for: candidateSelectionReading)
         )
     }
 
@@ -6273,14 +6259,6 @@ final class InputController: IMKInputController {
 
     private func cancelFuzzyCandidateSearch() {
         candidateSearchCoordinator.cancel(.fuzzy)
-    }
-
-    private func dismissFuzzyCandidates() {
-        candidateSearchCoordinator.cancel(.fuzzy)
-        cancelCandidateTranslation()
-        fuzzyCandidateSession.reset()
-        selectedFuzzyCandidateIndex = nil
-        secondaryCandidatePanel.hide()
     }
 
     private func dismissInputSessionPanels(
@@ -7182,8 +7160,22 @@ final class InputController: IMKInputController {
         rebuildFuzzyConversionEngine()
     }
 
+    /// Another process, such as the selection service, may change the
+    /// dictionary; it is read again only once the file has changed, and a
+    /// file that cannot be read keeps the entries already loaded
     private func reloadUserDictionaryFromDiskIfNeeded() {
-        let storedEntries = Self.loadUserEntries()
+        guard let cache = try? InputMethodData.userDictionaryCache() else { return }
+        let stamp = cache.dictionaryStamp()
+        guard stamp != userDictionaryStamp else { return }
+        let storedEntries: [DictionaryEntry]
+        if cache.containsDictionary() {
+            guard let entries = InputMethodData.loadEntries(from: cache) else { return }
+            storedEntries = entries
+        } else {
+            storedEntries = []
+        }
+        // Read after loading, which may have rewritten the file
+        userDictionaryStamp = cache.dictionaryStamp()
         guard userDictionaryStore.replaceEntriesIfChanged(storedEntries) else {
             return
         }
@@ -7376,363 +7368,6 @@ final class InputController: IMKInputController {
         DictionaryCandidateRepresentation.display(from: candidate)
     }
 
-    private static func loadBasicEntries() -> [DictionaryEntry] {
-        guard
-            let dictionaryURL = inputMethodResourceURL(
-                forResource: "basic-dictionary",
-                withExtension: "tsv"
-            ),
-            let dictionaryText = try? String(
-                contentsOf: dictionaryURL,
-                encoding: .utf8
-            ),
-            let entries = try? DictionaryParser().parse(dictionaryText)
-        else {
-            return []
-        }
-        if let cache = try? basicDictionaryCache(),
-           let cachedEntries = loadEntries(from: cache) {
-            return addingBundledRequiredEntries(
-                to: cachedEntries,
-                bundledEntries: entries
-            )
-        }
-        return entries
-    }
-
-    private static func loadBundledEntries(resource: String) -> [DictionaryEntry] {
-        guard let text = loadBundledText(resource: resource),
-              let entries = try? DictionaryParser().parse(text) else {
-            return []
-        }
-        return entries
-    }
-
-    private static func addingBundledRequiredEntries(
-        to entries: [DictionaryEntry],
-        bundledEntries: [DictionaryEntry]? = nil
-    ) -> [DictionaryEntry] {
-        let bundled = bundledEntries ?? {
-            guard let text = loadBundledText(resource: "basic-dictionary"),
-                  let parsed = try? DictionaryParser().parse(text) else {
-                return []
-            }
-            return parsed
-        }()
-        let readings: Set<String> = [
-            "opushon", "kontorooru", "shifuto", "supeesu", "ritaan",
-            "komando", "kyappusurokku", "esukeepu", "entaa", "tabu",
-            "deriito", "fowaadoderiito", "bakkusupeesu", "ijekuto",
-            "command", "cmd", "option", "alt", "shift", "control",
-            "ctrl", "capslock", "escape", "esc", "return", "enter",
-            "tab", "delete", "forwarddelete", "backspace", "space",
-            "eject", "yajirushi", "migiyajirushi", "hidariyajirushi",
-            "ueyajirushi", "shitayajirushi", "maru", "sankaku",
-            "migisankaku", "hidarisankaku", "uesankaku",
-            "shitasankaku", "shikaku", "hoshi", "puramain", "kakeru",
-            "waru", "nottoikooru", "yakunari", "shounari", "dainari",
-            "mugen", "ruuto", "shiguma", "sekibun", "komejirushi",
-            "asutarisuku", "dagaa", "daburudagaa", "onpu", "furatto",
-            "shaapu", "supe-do", "kurabu", "haato", "daiya", "en",
-            "doru", "yuuro", "pondo", "sento", "won", "yuubin",
-            "sesshi", "kashi", "nambaa", "tore-domaaku",
-            "kopiiraito", "touroku", "nakaguro"
-        ]
-        return entries + bundled.filter { readings.contains($0.input) }
-    }
-
-    private static func loadBundledText(resource: String) -> String? {
-        guard let url = inputMethodResourceURL(
-            forResource: resource,
-            withExtension: "tsv"
-        ) else {
-            return nil
-        }
-        return try? String(contentsOf: url, encoding: .utf8)
-    }
-
-    private static func loadMozcDictionaryEngine() -> IndexedDictionaryEngine {
-        guard
-            let dictionaryURL = inputMethodResourceURL(
-                forResource: "mozc-dictionary",
-                withExtension: "tsv"
-            ),
-            let engine = try? IndexedDictionaryEngine(contentsOf: dictionaryURL)
-        else {
-            return IndexedDictionaryEngine()
-        }
-        return engine
-    }
-
-    private static func loadUserEntries() -> [DictionaryEntry] {
-        guard let cache = try? userDictionaryCache() else {
-            return []
-        }
-        return loadEntries(from: cache) ?? []
-    }
-
-    private static var importedDictionaryStore: ImportedDictionaryStore {
-        ImportedDictionaryStore(
-            directoryURL: userDataURL(fileName: "imported-dictionaries")
-        )
-    }
-
-    private static func bundledBasicDictionaryRevision() -> String? {
-        guard
-            let metadataURL = inputMethodResourceURL(
-                forResource: "basic-dictionary-source",
-                withExtension: "json"
-            ),
-            let data = try? Data(contentsOf: metadataURL),
-            let metadata = try? JSONDecoder().decode(
-                BundledBasicDictionaryMetadata.self,
-                from: data
-            )
-        else {
-            return nil
-        }
-
-        return metadata.generated
-    }
-
-    private static func inputMethodResourceURL(
-        forResource name: String,
-        withExtension fileExtension: String
-    ) -> URL? {
-        let bundleIdentifier = "io.github.sendarionn.inputmethod.myime"
-        var bundles: [Bundle] = []
-        if let identifierBundle = Bundle(identifier: bundleIdentifier) {
-            bundles.append(identifierBundle)
-        }
-        bundles.append(Bundle(for: InputController.self))
-
-        let executableURL = URL(
-            fileURLWithPath: CommandLine.arguments.first ?? ""
-        )
-        let executableBundleURL = executableURL
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        if let executableBundle = Bundle(url: executableBundleURL) {
-            bundles.append(executableBundle)
-        }
-
-        let installedBundleURLs = [
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(
-                    "Library/Input Methods/myim.app",
-                    isDirectory: true
-                ),
-            URL(
-                fileURLWithPath: "/Library/Input Methods/myim.app",
-                isDirectory: true
-            )
-        ]
-        bundles.append(
-            contentsOf: installedBundleURLs.compactMap(Bundle.init(url:))
-        )
-
-        for bundle in bundles {
-            if let url = bundle.url(
-                forResource: name,
-                withExtension: fileExtension
-            ) {
-                return url
-            }
-        }
-
-        NSLog("myimのリソースが見つかりません: %@.%@", name, fileExtension)
-        return nil
-    }
-
-    private static func loadEntries(
-        from cache: DictionaryCache
-    ) -> [DictionaryEntry]? {
-        guard
-            cache.containsDictionary(),
-            let readableURL = cache.readableDictionaryURL(),
-            let dictionaryText = try? String(
-                contentsOf: readableURL,
-                encoding: .utf8
-            )
-        else {
-            return nil
-        }
-
-        guard let entries = try? DictionaryParser().parse(dictionaryText) else {
-            return nil
-        }
-        let tsv = DictionarySerializer.text(from: entries)
-        if readableURL != cache.dictionaryURL || dictionaryText != tsv {
-            let metadata = (try? cache.loadMetadata()) ?? nil
-            try? cache.save(
-                dictionaryText: tsv,
-                metadata: metadata ?? DictionaryCacheMetadata(
-                    syncedAt: Date(),
-                    entryCount: entries.count
-                )
-            )
-        }
-        return entries
-    }
-
-    private static func basicDictionaryCache() throws -> DictionaryCache {
-        let applicationCache = try DictionaryCache.applicationSupport()
-        return DictionaryCache(
-            directoryURL: applicationCache.directoryURL
-                .appendingPathComponent("basic", isDirectory: true)
-        )
-    }
-
-    private static func userDictionaryCache() throws -> DictionaryCache {
-        let applicationCache = try DictionaryCache.applicationSupport()
-        return DictionaryCache(
-            directoryURL: applicationCache.directoryURL
-                .appendingPathComponent("user", isDirectory: true)
-        )
-    }
-
-    private static func loadCandidateSelectionHistory()
-        -> CandidateSelectionHistory {
-        guard
-            let data = try? Data(contentsOf: candidateSelectionHistoryURL()),
-            !data.isEmpty
-        else {
-            return CandidateSelectionHistory()
-        }
-        if let history = try? JSONDecoder().decode(
-            CandidateSelectionHistory.self,
-            from: data
-        ) {
-            return history
-        }
-        if let legacyRanks = try? JSONDecoder().decode(
-            [String: Int].self,
-            from: data
-        ) {
-            return CandidateSelectionHistory(ranks: legacyRanks)
-        }
-        return CandidateSelectionHistory()
-    }
-
-    private static func makeCandidateSelectionHistoryStore()
-        -> CandidateSelectionHistoryStore {
-        let historyURL = candidateSelectionHistoryURL()
-        if FileManager.default.fileExists(atPath: historyURL.path) {
-            let protectedEntries = Set(loadUserEntries().flatMap { entry in
-                entry.candidates.map {
-                    DynamicDateTimeHistoryMigration.ProtectedEntry(
-                        reading: entry.reading,
-                        candidate: DictionaryCandidateRepresentation.value(
-                            from: $0
-                        )
-                    )
-                }
-            })
-            do {
-                if let report = try DynamicDateTimeHistoryMigrationRunner
-                    .migrateIfNeeded(
-                        historyURL: historyURL,
-                        backupURL: userDataURL(
-                            fileName: "candidate-selection-history.dynamic-date-migration-v2.backup.json"
-                        ),
-                        markerURL: userDataURL(
-                            fileName: "dynamic-date-history-migration-v2.json"
-                        ),
-                        legacySourceURL: userDataURL(
-                            fileName: "candidate-selection-history.dynamic-date-migration-v1.backup.json"
-                        ),
-                        protecting: protectedEntries
-                    ) {
-                    NSLog(
-                        "動的日時履歴の移行: removed=%d candidates=%d preferences=%d protected=%d unclassified=%d",
-                        report.removedAssociationCount,
-                        report.removedCandidateCount,
-                        report.migratedPreferenceCount,
-                        report.retainedProtectedCount,
-                        report.unclassifiedAssociationCount
-                    )
-                }
-            } catch {
-                NSLog(
-                    "動的日時履歴の移行に失敗: %@",
-                    error.localizedDescription
-                )
-            }
-        }
-        return CandidateSelectionHistoryStore(
-            history: loadCandidateSelectionHistory(),
-            writer: DeferredJSONFileWriter(
-                fileURL: historyURL,
-                delay: largeHistoryWriteDelay,
-                queueLabel: "myim.candidate-selection-history",
-                errorHandler: {
-                    NSLog(
-                        "候補選択履歴の保存に失敗: %@",
-                        $0.localizedDescription
-                    )
-                }
-            )
-        )
-    }
-
-    private static func candidateSelectionHistoryURL() -> URL {
-        userDataURL(fileName: "candidate-selection-history.json")
-    }
-
-    private static func loadUnselectedInputLearningHistory()
-        -> UnselectedInputLearningHistory {
-        guard
-            let data = try? Data(
-                contentsOf: unselectedInputLearningHistoryURL()
-            ),
-            !data.isEmpty,
-            let history = try? JSONDecoder().decode(
-                UnselectedInputLearningHistory.self,
-                from: data
-            )
-        else {
-            return UnselectedInputLearningHistory()
-        }
-        return history
-    }
-
-    private static func unselectedInputLearningHistoryURL() -> URL {
-        userDataURL(fileName: "unselected-input-learning.json")
-    }
-
-    private static func loadNextInputPredictionModel()
-        -> NextInputPredictionModel {
-        guard
-            let data = try? Data(contentsOf: nextInputPredictionModelURL()),
-            var model = try? JSONDecoder().decode(
-                NextInputPredictionModel.self,
-                from: data
-            )
-        else {
-            return NextInputPredictionModel()
-        }
-        model.breakSequence()
-        return model
-    }
-
-    private static func nextInputPredictionModelURL() -> URL {
-        userDataURL(fileName: "next-input-model.json")
-    }
-
-    private static func userDataURL(fileName: String) -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(
-                "Library/Application Support/myim/user",
-                isDirectory: true
-            )
-            .appendingPathComponent(fileName)
-    }
-
-}
-
-private struct BundledBasicDictionaryMetadata: Decodable {
-    let generated: String
 }
 
 private extension String {

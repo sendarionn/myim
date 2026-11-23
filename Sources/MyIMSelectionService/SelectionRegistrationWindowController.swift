@@ -58,8 +58,8 @@ final class SelectionRegistrationWindowController: NSObject,
         }
 
         do {
-            let cache = try Self.userDictionaryCache()
-            let entries = try Self.loadEntries(from: cache)
+            let cache = try DictionaryCache.userDictionary()
+            let entries = try cache.loadEntries()
             let store = UserDictionaryStore(entries: entries) { updated in
                 try cache.save(
                     dictionaryText: DictionarySerializer.text(from: updated),
@@ -268,23 +268,5 @@ final class SelectionRegistrationWindowController: NSObject,
         alert.informativeText = error.localizedDescription
         alert.alertStyle = .warning
         alert.beginSheetModal(for: window)
-    }
-
-    private static func userDictionaryCache() throws -> DictionaryCache {
-        let applicationCache = try DictionaryCache.applicationSupport()
-        return DictionaryCache(
-            directoryURL: applicationCache.directoryURL
-                .appendingPathComponent("user", isDirectory: true)
-        )
-    }
-
-    private static func loadEntries(
-        from cache: DictionaryCache
-    ) throws -> [DictionaryEntry] {
-        guard let readableURL = cache.readableDictionaryURL() else {
-            return []
-        }
-        let text = try String(contentsOf: readableURL, encoding: .utf8)
-        return try DictionaryParser().parse(text)
     }
 }

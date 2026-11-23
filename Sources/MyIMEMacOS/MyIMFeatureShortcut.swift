@@ -105,9 +105,7 @@ struct MyIMShortcut {
     }
 
     init?(event: NSEvent) {
-        let modifiers = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
+        let modifiers = event.shortcutModifiers
         guard !modifiers.intersection([.command, .option, .control]).isEmpty,
               let key = Self.keyName(for: event) else {
             return nil
@@ -141,9 +139,7 @@ struct MyIMShortcut {
     }
 
     func matches(_ event: NSEvent) -> Bool {
-        let eventModifiers = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
+        let eventModifiers = event.shortcutModifiers
         guard eventModifiers == modifiers else { return false }
         return Self.keyName(for: event) == key
     }
@@ -178,11 +174,19 @@ extension MyIMFeatureShortcut {
     /// The emoji shortcut; unchanged, Option and the E key on any layout
     static func matchesEmoji(_ event: NSEvent) -> Bool {
         if UserDefaults.standard.object(forKey: emoji.defaultsKey) == nil {
-            let modifiers = event.modifierFlags
-                .intersection(.deviceIndependentFlagsMask)
-                .subtracting([.capsLock, .numericPad])
+            let modifiers = event.shortcutModifiers
             return event.keyCode == 14 && modifiers == [.option]
         }
         return emoji.shortcut.matches(event)
+    }
+}
+
+extension NSEvent {
+    /// The modifiers a shortcut is defined with, without Caps Lock and the
+    /// keypad flag
+    var shortcutModifiers: NSEvent.ModifierFlags {
+        modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad])
     }
 }

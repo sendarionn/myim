@@ -308,6 +308,12 @@ case "click":
     usleep(80_000)
     postMouse(.leftMouseUp, at: location)
 
+case "move":
+    requireFrontmost(arguments)
+    let point = arguments.dropFirst().prefix(2).compactMap(Double.init)
+    guard point.count == 2 else { fail("usage: move <x> <y> --expect <ids>") }
+    postMouse(.mouseMoved, at: CGPoint(x: point[0], y: point[1]))
+
 case "scroll":
     requireFrontmost(arguments)
     let values = arguments.dropFirst().prefix(3).compactMap(Double.init)

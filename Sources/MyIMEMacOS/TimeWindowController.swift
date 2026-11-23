@@ -85,9 +85,7 @@ final class TimeWindowController: NSObject {
         if MyIMFeatureShortcut.time.shortcut.matches(event) {
             return true
         }
-        let modifiers = event.modifierFlags
-            .intersection(.deviceIndependentFlagsMask)
-            .subtracting([.capsLock, .numericPad])
+        let modifiers = event.shortcutModifiers
         if !modifiers.intersection([.command, .control, .option]).isEmpty {
             hide()
             return false

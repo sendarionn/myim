@@ -22,14 +22,16 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
             return []
         }
         let target = Array(reading.utf8)
-        let index = lowerBound(of: target)
-        guard
-            readingOffsets.indices.contains(index),
-            compareReading(at: index, with: target) == 0
-        else {
-            return []
+        return data.withUnsafeBytes { bytes in
+            let index = lowerBound(of: target, in: bytes)
+            guard
+                readingOffsets.indices.contains(index),
+                compare(readingRange(at: index, in: bytes), with: target, in: bytes) == 0
+            else {
+                return []
+            }
+            return candidates(at: index, limit: .max, in: bytes)
         }
-        return candidates(at: index, limit: .max)
     }
 
     public func candidates(
@@ -60,28 +62,31 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
         guard !candidates.isEmpty, limitPerCandidate > 0 else { return [:] }
         let targets = Set(candidates.filter { !$0.isEmpty })
         guard !targets.isEmpty else { return [:] }
-        var result: [String: [String]] = [:]
-
-        for index in readingOffsets.indices {
-            guard let reading = String(
-                data: reading(at: index),
-                encoding: .utf8
-            ) else { continue }
-            for candidate in self.candidates(at: index, limit: .max)
-            where targets.contains(candidate) {
-                var readings = result[candidate] ?? []
-                if readings.count < limitPerCandidate,
-                   !readings.contains(reading) {
-                    readings.append(reading)
-                    result[candidate] = readings
+        return data.withUnsafeBytes { bytes in
+            var result: [String: [String]] = [:]
+            for index in readingOffsets.indices {
+                guard let reading = String(
+                    bytes: UnsafeRawBufferPointer(
+                        rebasing: bytes[readingRange(at: index, in: bytes)]
+                    ),
+                    encoding: .utf8
+                ) else { continue }
+                for candidate in self.candidates(at: index, limit: .max, in: bytes)
+                where targets.contains(candidate) {
+                    var readings = result[candidate] ?? []
+                    if readings.count < limitPerCandidate,
+                       !readings.contains(reading) {
+                        readings.append(reading)
+                        result[candidate] = readings
+                    }
+                }
+                if result.count == targets.count,
+                   result.values.allSatisfy({ $0.count >= limitPerCandidate }) {
+                    break
                 }
             }
-            if result.count == targets.count,
-               result.values.allSatisfy({ $0.count >= limitPerCandidate }) {
-                break
-            }
+            return result
         }
-        return result
     }
 
     private func containsCandidate(_ target: Data, at index: Int) -> Bool {
@@ -115,34 +120,38 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
             return DictionaryCandidateGroups()
         }
         let target = Array(prefix.utf8)
-        var index = lowerBound(of: target)
-        var seen = Set<String>()
-        var exact: [String] = []
-        var prefixMatches: [String] = []
+        return data.withUnsafeBytes { bytes in
+            var index = lowerBound(of: target, in: bytes)
+            var seen = Set<String>()
+            var exact: [String] = []
+            var prefixMatches: [String] = []
 
-        while readingOffsets.indices.contains(index),
-              reading(at: index).starts(with: target) {
-            let isExactReading = compareReading(at: index, with: target) == 0
-            for candidate in candidates(
-                at: index,
-                limit: limit - exact.count - prefixMatches.count
-            )
-            where seen.insert(candidate).inserted {
-                if isExactReading {
-                    exact.append(candidate)
-                } else {
-                    prefixMatches.append(candidate)
+            while readingOffsets.indices.contains(index) {
+                let reading = readingRange(at: index, in: bytes)
+                guard Self.starts(reading, with: target, in: bytes) else { break }
+                let isExactReading = reading.count == target.count
+                for candidate in candidates(
+                    at: index,
+                    limit: limit - exact.count - prefixMatches.count,
+                    in: bytes
+                )
+                where seen.insert(candidate).inserted {
+                    if isExactReading {
+                        exact.append(candidate)
+                    } else {
+                        prefixMatches.append(candidate)
+                    }
+                    if exact.count + prefixMatches.count == limit {
+                        return DictionaryCandidateGroups(
+                            exact: exact,
+                            prefix: prefixMatches
+                        )
+                    }
                 }
-                if exact.count + prefixMatches.count == limit {
-                    return DictionaryCandidateGroups(
-                        exact: exact,
-                        prefix: prefixMatches
-                    )
-                }
+                index += 1
             }
-            index += 1
+            return DictionaryCandidateGroups(exact: exact, prefix: prefixMatches)
         }
-        return DictionaryCandidateGroups(exact: exact, prefix: prefixMatches)
     }
 
     private static func makeReadingOffsets(in data: Data) -> [Int] {
@@ -167,12 +176,18 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
         return offsets
     }
 
-    private func lowerBound(of target: [UInt8]) -> Int {
+    // The lookups read the bytes directly; going through `Data` for each
+    // byte costs more than the comparison itself
+
+    private func lowerBound(
+        of target: [UInt8],
+        in bytes: UnsafeRawBufferPointer
+    ) -> Int {
         var lower = 0
         var upper = readingOffsets.count
         while lower < upper {
             let middle = lower + (upper - lower) / 2
-            if compareReading(at: middle, with: target) < 0 {
+            if compare(readingRange(at: middle, in: bytes), with: target, in: bytes) < 0 {
                 lower = middle + 1
             } else {
                 upper = middle
@@ -181,61 +196,103 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
         return lower
     }
 
-    private func compareReading(at index: Int, with target: [UInt8]) -> Int {
-        let value = reading(at: index)
-        for position in 0..<min(value.count, target.count) {
-            let valueIndex = value.index(
-                value.startIndex,
-                offsetBy: position
-            )
-            if value[valueIndex] != target[position] {
-                return value[valueIndex] < target[position] ? -1 : 1
+    private func compare(
+        _ range: Range<Int>,
+        with target: [UInt8],
+        in bytes: UnsafeRawBufferPointer
+    ) -> Int {
+        for position in 0..<min(range.count, target.count) {
+            let value = bytes[range.lowerBound + position]
+            if value != target[position] {
+                return value < target[position] ? -1 : 1
             }
         }
-        if value.count == target.count {
+        if range.count == target.count {
             return 0
         }
-        return value.count < target.count ? -1 : 1
+        return range.count < target.count ? -1 : 1
     }
 
-    private func reading(at index: Int) -> Data.SubSequence {
+    private static func starts(
+        _ range: Range<Int>,
+        with target: [UInt8],
+        in bytes: UnsafeRawBufferPointer
+    ) -> Bool {
+        guard range.count >= target.count else { return false }
+        for position in target.indices
+        where bytes[range.lowerBound + position] != target[position] {
+            return false
+        }
+        return true
+    }
+
+    private static func equal(
+        _ lhs: Range<Int>,
+        _ rhs: Range<Int>,
+        in bytes: UnsafeRawBufferPointer
+    ) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        for offset in 0..<lhs.count
+        where bytes[lhs.lowerBound + offset] != bytes[rhs.lowerBound + offset] {
+            return false
+        }
+        return true
+    }
+
+    private func readingRange(
+        at index: Int,
+        in bytes: UnsafeRawBufferPointer
+    ) -> Range<Int> {
         let start = readingOffsets[index]
         var end = start
-        while end < data.count, data[end] != 0x09, data[end] != 0x0A {
+        while end < bytes.count, bytes[end] != 0x09, bytes[end] != 0x0A {
             end += 1
         }
-        return data[start..<end]
+        return start..<end
     }
 
-    private func candidates(at index: Int, limit: Int) -> [String] {
+    private func candidates(
+        at index: Int,
+        limit: Int,
+        in bytes: UnsafeRawBufferPointer
+    ) -> [String] {
         guard limit > 0 else {
             return []
         }
-        let expectedReading = reading(at: index)
+        let expectedReading = readingRange(at: index, in: bytes)
         var position = readingOffsets[index]
         var seen = Set<String>()
         var result: [String] = []
 
-        while position < data.count {
+        while position < bytes.count {
             let start = position
-            let end = lineEnd(startingAt: start)
-            position = end < data.count ? end + 1 : end
+            var end = start
+            while end < bytes.count, bytes[end] != 0x0A {
+                end += 1
+            }
+            position = end < bytes.count ? end + 1 : end
             guard start < end else {
                 continue
             }
-            guard let tab = data[start..<end].firstIndex(of: 0x09),
-                  data[start..<tab].elementsEqual(expectedReading) else {
+            var tab = start
+            while tab < end, bytes[tab] != 0x09 {
+                tab += 1
+            }
+            guard tab < end,
+                  Self.equal(start..<tab, expectedReading, in: bytes) else {
                 break
             }
             let valueStart = tab + 1
             var valueEnd = end
             while valueEnd > valueStart,
-                  data[valueEnd - 1] == 0x0D || data[valueEnd - 1] == 0x20 {
+                  bytes[valueEnd - 1] == 0x0D || bytes[valueEnd - 1] == 0x20 {
                 valueEnd -= 1
             }
             guard valueStart < valueEnd,
                   let value = String(
-                    data: data[valueStart..<valueEnd],
+                    bytes: UnsafeRawBufferPointer(
+                        rebasing: bytes[valueStart..<valueEnd]
+                    ),
                     encoding: .utf8
                   )
             else {
@@ -250,6 +307,15 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
             }
         }
         return result
+    }
+
+    private func reading(at index: Int) -> Data.SubSequence {
+        let start = readingOffsets[index]
+        var end = start
+        while end < data.count, data[end] != 0x09, data[end] != 0x0A {
+            end += 1
+        }
+        return data[start..<end]
     }
 
     private func lineEnd(startingAt start: Int) -> Int {

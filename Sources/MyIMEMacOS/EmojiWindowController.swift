@@ -3,6 +3,30 @@ import CoreText
 import MyIMECore
 
 private final class EmojiCellButton: NSButton {
+    /// Only the variations follow the pointer
+    var onHover: (() -> Void)? {
+        didSet { updateTrackingAreas() }
+    }
+    private var hoverArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        hoverArea = nil
+        guard onHover != nil else { return }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(area)
+        hoverArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHover?()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         guard !title.isEmpty,
               let context = NSGraphicsContext.current?.cgContext else {
@@ -167,6 +191,7 @@ final class EmojiWindowController: NSObject {
         + outerPadding * 3 + 1
     private static let maximumListHeight = panelWidth - panelChromeHeight
     private static let comparisonPanelSize = NSSize(width: 240, height: 88)
+    private static let sidePanelSpacing: CGFloat = 8
     private static let fallbackEmojis = Array(
         "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪"
             .split(separator: " ").map(String.init)
@@ -234,6 +259,8 @@ final class EmojiWindowController: NSObject {
     private var selectedIndex: Int?
     private var selectedRecentIndex: Int?
     private var selectedVariationIndex: Int?
+    /// The emoji the variations belong to, on screen
+    private var variationAnchor: NSRect?
     private var variationEntries: [Entry] = []
     private var variationButtons: [NSButton] = []
     private var variationSelectionState = EmojiVariationSelectionState()
@@ -595,6 +622,7 @@ final class EmojiWindowController: NSObject {
                 ? NSColor.controlAccentColor.cgColor
                 : NSColor.clear.cgColor
         }
+        showComparison(for: variationEntries[index])
     }
 
     private func select(
@@ -828,20 +856,6 @@ final class EmojiWindowController: NSObject {
     private func updateTabCapture() {
         guard panel.isVisible else { return }
         EmojiGlobalHotKey.shared.setPanelTabCaptureEnabled(canSelectEmoji)
-    }
-
-    private func updateCollectionDocumentHeight() {
-        let rowCount = ceil(
-            CGFloat(visibleEntries.count) / CGFloat(Self.columnCount)
-        )
-        let documentHeight = layout.sectionInset.top
-            + rowCount * Self.cellSize
-            + max(rowCount - 1, 0) * Self.spacing
-            + layout.sectionInset.bottom
-        collectionView.setFrameSize(NSSize(
-            width: scrollView.contentSize.width,
-            height: max(documentHeight, scrollView.contentSize.height)
-        ))
     }
 
     private func updatePanelPresentation() {
@@ -1184,6 +1198,9 @@ final class EmojiWindowController: NSObject {
                     action: #selector(commitClickedVariation(_:))
                 )
                 button.tag = index
+                button.onHover = { [weak self] in
+                    self?.selectVariation(index: index)
+                }
                 button.font = NSFont(name: "Apple Color Emoji", size: 22)
                 button.alignment = .center
                 button.isBordered = false
@@ -1202,7 +1219,6 @@ final class EmojiWindowController: NSObject {
             variationStack.addArrangedSubview(row)
         }
         selectVariation(index: 0)
-        comparisonPanel.orderOut(nil)
 
         let columns = min(entries.count, Self.columnCount)
         let rows = Int(ceil(
@@ -1220,6 +1236,7 @@ final class EmojiWindowController: NSObject {
         variationStack.frame = NSRect(origin: .zero, size: size)
         positionVariationPanel(near: anchor)
         variationPanel.orderFrontRegardless()
+        comparisonPanel.orderFrontRegardless()
         updateTabCapture()
     }
 
@@ -1227,26 +1244,42 @@ final class EmojiWindowController: NSObject {
         guard variationPanel.isVisible || !variationEntries.isEmpty else {
             return
         }
-        let size = variationPanel.frame.size
+        variationAnchor = anchor
+        layoutSidePanels(includingComparison: comparisonPanel.isVisible)
+    }
+
+    /// The variations and the comparison placed together beside the panel
+    private func layoutSidePanels(includingComparison: Bool) {
         let visible = panel.screen?.visibleFrame
-            ?? NSScreen.inputScreen(containing: anchor)?.visibleFrame
+            ?? NSScreen.inputScreen(containing: panel.frame)?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let rightX = anchor.maxX + Self.spacing
-        let leftX = anchor.minX - size.width - Self.spacing
-        let x = rightX + size.width <= visible.maxX
-            ? rightX
-            : max(leftX, visible.minX)
-        let y = min(
-            max(anchor.maxY - size.height, visible.minY),
-            visible.maxY - size.height
+        let showsVariations = !variationEntries.isEmpty
+        let frames = EmojiSidePanelLayout.frames(
+            panel: panel.frame,
+            variationSize: showsVariations ? variationPanel.frame.size : nil,
+            variationTop: (variationAnchor ?? panel.frame).maxY,
+            comparisonSize: includingComparison
+                ? comparisonPanel.frame.size
+                : nil,
+            visibleFrame: visible,
+            spacing: Self.sidePanelSpacing
         )
-        variationPanel.setFrameOrigin(NSPoint(x: x, y: y))
+        if let frame = frames.variation {
+            variationPanel.setFrameOrigin(frame.origin)
+        }
+        if let frame = frames.comparison {
+            comparisonPanel.setFrameOrigin(frame.origin)
+        }
     }
 
     private func dismissVariationPresentation() {
         cancelVariationPresentation()
         variationSelectionState.dismissCurrent()
         clearVariationPanel()
+        // The comparison goes back to the emoji the variations belonged to
+        if comparisonPanel.isVisible, let entry = selectedEntry {
+            showComparison(for: entry)
+        }
     }
 
     private func resetVariationPresentation() {
@@ -1260,6 +1293,10 @@ final class EmojiWindowController: NSObject {
         selectedVariationIndex = nil
         variationEntries = []
         variationButtons = []
+        variationAnchor = nil
+        if comparisonPanel.isVisible {
+            layoutSidePanels(includingComparison: true)
+        }
         updateTabCapture()
     }
 
@@ -1340,17 +1377,8 @@ final class EmojiWindowController: NSObject {
         comparisonStack.addArrangedSubview(
             bundledView(title: "Windows", platform: "Windows", entry: entry)
         )
-        let size = Self.comparisonPanelSize
-        comparisonPanel.setContentSize(size)
-        let frame = panel.frame
-        let visible = panel.screen?.visibleFrame ?? frame
-        let x = frame.maxX + 8 + size.width <= visible.maxX
-            ? frame.maxX + 8 : frame.minX - size.width - 8
-        let y = min(
-            max(frame.maxY - size.height, visible.minY),
-            visible.maxY - size.height
-        )
-        comparisonPanel.setFrameOrigin(NSPoint(x: x, y: y))
+        comparisonPanel.setContentSize(Self.comparisonPanelSize)
+        layoutSidePanels(includingComparison: true)
         comparisonPanel.orderFrontRegardless()
     }
 
@@ -1630,7 +1658,8 @@ final class EmojiWindowController: NSObject {
     private func cancelIfClickIsOutside(at point: NSPoint) {
         guard panel.isVisible else { return }
         if variationPanel.isVisible {
-            guard !variationPanel.frame.contains(point) else { return }
+            guard !variationPanel.frame.contains(point),
+                  !comparisonPanel.frame.contains(point) else { return }
             dismissVariationPresentation()
             return
         }
