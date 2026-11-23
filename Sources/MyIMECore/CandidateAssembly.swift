@@ -266,18 +266,19 @@ public struct CandidateAssembly: Sendable {
                     input.includeAutomaticKanaCandidates
             )
         )
-        let visibleTexts = SingleLetterDictionaryCandidateFilter.candidates(
+        // The ordered candidates are already unique, so only the filter for
+        // single letters, when it applies, removes any
+        guard SingleLetterDictionaryCandidateFilter.applies(to: input.reading) else {
+            return ordered
+        }
+        let visibleTexts = Set(SingleLetterDictionaryCandidateFilter.candidates(
             ordered.map(\.storageText),
             for: input.reading,
             keeping: Set(ordered.filter {
                 $0.hasSource(.javaScriptExtension) || $0.hasSource(.dateTime)
             }.map(\.storageText))
-        )
-        let byText = Dictionary(
-            ordered.map { ($0.storageText, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        return visibleTexts.compactMap { byText[$0] }
+        ))
+        return ordered.filter { visibleTexts.contains($0.storageText) }
     }
 
     private func makeCandidates(

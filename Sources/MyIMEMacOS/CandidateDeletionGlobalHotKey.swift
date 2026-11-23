@@ -12,69 +12,36 @@ final class CandidateDeletionGlobalHotKey {
         category: "candidate-deletion"
     )
 
-    private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
 
     private init() {
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-        InstallEventHandler(
-            GetApplicationEventTarget(),
-            { _, event, _ in
-                guard let event else {
-                    return OSStatus(eventNotHandledErr)
-                }
-                var identifier = EventHotKeyID()
-                let status = GetEventParameter(
-                    event,
-                    EventParamName(kEventParamDirectObject),
-                    EventParamType(typeEventHotKeyID),
-                    nil,
-                    MemoryLayout<EventHotKeyID>.size,
-                    nil,
-                    &identifier
-                )
-                guard status == noErr,
-                      identifier.signature
-                        == CandidateDeletionGlobalHotKey.signature,
-                      identifier.id
-                        == CandidateDeletionGlobalHotKey.identifier else {
-                    return OSStatus(eventNotHandledErr)
-                }
+        CarbonHotKeys.route(signature: Self.signature) { id, isPressed in
+            guard id == CandidateDeletionGlobalHotKey.identifier else {
+                return false
+            }
+            if isPressed {
                 DispatchQueue.main.async {
                     InputController.handleGlobalCandidateDeletionShortcut()
                 }
-                return noErr
-            },
-            1,
-            &eventType,
-            nil,
-            &eventHandler
-        )
+            }
+            return true
+        }
     }
 
     func activate() {
         guard hotKey == nil else { return }
-        let identifier = EventHotKeyID(
+        switch CarbonHotKeys.register(
+            keyCode: UInt32(kVK_ANSI_X),
+            modifiers: UInt32(cmdKey),
             signature: Self.signature,
             id: Self.identifier
-        )
-        let status = RegisterEventHotKey(
-            UInt32(kVK_ANSI_X),
-            UInt32(cmdKey),
-            identifier,
-            GetApplicationEventTarget(),
-            0,
-            &hotKey
-        )
-        guard status == noErr else {
-            hotKey = nil
+        ) {
+        case let .success(reference):
+            hotKey = reference
+        case let .failure(error):
             Self.logger.error(
-                "candidate deletion hot key registration failed status=\(status, privacy: .public)"
+                "candidate deletion hot key registration failed status=\(error.status, privacy: .public)"
             )
-            return
         }
     }
 
@@ -86,8 +53,5 @@ final class CandidateDeletionGlobalHotKey {
 
     deinit {
         deactivate()
-        if let eventHandler {
-            RemoveEventHandler(eventHandler)
-        }
     }
 }

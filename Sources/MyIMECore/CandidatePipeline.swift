@@ -144,16 +144,22 @@ public struct CandidatePipeline: Sendable {
             includeAutomaticKanaCandidates:
                 input.includeAutomaticKanaCandidates
         ))
-        let allCandidates = input.kana + input.direct + input.secondary
-            + input.other + input.english + input.trailing
-        let grouped = Dictionary(grouping: allCandidates, by: \.storageText)
-        return orderedTexts.compactMap { text in
-            guard let matches = grouped[text],
-                  let first = matches.first else { return nil }
-            return matches.dropFirst().reduce(first) {
-                $0.mergingOrigins(from: $1)
+        // Each text's candidates merged in the order they came, in one pass
+        var merged: [String: Candidate] = [:]
+        merged.reserveCapacity(orderedTexts.count)
+        for group in [
+            input.kana, input.direct, input.secondary,
+            input.other, input.english, input.trailing
+        ] {
+            for candidate in group {
+                if let existing = merged[candidate.storageText] {
+                    merged[candidate.storageText] = existing.mergingOrigins(from: candidate)
+                } else {
+                    merged[candidate.storageText] = candidate
+                }
             }
         }
+        return orderedTexts.compactMap { merged[$0] }
     }
 
     public func candidates(from input: Input) -> [String] {

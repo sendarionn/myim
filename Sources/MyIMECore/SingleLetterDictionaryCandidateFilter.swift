@@ -13,6 +13,11 @@ public enum SingleLetterDictionaryCandidateFilter {
         }
     }
 
+    /// Whether the input is one the filter removes candidates for
+    public static func applies(to input: String) -> Bool {
+        isSingleASCIILetter(input)
+    }
+
     private static func isSingleASCIILetter(_ input: String) -> Bool {
         guard input.utf8.count == 1, let byte = input.utf8.first else {
             return false

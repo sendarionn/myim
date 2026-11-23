@@ -6230,31 +6230,14 @@ final class InputController: IMKInputController {
         )
     }
 
+    /// Ends everything shown for input: the panels that last beyond an
+    /// empty composition, such as the bookmark search, and then every
+    /// input panel as an emptied composition does
     private func resetTransientInteractionState() {
         finishSelectionBracketChoice()
         clearBookmarkSearch()
-        trace("candidateGeneration.cancel", sender: client(), detail: "source=all")
         clearSessionTranslationCandidates()
-        candidateSearchCoordinator.cancel(.calendarFormat)
-        candidateSearchCoordinator.cancel(.timeFormat)
-        let hidesSharedEmoji = shouldDismissSharedEmojiPanel
-        panelCoordinator.dismissAll(hidesSharedEmoji: hidesSharedEmoji)
-        if hidesSharedEmoji {
-            Self.emojiPanelController = nil
-        }
-        tracePanelDismissal(
-            source: "all",
-            preserved: [],
-            ignoresSharedEmoji: !hidesSharedEmoji
-        )
-        fuzzyCandidateSession.reset()
-        selectedFuzzyCandidateIndex = nil
-        clearNextInputCandidateState()
-        cancelInputCandidateSearches()
-        candidateSearchCoordinator.cancel(.dictionaryDefinition)
-        clearCalendarSelection()
-        clearTimeSelection()
-        resetCandidateFilters()
+        dismissInputSessionPanels(using: .inputBecameEmpty, traceSource: "all")
     }
 
     private func cancelFuzzyCandidateSearch() {
@@ -6262,9 +6245,10 @@ final class InputController: IMKInputController {
     }
 
     private func dismissInputSessionPanels(
-        using policy: InputPanelDismissalPolicy
+        using policy: InputPanelDismissalPolicy,
+        traceSource: String = "panels"
     ) {
-        trace("candidateGeneration.cancel", sender: client(), detail: "source=panels")
+        trace("candidateGeneration.cancel", sender: client(), detail: "source=\(traceSource)")
         cancelInputCandidateSearches()
         candidateSearchCoordinator.cancel(.dictionaryDefinition)
         cancelCandidateTranslation()
@@ -6289,7 +6273,7 @@ final class InputController: IMKInputController {
             Self.emojiPanelController = nil
         }
         tracePanelDismissal(
-            source: "policy",
+            source: traceSource == "all" ? "all" : "policy",
             preserved: Set(InputPanelKind.allCases)
                 .subtracting(policy.panelsToDismiss),
             ignoresSharedEmoji: !hidesSharedEmoji

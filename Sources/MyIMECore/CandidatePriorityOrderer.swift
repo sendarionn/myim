@@ -26,11 +26,18 @@ public enum CandidatePriorityOrderer {
                 candidates,
                 ranks: recencyRanks
             )
-            let available = Set(recencyOrdered)
+            guard !contextualCandidates.isEmpty else { return recencyOrdered }
+            // Only the few contextual candidates are looked up among them
+            let wanted = Set(contextualCandidates)
+            var available = Set<String>()
+            for candidate in recencyOrdered where wanted.contains(candidate) {
+                available.insert(candidate)
+            }
             var contextual = Set<String>()
             let preferred = contextualCandidates.filter {
                 available.contains($0) && contextual.insert($0).inserted
             }
+            guard !contextual.isEmpty else { return recencyOrdered }
             return preferred + recencyOrdered.filter {
                 !contextual.contains($0)
             }
@@ -40,10 +47,10 @@ public enum CandidatePriorityOrderer {
             appendUnique([firstKana])
         }
 
-        let learned = CandidateRecencyOrderer.ordered(
+        let learned = CandidateRecencyOrderer.rankedOnly(
             kana + direct + secondary + others,
             ranks: recencyRanks
-        ).filter { recencyRanks[$0] != nil }
+        )
         appendUnique(learned)
 
         if prioritizeKana {

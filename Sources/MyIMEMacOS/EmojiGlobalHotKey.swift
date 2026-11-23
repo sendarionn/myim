@@ -14,7 +14,6 @@ final class EmojiGlobalHotKey {
 
     private static let signature: OSType = 0x4D_59_49_4D
     private static let identifier: UInt32 = 1
-    private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
     private var panelHotKeys: [EventHotKeyRef] = []
     private var panelTabHotKeys: [EventHotKeyRef] = []
@@ -22,66 +21,25 @@ final class EmojiGlobalHotKey {
     private var repeatTimer: DispatchSourceTimer?
 
     private init() {
-        let eventTypes = [
-            EventTypeSpec(
-                eventClass: OSType(kEventClassKeyboard),
-                eventKind: UInt32(kEventHotKeyPressed)
-            ),
-            EventTypeSpec(
-                eventClass: OSType(kEventClassKeyboard),
-                eventKind: UInt32(kEventHotKeyReleased)
-            )
-        ]
-        _ = eventTypes.withUnsafeBufferPointer { types in
-            InstallEventHandler(
-                GetApplicationEventTarget(),
-                { _, event, _ in
-                guard let event else { return OSStatus(eventNotHandledErr) }
-                var identifier = EventHotKeyID()
-                let status = GetEventParameter(
-                    event,
-                    EventParamName(kEventParamDirectObject),
-                    EventParamType(typeEventHotKeyID),
-                    nil,
-                    MemoryLayout<EventHotKeyID>.size,
-                    nil,
-                    &identifier
-                )
-                guard status == noErr,
-                      identifier.signature == EmojiGlobalHotKey.signature else {
-                    return OSStatus(eventNotHandledErr)
+        CarbonHotKeys.route(signature: Self.signature) { id, isPressed in
+            if !isPressed {
+                DispatchQueue.main.async {
+                    EmojiGlobalHotKey.shared.stopRepeating(command: id)
                 }
-                let isPressed = GetEventKind(event)
-                    == UInt32(kEventHotKeyPressed)
-                if !isPressed {
-                    DispatchQueue.main.async {
-                        EmojiGlobalHotKey.shared.stopRepeating(
-                            command: identifier.id
-                        )
-                    }
-                    return noErr
+                return true
+            }
+            if id == EmojiGlobalHotKey.identifier {
+                EmojiDiagnostics.logger.notice("global hot key received")
+                DispatchQueue.main.async {
+                    InputController.handleGlobalEmojiShortcut()
                 }
-                if identifier.id == EmojiGlobalHotKey.identifier {
-                    EmojiDiagnostics.logger.notice("global hot key received")
-                    DispatchQueue.main.async {
-                        InputController.handleGlobalEmojiShortcut()
-                    }
-                } else {
-                    let command = identifier.id
-                    DispatchQueue.main.async {
-                        InputController.handleGlobalEmojiPanelCommand(command)
-                        EmojiGlobalHotKey.shared.startRepeating(
-                            command: command
-                        )
-                    }
+            } else {
+                DispatchQueue.main.async {
+                    InputController.handleGlobalEmojiPanelCommand(id)
+                    EmojiGlobalHotKey.shared.startRepeating(command: id)
                 }
-                return noErr
-                },
-                types.count,
-                types.baseAddress,
-                nil,
-                &eventHandler
-            )
+            }
+            return true
         }
     }
 
@@ -92,24 +50,19 @@ final class EmojiGlobalHotKey {
               ) == nil else {
             return
         }
-        let identifier = EventHotKeyID(
+        switch CarbonHotKeys.register(
+            keyCode: UInt32(kVK_ANSI_E),
+            modifiers: UInt32(optionKey),
             signature: Self.signature,
             id: Self.identifier
-        )
-        let status = RegisterEventHotKey(
-            UInt32(kVK_ANSI_E),
-            UInt32(optionKey),
-            identifier,
-            GetApplicationEventTarget(),
-            0,
-            &hotKey
-        )
-        if status != noErr {
-            EmojiDiagnostics.logger.error(
-                "global hot key registration failed status=\(status, privacy: .public)"
-            )
-        } else {
+        ) {
+        case let .success(reference):
+            hotKey = reference
             EmojiDiagnostics.logger.notice("global hot key registered")
+        case let .failure(error):
+            EmojiDiagnostics.logger.error(
+                "global hot key registration failed status=\(error.status, privacy: .public)"
+            )
         }
     }
 
@@ -135,24 +88,7 @@ final class EmojiGlobalHotKey {
             // when nothing is composed, so it is taken before them
             (13, UInt32(kVK_Delete), 0)
         ]
-        for (id, keyCode, modifiers) in shortcuts {
-            var reference: EventHotKeyRef?
-            let status = RegisterEventHotKey(
-                keyCode,
-                modifiers,
-                EventHotKeyID(signature: Self.signature, id: id),
-                GetApplicationEventTarget(),
-                0,
-                &reference
-            )
-            if status == noErr, let reference {
-                panelHotKeys.append(reference)
-            } else {
-                EmojiDiagnostics.logger.error(
-                    "panel hot key registration failed id=\(id, privacy: .public) status=\(status, privacy: .public)"
-                )
-            }
-        }
+        panelHotKeys = register(shortcuts, kind: "panel")
         EmojiDiagnostics.logger.notice(
             "panel hot keys registered count=\(self.panelHotKeys.count, privacy: .public)"
         )
@@ -161,7 +97,7 @@ final class EmojiGlobalHotKey {
 
     func setPanelTabCaptureEnabled(_ enabled: Bool) {
         if enabled, panelTabHotKeys.count == 2 { return }
-        panelTabHotKeys.forEach { UnregisterEventHotKey($0) }
+        CarbonHotKeys.unregister(panelTabHotKeys)
         panelTabHotKeys = []
         guard enabled else {
             EmojiDiagnostics.logger.notice("panel Tab capture disabled")
@@ -171,24 +107,7 @@ final class EmojiGlobalHotKey {
             (11, UInt32(kVK_Tab), 0),
             (12, UInt32(kVK_Tab), UInt32(shiftKey))
         ]
-        for (id, keyCode, modifiers) in shortcuts {
-            var reference: EventHotKeyRef?
-            let status = RegisterEventHotKey(
-                keyCode,
-                modifiers,
-                EventHotKeyID(signature: Self.signature, id: id),
-                GetApplicationEventTarget(),
-                0,
-                &reference
-            )
-            if status == noErr, let reference {
-                panelTabHotKeys.append(reference)
-            } else {
-                EmojiDiagnostics.logger.error(
-                    "panel Tab hot key registration failed id=\(id, privacy: .public) status=\(status, privacy: .public)"
-                )
-            }
-        }
+        panelTabHotKeys = register(shortcuts, kind: "panel Tab")
         EmojiDiagnostics.logger.notice(
             "panel Tab hot keys registered count=\(self.panelTabHotKeys.count, privacy: .public)"
         )
@@ -196,10 +115,33 @@ final class EmojiGlobalHotKey {
 
     func endPanelCapture() {
         stopRepeating()
-        panelHotKeys.forEach { UnregisterEventHotKey($0) }
+        CarbonHotKeys.unregister(panelHotKeys)
         panelHotKeys = []
-        panelTabHotKeys.forEach { UnregisterEventHotKey($0) }
+        CarbonHotKeys.unregister(panelTabHotKeys)
         panelTabHotKeys = []
+    }
+
+    /// Registers what it can; a key another owner holds is logged and left
+    private func register(
+        _ shortcuts: [(UInt32, UInt32, UInt32)],
+        kind: String
+    ) -> [EventHotKeyRef] {
+        shortcuts.compactMap { id, keyCode, modifiers in
+            switch CarbonHotKeys.register(
+                keyCode: keyCode,
+                modifiers: modifiers,
+                signature: Self.signature,
+                id: id
+            ) {
+            case let .success(reference):
+                return reference
+            case let .failure(error):
+                EmojiDiagnostics.logger.error(
+                    "\(kind, privacy: .public) hot key registration failed id=\(id, privacy: .public) status=\(error.status, privacy: .public)"
+                )
+                return nil
+            }
+        }
     }
 
     private func startRepeating(command: UInt32) {
@@ -253,8 +195,5 @@ final class EmojiGlobalHotKey {
 
     deinit {
         deactivate()
-        if let eventHandler {
-            RemoveEventHandler(eventHandler)
-        }
     }
 }

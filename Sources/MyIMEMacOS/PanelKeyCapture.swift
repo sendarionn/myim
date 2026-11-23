@@ -60,7 +60,6 @@ final class PanelKeyCapture {
     private let signature: OSType
     private let keys: [Key]
     private let handler: (PanelKeyCommand) -> Void
-    private var eventHandler: EventHandlerRef?
     private var hotKeys: [EventHotKeyRef] = []
 
     var isCapturing: Bool { !hotKeys.isEmpty }
@@ -78,45 +77,17 @@ final class PanelKeyCapture {
         self.signature = signature
         self.keys = keys
         self.handler = handler
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-        // Instances live for the whole process as static constants
-        InstallEventHandler(
-            GetApplicationEventTarget(),
-            { _, event, userData in
-                guard let event, let userData else {
-                    return OSStatus(eventNotHandledErr)
-                }
-                var identifier = EventHotKeyID()
-                let status = GetEventParameter(
-                    event,
-                    EventParamName(kEventParamDirectObject),
-                    EventParamType(typeEventHotKeyID),
-                    nil,
-                    MemoryLayout<EventHotKeyID>.size,
-                    nil,
-                    &identifier
-                )
-                let capture = Unmanaged<PanelKeyCapture>
-                    .fromOpaque(userData)
-                    .takeUnretainedValue()
-                guard status == noErr,
-                      identifier.signature == capture.signature,
-                      let command = capture.command(for: identifier.id) else {
-                    return OSStatus(eventNotHandledErr)
-                }
+        CarbonHotKeys.route(signature: signature) { [weak self] id, isPressed in
+            guard let self, let command = self.command(for: id) else {
+                return false
+            }
+            if isPressed {
                 DispatchQueue.main.async {
-                    capture.handler(command)
+                    self.handler(command)
                 }
-                return noErr
-            },
-            1,
-            &eventType,
-            Unmanaged.passUnretained(self).toOpaque(),
-            &eventHandler
-        )
+            }
+            return true
+        }
     }
 
     private func command(for identifier: UInt32) -> PanelKeyCommand? {
@@ -131,29 +102,27 @@ final class PanelKeyCapture {
         end()
         for (index, key) in keys.enumerated() {
             let id = UInt32(index + 1)
-            var reference: EventHotKeyRef?
-            let status = RegisterEventHotKey(
-                UInt32(key.keyCode),
-                UInt32(key.modifiers),
-                EventHotKeyID(signature: signature, id: id),
-                GetApplicationEventTarget(),
-                0,
-                &reference
-            )
-            guard status == noErr, let reference else {
+            switch CarbonHotKeys.register(
+                keyCode: UInt32(key.keyCode),
+                modifiers: UInt32(key.modifiers),
+                signature: signature,
+                id: id
+            ) {
+            case let .success(reference):
+                hotKeys.append(reference)
+            case let .failure(error):
                 logger.error(
-                    "hot key registration failed id=\(id, privacy: .public) status=\(status, privacy: .public)"
+                    "hot key registration failed id=\(id, privacy: .public) status=\(error.status, privacy: .public)"
                 )
                 end()
                 return false
             }
-            hotKeys.append(reference)
         }
         return true
     }
 
     func end() {
-        hotKeys.forEach { UnregisterEventHotKey($0) }
+        CarbonHotKeys.unregister(hotKeys)
         hotKeys = []
     }
 }

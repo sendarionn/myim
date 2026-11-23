@@ -3,6 +3,10 @@ import Foundation
 public struct IndexedDictionaryEngine: @unchecked Sendable {
     private let data: Data
     private let readingOffsets: [Int]
+    /// The dictionary never changes, so a prefix asked again, as when the
+    /// same input is refreshed or typed again after a deletion, is answered
+    /// from the last lookups; shared by copies of the engine
+    private let recentGroups = GroupCache()
 
     public init(contentsOf url: URL) throws {
         try self.init(data: Data(contentsOf: url, options: .mappedIfSafe))
@@ -119,6 +123,19 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
         guard !prefix.isEmpty, limit > 0 else {
             return DictionaryCandidateGroups()
         }
+        let key = GroupCache.Key(prefix: prefix, limit: limit)
+        if let cached = recentGroups.value(for: key) {
+            return cached
+        }
+        let groups = lookUpGroups(matching: prefix, limit: limit)
+        recentGroups.store(groups, for: key)
+        return groups
+    }
+
+    private func lookUpGroups(
+        matching prefix: String,
+        limit: Int
+    ) -> DictionaryCandidateGroups {
         let target = Array(prefix.utf8)
         return data.withUnsafeBytes { bytes in
             var index = lowerBound(of: target, in: bytes)
@@ -324,5 +341,35 @@ public struct IndexedDictionaryEngine: @unchecked Sendable {
             end += 1
         }
         return end
+    }
+}
+
+/// The latest prefix lookups, used from the main thread and from
+/// background searches alike
+private final class GroupCache: @unchecked Sendable {
+    struct Key: Hashable {
+        let prefix: String
+        let limit: Int
+    }
+
+    private static let capacity = 32
+    private let lock = NSLock()
+    private var values: [Key: DictionaryCandidateGroups] = [:]
+    private var order: [Key] = []
+
+    func value(for key: Key) -> DictionaryCandidateGroups? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[key]
+    }
+
+    func store(_ value: DictionaryCandidateGroups, for key: Key) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard values.updateValue(value, forKey: key) == nil else { return }
+        order.append(key)
+        if order.count > Self.capacity {
+            values[order.removeFirst()] = nil
+        }
     }
 }

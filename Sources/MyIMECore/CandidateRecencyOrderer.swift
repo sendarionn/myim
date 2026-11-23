@@ -6,6 +6,26 @@ public enum CandidateRecencyOrderer {
         orderedIndices(candidates, ranks: ranks).map { candidates[$0] }
     }
 
+    /// Only the candidates with a rank, ordered as `ordered` orders them
+    public static func rankedOnly(
+        _ candidates: [String],
+        ranks: [String: Int]
+    ) -> [String] {
+        guard !ranks.isEmpty else { return [] }
+        var ranked: [(offset: Int, rank: Int)] = []
+        for (offset, candidate) in candidates.enumerated() {
+            if let rank = ranks[candidate] {
+                ranked.append((offset, rank))
+            }
+        }
+        ranked.sort {
+            $0.rank == $1.rank
+                ? $0.offset < $1.offset
+                : $0.rank > $1.rank
+        }
+        return ranked.map { candidates[$0.offset] }
+    }
+
     public static func orderedIndices(
         _ candidates: [String],
         ranks: [String: Int]
