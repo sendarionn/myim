@@ -1,5 +1,6 @@
 import Foundation
 import KanaKanjiConverterModule
+import MyIMECore
 
 /// The result of converting a whole composition at once
 public struct LiveConversionResult: Equatable, Sendable {
@@ -42,32 +43,34 @@ public final class LiveConversionEngine: @unchecked Sendable {
         )
     }
 
-    /// The letters converted so far, so typing on extends them as the
+    /// The input converted so far, so typing on extends it as the
     /// converter expects instead of starting over
     private var composing = ComposingText()
-    private var composedRomaji = ""
+    private var composedElements: [LiveConversionInput.Element] = []
 
-    /// Nil when the letters do not read as kana yet
+    /// Nil when the letters do not read as kana yet. Hyphens and
+    /// punctuation reach the converter as ordinary conversion reads them
     public func convert(romaji: String, limit: Int = 10) -> LiveConversionResult? {
         guard !romaji.isEmpty else {
             reset()
             return nil
         }
-        if romaji.hasPrefix(composedRomaji) {
-            for letter in romaji.dropFirst(composedRomaji.count) {
-                composing.insertAtCursorPosition(String(letter), inputStyle: .roman2kana)
-            }
-        } else {
+        let elements = LiveConversionInput.elements(for: romaji)
+        if !elements.starts(with: composedElements) {
             reset()
-            for letter in romaji {
-                composing.insertAtCursorPosition(String(letter), inputStyle: .roman2kana)
-            }
         }
-        composedRomaji = romaji
+        for element in elements.dropFirst(composedElements.count) {
+            composing.insertAtCursorPosition(
+                element.text,
+                inputStyle: element.isRomaji ? .roman2kana : .direct
+            )
+        }
+        composedElements = elements
         let reading = composing.convertTarget
         guard !reading.isEmpty else { return nil }
         let results = converter.requestCandidates(composing, options: options)
         var seen = Set<String>()
+        // Only conversions of the whole reading, not of its first part
         let whole = results.mainResults
             .filter { $0.rubyCount == reading.count }
             .map(\.text)
@@ -79,6 +82,6 @@ public final class LiveConversionEngine: @unchecked Sendable {
     public func reset() {
         converter.stopComposition()
         composing = ComposingText()
-        composedRomaji = ""
+        composedElements = []
     }
 }

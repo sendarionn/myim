@@ -4572,10 +4572,8 @@ final class InputController: IMKInputController {
             let result = engine.convert(romaji: input)
             DispatchQueue.main.async {
                 guard let self, self.usesLiveConversion,
-                      self.inputBuffer == input, let result,
-                      !result.candidates.isEmpty else { return }
-                self.liveConversion.update(input: input, candidates: result.candidates)
-                self.presentLiveConversion(client: sender)
+                      self.inputBuffer == input, let result else { return }
+                self.applyLiveConversion(result, for: input, client: sender)
             }
         }
     }
@@ -4604,9 +4602,37 @@ final class InputController: IMKInputController {
               let engine = Self.liveConversionEngine else { return }
         let input = inputBuffer
         let result = Self.liveConversionQueue.sync { engine.convert(romaji: input) }
-        guard let result, !result.candidates.isEmpty else { return }
-        liveConversion.update(input: input, candidates: result.candidates)
-        presentLiveConversion(client: sender)
+        guard let result else { return }
+        applyLiveConversion(result, for: input, client: sender)
+    }
+
+    /// A conversion of letters that are all kana is shown; with romaji
+    /// still being typed at the end the last one stays with the letters
+    /// after it, and with letters that are not romaji, such as an English
+    /// word, the letters are shown as typed
+    private func applyLiveConversion(
+        _ result: LiveConversionResult,
+        for input: String,
+        client sender: Any
+    ) {
+        switch LiveConversionInput.reading(result.reading) {
+        case .converted:
+            guard !result.candidates.isEmpty else { return }
+            liveConversion.update(input: input, candidates: result.candidates)
+            presentLiveConversion(client: sender)
+        case .typingRomaji:
+            break
+        case .notRomaji:
+            guard liveConversion.displayText(for: input) != nil else { return }
+            liveConversion.update(input: "", candidates: [])
+            replaceCurrentCandidates(with: currentCandidateModels.filter {
+                !$0.hasSource(.liveConversion)
+            })
+            if selectedCandidateIndex == nil {
+                updateMarkedText(in: sender)
+            }
+            showPrimaryCandidatePanel(client: sender)
+        }
     }
 
     /// Esc first goes back to the letters as typed
@@ -6982,7 +7008,12 @@ final class InputController: IMKInputController {
     }
 
     private var sequentialConversionSplit: SequentialConversionSplit? {
-        guard dictionaryRegistrationSession == nil else { return nil }
+        // A live conversion takes the whole composition, punctuation and
+        // all, so nothing is left for a next step; declined with Esc, the
+        // composition splits as it otherwise does
+        guard dictionaryRegistrationSession == nil, !usesLiveConversion else {
+            return nil
+        }
         return SequentialConversionSplit.split(
             inputBuffer,
             isCarried: inputSession.carriesRemainder,
@@ -7588,7 +7619,11 @@ final class InputController: IMKInputController {
     private var selectedCandidateValue: String? {
         candidateSession.selectedCandidate
             .map {
-                $0.commitText + conversionSuffix
+                // A live conversion already converts the symbols the
+                // reading leaves after it, so they are not added again
+                $0.hasSource(.liveConversion)
+                    ? $0.commitText
+                    : $0.commitText + conversionSuffix
             }
     }
 

@@ -40,6 +40,7 @@ let package = Package(
         .target(
             name: "MyIMELiveConversion",
             dependencies: [
+                "MyIMECore",
                 .product(
                     name: "KanaKanjiConverterModule",
                     package: "AzooKeyKanaKanjiConverter"

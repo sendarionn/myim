@@ -34,4 +34,22 @@ struct LiveConversionEngineTests {
         let weather = try #require(typed("kyouhatennkigaii", in: engine))
         #expect(weather.candidates.contains("今日は天気がいい"))
     }
+
+    /// Hyphens are long vowels and punctuation is Japanese after romaji,
+    /// as in ordinary conversion; numbers keep their symbols
+    @Test
+    func longVowelsAndPunctuationReadAsInOrdinaryConversion() throws {
+        try #require(FileManager.default.fileExists(atPath: Self.dictionaryURL.path))
+        let engine = LiveConversionEngine(
+            dictionaryURL: Self.dictionaryURL,
+            workingDirectoryURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("myim-live-conversion-tests", isDirectory: true)
+        )
+        #expect(try #require(typed("ko-hi-", in: engine)).candidates.first == "コーヒー")
+        #expect(try #require(typed("su-pa-", in: engine)).candidates.first == "スーパー")
+        let sentence = try #require(typed("ekimaenoko-hi-sutandode,ko-hi-wokatta.", in: engine))
+        #expect(sentence.reading == "えきまえのこーひーすたんどで、こーひーをかった。")
+        #expect(sentence.candidates.contains("駅前のコーヒースタンドで、コーヒーを買った。"))
+        #expect(try #require(typed("3.14", in: engine)).reading == "3.14")
+    }
 }
