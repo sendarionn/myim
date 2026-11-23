@@ -192,6 +192,9 @@ final class EmojiWindowController: NSObject {
     private static let maximumListHeight = panelWidth - panelChromeHeight
     private static let comparisonPanelSize = NSSize(width: 240, height: 88)
     private static let sidePanelSpacing: CGFloat = 8
+    /// The base emoji of the variations sits about half an emoji beside the
+    /// selected one
+    private static let variationBaseOffset: CGFloat = 18
     private static let fallbackEmojis = Array(
         "😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫡 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪"
             .split(separator: " ").map(String.init)
@@ -261,6 +264,8 @@ final class EmojiWindowController: NSObject {
     private var selectedVariationIndex: Int?
     /// The emoji the variations belong to, on screen
     private var variationAnchor: NSRect?
+    /// The side and direction the shown variations were laid out for
+    private var variationLayout: (expandsLeft: Bool, expandsDown: Bool)?
     private var variationEntries: [Entry] = []
     private var variationButtons: [NSButton] = []
     private var variationSelectionState = EmojiVariationSelectionState()
@@ -1183,6 +1188,15 @@ final class EmojiWindowController: NSObject {
             $0.removeFromSuperview()
         }
         variationButtons = []
+        // The variations open diagonally away from the comparison, in the
+        // direction the emoji panel itself opened, with the base emoji at
+        // the end nearest the selected emoji; only the order shown changes,
+        // and each button keeps its entry's index as its tag
+        let expandsLeft = variationExpandsLeft
+        let expandsDown = !layout.displaysBottomUp
+        variationLayout = (expandsLeft, expandsDown)
+        variationStack.alignment = expandsLeft ? .trailing : .leading
+        var rowViews: [NSStackView] = []
 
         for rowStart in stride(
             from: 0,
@@ -1193,7 +1207,8 @@ final class EmojiWindowController: NSObject {
             row.orientation = .horizontal
             row.spacing = Self.spacing
             let rowEnd = min(rowStart + Self.columnCount, entries.count)
-            for index in rowStart..<rowEnd {
+            let indices = Array(rowStart..<rowEnd)
+            for index in expandsLeft ? indices.reversed() : indices {
                 let button = EmojiCellButton(
                     title: entries[index].emoji,
                     target: self,
@@ -1218,6 +1233,10 @@ final class EmojiWindowController: NSObject {
                 row.addArrangedSubview(button)
                 variationButtons.append(button)
             }
+            rowViews.append(row)
+        }
+        // The row of the base emoji is the one nearest the selected emoji
+        for row in expandsDown ? rowViews : rowViews.reversed() {
             variationStack.addArrangedSubview(row)
         }
         selectVariation(index: 0)
@@ -1253,24 +1272,60 @@ final class EmojiWindowController: NSObject {
     /// The variations over the panel at their emoji, and the comparison
     /// beside the panel, each from its own anchor
     private func layoutSidePanels(includingComparison: Bool) {
-        if !variationEntries.isEmpty, let variationAnchor {
-            variationPanel.setFrameOrigin(EmojiSidePanelLayout.variationFrame(
-                cell: variationAnchor,
-                size: variationPanel.frame.size,
-                panel: panel.frame,
-                gap: Self.spacing
-            ).origin)
+        let visible = sidePanelVisibleFrame
+        let comparison = comparisonFrame
+        if includingComparison {
+            comparisonPanel.setFrameOrigin(comparison.origin)
         }
-        guard includingComparison else { return }
-        let visible = panel.screen?.visibleFrame
-            ?? NSScreen.inputScreen(containing: panel.frame)?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        comparisonPanel.setFrameOrigin(EmojiSidePanelLayout.comparisonFrame(
-            panel: panel.frame,
-            size: comparisonPanel.frame.size,
+        guard !variationEntries.isEmpty, let variationAnchor else { return }
+        // The emoji panel moved to where the side or direction changes
+        if let built = variationLayout,
+           built != (variationExpandsLeft, !layout.displaysBottomUp) {
+            let selected = selectedVariationIndex
+            showVariations(variationEntries, near: variationAnchor)
+            if let selected { selectVariation(index: selected) }
+            return
+        }
+        let size = variationPanel.frame.size
+        variationPanel.setFrameOrigin(EmojiSidePanelLayout.variationFrame(
+            cell: variationAnchor,
+            size: size,
+            baseCenterX: variationExpandsLeft
+                ? size.width - Self.outerPadding - Self.cellSize / 2
+                : Self.outerPadding + Self.cellSize / 2,
+            expandsLeft: variationExpandsLeft,
+            expandsDown: !layout.displaysBottomUp,
+            baseOffset: Self.variationBaseOffset,
+            gap: Self.spacing,
+            avoiding: includingComparison ? comparison : nil,
             visibleFrame: visible,
             spacing: Self.sidePanelSpacing
         ).origin)
+    }
+
+    private var sidePanelVisibleFrame: NSRect {
+        panel.screen?.visibleFrame
+            ?? NSScreen.inputScreen(containing: panel.frame)?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
+    }
+
+    /// Beside the emoji panel as it was placed, which the side panels
+    /// follow and never move
+    private var comparisonFrame: NSRect {
+        EmojiSidePanelLayout.comparisonFrame(
+            panel: panel.frame,
+            size: Self.comparisonPanelSize,
+            visibleFrame: sidePanelVisibleFrame,
+            spacing: Self.sidePanelSpacing
+        )
+    }
+
+    /// The variations open on the side away from the comparison
+    private var variationExpandsLeft: Bool {
+        EmojiSidePanelLayout.comparisonIsOnRight(
+            comparison: comparisonFrame,
+            panel: panel.frame
+        )
     }
 
     private func dismissVariationPresentation() {
@@ -1295,6 +1350,7 @@ final class EmojiWindowController: NSObject {
         variationEntries = []
         variationButtons = []
         variationAnchor = nil
+        variationLayout = nil
         if comparisonPanel.isVisible {
             layoutSidePanels(includingComparison: true)
         }

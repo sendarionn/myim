@@ -26,33 +26,49 @@ public enum EmojiSidePanelLayout {
         )
     }
 
-    /// Over the panel just below the emoji, or just above it where the
-    /// panel ends below, leaving the emoji itself in view; centered on it
-    /// and kept inside the panel
+    /// Whether the comparison went on the panel's right
+    public static func comparisonIsOnRight(comparison: CGRect, panel: CGRect) -> Bool {
+        comparison.minX >= panel.maxX
+    }
+
+    /// Diagonally from the emoji: down when the emoji panel opened
+    /// downward and up when it opened upward, and away from the comparison.
+    /// The base emoji, at the variations' end nearest the emoji, sits
+    /// `baseOffset` beside the emoji's center; `baseCenterX` is that base's
+    /// center from the variations' left edge. The variations then move only
+    /// as far as the screen needs, and off the comparison
     public static func variationFrame(
         cell: CGRect,
         size: CGSize,
-        panel: CGRect,
-        gap: CGFloat
+        baseCenterX: CGFloat,
+        expandsLeft: Bool,
+        expandsDown: Bool,
+        baseOffset: CGFloat,
+        gap: CGFloat,
+        avoiding comparison: CGRect?,
+        visibleFrame visible: CGRect,
+        spacing: CGFloat
     ) -> CGRect {
-        let below = cell.minY - gap - size.height
-        let above = cell.maxY + gap
-        let y: CGFloat
-        if below >= panel.minY {
-            y = below
-        } else if above + size.height <= panel.maxY {
-            y = above
-        } else {
-            // Taller than the room on either side: the side with more room,
-            // kept inside the panel
-            y = cell.minY - panel.minY >= panel.maxY - cell.maxY
-                ? max(below, panel.minY)
-                : min(above, panel.maxY - size.height)
-        }
-        let x = min(
-            max(cell.midX - size.width / 2, panel.minX),
-            max(panel.maxX - size.width, panel.minX)
+        let baseCenter = cell.midX + (expandsLeft ? -baseOffset : baseOffset)
+        var frame = CGRect(
+            x: baseCenter - baseCenterX,
+            y: expandsDown ? cell.minY - gap - size.height : cell.maxY + gap,
+            width: size.width,
+            height: size.height
         )
-        return CGRect(x: x, y: y, width: size.width, height: size.height)
+        frame.origin.x = min(
+            max(frame.minX, visible.minX),
+            max(visible.maxX - size.width, visible.minX)
+        )
+        frame.origin.y = min(
+            max(frame.minY, visible.minY),
+            max(visible.maxY - size.height, visible.minY)
+        )
+        if let comparison, frame.intersects(comparison) {
+            frame.origin.x = comparison.minX >= cell.midX
+                ? comparison.minX - spacing - size.width
+                : comparison.maxX + spacing
+        }
+        return frame
     }
 }
