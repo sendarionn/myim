@@ -153,8 +153,8 @@ final class EmojiWindowController: NSObject {
     private static let recentColumnCount = columnCount
     private static let recentDefaultsKey = "EmojiRecentHistory"
     private static let spacing: CGFloat = 2
-    private static let outerPadding: CGFloat = 8
-    private static let panelWidth: CGFloat = 240
+    private static let outerPadding = InputPanelPositioning.outerPadding
+    private static let panelWidth = InputPanelPositioning.panelSize.width
     private static let cellSize = (
         panelWidth - outerPadding * 2
             - spacing * CGFloat(columnCount - 1)
@@ -245,7 +245,10 @@ final class EmojiWindowController: NSObject {
     private var visibleEntries: [Entry]
     private var searchQuery = ""
     private var presentationAnchor: NSRect?
-    private var presentationVisibleFrame: NSRect?
+    /// Only the runtime verification gives the screens; otherwise the
+    /// connected ones
+    private var presentationScreens: [InputPanelScreenGeometry]?
+    private var lastPlacement: InputPanelPlacement?
     private var avoidedFrames: [NSRect] = []
     private(set) var isSearchConfirmed = false
     private var isClickCommitInProgress = false
@@ -325,20 +328,22 @@ final class EmojiWindowController: NSObject {
     }
 
     func runtimePanelMeasurements(
-        keepsPanelVisible: Bool = false
+        keepsPanelVisible: Bool = false,
+        placementCases: [InputPanelPlacementCase] = []
     ) -> [InputPanelRuntimeSnapshot] {
         let originalHistory = recentHistory
         if recentHistory.emojis.isEmpty {
             recentHistory = RecentEmojiHistory(emojis: ["😀"])
         }
-        presentationAnchor = NSRect(x: 340, y: 400, width: 1, height: 20)
-        presentationVisibleFrame = NSRect(x: 0, y: 0, width: 1200, height: 900)
-
         var results = [panel.inputPanelRuntimeSnapshot(label: "emoji-created")]
         panel.orderFrontRegardless()
         panel.contentView?.layoutSubtreeIfNeeded()
         panel.displayIfNeeded()
         results.append(panel.inputPanelRuntimeSnapshot(label: "emoji-visible"))
+
+        for placementCase in placementCases {
+            results.append(place(placementCase, label: "emoji-placement-\(placementCase.label)"))
+        }
 
         setSearchQuery("")
         panel.contentView?.layoutSubtreeIfNeeded()
@@ -353,14 +358,34 @@ final class EmojiWindowController: NSObject {
         panel.orderFrontRegardless()
         panel.contentView?.layoutSubtreeIfNeeded()
         results.append(panel.inputPanelRuntimeSnapshot(label: "emoji-redisplayed"))
+        // Closed and shown again at the first place
+        if let placementCase = placementCases.first {
+            results.append(place(placementCase, label: "emoji-placement-redisplayed"))
+        }
         if !keepsPanelVisible {
             panel.orderOut(nil)
         }
 
         recentHistory = originalHistory
         presentationAnchor = nil
-        presentationVisibleFrame = nil
+        presentationScreens = nil
         return results
+    }
+
+    /// Places the panel through its own presentation, as `show` does
+    private func place(
+        _ placementCase: InputPanelPlacementCase,
+        label: String
+    ) -> InputPanelRuntimeSnapshot {
+        presentationAnchor = InputPanelPositioning.resolvedAnchor(
+            placementCase.anchorFrame,
+            fallbackPoint: placementCase.fallbackPoint
+        )
+        presentationScreens = placementCase.screens
+        avoidedFrames = placementCase.avoidedFrames
+        updatePanelPresentation()
+        panel.contentView?.layoutSubtreeIfNeeded()
+        return panel.inputPanelRuntimeSnapshot(label: label, placement: lastPlacement)
     }
 
     func show(
@@ -374,14 +399,12 @@ final class EmojiWindowController: NSObject {
         resetVariationPresentation()
         collectionView.selectionIndexPaths = []
         updateRecentSelection()
-        let resolvedAnchor = anchor == .zero
-            ? NSRect(origin: NSEvent.mouseLocation, size: .zero)
-            : anchor
-        let screen = NSScreen.inputScreen(containing: resolvedAnchor)
-        let visible = screen?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        presentationAnchor = resolvedAnchor
-        presentationVisibleFrame = visible
+        // Resolved once, so later layouts do not follow the mouse
+        presentationAnchor = InputPanelPositioning.resolvedAnchor(
+            anchor,
+            fallbackPoint: NSEvent.mouseLocation
+        )
+        presentationScreens = nil
         setSearchQuery("")
         comparisonPanel.orderOut(nil)
         panel.orderFrontRegardless()
@@ -423,6 +446,8 @@ final class EmojiWindowController: NSObject {
         cancelVariationPresentation()
         isSearchConfirmed = false
         avoidedFrames = []
+        presentationAnchor = nil
+        presentationScreens = nil
     }
 
     func avoid(frames: [NSRect]) {
@@ -758,6 +783,7 @@ final class EmojiWindowController: NSObject {
         panel.contentView = root
         panel.setContentSize(contentSize)
         root.frame = NSRect(origin: .zero, size: contentSize)
+        panel.applyInputPanelStyle()
         rebuildRecentArea()
     }
 
@@ -830,10 +856,7 @@ final class EmojiWindowController: NSObject {
             + layout.sectionInset.bottom
         let listHeight = panel.frame.width
             - (showsRecentArea ? Self.panelChromeHeight : 0)
-        let size = NSSize(
-            width: panel.frame.width,
-            height: panel.frame.width
-        )
+        let size = InputPanelPositioning.panelSize
         panel.setContentSize(size)
         panel.contentView?.frame = NSRect(origin: .zero, size: size)
         scrollView.frame.size.height = listHeight
@@ -842,44 +865,23 @@ final class EmojiWindowController: NSObject {
             height: max(documentHeight, scrollView.contentSize.height)
         ))
 
-        guard let anchor = presentationAnchor,
-              let visible = presentationVisibleFrame else { return }
-        let belowY = anchor.minY - size.height - 8
-        let displaysAboveInput = belowY < visible.minY
-        layout.displaysBottomUp = displaysAboveInput
-        positionSections(listHeight: listHeight, width: size.width)
-        let preferredY = displaysAboveInput
-            ? anchor.maxY + 8
-            : belowY
-        let baseOrigin = NSPoint(
-            x: min(max(anchor.minX, visible.minX), visible.maxX - size.width),
-            y: min(max(preferredY, visible.minY), visible.maxY - size.height)
+        guard let anchor = presentationAnchor else { return }
+        let screens = presentationScreens
+            ?? NSScreen.screens.map(InputPanelPositioning.screenGeometry)
+        let placement = InputPanelPositioning.placement(
+            anchorFrame: anchor,
+            screens: screens,
+            avoidedFrames: avoidedFrames,
+            fallbackPoint: NSEvent.mouseLocation,
+            panelSize: size
         )
-        let occupied = avoidedFrames.reduce(anchor) { $0.union($1) }
-        let origins = [
-            baseOrigin,
-            NSPoint(x: occupied.maxX + 8, y: baseOrigin.y),
-            NSPoint(x: occupied.minX - size.width - 8, y: baseOrigin.y),
-            NSPoint(x: baseOrigin.x, y: occupied.maxY + 8),
-            NSPoint(x: baseOrigin.x, y: occupied.minY - size.height - 8)
-        ].map { point in
-            NSPoint(
-                x: min(max(point.x, visible.minX), visible.maxX - size.width),
-                y: min(max(point.y, visible.minY), visible.maxY - size.height)
-            )
-        }
-        let frames = origins.map { NSRect(origin: $0, size: size) }
-        let frame = frames.first { candidate in
-            avoidedFrames.allSatisfy { !candidate.intersects($0) }
-        } ?? frames.min { lhs, rhs in
-            overlapArea(of: lhs) < overlapArea(of: rhs)
-        } ?? NSRect(origin: baseOrigin, size: size)
-        layout.displaysBottomUp = frame.minY >= anchor.maxY
+        lastPlacement = placement
+        layout.displaysBottomUp = placement.direction == .above
         positionSections(listHeight: listHeight, width: size.width)
         if previousDirection != layout.displaysBottomUp {
             rebuildRecentArea()
         }
-        panel.setFrameOrigin(frame.origin)
+        panel.setFrame(placement.frame, display: panel.isVisible)
         layout.invalidateLayout()
     }
 
@@ -927,13 +929,6 @@ final class EmojiWindowController: NSObject {
                 width: width - 16,
                 height: Self.recentAreaHeight
             )
-        }
-    }
-
-    private func overlapArea(of frame: NSRect) -> CGFloat {
-        avoidedFrames.reduce(0) { result, avoided in
-            let intersection = frame.intersection(avoided)
-            return result + max(intersection.width, 0) * max(intersection.height, 0)
         }
     }
 

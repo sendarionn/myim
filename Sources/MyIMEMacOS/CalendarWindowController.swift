@@ -129,7 +129,7 @@ private final class CalendarGridView: NSView {
 
     override func layout() {
         super.layout()
-        let padding: CGFloat = 9
+        let padding = InputPanelPositioning.outerPadding
         let headerHeight: CGFloat = 28
         let weekdayHeight: CGFloat = 18
         let footerHeight: CGFloat = shortcutLabel.isHidden ? 0 : 28
@@ -338,7 +338,7 @@ final class CalendarWindowController: NSObject {
     private var outsideClickTimer: Timer?
 
     override init() {
-        let gridSize = NSSize(width: 240, height: 240)
+        let gridSize = InputPanelPositioning.panelSize
         let calendarGrid = CalendarGridView(frame: NSRect(origin: .zero, size: gridSize))
         calendarView = calendarGrid
 
@@ -352,9 +352,8 @@ final class CalendarWindowController: NSObject {
         super.init()
 
         panel.applyInputPanelStyle()
+        panel.setContentSize(InputPanelPositioning.panelSize)
         panel.isMovableByWindowBackground = true
-        panel.contentView?.wantsLayer = true
-        panel.contentView?.layer?.cornerRadius = 0
         panel.becomesKeyOnlyIfNeeded = false
         panel.collectionBehavior = [
             .moveToActiveSpace, .transient, .fullScreenAuxiliary
@@ -381,7 +380,8 @@ final class CalendarWindowController: NSObject {
     }
 
     func runtimePanelMeasurements(
-        keepsPanelVisible: Bool = false
+        keepsPanelVisible: Bool = false,
+        placementCases: [InputPanelPlacementCase] = []
     ) -> [InputPanelRuntimeSnapshot] {
         var results = [panel.inputPanelRuntimeSnapshot(label: "calendar-created")]
         panel.orderFrontRegardless()
@@ -389,8 +389,9 @@ final class CalendarWindowController: NSObject {
         panel.displayIfNeeded()
         results.append(panel.inputPanelRuntimeSnapshot(label: "calendar-visible"))
 
-        panel.setFrameOrigin(NSPoint(x: 80, y: 152))
-        results.append(panel.inputPanelRuntimeSnapshot(label: "calendar-positioned"))
+        for placementCase in placementCases {
+            results.append(place(placementCase, label: "calendar-placement-\(placementCase.label)"))
+        }
 
         calendarView.moveDisplayedMonthForRuntimeVerification()
         panel.contentView?.layoutSubtreeIfNeeded()
@@ -405,6 +406,10 @@ final class CalendarWindowController: NSObject {
         panel.orderFrontRegardless()
         panel.contentView?.layoutSubtreeIfNeeded()
         results.append(panel.inputPanelRuntimeSnapshot(label: "calendar-redisplayed"))
+        // Closed and shown again at the first place
+        if let placementCase = placementCases.first {
+            results.append(place(placementCase, label: "calendar-placement-redisplayed"))
+        }
         if !keepsPanelVisible {
             panel.orderOut(nil)
         }
@@ -445,6 +450,12 @@ final class CalendarWindowController: NSObject {
         panel.makeFirstResponder(calendarView)
         startOutsideClickMonitoring()
 
+        // A modal session lowers the panel to the modal level, below the
+        // level the input panels share
+        let sharedLevel = panel.level
+        RunLoop.main.perform(inModes: [.modalPanel]) { [panel] in
+            panel.level = sharedLevel
+        }
         let response = NSApp.runModal(for: panel)
         stopOutsideClickMonitoring()
         panel.orderOut(nil)
@@ -501,53 +512,39 @@ final class CalendarWindowController: NSObject {
         return response == .OK ? selectedIndex : nil
     }
 
-    private func position(near anchorFrame: NSRect) {
-        let resolvedAnchor = anchorFrame == .zero
-            ? NSRect(origin: NSEvent.mouseLocation, size: NSSize(width: 1, height: 1))
-            : anchorFrame
-        let screens = NSScreen.screens
-        let screen = screens.max { lhs, rhs in
-            intersectionArea(lhs.frame, resolvedAnchor)
-                < intersectionArea(rhs.frame, resolvedAnchor)
-        }.flatMap {
-            intersectionArea($0.frame, resolvedAnchor) > 0 ? $0 : nil
-        } ?? nearestScreen(
-            to: NSPoint(x: resolvedAnchor.midX, y: resolvedAnchor.midY),
-            screens: screens
-        ) ?? NSScreen.main
-        let visibleFrame = screen?.visibleFrame
-            ?? NSRect(x: 0, y: 0, width: 800, height: 600)
-        let size = panel.frame.size
-        let x = min(
-            max(resolvedAnchor.minX, visibleFrame.minX),
-            visibleFrame.maxX - size.width
+    private func place(
+        _ placementCase: InputPanelPlacementCase,
+        label: String
+    ) -> InputPanelRuntimeSnapshot {
+        let placement = position(
+            near: placementCase.anchorFrame,
+            avoiding: placementCase.avoidedFrames,
+            screens: placementCase.screens,
+            fallbackPoint: placementCase.fallbackPoint
         )
-        var y = resolvedAnchor.minY - size.height - 6
-        if y < visibleFrame.minY {
-            y = min(resolvedAnchor.maxY + 6, visibleFrame.maxY - size.height)
-        }
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        panel.contentView?.layoutSubtreeIfNeeded()
+        return panel.inputPanelRuntimeSnapshot(label: label, placement: placement)
     }
 
-    private func intersectionArea(_ lhs: NSRect, _ rhs: NSRect) -> CGFloat {
-        let intersection = lhs.intersection(rhs)
-        return intersection.isNull ? 0 : intersection.width * intersection.height
-    }
-
-    private func nearestScreen(
-        to point: NSPoint,
-        screens: [NSScreen]
-    ) -> NSScreen? {
-        screens.min { lhs, rhs in
-            squaredDistance(from: point, to: lhs.frame)
-                < squaredDistance(from: point, to: rhs.frame)
-        }
-    }
-
-    private func squaredDistance(from point: NSPoint, to rect: NSRect) -> CGFloat {
-        let x = min(max(point.x, rect.minX), rect.maxX)
-        let y = min(max(point.y, rect.minY), rect.maxY)
-        return pow(point.x - x, 2) + pow(point.y - y, 2)
+    @discardableResult
+    private func position(
+        near anchorFrame: NSRect,
+        avoiding avoidedFrames: [NSRect] = [],
+        screens: [InputPanelScreenGeometry] = NSScreen.screens
+            .map(InputPanelPositioning.screenGeometry),
+        fallbackPoint: NSPoint = NSEvent.mouseLocation
+    ) -> InputPanelPlacement {
+        let placement = InputPanelPositioning.placement(
+            anchorFrame: InputPanelPositioning.resolvedAnchor(
+                anchorFrame,
+                fallbackPoint: fallbackPoint
+            ),
+            screens: screens,
+            avoidedFrames: avoidedFrames,
+            fallbackPoint: fallbackPoint
+        )
+        panel.setFrame(placement.frame, display: panel.isVisible)
+        return placement
     }
 
     private func startOutsideClickMonitoring() {
