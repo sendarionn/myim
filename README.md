@@ -65,7 +65,7 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 ## 再変換
 
-確定済みの文字列を選択して`Tab`を押すと、候補を選び直せます。
+確定済みの文字列を選択して`⌥R`を押すと、候補を選び直せます。
 
 <!-- readme-media: reconversion -->
 ![再変換](docs/assets/reconversion.gif)
@@ -148,7 +148,7 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 ## 絵文字パネル
 
-`⌥E`で絵文字パネルを開き、矢印キーや英字の検索で絵文字を選べます。選択した絵文字は肌の色などのバリエーションと、Apple、Android、Windowsでの見え方を表示します。
+`⌥E`で絵文字パネルを開き、矢印キーや英字の検索で絵文字を選べます。肌の色などのバリエーションがある絵文字を選ぶと、その近くにバリエーションを、パネルの横にApple、Android、Windowsでの見え方を表示します。
 
 <!-- readme-media: emoji -->
 ![絵文字パネル](docs/assets/emoji.gif)
@@ -162,7 +162,7 @@ myim は macOS 向けの Input Method です。[Gyaim](https://masui.github.io/G
 
 ## ブックマーク検索
 
-`⌥B`でChromeのブックマークを検索し、URLやMarkdownリンクの書式を選んで入力できます。同梱のChrome拡張機能でブックマークを同期しておく必要があります。手順は[Chromeブックマークの同期](docs/DEVELOPMENT_INSTALLATION.md#chromeブックマークの同期)を参照してください。
+`⌥B`でChromeのブックマークを検索し、URLやMarkdownリンクの書式を選んで入力できます。検索文字列は入力位置に表示され、通常どおり変換できます。選択中のブックマークのページを横に表示し、書式の選択中は挿入される文字列を入力位置に表示します。書式の選択中に`Delete`または`Esc`を押すと検索に戻ります。同梱のChrome拡張機能でブックマークを同期しておく必要があります。手順は[Chromeブックマークの同期](docs/DEVELOPMENT_INSTALLATION.md#chromeブックマークの同期)を参照してください。
 
 <!-- readme-media: bookmark -->
 ![ブックマーク検索](docs/assets/bookmark.gif)

@@ -60,7 +60,7 @@ func keyLabel(_ keyCode: UInt16, flags: CGEventFlags) -> String {
         36: "Return", 48: "Tab", 49: "Space", 51: "Delete", 53: "Esc",
         76: "Enter", 123: "←", 124: "→", 125: "↓", 126: "↑",
         97: "F6", 98: "F7", 100: "F8",
-        17: "T", 8: "C", 11: "B", 12: "Q", 14: "E", 3: "F", 2: "D"
+        17: "T", 8: "C", 11: "B", 12: "Q", 14: "E", 3: "F", 2: "D", 15: "R"
     ]
     parts.append(names[keyCode] ?? "Key \(keyCode)")
     return parts.joined(separator: " ")
