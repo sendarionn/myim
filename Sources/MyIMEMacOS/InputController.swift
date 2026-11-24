@@ -712,6 +712,12 @@ final class InputController: IMKInputController {
             return true
         }
 
+        // A live conversion being corrected takes the arrows and Tab before
+        // the panels beside the candidates
+        if let handled = handleLivePreviewKey(event, client: sender) {
+            return handled
+        }
+
         if let handled = handleTranslationCandidateSelection(
             event,
             client: sender
@@ -729,10 +735,6 @@ final class InputController: IMKInputController {
         if isFuzzyCandidateEntryShortcut(event),
            !fuzzyCandidateSession.isEmpty {
             return selectFuzzyCandidate(index: 0, client: sender)
-        }
-
-        if let handled = handleLivePreviewKey(event, client: sender) {
-            return handled
         }
 
         if let handled = handleStandardKeyEvent(event, client: sender) {
@@ -4528,7 +4530,7 @@ final class InputController: IMKInputController {
     private func presentLiveConversion(client sender: Any) {
         let converted = liveConversion.candidates(for: inputBuffer)
         // A conversion being corrected keeps its place
-        guard !converted.isEmpty, livePreview == nil else { return }
+        guard !converted.isEmpty, !isPreviewingLiveConversion else { return }
         let others = currentCandidateModels.filter {
             !$0.hasSource(.liveConversion) && !converted.contains($0.storageText)
         }
@@ -4593,6 +4595,19 @@ final class InputController: IMKInputController {
     /// The part the listed conversions replace, the same for each
     private var livePartTarget: LiveConversionPreview.Target?
 
+    /// A live conversion selected in the primary panel, and nothing in the
+    /// fuzzy or translation panels, is shown to be corrected
+    private var isPreviewingLiveConversion: Bool {
+        guard usesLiveConversion, interactionState == .selectingCandidate,
+              translationCandidateSession.selectedCandidate == nil,
+              let index = selectedCandidateIndex,
+              currentCandidateModels.indices.contains(index),
+              currentCandidateModels[index].hasSource(.liveConversion),
+              let livePreview else { return false }
+        return livePreview.text == currentCandidateModels[index].storageText
+            || livePartCandidates != nil
+    }
+
     /// A live conversion chosen is shown in place of the letters to be
     /// corrected; any other candidate as ordinary conversion shows it
     private func showSelectedCandidateInComposition(_ candidate: Candidate, in sender: Any) {
@@ -4625,13 +4640,8 @@ final class InputController: IMKInputController {
     /// closes the list, then the selection. With no list or selection the
     /// keys work on the candidates as usual
     private func handleLivePreviewKey(_ event: NSEvent, client sender: Any) -> Bool? {
-        guard usesLiveConversion, let index = selectedCandidateIndex,
-              currentCandidateModels.indices.contains(index),
-              currentCandidateModels[index].hasSource(.liveConversion),
-              var preview = livePreview,
-              preview.text == currentCandidateModels[index].storageText
-                || livePartCandidates != nil
-        else { return nil }
+        guard isPreviewingLiveConversion, let index = selectedCandidateIndex,
+              var preview = livePreview else { return nil }
         let modifiers = event.shortcutModifiers.intersection([.shift, .command, .option, .control])
         switch (event.keyCode, modifiers) {
         case (123, []), (124, []):
@@ -5316,6 +5326,10 @@ final class InputController: IMKInputController {
             detail: "fuzzy=\(resolvedIndex)"
         )
         updateCandidateDeletionShortcutCapture()
+        // The live conversion being corrected is left; it is shown again on
+        // the way back to the primary panel
+        closeLivePartCandidates(restoring: false)
+        livePreview = nil
         primaryCandidatePanel.clearSelection()
         let displayValue = fuzzyCandidate.storageText + fuzzySuffix
             + compositionSuffix
@@ -7760,6 +7774,11 @@ final class InputController: IMKInputController {
         get { candidateSession.selectedIndex }
         set {
             candidateSession.selectedIndex = newValue
+            // A conversion is corrected only while it is selected
+            if newValue == nil {
+                closeLivePartCandidates(restoring: false)
+                livePreview = nil
+            }
             trace(
                 "candidateSelection.changed",
                 sender: client(),
