@@ -80,46 +80,68 @@ struct LiveConversionPhrasesTests {
         #expect(editing.cursor == 4)
     }
 
-    /// A selection inside kanji widens to the phrase, since the kanji
-    /// cannot be told apart in the reading; kana written as they read
-    /// can be selected alone
+    /// Only what is selected is converted again: kana written as they read,
+    /// katakana among them, are matched in the reading, kanji where the
+    /// converter takes the kana each side to them, and a selection whose
+    /// reading cannot be told is not converted rather than widened
     @Test
-    func aSelectionConvertsTheKanaItReads() throws {
-        var editing = phrases()
-        // 天 of 転機
+    func aSelectionConvertsExactlyTheKanaItReads() throws {
+        var editing = LiveConversionPreview(segments: [
+            .init(surface: "ローマ字として", reading: "ろーまじとして"),
+            .init(surface: "今日", reading: "きょう"),
+            .init(surface: "天気", reading: "てんき")
+        ])
+        // ローマ
+        editing.moveCursor(by: -12)
+        editing.extendSelection(by: 3)
+        let roma = try #require(editing.conversionTarget())
+        #expect(roma.reading == "ろーま")
+        #expect(roma.range == 0..<3)
+        // 字
+        editing.moveCursor(by: 1)
+        editing.extendSelection(by: 1)
+        #expect(try #require(editing.conversionTarget()).reading == "じ")
+        // 気 of 天気, confirmed by the converter
+        let converts: (String, String) -> Bool = { reading, surface in
+            ["てん": "天", "き": "気"][reading] == surface
+        }
+        editing.moveCursor(by: 1)
+        editing.moveCursor(by: 20)
+        editing.extendSelection(by: -1)
+        #expect(editing.selection == 10..<11)
+        #expect(editing.conversionTarget() == nil)
+        #expect(try #require(editing.conversionTarget(converts: converts)).reading == "き")
+        // 日 of 今日 reads no part of きょう alone
+        editing.moveCursor(by: -1)
         editing.moveCursor(by: -1)
         editing.extendSelection(by: -1)
-        #expect(try #require(editing.conversionTarget).reading == "てんき")
-        #expect(try #require(editing.conversionTarget).range == 5..<7)
-        // は of 今日は; the first arrow ends the selection
-        editing.moveCursor(by: -1)
-        editing.moveCursor(by: -10)
-        editing.moveCursor(by: 2)
-        editing.extendSelection(by: 1)
-        #expect(try #require(editing.conversionTarget).reading == "は")
-        #expect(try #require(editing.conversionTarget).range == 2..<3)
+        #expect(String(Array(editing.text)[editing.selection!]) == "日")
+        #expect(editing.conversionTarget(converts: converts) == nil)
+        #expect(editing.selection != nil)
     }
 
-    /// Only the selection changes, and the rest keeps its text and reading
+    /// The conversions listed and the one taken replace the same part, and
+    /// the text before and after it is kept whatever their length
     @Test
-    func aConversionReplacesOnlyTheSelection() {
-        var editing = phrases()
-        editing.moveCursor(by: -1)
-        editing.extendSelection(by: -1)
-        editing.replaceSelection(with: "天気", keepsSelected: true)
-        #expect(editing.text == "今日は良い天気")
-        #expect(editing.selection == 5..<7)
-        editing.replaceSelection(with: "てんき")
-        #expect(editing.text == "今日は良いてんき")
-        #expect(editing.reading == "きょうはよいてんき")
-        #expect(editing.selection == nil)
-        #expect(editing.cursor == 8)
-        // Part of a phrase in kana
-        editing.moveCursor(by: -10)
-        editing.moveCursor(by: 2)
-        editing.extendSelection(by: 1)
-        editing.replaceSelection(with: "葉")
-        #expect(editing.text == "今日葉良いてんき")
-        #expect(editing.segments.map(\.reading) == ["きょう", "は", "よい", "てんき"])
+    func aConversionReplacesOnlyTheSelection() throws {
+        var editing = LiveConversionPreview(segments: [
+            .init(surface: "ローマ字として", reading: "ろーまじとして"),
+            .init(surface: "使う", reading: "つかう")
+        ])
+        editing.moveCursor(by: -9)
+        editing.extendSelection(by: 3)
+        let target = try #require(editing.conversionTarget())
+        let shown = editing.replacing(target, with: "ろうま", keepsSelected: true)
+        #expect(shown.text == "ろうま字として使う")
+        #expect(shown.selection == 0..<3)
+        let longer = editing.replacing(target, with: "羅馬帝国", keepsSelected: true)
+        #expect(longer.text == "羅馬帝国字として使う")
+        #expect(longer.selection == 0..<4)
+        let taken = editing.replacing(target, with: "ローマ")
+        #expect(taken.text == "ローマ字として使う")
+        #expect(taken.reading == "ろーまじとしてつかう")
+        #expect(taken.selection == nil)
+        #expect(taken.cursor == 3)
+        #expect(taken.segments.map(\.reading) == ["ろーま", "じとして", "つかう"])
     }
 }

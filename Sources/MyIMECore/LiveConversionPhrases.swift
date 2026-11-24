@@ -114,96 +114,191 @@ public struct LiveConversionPreview: Equatable, Sendable {
         anchor = nil
     }
 
-    /// The part a selection converts again: the selection widened to where
-    /// the text can be told from its reading, as the end of a phrase or
-    /// kana written as it reads, with the kana that part reads
-    public var conversionTarget: (range: Range<Int>, reading: String)? {
-        guard let selection else { return nil }
-        let start = position(selection.lowerBound, widening: .backward)
-        let end = position(selection.upperBound, widening: .forward)
-        guard start.text < end.text else { return nil }
-        let reading = Array(self.reading)
-        return (start.text..<end.text, String(reading[start.reading..<end.reading]))
+    /// The selected part to be converted again: exactly the characters
+    /// selected, with the kana they read. Kept from when its conversions
+    /// are listed, so each of them and the one taken replace the same part
+    public struct Target: Equatable, Sendable {
+        public let range: Range<Int>
+        public let readingRange: Range<Int>
+        public let original: String
+        public let reading: String
     }
 
-    /// The selection, widened as `conversionTarget`, takes `surface`.
+    /// The selection as a part to convert again, or nil where its ends
+    /// cannot be told in the reading. An end inside a phrase is found where
+    /// the kana written in it meet the reading, hiragana and katakana alike;
+    /// one inside kanji is found when `converts` takes the kana each side of
+    /// it to the kanji each side, as てん|き to 天|気. The selection is never
+    /// widened
+    public func conversionTarget(
+        converts: (_ reading: String, _ surface: String) -> Bool = { _, _ in false }
+    ) -> Target? {
+        guard let selection,
+              let start = readingOffset(at: selection.lowerBound, converts: converts),
+              let end = readingOffset(at: selection.upperBound, converts: converts),
+              start < end else { return nil }
+        let reading = Array(self.reading)
+        return Target(
+            range: selection,
+            readingRange: start..<end,
+            original: String(Array(text)[selection]),
+            reading: String(reading[start..<end])
+        )
+    }
+
+    /// `target` takes `surface`, and everything outside it stays as it is.
     /// Kept selected, it is a conversion being chosen; otherwise the cursor
     /// goes after it
-    public mutating func replaceSelection(with surface: String, keepsSelected: Bool = false) {
-        guard let selection else { return }
-        let start = position(selection.lowerBound, widening: .backward)
-        let end = position(selection.upperBound, widening: .forward)
-        guard start.text < end.text else { return }
-        let allReading = Array(reading)
+    public func replacing(_ target: Target, with surface: String, keepsSelected: Bool = false) -> LiveConversionPreview {
         var replaced: [LiveConversionSegment] = []
         var offset = 0
         var readingOffset = 0
+        var inserted = false
+        func insert() {
+            guard !inserted else { return }
+            inserted = true
+            replaced.append(LiveConversionSegment(surface: surface, reading: target.reading))
+        }
         for segment in segments {
             let range = offset..<(offset + segment.surface.count)
             let readingRange = readingOffset..<(readingOffset + segment.reading.count)
             offset = range.upperBound
             readingOffset = readingRange.upperBound
-            if range.upperBound <= start.text || range.lowerBound >= end.text {
+            if range.upperBound <= target.range.lowerBound {
                 replaced.append(segment)
                 continue
             }
-            if range.lowerBound < start.text {
+            if range.lowerBound >= target.range.upperBound {
+                insert()
+                replaced.append(segment)
+                continue
+            }
+            if range.lowerBound < target.range.lowerBound {
                 replaced.append(LiveConversionSegment(
-                    surface: String(segment.surface.prefix(start.text - range.lowerBound)),
-                    reading: String(segment.reading.prefix(start.reading - readingRange.lowerBound))
+                    surface: String(segment.surface.prefix(target.range.lowerBound - range.lowerBound)),
+                    reading: String(segment.reading.prefix(target.readingRange.lowerBound - readingRange.lowerBound))
                 ))
             }
-            if range.lowerBound <= start.text {
+            insert()
+            if range.upperBound > target.range.upperBound {
                 replaced.append(LiveConversionSegment(
-                    surface: surface,
-                    reading: String(allReading[start.reading..<end.reading])
-                ))
-            }
-            if range.upperBound > end.text {
-                replaced.append(LiveConversionSegment(
-                    surface: String(segment.surface.suffix(range.upperBound - end.text)),
-                    reading: String(segment.reading.suffix(readingRange.upperBound - end.reading))
+                    surface: String(segment.surface.suffix(range.upperBound - target.range.upperBound)),
+                    reading: String(segment.reading.suffix(readingRange.upperBound - target.readingRange.upperBound))
                 ))
             }
         }
-        segments = replaced.filter { !$0.surface.isEmpty || !$0.reading.isEmpty }
-        cursor = start.text + surface.count
-        anchor = keepsSelected && !surface.isEmpty ? start.text : nil
+        insert()
+        var preview = self
+        preview.segments = replaced.filter { !$0.surface.isEmpty || !$0.reading.isEmpty }
+        preview.cursor = target.range.lowerBound + surface.count
+        preview.anchor = keepsSelected && !surface.isEmpty ? target.range.lowerBound : nil
+        return preview
     }
 
-    private enum Widening {
-        case backward
-        case forward
-    }
-
-    /// A position in the text and the reading. One inside a phrase stays
-    /// where the kana before or after it are written as they read, and
-    /// otherwise moves to the phrase's start or end
-    private func position(_ text: Int, widening: Widening) -> (text: Int, reading: Int) {
+    /// The offset in the reading of a position in the text
+    private func readingOffset(at position: Int, converts: (String, String) -> Bool) -> Int? {
         var offset = 0
-        var readingOffset = 0
+        var readingStart = 0
         for segment in segments {
             let surface = Array(segment.surface)
-            let end = offset + surface.count
-            if text <= end {
-                let inside = text - offset
-                let kana = Array(segment.reading)
-                let prefix = zip(surface, kana).prefix { $0 == $1 }.count
-                let suffix = zip(surface.reversed(), kana.reversed()).prefix { $0 == $1 }.count
-                if inside <= prefix {
-                    return (text, readingOffset + inside)
-                }
-                if surface.count - inside <= suffix {
-                    return (text, readingOffset + kana.count - (surface.count - inside))
-                }
-                return widening == .backward
-                    ? (offset, readingOffset)
-                    : (end, readingOffset + kana.count)
+            if position <= offset + surface.count {
+                let inside = position - offset
+                if inside == 0 { return readingStart }
+                if inside == surface.count { return readingStart + segment.reading.count }
+                return Self.readingOffset(
+                    at: inside,
+                    surface: surface,
+                    reading: Array(segment.reading),
+                    converts: converts
+                ).map { readingStart + $0 }
             }
-            offset = end
-            readingOffset += segment.reading.count
+            offset += surface.count
+            readingStart += segment.reading.count
         }
-        return (offset, readingOffset)
+        return nil
+    }
+
+    /// Within a phrase: the offsets in the reading every way of reading it
+    /// gives the position, where a character written as it reads matches
+    /// one kana and any other reads one or more. One offset is the answer;
+    /// with more, inside kanji, the one `converts` confirms each side of
+    static func readingOffset(
+        at position: Int,
+        surface: [Character],
+        reading: [Character],
+        converts: (String, String) -> Bool
+    ) -> Int? {
+        let kana = reading.map(normalized)
+        let written = surface.map(normalized)
+        func readsAsWritten(_ character: Character) -> Bool {
+            let scalars = String(character).unicodeScalars
+            return scalars.allSatisfy {
+                $0.isASCII || (0x3041...0x309F).contains($0.value) || $0.value == 0x30FC
+                    || (0x3000...0x303F).contains($0.value) || (0xFF01...0xFF5E).contains($0.value)
+            }
+        }
+        let isKana = written.map(readsAsWritten)
+        // Offsets the text up to each position can read to
+        var forward = Array(repeating: Set<Int>(), count: surface.count + 1)
+        forward[0] = [0]
+        for index in surface.indices {
+            for offset in forward[index] {
+                if isKana[index] {
+                    if offset < kana.count, kana[offset] == written[index] {
+                        forward[index + 1].insert(offset + 1)
+                    }
+                } else {
+                    for end in (offset + 1)...max(offset + 1, kana.count) where end <= kana.count {
+                        forward[index + 1].insert(end)
+                    }
+                }
+            }
+        }
+        // Offsets the text from each position to its end can read from
+        var backward = Array(repeating: Set<Int>(), count: surface.count + 1)
+        backward[surface.count] = [kana.count]
+        for index in surface.indices.reversed() {
+            for offset in backward[index + 1] {
+                if isKana[index] {
+                    if offset > 0, kana[offset - 1] == written[index] {
+                        backward[index].insert(offset - 1)
+                    }
+                } else {
+                    for start in 0..<offset {
+                        backward[index].insert(start)
+                    }
+                }
+            }
+        }
+        let offsets = forward[position].intersection(backward[position]).sorted()
+        if offsets.count == 1 { return offsets[0] }
+        guard offsets.count > 1 else { return nil }
+        // Inside kanji: the kanji each side, up to kana written as they
+        // read or the phrase's ends, which must be read one way
+        var runStart = position
+        while runStart > 0, !isKana[runStart - 1] { runStart -= 1 }
+        var runEnd = position
+        while runEnd < surface.count, !isKana[runEnd] { runEnd += 1 }
+        let starts = forward[runStart].intersection(backward[runStart])
+        let ends = forward[runEnd].intersection(backward[runEnd])
+        guard starts.count == 1, ends.count == 1,
+              let readingStart = starts.first, let readingEnd = ends.first else { return nil }
+        let confirmed = offsets.filter { offset in
+            readingStart < offset && offset < readingEnd
+                && converts(String(reading[readingStart..<offset]), String(surface[runStart..<position]))
+                && converts(String(reading[offset..<readingEnd]), String(surface[position..<runEnd]))
+        }
+        return confirmed.count == 1 ? confirmed[0] : nil
+    }
+
+    /// Katakana compared as hiragana
+    private static func normalized(_ character: Character) -> Character {
+        let scalars = String(character).unicodeScalars.map { scalar -> Unicode.Scalar in
+            (0x30A1...0x30F6).contains(scalar.value)
+                ? Unicode.Scalar(scalar.value - 0x60) ?? scalar
+                : scalar
+        }
+        return Character(String(String.UnicodeScalarView(scalars)))
     }
 
     private func utf16Range(_ range: Range<Int>) -> NSRange {

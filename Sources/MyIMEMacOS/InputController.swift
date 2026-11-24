@@ -4590,6 +4590,8 @@ final class InputController: IMKInputController {
     private var livePartCandidateIndex = 0
     /// The conversion as it was before the list, for Esc
     private var livePreviewBeforeList: LiveConversionPreview?
+    /// The part the listed conversions replace, the same for each
+    private var livePartTarget: LiveConversionPreview.Target?
 
     /// A live conversion chosen is shown in place of the letters to be
     /// corrected; any other candidate as ordinary conversion shows it
@@ -4618,10 +4620,10 @@ final class InputController: IMKInputController {
     }
 
     /// While a live conversion chosen is shown: ← and → move the cursor,
-    /// Shift with them selects; Space lists the conversions of the
-    /// selection and goes through them, ↑↓ too; Return takes the one
-    /// chosen; Esc closes the list, then the selection. With no list or
-    /// selection the keys work on the candidates as usual
+    /// Shift with them selects; Tab lists the conversions of the selection
+    /// and goes through them, ↑↓ too; Return takes the one chosen; Esc
+    /// closes the list, then the selection. With no list or selection the
+    /// keys work on the candidates as usual
     private func handleLivePreviewKey(_ event: NSEvent, client sender: Any) -> Bool? {
         guard usesLiveConversion, let index = selectedCandidateIndex,
               currentCandidateModels.indices.contains(index),
@@ -4642,21 +4644,28 @@ final class InputController: IMKInputController {
             preview = livePreview ?? preview
             preview.extendSelection(by: event.keyCode == 123 ? -1 : 1)
             livePreview = preview
-        case (49, []):
+        case (48, []):
             if livePartCandidates != nil {
                 moveLivePartCandidate(by: 1)
             } else {
-                guard let target = preview.conversionTarget,
-                      let engine = Self.liveConversionEngine else { return nil }
-                let candidates = Self.liveConversionQueue.sync {
-                    engine.candidates(forReading: target.reading)
-                }
-                guard !candidates.isEmpty else { return true }
-                let shown = String(Array(preview.text)[target.range])
+                guard preview.selection != nil else { return nil }
+                // A selection whose reading is not known stays selected,
+                // and Tab does not go on to the whole conversions
+                guard let engine = Self.liveConversionEngine,
+                      let (target, found) = Self.liveConversionQueue.sync(execute: {
+                          () -> (LiveConversionPreview.Target, [String])? in
+                          guard let target = preview.conversionTarget(converts: { reading, surface in
+                              engine.candidates(forReading: reading).contains(surface)
+                          }) else { return nil }
+                          return (target, engine.candidates(forReading: target.reading))
+                      }) else { return true }
+                // What is shown can be gone back to
+                let candidates = found.contains(target.original) ? found : [target.original] + found
+                livePartTarget = target
                 livePreviewBeforeList = preview
                 livePartCandidates = candidates
                 // The first conversion other than the one shown
-                livePartCandidateIndex = candidates.firstIndex { $0 != shown } ?? 0
+                livePartCandidateIndex = candidates.firstIndex { $0 != target.original } ?? 0
             }
             previewLivePartCandidate()
         case (125, []), (126, []):
@@ -4664,9 +4673,9 @@ final class InputController: IMKInputController {
             moveLivePartCandidate(by: event.keyCode == 125 ? 1 : -1)
             previewLivePartCandidate()
         case (36, []), (76, []):
-            guard let candidates = livePartCandidates,
-                  var applied = livePreviewBeforeList else { return nil }
-            applied.replaceSelection(with: candidates[livePartCandidateIndex])
+            guard let candidates = livePartCandidates, let target = livePartTarget,
+                  let before = livePreviewBeforeList else { return nil }
+            let applied = before.replacing(target, with: candidates[livePartCandidateIndex])
             closeLivePartCandidates(restoring: false)
             livePreview = applied
             replaceSelectedCandidate(with: applied.text, at: index)
@@ -4719,9 +4728,13 @@ final class InputController: IMKInputController {
     private func previewLivePartCandidate() {
         guard let candidates = livePartCandidates,
               candidates.indices.contains(livePartCandidateIndex),
-              var preview = livePreviewBeforeList else { return }
-        preview.replaceSelection(with: candidates[livePartCandidateIndex], keepsSelected: true)
-        livePreview = preview
+              let target = livePartTarget,
+              let before = livePreviewBeforeList else { return }
+        livePreview = before.replacing(
+            target,
+            with: candidates[livePartCandidateIndex],
+            keepsSelected: true
+        )
     }
 
     private func closeLivePartCandidates(restoring: Bool) {
@@ -4731,6 +4744,7 @@ final class InputController: IMKInputController {
         livePartCandidates = nil
         livePartCandidateIndex = 0
         livePreviewBeforeList = nil
+        livePartTarget = nil
     }
 
     private func showLivePartCandidates(_ candidates: [String], client sender: Any) {
