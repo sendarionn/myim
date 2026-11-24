@@ -53,6 +53,19 @@ struct SKKCompositionTests {
         #expect(candidates == ["書く", "描く", "欠く", "かく", "KaKu"])
     }
 
+    /// Keys that read as no kana offer nothing to commit in their place,
+    /// and keep their capitals to be committed as typed
+    @Test
+    func keysThatReadAsNoKanaKeepTheirCapitals() {
+        let skk = composition("SKK")
+        #expect(skk.typed == "SKK")
+        #expect(skk.romaji == "skk")
+        #expect(skk.reading() == nil)
+        #expect(SKKCandidateComposer.candidates(
+            input: "skk", composition: skk, standard: [], okuriAri: { _ in [] }
+        ).isEmpty)
+    }
+
     @Test
     func incompleteOkuriganaOfferNothingYet() {
         #expect(SKKCandidateComposer.candidates(

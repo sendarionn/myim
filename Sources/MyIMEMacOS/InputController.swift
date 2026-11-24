@@ -753,7 +753,7 @@ final class InputController: IMKInputController {
             !characters.isEmpty
         else {
             if !inputBuffer.isEmpty {
-                commit(inputBuffer, to: sender)
+                commit(compositionAsTyped, to: sender)
             }
             if isPasteShortcut(event) {
                 followPastedText(client: sender)
@@ -767,7 +767,7 @@ final class InputController: IMKInputController {
         if startsSKK, selectedCandidateValue == nil, !inputBuffer.isEmpty {
             _ = handleReturnKey(client: sender)
             if !inputBuffer.isEmpty {
-                commit(inputBuffer, to: sender)
+                commit(compositionAsTyped, to: sender)
             }
         }
 
@@ -781,7 +781,7 @@ final class InputController: IMKInputController {
         }
         guard isASCIIInput else {
             if !inputBuffer.isEmpty {
-                commit(inputBuffer, to: sender)
+                commit(compositionAsTyped, to: sender)
             }
             return false
         }
@@ -818,6 +818,10 @@ final class InputController: IMKInputController {
         guard var composition = skkComposition else { return characters }
         guard characters.count == 1, let character = characters.first,
               inputCursor == inputBuffer.count, composition.romaji == inputBuffer else {
+            // Going on as ordinary input, the letters keep their capitals
+            if composition.romaji == inputBuffer {
+                replaceInputBuffer(composition.typed, cursorPosition: inputCursor)
+            }
             skkComposition = nil
             return characters
         }
@@ -828,6 +832,18 @@ final class InputController: IMKInputController {
         )
         skkComposition = composition
         return characters.lowercased()
+    }
+
+    /// The keys of the SKK conversion being typed, capitals kept
+    private var skkTypedText: String? {
+        skkComposition.flatMap { $0.romaji == inputBuffer ? $0.typed : nil }
+    }
+
+    /// The composition as typed, for a commit of the letters themselves:
+    /// an SKK conversion keeps its capitals, which the composition holds in
+    /// lower case for conversion
+    private var compositionAsTyped: String {
+        skkTypedText ?? inputBuffer
     }
 
     /// Shift-Tab goes back through the candidates of an SKK conversion
@@ -2305,12 +2321,15 @@ final class InputController: IMKInputController {
             refreshCandidates(client: sender)
             return true
         }
-        let unselectedInputLearningEntry = UnselectedInputLearningPolicy.entry(
-            originalInput: inputBuffer,
-            hasSelectedCandidate: selectedCandidateValue != nil,
-            remainder: compositionSuffix
-        )
-        let value = selectedCandidateValue ?? inputBuffer
+        // The keys of an SKK conversion go as typed and are not learned
+        let unselectedInputLearningEntry = skkTypedText == nil
+            ? UnselectedInputLearningPolicy.entry(
+                originalInput: inputBuffer,
+                hasSelectedCandidate: selectedCandidateValue != nil,
+                remainder: compositionSuffix
+            )
+            : nil
+        let value = selectedCandidateValue ?? compositionAsTyped
         let punctuation = selectedCandidateValue == nil
             ? ""
             : compositionSuffix
@@ -6289,6 +6308,13 @@ final class InputController: IMKInputController {
             return true
         }
 
+        // An SKK conversion with nothing to commit in its place goes as
+        // typed, capitals kept, and is not learned
+        if selectedCandidateValue == nil, let typed = skkTypedText {
+            commit(typed, to: sender)
+            return true
+        }
+
         let selectedCandidate = selectedCandidateIndex.flatMap {
             currentCandidates.indices.contains($0) ? currentCandidates[$0] : nil
         }
@@ -7198,7 +7224,7 @@ final class InputController: IMKInputController {
     private func updateMarkedText(in sender: Any) {
         // An SKK conversion shows its keys as typed, so the capitals that
         // start it and its okurigana are seen
-        let shown = skkComposition.map { $0.romaji == inputBuffer ? $0.typed : inputBuffer } ?? inputBuffer
+        let shown = compositionAsTyped
         setMarkedText(
             CandidateSelectionProjection.unconvertedMarkedText(
                 input: shown,
