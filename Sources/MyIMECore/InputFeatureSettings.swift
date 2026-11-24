@@ -15,6 +15,7 @@ public struct InputFeatureSettings {
         static let dateTimeCandidates = "DateTimeCandidatesEnabled"
         static let emojiCandidates = "EmojiCandidatesEnabled"
         static let liveConversion = "LiveConversionEnabled"
+        static let skkMode = "SKKModeEnabled"
         static let passwordInputSourceRecovery =
             "PasswordInputSourceRecoveryEnabled"
         static let disabledImportedDictionaries = "DisabledImportedDictionaries"
@@ -72,6 +73,13 @@ public struct InputFeatureSettings {
     public var isLiveConversionEnabled: Bool {
         get { flag(Key.liveConversion, default: true) }
         nonmutating set { setFlag(Key.liveConversion, newValue) }
+    }
+
+    /// A capital typed with Shift starts an SKK conversion and the next
+    /// marks where its okurigana start; off unless turned on
+    public var isSKKModeEnabled: Bool {
+        get { flag(Key.skkMode, default: false) }
+        nonmutating set { setFlag(Key.skkMode, newValue) }
     }
 
     public var isDateTimeCandidatesEnabled: Bool {

@@ -121,6 +121,8 @@ final class InputController: IMKInputController {
     private var reconversionOriginal: String?
     /// The live conversion of the composition, when it is on
     private var liveConversion = LiveConversionState()
+    /// The SKK conversion being typed, begun with a capital typed with Shift
+    private var skkComposition: SKKComposition?
     private var translationCandidateSession = TranslationCandidateSession()
     private var recentCommittedContext = ""
     private var secureInputPassthroughActive = false
@@ -732,6 +734,10 @@ final class InputController: IMKInputController {
             return handled
         }
 
+        if let handled = handleSKKKey(event, client: sender) {
+            return handled
+        }
+
         if isFuzzyCandidateEntryShortcut(event),
            !fuzzyCandidateSession.isEmpty {
             return selectFuzzyCandidate(index: 0, client: sender)
@@ -755,6 +761,16 @@ final class InputController: IMKInputController {
             return false
         }
 
+        // A capital typed with Shift in SKK mode commits what was being
+        // typed, as Return would, and starts an SKK conversion
+        let startsSKK = startsSKKConversion(event, characters: characters)
+        if startsSKK, selectedCandidateValue == nil, !inputBuffer.isEmpty {
+            _ = handleReturnKey(client: sender)
+            if !inputBuffer.isEmpty {
+                commit(inputBuffer, to: sender)
+            }
+        }
+
         if let selectedValue = selectedCandidateValue {
             recordSelectedCandidate()
             commit(selectedValue + compositionSuffix, to: sender)
@@ -770,12 +786,57 @@ final class InputController: IMKInputController {
             return false
         }
 
-        insertIntoInputBuffer(characters)
+        insertIntoInputBuffer(skkTypedCharacters(event, characters: characters, starts: startsSKK))
         selectedCandidateIndex = nil
         previewWindow.hide()
         updateMarkedText(in: sender)
         refreshCandidates(client: sender)
         return true
+    }
+
+    /// In SKK mode a letter typed with Shift, which is a capital, starts an
+    /// SKK conversion when none is being typed. Caps Lock alone is not Shift
+    private func startsSKKConversion(_ event: NSEvent, characters: String) -> Bool {
+        guard Self.featureSettings.isSKKModeEnabled, skkComposition == nil,
+              reconversionOriginal == nil, dictionaryRegistrationSession == nil,
+              !bookmarkSearchSession.isSearching,
+              event.modifierFlags.contains(.shift),
+              characters.count == 1, let character = characters.first,
+              character.isASCII, character.isLetter, character.isUppercase
+        else { return false }
+        return true
+    }
+
+    /// The keys an SKK conversion takes, in lower case as romaji; a capital
+    /// typed with Shift in it marks the okurigana. A key typed elsewhere
+    /// than at the end, where the mark would not stay, ends it
+    private func skkTypedCharacters(_ event: NSEvent, characters: String, starts: Bool) -> String {
+        if starts, let first = characters.first {
+            skkComposition = SKKComposition(firstLetter: first)
+            return characters.lowercased()
+        }
+        guard var composition = skkComposition else { return characters }
+        guard characters.count == 1, let character = characters.first,
+              inputCursor == inputBuffer.count, composition.romaji == inputBuffer else {
+            skkComposition = nil
+            return characters
+        }
+        composition.type(
+            character,
+            marksOkurigana: event.modifierFlags.contains(.shift)
+                && character.isASCII && character.isLetter && character.isUppercase
+        )
+        skkComposition = composition
+        return characters.lowercased()
+    }
+
+    /// Shift-Tab goes back through the candidates of an SKK conversion
+    private func handleSKKKey(_ event: NSEvent, client sender: Any) -> Bool? {
+        guard skkComposition != nil, event.keyCode == 48,
+              event.modifierFlags.intersection([.command, .control, .option, .shift]) == [.shift],
+              !currentCandidates.isEmpty else { return nil }
+        let count = currentCandidates.count
+        return selectCandidate(index: ((selectedCandidateIndex ?? 0) - 1 + count) % count, client: sender)
     }
 
     private func handleStandardKeyEvent(
@@ -897,7 +958,9 @@ final class InputController: IMKInputController {
         // A live conversion shown in place of the letters is committed, not
         // the letters, waited for if the last letters are not converted yet
         finishPendingLiveConversion(client: sender)
-        if !liveConversion.candidates(for: inputBuffer).isEmpty,
+        // An SKK conversion commits its first candidate, as a live
+        // conversion does
+        if skkComposition != nil || !liveConversion.candidates(for: inputBuffer).isEmpty,
            selectedCandidateIndex == nil,
            !currentCandidates.isEmpty {
             selectedCandidateIndex = 0
@@ -1290,6 +1353,7 @@ final class InputController: IMKInputController {
             dateTimeCandidates: Self.featureSettings.isDateTimeCandidatesEnabled,
             emojiCandidates: Self.featureSettings.isEmojiCandidatesEnabled,
             liveConversion: Self.featureSettings.isLiveConversionEnabled,
+            skkMode: Self.featureSettings.isSKKModeEnabled,
             passwordInputSourceRecovery:
                 Self.featureSettings.isPasswordInputSourceRecoveryEnabled,
             passwordInputSourceRecoveryStatus:
@@ -1325,6 +1389,7 @@ final class InputController: IMKInputController {
             toggleDateTimeCandidates: #selector(toggleDateTimeCandidates(_:)),
             toggleEmojiCandidates: #selector(toggleEmojiCandidates(_:)),
             toggleLiveConversion: #selector(toggleLiveConversion(_:)),
+            toggleSKKMode: #selector(toggleSKKMode(_:)),
             togglePasswordInputSourceRecovery: #selector(
                 togglePasswordInputSourceRecovery(_:)
             ),
@@ -1377,6 +1442,7 @@ final class InputController: IMKInputController {
                     dictionaries: InputMethodData.importedDictionaryStore.loadDictionaries()
                 )
                 Self.sharedImportedDictionaryRuntime = imported
+                Self.loadedSKKOkuriAriCandidates = nil
                 dictionaryRuntime.replaceImported(
                     imported,
                     userEntries: userDictionaryStore.entries,
@@ -1408,6 +1474,7 @@ final class InputController: IMKInputController {
     private func toggleImportedDictionary(_ sender: NSButton) {
         guard let filename = sender.identifier?.rawValue else { return }
         Self.featureSettings.setImportedDictionary(filename, enabled: sender.state == .on)
+        Self.loadedSKKOkuriAriCandidates = nil
         rebuildConversionEngine()
     }
 
@@ -1929,6 +1996,13 @@ final class InputController: IMKInputController {
         let enabled = checkboxValue(sender, current: Self.featureSettings.isLiveConversionEnabled)
         commitCompositionBeforeInputMethodChange()
         Self.featureSettings.isLiveConversionEnabled = enabled
+    }
+
+    @objc
+    private func toggleSKKMode(_ sender: Any?) {
+        let enabled = checkboxValue(sender, current: Self.featureSettings.isSKKModeEnabled)
+        commitCompositionBeforeInputMethodChange()
+        Self.featureSettings.isSKKModeEnabled = enabled
     }
 
     private func commitCompositionBeforeInputMethodChange() {
@@ -4443,9 +4517,10 @@ final class InputController: IMKInputController {
         ))
         sourceDuration = performanceClock.now - sourceStart
         let presentationStart = performanceClock.now
+        let conversionCandidates = skkCandidates(standard: orderedCandidates)
         replaceCurrentCandidates(with: CandidateListInsertion.inserting(
-            emojiCandidates(after: orderedCandidates),
-            into: orderedCandidates,
+            emojiCandidates(after: conversionCandidates),
+            into: conversionCandidates,
             afterFirst: Self.maximumCandidateCount
         ))
 
@@ -4498,6 +4573,7 @@ final class InputController: IMKInputController {
     /// not a reconversion or one of the panels'
     private var usesLiveConversion: Bool {
         Self.featureSettings.isLiveConversionEnabled
+            && skkComposition == nil
             && reconversionOriginal == nil
             && !bookmarkSearchSession.isSearching
             && !emojiWindow.isVisible
@@ -4819,6 +4895,32 @@ final class InputController: IMKInputController {
         }
     }
 
+    /// The candidates of an SKK conversion: with okurigana, those that
+    /// convert the stem and end in the typed okurigana
+    private func skkCandidates(standard: [Candidate]) -> [Candidate] {
+        guard let skkComposition, skkComposition.romaji == inputBuffer else { return standard }
+        return SKKCandidateComposer.candidates(
+            input: inputBuffer,
+            composition: skkComposition,
+            standard: standard,
+            okuriAri: { Self.skkOkuriAriCandidates[$0] ?? [] }
+        )
+    }
+
+    /// Okuri-ari entries of the imported SKK dictionaries, read when SKK
+    /// mode first needs them and again after an import
+    private static var loadedSKKOkuriAriCandidates: [String: [String]]?
+
+    private static var skkOkuriAriCandidates: [String: [String]] {
+        if let loadedSKKOkuriAriCandidates { return loadedSKKOkuriAriCandidates }
+        let candidates = InputMethodData.importedDictionaryStore
+            .loadOkuriAriCandidates(
+                excludingFilenames: featureSettings.disabledImportedDictionaryFilenames
+            )
+        loadedSKKOkuriAriCandidates = candidates
+        return candidates
+    }
+
     /// Emoji the emoji search finds for the input and its first conversions,
     /// placed after the first page of dictionary candidates; an emoji
     /// already listed, such as one chosen before, keeps its place
@@ -4887,8 +4989,11 @@ final class InputController: IMKInputController {
     }
 
     private func updateFuzzyCandidatesIfNeeded() {
+        // An SKK conversion says what it converts; Shift-Tab goes back
+        // through its candidates
         guard Self.diagnosticConfiguration.enables(.fuzzyCandidate),
               Self.featureSettings.isFuzzyCandidatesEnabled,
+              skkComposition == nil,
               !fuzzyQuery.isEmpty else {
             candidateSearchCoordinator.cancel(.fuzzy)
             secondaryCandidatePanel.hide()
@@ -6392,6 +6497,10 @@ final class InputController: IMKInputController {
         if inputSession.deleteBackward(unit: unit) {
             cancelCandidateLocationRetry()
         }
+        skkComposition?.shorten(to: inputBuffer.count)
+        if inputBuffer.isEmpty || skkComposition?.romaji != inputBuffer {
+            skkComposition = nil
+        }
         selectedCandidateIndex = nil
         previewWindow.hide()
         setMarkedText(
@@ -7087,9 +7196,12 @@ final class InputController: IMKInputController {
     }
 
     private func updateMarkedText(in sender: Any) {
+        // An SKK conversion shows its keys as typed, so the capitals that
+        // start it and its okurigana are seen
+        let shown = skkComposition.map { $0.romaji == inputBuffer ? $0.typed : inputBuffer } ?? inputBuffer
         setMarkedText(
             CandidateSelectionProjection.unconvertedMarkedText(
-                input: inputBuffer,
+                input: shown,
                 prefix: compositionPrefix
             ),
             in: sender,
@@ -7346,6 +7458,7 @@ final class InputController: IMKInputController {
 
     private func clearInputBuffer() {
         cancelCandidateLocationRetry()
+        skkComposition = nil
         endLiveConversion()
         inputSession.clear()
         locationCoordinator.clearCompositionAnchor()

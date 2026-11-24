@@ -160,4 +160,28 @@ struct ImportedDictionaryStoreTests {
             DictionaryEntry(reading: "よみ", candidates: ["後"])
         ])
     }
+
+    /// Okuri-ari entries are stored beside the dictionary, kept out of the
+    /// ordinary entries and read for SKK mode by their key, as かk
+    @Test
+    func okuriAriEntriesAreStoredApartForSKKMode() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: source)
+        }
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        let file = source.appendingPathComponent("SKK-JISYO.S")
+        try Data("かk /書/描/\nたべr /食/\nかんじ /漢字/\n".utf8).write(to: file)
+        let store = ImportedDictionaryStore(directoryURL: directory)
+
+        _ = try store.importSKKFiles([file])
+
+        #expect(store.loadDictionaries().flatMap(\.entries).map(\.reading) == ["かんじ"])
+        #expect(store.loadOkuriAriCandidates() == ["かk": ["書", "描"], "たべr": ["食"]])
+        #expect(store.loadOkuriAriCandidates(excludingFilenames: ["SKK-JISYO.S.tsv"]).isEmpty)
+    }
 }
