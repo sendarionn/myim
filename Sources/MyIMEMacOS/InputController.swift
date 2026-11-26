@@ -790,6 +790,13 @@ final class InputController: IMKInputController {
             }
         }
 
+        // A conversion shown by itself and worked on is committed before
+        // typing on, so the corrections are kept
+        if isLiveAutoPreviewWorkedOn, let shown = livePreview?.text {
+            closeLivePartCandidates(restoring: false)
+            replaceSelectedCandidate(with: shown, at: 0, selects: true)
+        }
+
         if let selectedValue = selectedCandidateValue {
             recordSelectedCandidate()
             commit(selectedValue + compositionSuffix, to: sender)
@@ -826,8 +833,8 @@ final class InputController: IMKInputController {
         return true
     }
 
-    /// The keys an SKK conversion takes, in lower case as romaji; a capital
-    /// typed with Shift in it marks the okurigana. A key typed elsewhere
+    /// The keys an SKK conversion takes, in lower case as romaji; the first
+    /// capital after a lowercase letter marks the okurigana. A key typed elsewhere
     /// than at the end, where the mark would not stay, ends it
     private func skkTypedCharacters(_ event: NSEvent, characters: String, starts: Bool) -> String {
         if starts, let first = characters.first {
@@ -844,11 +851,7 @@ final class InputController: IMKInputController {
             skkComposition = nil
             return characters
         }
-        composition.type(
-            character,
-            marksOkurigana: event.modifierFlags.contains(.shift)
-                && character.isASCII && character.isLetter && character.isUppercase
-        )
+        composition.type(character)
         skkComposition = composition
         return characters.lowercased()
     }
@@ -993,9 +996,10 @@ final class InputController: IMKInputController {
         // A live conversion shown in place of the letters is committed, not
         // the letters, waited for if the last letters are not converted yet
         finishPendingLiveConversion(client: sender)
-        // An SKK conversion commits its first candidate, as a live
-        // conversion does
-        if skkComposition != nil || !liveConversion.candidates(for: inputBuffer).isEmpty,
+        // An SKK conversion with no candidate chosen commits its keys as
+        // typed; a live conversion commits the one shown
+        if skkComposition == nil,
+           !liveConversion.candidates(for: inputBuffer).isEmpty,
            selectedCandidateIndex == nil,
            !currentCandidates.isEmpty {
             selectedCandidateIndex = 0
@@ -1776,6 +1780,17 @@ final class InputController: IMKInputController {
     }
 
     private func commitCurrentCompositionFromSystem(to sender: Any) {
+        // An SKK conversion with no candidate chosen goes as typed, capitals
+        // kept, and is not learned
+        if candidateSession.selectedCandidate == nil, let typed = skkTypedText {
+            commit(typed, to: sender)
+            return
+        }
+        // The conversion shown by itself is what the composition looks like
+        if isAutoPreviewingLiveConversion, let shown = livePreview?.text {
+            closeLivePartCandidates(restoring: false)
+            replaceSelectedCandidate(with: shown, at: 0, selects: true)
+        }
         let plan = SystemCompositionCommitPlan.resolve(
             originalInput: inputBuffer,
             selectedCandidate: candidateSession.selectedCandidate,
@@ -4803,7 +4818,8 @@ final class InputController: IMKInputController {
     private func presentLiveConversion(client sender: Any) {
         let converted = liveConversion.candidates(for: inputBuffer)
         // A conversion being corrected keeps its place
-        guard !converted.isEmpty, !isPreviewingLiveConversion else { return }
+        guard !converted.isEmpty, !isPreviewingLiveConversion,
+              !isLiveAutoPreviewWorkedOn else { return }
         let others = currentCandidateModels.filter {
             !$0.hasSource(.liveConversion) && !converted.contains($0.storageText)
         }
@@ -4836,18 +4852,31 @@ final class InputController: IMKInputController {
         switch result.status {
         case .converted:
             guard !result.candidates.isEmpty else { return }
+            // A conversion being worked on stays as it is
+            guard !isLiveAutoPreviewWorkedOn else { return }
             liveConversion.update(
                 input: input,
                 reading: result.reading,
                 candidates: result.candidates,
                 phrases: result.phrases
             )
+            let wasActive = isLiveAutoPreviewActive
+            updateLiveAutoPreview(for: result.reading)
             presentLiveConversion(client: sender)
+            if selectedCandidateIndex == nil, isLiveAutoPreviewActive || wasActive {
+                livePreview = nil
+                updateMarkedText(in: sender)
+            }
         case .typingRomaji:
             break
         case .notRomaji:
             guard liveConversion.displayText(for: input) != nil else { return }
             liveConversion.update(input: "", candidates: [])
+            if isLiveAutoPreviewActive, selectedCandidateIndex == nil {
+                isLiveAutoPreviewActive = false
+                livePreview = nil
+                updateMarkedText(in: sender)
+            }
             replaceCurrentCandidates(with: currentCandidateModels.filter {
                 !$0.hasSource(.liveConversion)
             })
@@ -4860,6 +4889,14 @@ final class InputController: IMKInputController {
     /// The live conversion chosen among the candidates, shown in place of
     /// the letters with a cursor and a selection
     private var livePreview: LiveConversionPreview?
+    /// The first live conversion is shown in place of the letters without
+    /// being chosen, once they read as enough kana
+    private var isLiveAutoPreviewActive = false
+    /// Esc put the letters back; the composition is not shown converted
+    /// again until it ends
+    private var isLiveAutoPreviewDeclined = false
+    /// Kana the letters read as before their conversion is shown by itself
+    private static let liveAutoPreviewKanaCount = 6
     /// Conversions of the selection, listed with Space
     private var livePartCandidates: [String]?
     private var livePartCandidateIndex = 0
@@ -4867,6 +4904,75 @@ final class InputController: IMKInputController {
     private var livePreviewBeforeList: LiveConversionPreview?
     /// The part the listed conversions replace, the same for each
     private var livePartTarget: LiveConversionPreview.Target?
+
+    /// The first live conversion shown by itself, with no candidate chosen
+    /// and nothing in the fuzzy or translation panels
+    private var isAutoPreviewingLiveConversion: Bool {
+        guard usesLiveConversion, isLiveAutoPreviewActive, selectedCandidateIndex == nil,
+              selectedFuzzyCandidateIndex == nil,
+              translationCandidateSession.selectedCandidate == nil,
+              let livePreview,
+              let first = currentCandidateModels.first,
+              first.hasSource(.liveConversion) else { return false }
+        return livePreview.text == first.storageText || livePartCandidates != nil
+    }
+
+    /// The conversion shown by itself has been worked on: a cursor moved, a
+    /// selection or a part converted again; typing on then commits it
+    /// rather than converting the letters again
+    private var isLiveAutoPreviewWorkedOn: Bool {
+        guard isAutoPreviewingLiveConversion, let livePreview else { return false }
+        return livePartCandidates != nil || livePreview.selection != nil
+            || livePreview.cursor != livePreview.text.count
+            || livePreview.text != liveConversion.candidates(for: inputBuffer).first
+    }
+
+    /// Shows the first live conversion in place of the letters while the
+    /// automatic preview is on; until the letters typed since are converted,
+    /// the last conversion with them after it. Returns whether it showed one
+    private func showLiveAutoPreview(in sender: Any) -> Bool {
+        guard usesLiveConversion, isLiveAutoPreviewActive,
+              selectedCandidateIndex == nil else { return false }
+        if let first = liveConversion.candidates(for: inputBuffer).first,
+           currentCandidateModels.first?.hasSource(.liveConversion) == true {
+            if livePreview == nil || (livePartCandidates == nil
+                && livePreview?.text != currentCandidateModels.first?.storageText) {
+                livePreview = liveConversion.preview(
+                    of: currentCandidateModels.first?.storageText ?? first,
+                    for: inputBuffer
+                )
+            }
+            if let livePreview {
+                setLivePreviewMarkedText(livePreview, in: sender)
+                return true
+            }
+        }
+        if let shown = liveConversion.displayText(for: inputBuffer) {
+            setMarkedText(shown, in: sender)
+            return true
+        }
+        return false
+    }
+
+    /// The automatic preview follows how many kana the letters read as;
+    /// one with no Japanese never starts it
+    private func updateLiveAutoPreview(for reading: String) {
+        let kana = reading.unicodeScalars.filter {
+            (0x3041...0x3096).contains($0.value) || (0x30A1...0x30FA).contains($0.value)
+                || $0.value == 0x30FC
+        }.count
+        let isActive = !isLiveAutoPreviewDeclined && kana >= Self.liveAutoPreviewKanaCount
+        if !isActive, isLiveAutoPreviewActive, selectedCandidateIndex == nil {
+            closeLivePartCandidates(restoring: false)
+            livePreview = nil
+        }
+        isLiveAutoPreviewActive = isActive
+    }
+
+    private func endLiveAutoPreview() {
+        isLiveAutoPreviewActive = false
+        isLiveAutoPreviewDeclined = false
+    }
 
     /// A live conversion selected in the primary panel, and nothing in the
     /// fuzzy or translation panels, is shown to be corrected
@@ -4913,8 +5019,11 @@ final class InputController: IMKInputController {
     /// closes the list, then the selection. With no list or selection the
     /// keys work on the candidates as usual
     private func handleLivePreviewKey(_ event: NSEvent, client sender: Any) -> Bool? {
-        guard isPreviewingLiveConversion, let index = selectedCandidateIndex,
+        let isAuto = !isPreviewingLiveConversion && isAutoPreviewingLiveConversion
+        guard isPreviewingLiveConversion || isAuto,
               var preview = livePreview else { return nil }
+        // The conversion shown by itself is the first candidate
+        let index = selectedCandidateIndex ?? 0
         let modifiers = event.shortcutModifiers.intersection([.shift, .command, .option, .control])
         switch (event.keyCode, modifiers) {
         case (123, []), (124, []):
@@ -4931,7 +5040,13 @@ final class InputController: IMKInputController {
             if livePartCandidates != nil {
                 moveLivePartCandidate(by: 1)
             } else {
-                guard preview.selection != nil else { return nil }
+                guard preview.selection != nil else {
+                    // The conversion shown by itself goes on to the next
+                    // whole conversion, as chosen with Tab
+                    guard isAuto else { return nil }
+                    let next = currentCandidates.count > 1 ? 1 : 0
+                    return selectCandidate(index: next, client: sender)
+                }
                 // A selection whose reading is not known stays selected,
                 // and Tab does not go on to the whole conversions
                 guard let engine = Self.liveConversionEngine,
@@ -4961,16 +5076,31 @@ final class InputController: IMKInputController {
             let applied = before.replacing(target, with: candidates[livePartCandidateIndex])
             closeLivePartCandidates(restoring: false)
             livePreview = applied
-            replaceSelectedCandidate(with: applied.text, at: index)
+            replaceSelectedCandidate(with: applied.text, at: index, selects: !isAuto)
         case (53, []):
             if livePartCandidates != nil {
                 closeLivePartCandidates(restoring: true)
             } else if preview.selection != nil {
                 preview.clearSelection()
                 livePreview = preview
+            } else if isAuto {
+                // The letters come back and stay until the composition ends
+                isLiveAutoPreviewActive = false
+                isLiveAutoPreviewDeclined = true
+                livePreview = nil
+                updateMarkedText(in: sender)
+                showPrimaryCandidatePanel(client: sender)
+                return true
             } else {
                 return nil
             }
+        case (49, []) where isAuto:
+            // Space commits the conversion shown, as one chosen
+            closeLivePartCandidates(restoring: true)
+            if let shown = livePreview?.text {
+                replaceSelectedCandidate(with: shown, at: 0, selects: true)
+            }
+            return nil
         default:
             closeLivePartCandidates(restoring: true)
             return nil
@@ -4988,7 +5118,7 @@ final class InputController: IMKInputController {
 
     /// The selected candidate becomes the corrected conversion, so it is
     /// what is committed; it stays a live conversion and is not learned
-    private func replaceSelectedCandidate(with text: String, at index: Int) {
+    private func replaceSelectedCandidate(with text: String, at index: Int, selects: Bool = true) {
         var models = currentCandidateModels
         var selected = index
         models[selected] = Candidate(storageText: text, source: .liveConversion, reading: inputBuffer)
@@ -4999,7 +5129,9 @@ final class InputController: IMKInputController {
             if duplicate < selected { selected -= 1 }
         }
         currentCandidateModels = models
-        selectedCandidateIndex = selected
+        if selects {
+            selectedCandidateIndex = selected
+        }
     }
 
     private func moveLivePartCandidate(by offset: Int) {
@@ -6739,6 +6871,18 @@ final class InputController: IMKInputController {
             return true
         }
 
+        // The conversion shown by itself gives way to the letters first,
+        // and is not shown again for this composition
+        if selectedCandidateIndex == nil, usesLiveConversion, isLiveAutoPreviewActive {
+            closeLivePartCandidates(restoring: false)
+            livePreview = nil
+            isLiveAutoPreviewActive = false
+            isLiveAutoPreviewDeclined = true
+            updateMarkedText(in: sender)
+            showPrimaryCandidatePanel(client: sender)
+            return true
+        }
+
         guard selectedCandidateIndex != nil else {
             if bookmarkSearchSession.isSearching {
                 // Only what is being typed goes; the search stays
@@ -7414,6 +7558,7 @@ final class InputController: IMKInputController {
     }
 
     private func updateMarkedText(in sender: Any) {
+        if showLiveAutoPreview(in: sender) { return }
         // An SKK conversion shows its keys as typed, so the capitals that
         // start it and its okurigana are seen
         let shown = compositionAsTyped
@@ -7677,6 +7822,7 @@ final class InputController: IMKInputController {
     private func clearInputBuffer() {
         cancelCandidateLocationRetry()
         skkComposition = nil
+        endLiveAutoPreview()
         endLiveConversion()
         inputSession.clear()
         locationCoordinator.clearCompositionAnchor()

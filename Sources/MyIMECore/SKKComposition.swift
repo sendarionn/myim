@@ -1,15 +1,13 @@
 import Foundation
 
 /// A composition begun with a capital typed with Shift in SKK mode: the
-/// first capital starts the conversion and the next marks where the
-/// okurigana start, as `KaKu` does for か + く, 書く. It keeps the keys as
-/// typed and where the okurigana start, and reads the stem and the
-/// okurigana from them, so they always agree
+/// first capital starts the conversion and the first capital after a
+/// lowercase letter marks where the okurigana start, as `KaKu` does for
+/// か + く, 書く, and `TORituKe` for とりつ + け. It keeps the keys as typed
+/// and reads the stem and the okurigana from them, so they always agree
 public struct SKKComposition: Equatable, Sendable {
     /// The keys as typed, capitals kept
     public private(set) var typed: String
-    /// Where the okurigana start in `typed`, once marked
-    public private(set) var okuriganaStart: Int?
 
     public init(firstLetter: Character) {
         typed = String(firstLetter)
@@ -18,22 +16,30 @@ public struct SKKComposition: Equatable, Sendable {
     /// The keys as romaji, which is what the composition holds
     public var romaji: String { typed.lowercased() }
 
-    /// A key typed at the end; a capital typed with Shift after the first
-    /// marks the okurigana there, once
-    public mutating func type(_ character: Character, marksOkurigana: Bool) {
-        if marksOkurigana, okuriganaStart == nil, !typed.isEmpty {
-            okuriganaStart = typed.count
+    /// Where the okurigana start in `typed`: the first capital after a
+    /// lowercase letter. Capitals typed together at the start, as the TOR of
+    /// TORituKe, are the stem, and capitals alone, as SKK, mark nothing. It
+    /// follows the keys, so it is found again after Delete
+    public var okuriganaStart: Int? {
+        var seenLowercase = false
+        for (index, character) in typed.enumerated() {
+            if character.isLowercase {
+                seenLowercase = true
+            } else if seenLowercase, character.isUppercase {
+                return index
+            }
         }
+        return nil
+    }
+
+    /// A key typed at the end
+    public mutating func type(_ character: Character) {
         typed.append(character)
     }
 
-    /// The keys after Delete left `length` of them; okurigana deleted
-    /// entirely are no longer marked
+    /// The keys after Delete left `length` of them
     public mutating func shorten(to length: Int) {
         typed = String(typed.prefix(length))
-        if let start = okuriganaStart, typed.count <= start {
-            okuriganaStart = nil
-        }
     }
 
     /// The romaji before and after the okurigana mark

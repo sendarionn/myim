@@ -202,7 +202,7 @@ struct ImportedDictionaryStoreTests {
         let store = ImportedDictionaryStore(directoryURL: directory)
         var composition = SKKComposition(firstLetter: "T")
         for key in "orituKe" {
-            composition.type(key, marksOkurigana: key.isUppercase)
+            composition.type(key)
         }
         let standard = ["取り付け", "取付け", "鳥付け"].map {
             Candidate(storageText: $0, source: .systemDictionary, reading: "toritsuke")

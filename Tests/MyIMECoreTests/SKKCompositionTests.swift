@@ -8,7 +8,7 @@ struct SKKCompositionTests {
     private func composition(_ keys: String) -> SKKComposition {
         var composition = SKKComposition(firstLetter: keys.first!)
         for key in keys.dropFirst() {
-            composition.type(key, marksOkurigana: key.isUppercase)
+            composition.type(key)
         }
         return composition
     }
@@ -23,6 +23,21 @@ struct SKKCompositionTests {
         #expect(taberu.parts == ("ta", "beru"))
         #expect(try #require(taberu.reading()).okuriAriKey == "たb")
         #expect(composition("Kanji").okuriganaStart == nil)
+    }
+
+    /// Capitals typed together at the start are the stem; the first capital
+    /// after a lowercase letter starts the okurigana
+    @Test
+    func capitalsAtTheStartAreTheStem() throws {
+        for keys in ["TorituKe", "TORituKe", "ToritsuKe", "TORitsuKe"] {
+            let keys = composition(keys)
+            #expect(try #require(keys.reading()).okuriAriKey == "とりつk")
+            #expect(try #require(keys.reading()).okurigana == "け")
+        }
+        #expect(composition("TORituKe").typed == "TORituKe")
+        #expect(composition("TAB").okuriganaStart == nil)
+        #expect(composition("SKK").okuriganaStart == nil)
+        #expect(composition("TaBeru").okuriganaStart == 2)
     }
 
     @Test
@@ -84,17 +99,16 @@ struct SKKCompositionTests {
         ).map(\.storageText) == ["取り付け", "取付け", "鳥付け", "取付", "Toritsuke"])
     }
 
-    /// Keys that read as no kana offer nothing to commit in their place,
-    /// and keep their capitals to be committed as typed
+    /// Capitals alone mark no okurigana, so the ordinary candidates of the
+    /// reading are offered and the keys as typed close them
     @Test
-    func keysThatReadAsNoKanaKeepTheirCapitals() {
+    func capitalsAloneKeepTheirCase() {
         let skk = composition("SKK")
         #expect(skk.typed == "SKK")
         #expect(skk.romaji == "skk")
-        #expect(skk.reading() == nil)
         #expect(SKKCandidateComposer.candidates(
             input: "skk", composition: skk, standard: [], okuriAri: { _ in [] }
-        ).isEmpty)
+        ).map(\.storageText) == ["SKK"])
     }
 
     @Test
