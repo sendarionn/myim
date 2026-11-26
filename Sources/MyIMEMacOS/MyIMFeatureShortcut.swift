@@ -42,7 +42,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .externalInformation: MyIMShortcut(modifiers: [.option], key: "o")
         case .selectionBracket: MyIMShortcut(modifiers: [.option], key: "q")
         case .reconversion: MyIMShortcut(modifiers: [.option], key: "r")
-        case .inputHistory: MyIMShortcut(modifiers: [.control, .shift], key: "h")
+        case .inputHistory: MyIMShortcut(modifiers: [.option], key: "h")
         }
     }
 

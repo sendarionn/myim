@@ -2795,8 +2795,7 @@ final class InputController: IMKInputController {
             candidates: Array(entries[pageStart..<min(pageStart + pageSize, entries.count)])
                 .map { $0.replacingOccurrences(of: "\n", with: " ") },
             selectedIndex: selection - pageStart,
-            near: inputLocation(for: sender),
-            caption: "入力履歴"
+            near: inputLocation(for: sender)
         )
     }
 
