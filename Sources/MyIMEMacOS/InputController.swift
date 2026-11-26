@@ -5100,7 +5100,15 @@ final class InputController: IMKInputController {
             input: inputBuffer,
             composition: skkComposition,
             standard: standard,
-            okuriAri: { Self.skkOkuriAriCandidates[$0] ?? [] }
+            okuriAri: { key in
+                let entries = Self.skkOkuriAriCandidates[key] ?? []
+                // Whether okuri-ari entries are loaded at all and found for
+                // the key, as counts only, never the text typed
+                Self.lifecycleLogger.notice(
+                    "SKK okuri-ari lookup loadedKeys=\(Self.skkOkuriAriCandidates.count, privacy: .public) found=\(entries.count, privacy: .public)"
+                )
+                return entries
+            }
         )
     }
 

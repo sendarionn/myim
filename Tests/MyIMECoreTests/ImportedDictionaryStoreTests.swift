@@ -184,4 +184,46 @@ struct ImportedDictionaryStoreTests {
         #expect(store.loadOkuriAriCandidates() == ["かk": ["書", "描"], "たべr": ["食"]])
         #expect(store.loadOkuriAriCandidates(excludingFilenames: ["SKK-JISYO.S.tsv"]).isEmpty)
     }
+
+    /// An SKK dictionary imported and saved reaches the SKK candidates for
+    /// TorituKe by its key とりつk, in its own order, ahead of 取り付け
+    /// that ordinary conversion or learning ranks first
+    @Test
+    func savedOkuriAriEntriesLeadTheSKKCandidates() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: source)
+        }
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        let store = ImportedDictionaryStore(directoryURL: directory)
+        var composition = SKKComposition(firstLetter: "T")
+        for key in "orituKe" {
+            composition.type(key, marksOkurigana: key.isUppercase)
+        }
+        let standard = ["取り付け", "取付け", "鳥付け"].map {
+            Candidate(storageText: $0, source: .systemDictionary, reading: "toritsuke")
+        }
+        func firstCandidates(importing line: String) throws -> [String] {
+            let file = source.appendingPathComponent("SKK-JISYO.T")
+            try Data("\(line)\n".utf8).write(to: file)
+            _ = try store.importSKKFiles([file])
+            let saved = store.loadOkuriAriCandidates()
+            return Array(SKKCandidateComposer.candidates(
+                input: composition.romaji,
+                composition: composition,
+                standard: standard,
+                okuriAri: { saved[$0] ?? [] }
+            ).map(\.storageText).prefix(3))
+        }
+        #expect(try #require(composition.reading()).okuriAriKey == "とりつk")
+        #expect(try firstCandidates(importing: "とりつk /取付/取り付/")
+            == ["取付け", "取り付け", "鳥付け"])
+        // Imported again in the other order, that order is followed
+        #expect(try firstCandidates(importing: "とりつk /取り付/取付/")
+            == ["取り付け", "取付け", "鳥付け"])
+    }
 }

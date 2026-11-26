@@ -36,7 +36,7 @@ public enum ImportedDictionaryStoreError: Error, LocalizedError {
         case .unsupportedEncoding:
             return "辞書の文字コードを読み取れません"
         case .noEntries:
-            return "取り込める送りなしエントリがありません"
+            return "取り込めるエントリがありません"
         }
     }
 }
@@ -57,7 +57,8 @@ public struct ImportedDictionaryStore: Sendable {
             throw ImportedDictionaryStoreError.unsupportedEncoding
         }
         let result = SKKDictionaryParser().parse(text)
-        guard !result.entries.isEmpty else {
+        // A dictionary of okuri-ari entries alone is kept for SKK mode
+        guard !result.entries.isEmpty || !result.okuriAriEntries.isEmpty else {
             throw ImportedDictionaryStoreError.noEntries
         }
         try fileManager.createDirectory(
