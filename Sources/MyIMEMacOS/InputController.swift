@@ -4896,7 +4896,7 @@ final class InputController: IMKInputController {
     /// again until it ends
     private var isLiveAutoPreviewDeclined = false
     /// Kana the letters read as before their conversion is shown by itself
-    private static let liveAutoPreviewKanaCount = 6
+    private static let liveAutoPreviewKanaCount = 15
     /// Conversions of the selection, listed with Space
     private var livePartCandidates: [String]?
     private var livePartCandidateIndex = 0

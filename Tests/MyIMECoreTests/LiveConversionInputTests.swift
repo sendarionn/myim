@@ -71,4 +71,26 @@ struct LiveConversionInputTests {
         let elements = LiveConversionInput.elements(for: "ko-")
         #expect(elements.map(\.isRomaji) == [true, true, false])
     }
+
+    /// ん before な行 is nn in both conversions: the converter, which reads
+    /// nn as ん, is given ん as nn and the n of な行 after it; an n after an
+    /// n at the end waits for the vowel
+    @Test
+    func nBeforeNaRowReadsAsInOrdinaryConversion() {
+        let romaji = RomajiConverter()
+        let cases: [(String, String)] = [
+            ("konna", "こんな"), ("kanni", "かんに"), ("kanno", "かんの"),
+            ("henkanno", "へんかんの"), ("raibuhenkanno", "らいぶへんかんの"),
+            ("raibuhenkannno", "らいぶへんかんんの"), ("kan'no", "かんの"),
+            ("kan", "かん"), ("kann", "かん"), ("kantann", "かんたん")
+        ]
+        for (typed, kana) in cases {
+            #expect(romaji.hiragana(from: typed) == kana, "\(typed)")
+        }
+        #expect(read("konna") == "konnna")
+        #expect(read("kann") == "kann")
+        #expect(read("kanno") == "kannno")
+        #expect(read("kan'no") == "kannno")
+        #expect(read("raibuhenkannno") == "raibuhenkannnnno")
+    }
 }

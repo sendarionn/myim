@@ -30,7 +30,11 @@ public struct RomajiConverter: Sendable {
 
             if source[index] == "n" {
                 if index + 1 == source.count {
-                    result.append("ん")
+                    // The n after an n read as ん waits for the vowel of
+                    // な行, so kann reads かん until kanno makes it かんの
+                    if index == 0 || source[index - 1] != "n" {
+                        result.append("ん")
+                    }
                     index += 1
                     continue
                 }

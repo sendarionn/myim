@@ -8,8 +8,9 @@ import Foundation
 /// stay as typed. Letters are read as romaji in lower case, as ordinary
 /// conversion reads them, so Kyou reads きょう; a word of letters that is
 /// not romaji, as iPhone or example, is kept as typed, and the converter
-/// converts the rest around it. A finished word may be read differently
-/// from while it was typed, and the converter then starts over
+/// converts the rest around it. ん is read as ordinary conversion reads it
+/// (`romajiElements`). A finished word may be read differently from while
+/// it was typed, and the converter then starts over
 public enum LiveConversionInput {
     public struct Element: Equatable, Sendable {
         public let text: String
@@ -68,6 +69,33 @@ public enum LiveConversionInput {
         }
     }
 
+    /// Romaji as ordinary conversion reads ん, for the converter, which
+    /// reads nn as ん and so konna as こんあ: an n before an n, or at the end
+    /// of the letters, is ん and goes as nn, so konna reads こんな and nihon2026
+    /// にほん2026; an n after such an n at the end waits for a vowel and goes
+    /// as nothing yet, so kann reads かん and kanno かんの
+    private static func romajiElements(_ romaji: String) -> [Element] {
+        let letters = Array(romaji)
+        var elements: [Element] = []
+        for (index, letter) in letters.enumerated() {
+            guard letter == "n" else {
+                elements.append(Element(text: String(letter), isRomaji: true))
+                continue
+            }
+            let next = index + 1 < letters.count ? letters[index + 1] : nil
+            if next == "n" {
+                elements.append(Element(text: "nn", isRomaji: true))
+            } else if next == nil {
+                if index == 0 || letters[index - 1] != "n" {
+                    elements.append(Element(text: "nn", isRomaji: true))
+                }
+            } else {
+                elements.append(Element(text: "n", isRomaji: true))
+            }
+        }
+        return elements
+    }
+
     public static func elements(
         for typed: String,
         converter: RomajiConverter = RomajiConverter()
@@ -90,14 +118,7 @@ public enum LiveConversionInput {
                 afterRomaji = converter.hiragana(from: romaji) != nil
                     || (isLast && converter.hiragana(from: romaji + "a") != nil)
                 if afterRomaji {
-                    elements += romaji.map { Element(text: String($0), isRomaji: true) }
-                    // An n before what is not a letter is ん, as ordinary
-                    // conversion reads nihon2026, where the converter
-                    // waits for the letter after it
-                    let trailingN = romaji.reversed().prefix { $0 == "n" }.count
-                    if !isLast, !trailingN.isMultiple(of: 2) {
-                        elements.append(Element(text: "n", isRomaji: true))
-                    }
+                    elements += romajiElements(romaji)
                 } else {
                     elements.append(Element(text: word, isRomaji: false))
                 }
@@ -106,6 +127,12 @@ public enum LiveConversionInput {
                 continue
             }
             let character = characters[index]
+            // n' only separates ん from what follows, which the n before it
+            // already says
+            if character == "'", afterRomaji, elements.last?.text.hasSuffix("n") == true {
+                index += 1
+                continue
+            }
             let inKana = afterRomaji || followsKana
             let replacement: String? = switch character {
             case "-" where inKana: "ー"

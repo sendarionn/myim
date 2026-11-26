@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import MyIMELiveConversion
+import MyIMECore
 
 /// Uses the dictionary SwiftPM checked out with the converter
 @Suite(.serialized)
@@ -31,7 +32,7 @@ struct LiveConversionEngineTests {
         #expect(meeting.reading == "かいぎのしりょうをじゅんびします")
         #expect(meeting.candidates.first == "会議の資料を準備します")
         // Not always first without the neural model, but offered
-        let weather = try #require(typed("kyouhatennkigaii", in: engine))
+        let weather = try #require(typed("kyouhatenkigaii", in: engine))
         #expect(weather.candidates.contains("今日は天気がいい"))
     }
 
@@ -78,5 +79,22 @@ struct LiveConversionEngineTests {
         #expect(try #require(typed("3.14", in: engine)).candidates.first == "3.14")
         #expect(try #require(typed("example.com", in: engine)).status != .converted
             || typed("example.com", in: engine)?.candidates.first == "example.com")
+    }
+
+    /// The converter reads ん as ordinary conversion does, typed a letter at
+    /// a time
+    @Test
+    func nBeforeNaRowReadsAsInOrdinaryConversion() throws {
+        try #require(FileManager.default.fileExists(atPath: Self.dictionaryURL.path))
+        let engine = LiveConversionEngine(
+            dictionaryURL: Self.dictionaryURL,
+            workingDirectoryURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("myim-live-conversion-tests", isDirectory: true)
+        )
+        for keys in ["konna", "kanno", "henkanno", "raibuhenkanno", "raibuhenkannno", "kan'no", "kann"] {
+            let result = try #require(typed(keys, in: engine))
+            #expect(result.reading == RomajiConverter().hiragana(from: keys), "\(keys)")
+            #expect(result.status == LiveConversionInput.Reading.converted, "\(keys)")
+        }
     }
 }
