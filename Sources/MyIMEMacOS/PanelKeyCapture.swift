@@ -47,6 +47,13 @@ final class PanelKeyCapture {
         handler: { InputController.handleSelectionBracketCommand($0) }
     )
 
+    static let inputHistory = PanelKeyCapture(
+        category: "input-history",
+        signature: 0x4D_59_49_48,
+        keys: navigationKeys,
+        handler: { InputController.handleInputHistoryCommand($0) }
+    )
+
     /// Backspace edits the search text, and must not delete the document's
     /// text while formats are listed either
     static let bookmark = PanelKeyCapture(

@@ -12,6 +12,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
     case externalInformation
     case selectionBracket
     case reconversion
+    case inputHistory
 
     var title: String {
         switch self {
@@ -25,6 +26,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .externalInformation: "外部ページ"
         case .selectionBracket: "選択文字列を括弧で囲む"
         case .reconversion: "再変換"
+        case .inputHistory: "入力履歴"
         }
     }
 
@@ -40,6 +42,7 @@ enum MyIMFeatureShortcut: String, CaseIterable {
         case .externalInformation: MyIMShortcut(modifiers: [.option], key: "o")
         case .selectionBracket: MyIMShortcut(modifiers: [.option], key: "q")
         case .reconversion: MyIMShortcut(modifiers: [.option], key: "r")
+        case .inputHistory: MyIMShortcut(modifiers: [.control, .shift], key: "h")
         }
     }
 

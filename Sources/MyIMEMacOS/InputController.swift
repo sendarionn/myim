@@ -135,6 +135,8 @@ final class InputController: IMKInputController {
     private var bookmarkInsertionContext: BookmarkInsertionContext?
     /// Choosing the brackets put around the selection with ⌥⇧Q
     private var selectionBracketChoice: SelectionBracketChoice?
+    /// The entry selected in the input history panel, while it is shown
+    private var inputHistorySelection: Int?
     private var fuzzyCandidateSession = FuzzyCandidateSession()
     private let userDictionaryStore: UserDictionaryStore
     /// The dictionary file as last read, so typing does not read it again
@@ -607,6 +609,23 @@ final class InputController: IMKInputController {
         if selectionBracketChoice != nil,
            let handled = handleSelectionBracketKey(event) {
             return handled
+        }
+
+        if inputHistorySelection != nil,
+           let handled = handleInputHistoryKey(event, client: sender) {
+            return handled
+        }
+
+        // The shortcut opens the input history with nothing being typed,
+        // and closes it; it is taken either way, and what is being typed
+        // is left as it is
+        if MyIMFeatureShortcut.inputHistory.shortcut.matches(event) {
+            if inputHistorySelection != nil {
+                finishInputHistory()
+            } else if inputBuffer.isEmpty {
+                beginInputHistory(client: sender)
+            }
+            return true
         }
 
         if MyIMFeatureShortcut.selectionBracket.shortcut.matches(event) {
@@ -1370,6 +1389,7 @@ final class InputController: IMKInputController {
             emojiCandidates: Self.featureSettings.isEmojiCandidatesEnabled,
             liveConversion: Self.featureSettings.isLiveConversionEnabled,
             skkMode: Self.featureSettings.isSKKModeEnabled,
+            inputHistoryCount: Self.featureSettings.inputHistoryMaximumCount,
             passwordInputSourceRecovery:
                 Self.featureSettings.isPasswordInputSourceRecoveryEnabled,
             passwordInputSourceRecoveryStatus:
@@ -1413,6 +1433,8 @@ final class InputController: IMKInputController {
                 requestPasswordRecoveryAccessibilityPermission(_:)
             ),
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
+            changeInputHistoryCount: #selector(changeInputHistoryCount(_:)),
+            clearInputHistory: #selector(clearInputHistory(_:)),
             toggleExternalInformationPanel: #selector(toggleExternalInformationPanel(_:)),
             toggleSystemDictionaryPreview: #selector(toggleSystemDictionaryPreview(_:)),
             configureSystemDictionaries: #selector(configureSystemDictionaries(_:)),
@@ -1842,6 +1864,7 @@ final class InputController: IMKInputController {
         CandidateDeletionGlobalHotKey.shared.deactivate()
         EmojiGlobalHotKey.shared.deactivate()
         finishSelectionBracketChoice()
+        finishInputHistory()
         if Self.activeController === self {
             Self.activeController = nil
         }
@@ -2216,6 +2239,29 @@ final class InputController: IMKInputController {
         defer { escape.map(NSEvent.removeMonitor) }
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    @objc
+    private func clearInputHistory(_ sender: Any?) {
+        Self.inputHistoryController?.finishInputHistory()
+        Self.inputHistory.clear()
+    }
+
+    /// The number field and the stepper beside it set the count together;
+    /// fewer drops the oldest entries
+    @objc
+    private func changeInputHistoryCount(_ sender: Any?) {
+        guard let control = sender as? NSControl else { return }
+        let count = InputHistoryStore.clamped(control.integerValue)
+        Self.featureSettings.inputHistoryMaximumCount = count
+        Self.inputHistory.maximumCount = count
+        for sibling in control.superview?.subviews ?? [] {
+            if let field = sibling as? NSTextField, field.isEditable {
+                field.integerValue = count
+            } else if let stepper = sibling as? NSStepper {
+                stepper.integerValue = count
+            }
+        }
     }
 
     @objc
@@ -2599,6 +2645,7 @@ final class InputController: IMKInputController {
     private func beginSelectionBracketChoice(client sender: Any) {
         dismissNextInputCandidates(clearMarkedTextIn: nil)
         finishSelectionBracketChoice()
+        finishInputHistory()
         guard let selection = bracketableSelection(in: sender) else {
             NSSound.beep()
             return
@@ -2699,9 +2746,139 @@ final class InputController: IMKInputController {
         primaryCandidatePanel.hide()
     }
 
+    // MARK: Input history
+
+    /// What myim committed, shared by every controller of the process and
+    /// gone when it ends
+    static let inputHistory = InputHistoryStore(
+        maximumCount: featureSettings.inputHistoryMaximumCount
+    )
+
+    /// The controller whose input history panel the captured keys operate
+    private static weak var inputHistoryController: InputController?
+
+    private func beginInputHistory(client sender: Any) {
+        dismissNextInputCandidates(clearMarkedTextIn: nil)
+        finishSelectionBracketChoice()
+        // The emoji and bookmark panels take the same keys while shown
+        if emojiWindow.isVisible {
+            toggleEmojiWindow(client: sender)
+        }
+        clearBookmarkSearch()
+        hideConversionPanels()
+        Self.inputHistoryController?.finishInputHistory()
+        guard !Self.inputHistory.entries.isEmpty,
+              PanelKeyCapture.inputHistory.begin() else {
+            NSSound.beep()
+            return
+        }
+        inputHistorySelection = 0
+        Self.inputHistoryController = self
+        // A click inserts the entry clicked
+        primaryCandidatePanel.onSelectionChanged = { [weak self] item in
+            guard let self, let item, let selection = self.inputHistorySelection,
+                  let client = self.activeInputClient ?? (self.client() as Any?) else { return }
+            let pageStart = selection / Self.maximumCandidateCount * Self.maximumCandidateCount
+            self.inputHistorySelection = pageStart + item
+            self.handleInputHistoryCommand(.apply, client: client)
+        }
+        showInputHistory(client: sender)
+    }
+
+    /// The newest first, a page of the candidate panel's rows at a time
+    private func showInputHistory(client sender: Any) {
+        guard let selection = inputHistorySelection else { return }
+        let entries = Self.inputHistory.entries
+        let pageSize = Self.maximumCandidateCount
+        let pageStart = selection / pageSize * pageSize
+        primaryCandidatePanel.show(
+            candidates: Array(entries[pageStart..<min(pageStart + pageSize, entries.count)])
+                .map { $0.replacingOccurrences(of: "\n", with: " ") },
+            selectedIndex: selection - pageStart,
+            near: inputLocation(for: sender),
+            caption: "入力履歴"
+        )
+    }
+
+    /// Keys taken as hot keys reach here instead of the application
+    static func handleInputHistoryCommand(_ key: PanelKeyCommand) {
+        guard let controller = inputHistoryController,
+              controller.inputHistorySelection != nil,
+              let client = controller.activeInputClient
+                ?? (controller.client() as Any?) else {
+            PanelKeyCapture.inputHistory.end()
+            return
+        }
+        controller.handleInputHistoryCommand(key, client: client)
+    }
+
+    private func handleInputHistoryCommand(_ key: PanelKeyCommand, client sender: Any) {
+        guard let selection = inputHistorySelection else { return }
+        let entries = Self.inputHistory.entries
+        switch key {
+        case .previous, .backTab:
+            inputHistorySelection = max(selection - 1, 0)
+            showInputHistory(client: sender)
+        case .next, .tab:
+            inputHistorySelection = min(selection + 1, entries.count - 1)
+            showInputHistory(client: sender)
+        case .apply:
+            finishInputHistory()
+            guard entries.indices.contains(selection),
+                  let textClient = sender as? IMKTextInput else { return }
+            // Inserted as it was kept, not converted or kept again
+            isInsertingCommittedText = true
+            textClient.insertText(
+                entries[selection],
+                replacementRange: NSRange(location: NSNotFound, length: NSNotFound)
+            )
+            isInsertingCommittedText = false
+        case .cancel:
+            finishInputHistory()
+        case .deleteBackward:
+            break
+        }
+    }
+
+    /// The panel's keys that reach here rather than the hot keys are
+    /// handled the same way, since a hot key is not delivered here too; any
+    /// other key closes the panel and is handled as usual
+    private func handleInputHistoryKey(_ event: NSEvent, client sender: Any) -> Bool? {
+        let shift = event.modifierFlags.contains(.shift)
+        let command: PanelKeyCommand? = switch event.keyCode {
+        case 123, 126: .previous
+        case 124, 125: .next
+        case 48: shift ? .backTab : .tab
+        case 36, 76: .apply
+        case 53: .cancel
+        default: nil
+        }
+        if let command {
+            handleInputHistoryCommand(command, client: sender)
+            return true
+        }
+        if MyIMFeatureShortcut.inputHistory.shortcut.matches(event) {
+            return nil
+        }
+        finishInputHistory()
+        return nil
+    }
+
+    /// Every way the panel closes releases the captured keys
+    private func finishInputHistory() {
+        if Self.inputHistoryController === self {
+            PanelKeyCapture.inputHistory.end()
+            Self.inputHistoryController = nil
+        }
+        guard inputHistorySelection != nil else { return }
+        inputHistorySelection = nil
+        primaryCandidatePanel.onSelectionChanged = nil
+        primaryCandidatePanel.hide()
+    }
+
     private func restoreReconversionOriginal(client sender: Any) {
         guard let original = reconversionOriginal else { return }
-        commit(original, to: sender, replacingMarkedText: true)
+        commit(original, to: sender, replacingMarkedText: true, recordsInputHistory: false)
     }
 
     private func beginDictionaryRegistration(client sender: Any) -> Bool {
@@ -3128,6 +3305,7 @@ final class InputController: IMKInputController {
         }
         // Every panel takes the same keys while shown
         finishSelectionBracketChoice()
+        finishInputHistory()
         clearBookmarkSearch()
         if emojiWindow.isVisible {
             EmojiDiagnostics.logger.notice("hiding emoji panel")
@@ -3717,6 +3895,7 @@ final class InputController: IMKInputController {
         clearCalendarSelection()
         clearTimeSelection()
         finishSelectionBracketChoice()
+        finishInputHistory()
         clearBookmarkSearch()
         if let owner = Self.bookmarkPanelController, owner !== self {
             owner.clearBookmarkSearch()
@@ -6699,7 +6878,8 @@ final class InputController: IMKInputController {
         historyReadings: [String?]? = nil,
         historyReading: String? = nil,
         historyLearningSource: NextInputLearningSource = .directInput,
-        preferredNextInputCandidates: [String] = []
+        preferredNextInputCandidates: [String] = [],
+        recordsInputHistory: Bool = true
     ) {
         guard let textClient = sender as? IMKTextInput else {
             return
@@ -6748,6 +6928,10 @@ final class InputController: IMKInputController {
         )
         isInsertingCommittedText = false
         trace("insertText.complete", sender: sender, detail: "value=\(value)")
+        // Text typed into a protected field is not kept
+        if recordsInputHistory, !SecureInputDetector.isEnabled {
+            Self.inputHistory.record(text: value)
+        }
         if beginsAfterLineBreak {
             closingBracketTracker.reset()
         }
@@ -6835,6 +7019,7 @@ final class InputController: IMKInputController {
     /// input panel as an emptied composition does
     private func resetTransientInteractionState() {
         finishSelectionBracketChoice()
+        finishInputHistory()
         clearBookmarkSearch()
         clearSessionTranslationCandidates()
         dismissInputSessionPanels(using: .inputBecameEmpty, traceSource: "all")

@@ -148,7 +148,8 @@ class BookmarkPanelKeyCaptureTests(unittest.TestCase):
             if line.strip().startswith("signature: 0x")
         ]
         self.assertEqual(len(signatures), len(set(signatures)))
-        self.assertEqual(len(signatures), 2)
+        # The bracket choice, the input history and the bookmark search
+        self.assertEqual(len(signatures), 3)
 
     def test_the_panel_opens_only_with_every_key_taken(self):
         begin = self.body("private func beginBookmarkSearch(")
