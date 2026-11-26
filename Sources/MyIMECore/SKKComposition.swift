@@ -64,12 +64,14 @@ public struct SKKComposition: Equatable, Sendable {
 }
 
 /// Conversion candidates for an SKK composition. Without okurigana they are
-/// the ordinary candidates of the reading. With okurigana, as `KaKu`, the
-/// ordinary candidates of the whole reading are kept where they end in the
-/// okurigana and convert the stem, so 書く and 描く stay while 角 and かく
-/// go; then the SKK dictionaries' okuri-ari entries for かk with the
-/// okurigana after them, and the kana. The keys as typed close the list,
-/// so a capitalized English word can still be entered
+/// the ordinary candidates of the reading, in their order. With okurigana,
+/// as `KaKu`, the okurigana say what is meant, so the SKK dictionaries'
+/// okuri-ari entries for かk come first in the dictionaries' order, with the
+/// okurigana after them, whatever the ordinary ranking or learning; then
+/// the ordinary candidates of the whole reading that end in the okurigana
+/// and convert the stem, so 書く and 描く stay while 角 and かく go; then the
+/// kana. The keys as typed close the list, so a capitalized English word
+/// can still be entered
 public enum SKKCandidateComposer {
     public static func candidates(
         input: String,
@@ -91,18 +93,18 @@ public enum SKKCandidateComposer {
                 result.append(candidate)
             }
         }
-        for candidate in standard where candidate.storageText.hasSuffix(reading.okurigana) {
-            let converted = String(candidate.storageText.dropLast(reading.okurigana.count))
-            guard !converted.isEmpty, converted != reading.stem, converted != stemKatakana
-            else { continue }
-            append(candidate)
-        }
         for word in okuriAri(reading.okuriAriKey) {
             append(Candidate(
                 storageText: word + reading.okurigana,
                 source: .importedDictionary,
                 reading: input
             ))
+        }
+        for candidate in standard where candidate.storageText.hasSuffix(reading.okurigana) {
+            let converted = String(candidate.storageText.dropLast(reading.okurigana.count))
+            guard !converted.isEmpty, converted != reading.stem, converted != stemKatakana
+            else { continue }
+            append(candidate)
         }
         append(Candidate(
             storageText: reading.stem + reading.okurigana,

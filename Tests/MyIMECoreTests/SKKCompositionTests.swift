@@ -35,11 +35,12 @@ struct SKKCompositionTests {
         #expect(kaku.typed == "Ka")
     }
 
-    /// The ordinary candidates that convert the stem and end in the
-    /// okurigana, then the okuri-ari entries; the reading as a whole is
-    /// not offered
+    /// Okurigana marked say what is meant: the okuri-ari entries come first
+    /// in the dictionary's order, then the ordinary candidates that convert
+    /// the stem and end in the okurigana; the reading as a whole is not
+    /// offered
     @Test
-    func okuriganaFollowTheConvertedStem() {
+    func okuriAriEntriesComeBeforeTheOrdinaryCandidates() {
         let kaku = composition("KaKu")
         let standard = ["角", "書く", "かく", "描く", "格"].map {
             Candidate(storageText: $0, source: .systemDictionary, reading: "kaku")
@@ -50,7 +51,37 @@ struct SKKCompositionTests {
             standard: standard,
             okuriAri: { $0 == "かk" ? ["書", "欠"] : [] }
         ).map(\.storageText)
-        #expect(candidates == ["書く", "描く", "欠く", "かく", "KaKu"])
+        #expect(candidates == ["書く", "欠く", "描く", "かく", "KaKu"])
+    }
+
+    /// 取り付け ranked first by ordinary conversion or learning still
+    /// follows the entries for とりつk, in their order either way
+    @Test
+    func theOkuriAriOrderWinsOverTheOrdinaryRanking() throws {
+        let toritsuke = composition("ToritsuKe")
+        #expect(try #require(toritsuke.reading()).okuriAriKey == "とりつk")
+        let standard = ["取り付け", "取付け", "鳥付け", "取付"].map {
+            Candidate(storageText: $0, source: .systemDictionary, reading: "toritsuke")
+        }
+        func candidates(_ entries: [String]) -> [String] {
+            SKKCandidateComposer.candidates(
+                input: "toritsuke",
+                composition: toritsuke,
+                standard: standard,
+                okuriAri: { $0 == "とりつk" ? entries : [] }
+            ).map(\.storageText)
+        }
+        #expect(candidates(["取付", "取り付"])
+            == ["取付け", "取り付け", "鳥付け", "とりつけ", "ToritsuKe"])
+        #expect(candidates(["取り付", "取付"])
+            == ["取り付け", "取付け", "鳥付け", "とりつけ", "ToritsuKe"])
+        // Without okurigana marked the ordinary order stays
+        #expect(SKKCandidateComposer.candidates(
+            input: "toritsuke",
+            composition: composition("Toritsuke"),
+            standard: standard,
+            okuriAri: { _ in ["取付"] }
+        ).map(\.storageText) == ["取り付け", "取付け", "鳥付け", "取付", "Toritsuke"])
     }
 
     /// Keys that read as no kana offer nothing to commit in their place,
