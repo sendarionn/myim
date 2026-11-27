@@ -2674,20 +2674,25 @@ final class InputController: IMKInputController {
             applicationIdentifier: Self.frontmostApplicationIdentifier,
             selectedRange: selection.range,
             selectedText: selection.text.string,
-            current: SelectionBracketPreference().pair
+            pairs: SelectionBracketPreference().orderedPairs
         )
         Self.selectionBracketController = self
         showSelectionBracketChoice(client: sender)
     }
 
-    /// Every pair at once, rather than a page of the candidates' rows
+    /// A page of the candidates' rows holding the selected pair
     private func showSelectionBracketChoice(client sender: Any) {
         guard let choice = selectionBracketChoice else { return }
+        let labels = choice.labels
+        let pageRange = LinearCandidateNavigator.pageRange(
+            containing: choice.selectedIndex,
+            pageSize: Self.maximumCandidateCount,
+            candidateCount: labels.count
+        )
         primaryCandidatePanel.show(
-            candidates: choice.labels,
-            selectedIndex: choice.selectedIndex,
-            near: inputLocation(for: sender),
-            maximumRows: choice.labels.count
+            candidates: Array(labels[pageRange]),
+            selectedIndex: choice.selectedIndex - pageRange.lowerBound,
+            near: inputLocation(for: sender)
         )
     }
 

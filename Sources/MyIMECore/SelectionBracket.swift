@@ -81,22 +81,46 @@ public enum SelectionBracketWrapper {
     }
 }
 
-/// The bracket the shortcut puts around a selection, the one chosen last
+/// The brackets put around selections, most recently used first, kept
+/// across launches. The one bracket kept before the history began starts it
 public struct SelectionBracketPreference: @unchecked Sendable {
+    /// The bracket chosen last, from before the history
     public static let defaultsKey = "SelectionBracketPair"
+    public static let historyKey = "SelectionBracketHistory"
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
-    public var pair: SelectionBracketPair {
-        defaults.string(forKey: Self.defaultsKey)
+    /// Used brackets, newest first, each once
+    public var history: [SelectionBracketPair] {
+        if let labels = defaults.stringArray(forKey: Self.historyKey) {
+            return labels.compactMap(SelectionBracketPair.pair(labeled:))
+        }
+        return defaults.string(forKey: Self.defaultsKey)
             .flatMap(SelectionBracketPair.pair(labeled:))
-            ?? .standard
+            .map { [$0] } ?? []
     }
 
+    /// Every bracket, the used ones first by how recently, the rest in
+    /// their usual order
+    public var orderedPairs: [SelectionBracketPair] {
+        let used = history
+        return used + SelectionBracketPair.all.filter { !used.contains($0) }
+    }
+
+    /// The bracket chosen last
+    public var pair: SelectionBracketPair {
+        history.first ?? .standard
+    }
+
+    /// A bracket put around a selection goes to the front
     public func remember(_ pair: SelectionBracketPair) {
+        let labels = ([pair] + history.filter { $0 != pair })
+            .prefix(SelectionBracketPair.all.count)
+            .map(\.label)
+        defaults.set(Array(labels), forKey: Self.historyKey)
         defaults.set(pair.label, forKey: Self.defaultsKey)
     }
 }
@@ -122,24 +146,27 @@ public struct SelectionBracketChoice: Equatable, Sendable {
     public let applicationIdentifier: String?
     public let selectedRange: NSRange
     public let selectedText: String
-    public private(set) var selectedIndex: Int
+    /// The brackets in the order shown, fixed while the panel is open
+    public let pairs: [SelectionBracketPair]
+    public private(set) var selectedIndex = 0
 
+    /// Opens on the first of `pairs`, the one used last
     public init(
         applicationIdentifier: String?,
         selectedRange: NSRange,
         selectedText: String,
-        current: SelectionBracketPair
+        pairs: [SelectionBracketPair] = SelectionBracketPair.all
     ) {
         self.applicationIdentifier = applicationIdentifier
         self.selectedRange = selectedRange
         self.selectedText = selectedText
-        selectedIndex = SelectionBracketPair.all.firstIndex(of: current) ?? 0
+        self.pairs = pairs.isEmpty ? SelectionBracketPair.all : pairs
     }
 
-    public var labels: [String] { SelectionBracketPair.all.map(\.label) }
+    public var labels: [String] { pairs.map(\.label) }
 
     public var selectedPair: SelectionBracketPair {
-        SelectionBracketPair.all[selectedIndex]
+        pairs[selectedIndex]
     }
 
     public mutating func handle(_ command: SelectionBracketCommand) -> Outcome {
@@ -159,7 +186,7 @@ public struct SelectionBracketChoice: Equatable, Sendable {
 
     /// Moves through the pairs, wrapping at either end
     public mutating func move(by offset: Int) {
-        let count = SelectionBracketPair.all.count
+        let count = pairs.count
         selectedIndex = ((selectedIndex + offset) % count + count) % count
     }
 

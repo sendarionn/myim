@@ -85,45 +85,66 @@ struct SelectionBracketTests {
         ) == nil)
     }
 
-    @Test
-    func remembersTheLastChosenPair() throws {
+    private func preference() throws -> (SelectionBracketPreference, UserDefaults, String) {
         let suite = "SelectionBracketTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
+        return (SelectionBracketPreference(defaults: defaults), defaults, suite)
+    }
+
+    /// Used brackets come first, newest first and each once, the rest in
+    /// their usual order, and stay across launches
+    @Test
+    func recentlyUsedPairsComeFirst() throws {
+        let (preference, defaults, suite) = try preference()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let preference = SelectionBracketPreference(defaults: defaults)
-
+        #expect(preference.orderedPairs == SelectionBracketPair.all)
         #expect(preference.pair == .standard)
 
-        preference.remember(SelectionBracketPair.pair(labeled: "【】")!)
+        for label in ["【】", "（）", "「」"] {
+            preference.remember(try #require(SelectionBracketPair.pair(labeled: label)))
+        }
+        let labels = SelectionBracketPreference(defaults: defaults).orderedPairs.map(\.label)
+        #expect(Array(labels.prefix(4)) == ["「」", "（）", "【】", "『』"])
+        #expect(labels.count == 12)
+        #expect(Set(labels).count == 12)
 
-        #expect(SelectionBracketPreference(defaults: defaults).pair.label
-            == "【】")
+        preference.remember(try #require(SelectionBracketPair.pair(labeled: "【】")))
+        #expect(Array(preference.orderedPairs.map(\.label).prefix(3)) == ["【】", "「」", "（）"])
+        #expect(preference.history.count == 3)
+    }
 
+    /// The one bracket kept before the history starts it
+    @Test
+    func theBracketChosenBeforeStartsTheHistory() throws {
+        let (preference, defaults, suite) = try preference()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("『』", forKey: SelectionBracketPreference.defaultsKey)
+        #expect(preference.orderedPairs.first?.label == "『』")
         defaults.set("unknown", forKey: SelectionBracketPreference.defaultsKey)
-        #expect(preference.pair == .standard)
+        #expect(preference.orderedPairs == SelectionBracketPair.all)
     }
 
     private func choice(
-        current: SelectionBracketPair = .standard
+        pairs: [SelectionBracketPair] = SelectionBracketPair.all
     ) -> SelectionBracketChoice {
         SelectionBracketChoice(
             applicationIdentifier: "com.apple.TextEdit",
             selectedRange: NSRange(location: 3, length: 3),
             selectedText: "テスト",
-            current: current
+            pairs: pairs
         )
     }
 
-    /// The panel opens on the pair chosen last and keys move around it
+    /// The panel opens on the first pair, the one used last, and keys move
+    /// through the pairs in their order, wrapping
     @Test
-    func choiceStartsAtTheCurrentPairAndWraps() {
-        var choice = choice(current: SelectionBracketPair.all[11])
-        #expect(choice.selectedIndex == 11)
-
-        #expect(choice.handle(.next) == .moved)
-        #expect(choice.selectedPair == .standard)
-
+    func choiceStartsAtTheFirstPairAndWraps() {
+        let pairs = Array(SelectionBracketPair.all.reversed())
+        var choice = choice(pairs: pairs)
+        #expect(choice.selectedPair.label == "“”")
         #expect(choice.handle(.previous) == .moved)
+        #expect(choice.selectedPair == .standard)
+        #expect(choice.handle(.next) == .moved)
         #expect(choice.selectedPair.label == "“”")
         #expect(choice.labels.count == 12)
     }
