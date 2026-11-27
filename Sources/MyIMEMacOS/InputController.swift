@@ -5339,8 +5339,7 @@ final class InputController: IMKInputController {
             verbConjugations: Self.sharedVerbConjugations,
             adjectiveDictionary: Self.sharedAdjectiveDictionary,
             maximumSystemPrefixCandidates:
-                Self.maximumMozcDictionaryPrefixCandidates,
-            derivedExclusions: Self.derivedCandidateExclusions
+                Self.maximumMozcDictionaryPrefixCandidates
         )
     }
 
@@ -5477,22 +5476,6 @@ final class InputController: IMKInputController {
     private func applyFuzzyCandidates(
         _ matchTiers: [[FuzzyConversionMatch]]
     ) {
-        let exclusions = Self.derivedCandidateExclusions
-        let matchTiers = exclusions.isEmpty ? matchTiers : matchTiers.map { tier in
-            tier.map { match in
-                FuzzyConversionMatch(
-                    reading: match.reading,
-                    candidates: match.candidates.filter {
-                        !exclusions.contains(reading: match.reading, candidate: $0)
-                    },
-                    distance: match.distance,
-                    isLearnable: match.isLearnable,
-                    sourceTokens: match.sourceTokens,
-                    sourceReadings: match.sourceReadings,
-                    origin: match.origin
-                )
-            }.filter { !$0.candidates.isEmpty }
-        }
         let changed = fuzzyCandidateSession.replace(
             matchTiers: matchTiers,
             recencyRanks: candidateSelectionRanks(for: fuzzyQuery),
@@ -6396,25 +6379,7 @@ final class InputController: IMKInputController {
             display: display
         )
         unselectedInputLearningStore.remove(candidate: candidate)
-        // Registered again, a removed candidate of the reading comes back
-        try? Self.updateDerivedCandidateExclusions {
-            $0.remove(reading: reading, candidate: candidate)
-        }
         rebuildConversionEngine()
-    }
-
-    /// Candidates made from the user's words that the user removed, kept
-    /// for every controller and across launches
-    private static var derivedCandidateExclusions = InputMethodData.loadDerivedCandidateExclusions()
-
-    private static func updateDerivedCandidateExclusions(
-        _ change: (inout DerivedCandidateExclusions) -> Void
-    ) throws {
-        var exclusions = derivedCandidateExclusions
-        change(&exclusions)
-        guard exclusions != derivedCandidateExclusions else { return }
-        try InputMethodData.saveDerivedCandidateExclusions(exclusions)
-        derivedCandidateExclusions = exclusions
     }
 
     private func removeSelectedUserDictionaryCandidate(client sender: Any) {
@@ -6438,27 +6403,34 @@ final class InputController: IMKInputController {
             historyCandidates
         )
         // A candidate made from a word the user registered, as 検討した from
-        // 検討する, is made again on every conversion, so it is left out by
-        // its reading; the registered word stays
+        // 検討する, goes with the registration it is made from; one made
+        // from more than one registration removes none of them
         let model = currentCandidateModels.indices.contains(selectedCandidateIndex)
             ? currentCandidateModels[selectedCandidateIndex]
             : nil
-        // A registered word that is also made by inflection is left out
-        // too, so it does not come back once removed from the dictionary
-        let excludesDerived = model.map {
-            DerivedCandidateOrigin.isDerived($0, fromUserEntries: userDictionaryStore.entries)
-                || (removesDictionaryEntry && $0.origins.contains { $0.inflectionBase != nil })
-        } ?? false
-        guard removesDictionaryEntry || removesHistory || excludesDerived else {
+        let sourceEntries = removesDictionaryEntry
+            ? []
+            : model.map {
+                DerivedCandidateOrigin.sourceEntries(of: $0, in: userDictionaryStore.entries)
+            } ?? []
+        let sourceEntry = sourceEntries.count == 1 ? sourceEntries.first : nil
+        guard removesDictionaryEntry || removesHistory || sourceEntry != nil else {
             NSSound.beep()
             return
         }
 
         do {
-            if excludesDerived, let model {
-                try Self.updateDerivedCandidateExclusions {
-                    $0.insert(reading: conversionReading, candidate: model.storageText)
-                }
+            if let sourceEntry {
+                try userDictionaryStore.remove(
+                    candidate: sourceEntry.candidate,
+                    matchingReadings: [sourceEntry.reading]
+                )
+                // What was learned of the registered word goes with it; the
+                // same word in other dictionaries is still offered
+                let word = DictionaryCandidateRepresentation.value(from: sourceEntry.candidate)
+                candidateSelectionHistoryStore.remove([word, sourceEntry.candidate], inflectionBases: [])
+                unselectedInputLearningStore.remove(candidates: [word, sourceEntry.candidate])
+                rebuildConversionEngine()
             }
             if removesDictionaryEntry {
                 try userDictionaryStore.remove(candidate: candidate)

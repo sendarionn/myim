@@ -42,19 +42,24 @@ public struct CandidateOrigin: Equatable, Sendable {
     public let isLearnable: Bool
     public let attributes: Attributes
     public let inflectionBase: InflectionBaseIdentity?
+    /// Words the candidate is made from other than an inflection's base,
+    /// as 私 of the composition 私は
+    public let baseWords: [CandidateBaseWord]
 
     public init(
         source: CandidateSourceKind,
         reading: String? = nil,
         isLearnable: Bool = false,
         attributes: Attributes = [],
-        inflectionBase: InflectionBaseIdentity? = nil
+        inflectionBase: InflectionBaseIdentity? = nil,
+        baseWords: [CandidateBaseWord] = []
     ) {
         self.source = source
         self.reading = reading
         self.isLearnable = isLearnable
         self.attributes = attributes
         self.inflectionBase = inflectionBase
+        self.baseWords = baseWords
     }
 }
 
@@ -73,6 +78,7 @@ public struct Candidate: Equatable, Sendable {
         isLearnable: Bool = false,
         attributes: CandidateOrigin.Attributes = [],
         inflectionBase: InflectionBaseIdentity? = nil,
+        baseWords: [CandidateBaseWord] = [],
         priority: Int? = nil,
         contextualMetadata: [String: String] = [:]
     ) {
@@ -82,7 +88,8 @@ public struct Candidate: Equatable, Sendable {
             reading: reading,
             isLearnable: isLearnable,
             attributes: attributes,
-            inflectionBase: inflectionBase
+            inflectionBase: inflectionBase,
+            baseWords: baseWords
         )]
         self.priority = priority
         self.contextualMetadata = contextualMetadata

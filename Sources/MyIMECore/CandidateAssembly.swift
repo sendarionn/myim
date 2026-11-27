@@ -20,6 +20,8 @@ public struct CandidateAssembly: Sendable {
         public let generatedAdjectiveInflections: [GeneratedInflectionCandidate]
         public let particle: [String]
         public let generatedParticles: Set<String>
+        /// The words each composition is made from
+        public let particleBases: [String: [CandidateBaseWord]]
         public let userPrefix: [String]
         public let learnedCompletion: [String]
         public let symbolPrefix: [String]
@@ -59,6 +61,7 @@ public struct CandidateAssembly: Sendable {
             generatedAdjectiveInflections: [GeneratedInflectionCandidate] = [],
             particle: [String],
             generatedParticles: Set<String>,
+            particleBases: [String: [CandidateBaseWord]] = [:],
             userPrefix: [String],
             learnedCompletion: [String],
             symbolPrefix: [String],
@@ -95,6 +98,7 @@ public struct CandidateAssembly: Sendable {
             self.generatedAdjectiveInflections = generatedAdjectiveInflections
             self.particle = particle
             self.generatedParticles = generatedParticles
+            self.particleBases = particleBases
             self.userPrefix = userPrefix
             self.learnedCompletion = learnedCompletion
             self.symbolPrefix = symbolPrefix
@@ -243,7 +247,8 @@ public struct CandidateAssembly: Sendable {
                         isLearnable: input.generatedParticles.contains($0),
                         attributes: input.generatedParticles.contains($0)
                             ? [.generated]
-                            : []
+                            : [],
+                        baseWords: input.particleBases[$0] ?? []
                     )
                 },
                 other: other,

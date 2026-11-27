@@ -41,7 +41,6 @@ public struct StandardConversionCandidateSource: Sendable {
     private let verbConjugationGenerator: VerbConjugationCandidateGenerator
     private let verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let maximumSystemPrefixCandidates: Int
-    private let derivedExclusions: DerivedCandidateExclusions
     private let romajiConverter = RomajiConverter()
 
     /// `userEngine` holds only the user's own registrations so that bulk
@@ -59,10 +58,8 @@ public struct StandardConversionCandidateSource: Sendable {
             VerbConjugationDictionary(),
         adjectiveDictionary: JapaneseAdjectiveDictionary =
             JapaneseAdjectiveDictionary(),
-        maximumSystemPrefixCandidates: Int = 2048,
-        derivedExclusions: DerivedCandidateExclusions = DerivedCandidateExclusions()
+        maximumSystemPrefixCandidates: Int = 2048
     ) {
-        self.derivedExclusions = derivedExclusions
         self.userEngine = userEngine
         self.importedEngine = importedEngine
         self.basicEngine = basicEngine
@@ -85,12 +82,7 @@ public struct StandardConversionCandidateSource: Sendable {
     public func candidates(
         for context: StandardConversionCandidateContext
     ) -> [Candidate] {
-        // Generated candidates the user removed are left out once every
-        // source is merged, whichever made them
-        let candidates = derivedExclusions.filtering(
-            assembledCandidates(for: context),
-            reading: context.conversionReading
-        )
+        let candidates = assembledCandidates(for: context)
         // A time is committed as typed without choosing a candidate, so
         // only its formats are offered
         guard TimeShapedInput.matches(context.input) else { return candidates }
@@ -189,6 +181,15 @@ public struct StandardConversionCandidateSource: Sendable {
             for: context.conversionReading
         )
         let particles = particleCompositions.map(\.text)
+        // The word each composition is made from, to find the user's
+        // registration it came from
+        var particleBases: [String: [CandidateBaseWord]] = [:]
+        for composition in particleCompositions {
+            let word = CandidateBaseWord(reading: composition.baseReading, surface: composition.base)
+            if particleBases[composition.text]?.contains(word) != true {
+                particleBases[composition.text, default: []].append(word)
+            }
+        }
         let fullReadingRanks = recencyRanks(
             for: context.conversionReading,
             history: context.selectionHistory,
@@ -322,6 +323,7 @@ public struct StandardConversionCandidateSource: Sendable {
             generatedAdjectiveInflections: adjectiveInflections,
             particle: particles,
             generatedParticles: generatedParticles,
+            particleBases: particleBases,
             userPrefix: user.prefix,
             learnedCompletion: context.selectionHistory.completions(
                 for: context.conversionReading,
