@@ -3,6 +3,8 @@ public struct StandardConversionCandidateContext: Sendable {
     public let conversionReading: String
     public let javaScriptCandidates: [JavaScriptExtensionCandidate]
     public let englishCandidates: [String]
+    /// English words for the Japanese reading
+    public let japaneseEnglishCandidates: [String]
     public let selectionHistory: CandidateSelectionHistory
     public let contextualCandidates: [String]
     public let learningEnabled: Bool
@@ -12,6 +14,7 @@ public struct StandardConversionCandidateContext: Sendable {
         conversionReading: String,
         javaScriptCandidates: [JavaScriptExtensionCandidate] = [],
         englishCandidates: [String] = [],
+        japaneseEnglishCandidates: [String] = [],
         selectionHistory: CandidateSelectionHistory =
             CandidateSelectionHistory(),
         contextualCandidates: [String] = [],
@@ -21,6 +24,7 @@ public struct StandardConversionCandidateContext: Sendable {
         self.conversionReading = conversionReading
         self.javaScriptCandidates = javaScriptCandidates
         self.englishCandidates = englishCandidates
+        self.japaneseEnglishCandidates = japaneseEnglishCandidates
         self.selectionHistory = selectionHistory
         self.contextualCandidates = contextualCandidates
         self.learningEnabled = learningEnabled
@@ -334,6 +338,7 @@ public struct StandardConversionCandidateSource: Sendable {
             basicPrefix: basic.prefix,
             importedPrefix: imported.reading.prefix + imported.spelling.prefix,
             english: context.englishCandidates,
+            japaneseEnglish: context.japaneseEnglishCandidates,
             uppercase: caseCandidates,
             recencyRanks: combinedDirectRanks,
             secondaryRanks: secondaryRanks,

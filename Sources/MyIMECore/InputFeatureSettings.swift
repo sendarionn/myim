@@ -4,6 +4,7 @@ public struct InputFeatureSettings {
     private enum Key {
         static let nextInputPrediction = "NextInputPredictionEnabled"
         static let englishCompletion = "EnglishCompletionEnabled"
+        static let japaneseEnglishCandidates = "JapaneseEnglishCandidatesEnabled"
         static let appleTranslation = "AppleTranslationEnabled"
         static let translationLanguages = "TranslationTargetLanguages"
         static let legacyTranslationLanguage = "DefaultTranslationLanguage"
@@ -94,6 +95,13 @@ public struct InputFeatureSettings {
         nonmutating set {
             defaults.set(InputHistoryStore.clamped(newValue), forKey: Key.inputHistoryCount)
         }
+    }
+
+    /// English words for the Japanese reading among the candidates; off
+    /// unless turned on
+    public var isJapaneseEnglishCandidatesEnabled: Bool {
+        get { flag(Key.japaneseEnglishCandidates, default: false) }
+        nonmutating set { setFlag(Key.japaneseEnglishCandidates, newValue) }
     }
 
     public var isDateTimeCandidatesEnabled: Bool {

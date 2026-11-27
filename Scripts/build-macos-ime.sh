@@ -154,6 +154,9 @@ cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary.tsv" \
     "$resources_directory/basic-dictionary.tsv"
 cp \
+    "Sources/MyIMEMacOS/Resources/japanese-english-dictionary.tsv" \
+    "$resources_directory/japanese-english-dictionary.tsv"
+cp \
     "Sources/MyIMEMacOS/Resources/basic-dictionary-LICENSE.txt" \
     "$resources_directory/basic-dictionary-LICENSE.txt"
 cp \

@@ -29,6 +29,8 @@ public struct CandidateAssembly: Sendable {
         public let basicPrefix: [String]
         public let importedPrefix: [String]
         public let english: [String]
+        /// English words for the Japanese reading, before the completions
+        public let japaneseEnglish: [String]
         public let uppercase: [String]
         public let recencyRanks: [String: Int]
         /// Ranks ordering generated candidates without moving them ahead of
@@ -69,6 +71,7 @@ public struct CandidateAssembly: Sendable {
             basicPrefix: [String],
             importedPrefix: [String] = [],
             english: [String],
+            japaneseEnglish: [String] = [],
             uppercase: [String],
             recencyRanks: [String: Int],
             secondaryRanks: [String: Int]? = nil,
@@ -106,6 +109,7 @@ public struct CandidateAssembly: Sendable {
             self.basicPrefix = basicPrefix
             self.importedPrefix = importedPrefix
             self.english = english
+            self.japaneseEnglish = japaneseEnglish
             self.uppercase = uppercase
             self.recencyRanks = recencyRanks
             self.secondaryRanks = secondaryRanks
@@ -253,6 +257,10 @@ public struct CandidateAssembly: Sendable {
                 },
                 other: other,
                 english: makeCandidates(
+                    input.japaneseEnglish,
+                    source: .japaneseEnglishDictionary,
+                    reading: input.reading
+                ) + makeCandidates(
                     input.english,
                     source: .englishCompletion,
                     reading: input.reading

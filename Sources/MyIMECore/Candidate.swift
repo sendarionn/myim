@@ -14,6 +14,8 @@ public enum CandidateSourceKind: String, CaseIterable, Sendable {
     case adjectiveInflection
     case particleComposition
     case englishCompletion
+    /// English words for the Japanese reading, from the bundled dictionary
+    case japaneseEnglishDictionary
     case uppercase
     case translation
     case fuzzyCandidate

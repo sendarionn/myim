@@ -75,6 +75,7 @@ enum SettingsWindowBuilder {
 
     struct FeatureStates {
         let englishCompletion: Bool
+        let japaneseEnglishCandidates: Bool
         let appleTranslation: Bool
         let translationLanguageIdentifiers: Set<String>
         let nextInputPrediction: Bool
@@ -95,6 +96,7 @@ enum SettingsWindowBuilder {
 
     struct Actions {
         let toggleEnglishCompletion: Selector
+        let toggleJapaneseEnglishCandidates: Selector
         let toggleAppleTranslation: Selector
         let toggleTranslationLanguage: Selector
         let toggleNextInputPrediction: Selector
@@ -152,6 +154,7 @@ enum SettingsWindowBuilder {
         addSection("候補", to: stack)
         addCheckboxes([
             ("英語候補を表示", actions.toggleEnglishCompletion, states.englishCompletion),
+            ("日本語から英語の候補を表示", actions.toggleJapaneseEnglishCandidates, states.japaneseEnglishCandidates),
             ("次入力候補を表示", actions.toggleNextInputPrediction, states.nextInputPrediction),
             ("曖昧候補を表示", actions.toggleFuzzyCandidates, states.fuzzyCandidates),
             ("日時候補を表示", actions.toggleDateTimeCandidates, states.dateTimeCandidates),

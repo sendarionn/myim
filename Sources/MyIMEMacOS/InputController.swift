@@ -1380,6 +1380,7 @@ final class InputController: IMKInputController {
     private var settingsFeatureStates: SettingsWindowBuilder.FeatureStates {
         SettingsWindowBuilder.FeatureStates(
             englishCompletion: Self.featureSettings.isEnglishCompletionEnabled,
+            japaneseEnglishCandidates: Self.featureSettings.isJapaneseEnglishCandidatesEnabled,
             appleTranslation: Self.featureSettings.isAppleTranslationEnabled,
             translationLanguageIdentifiers:
                 Set(Self.featureSettings.translationTargetLanguages.map(\.identifier)),
@@ -1416,6 +1417,7 @@ final class InputController: IMKInputController {
     private var settingsActions: SettingsWindowBuilder.Actions {
         SettingsWindowBuilder.Actions(
             toggleEnglishCompletion: #selector(toggleEnglishCompletion(_:)),
+            toggleJapaneseEnglishCandidates: #selector(toggleJapaneseEnglishCandidates(_:)),
             toggleAppleTranslation: #selector(toggleAppleTranslation(_:)),
             toggleTranslationLanguage: #selector(
                 toggleTranslationLanguage(_:)
@@ -2114,6 +2116,23 @@ final class InputController: IMKInputController {
             Self.featureSettings.isEnglishCompletionEnabled = enabled
         }
     }
+
+    @objc
+    private func toggleJapaneseEnglishCandidates(_ sender: Any?) {
+        let enabled = checkboxValue(
+            sender,
+            current: Self.featureSettings.isJapaneseEnglishCandidatesEnabled
+        )
+        toggleCandidateSource {
+            Self.featureSettings.isJapaneseEnglishCandidatesEnabled = enabled
+        }
+    }
+
+    /// The bundled English words for Japanese readings, read when first
+    /// used
+    private static let japaneseEnglishDictionary = JapaneseEnglishDictionary(
+        text: InputMethodData.loadBundledText(resource: "japanese-english-dictionary") ?? ""
+    )
 
     @objc
     private func toggleAppleTranslation(_ sender: Any?) {
@@ -4730,6 +4749,9 @@ final class InputController: IMKInputController {
             conversionReading: conversionReading,
             javaScriptCandidates: scriptCandidates,
             englishCandidates: englishCandidates,
+            japaneseEnglishCandidates: Self.featureSettings.isJapaneseEnglishCandidatesEnabled
+                ? Self.japaneseEnglishDictionary.words(for: conversionReading)
+                : [],
             selectionHistory: candidateSelectionHistoryStore.snapshot,
             contextualCandidates: contextualCandidates,
             learningEnabled: Self.diagnosticConfiguration.enables(.learning)
