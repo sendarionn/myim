@@ -69,6 +69,48 @@ public enum LiveConversionInput {
         }
     }
 
+    /// About how many kana the typed letters read as, without the converter,
+    /// to decide whether live conversion starts: each word of letters as
+    /// ordinary conversion reads it, the last one less the romaji still
+    /// being typed, as the k of kyouk, a word that is not romaji as none,
+    /// and a hyphen after romaji as ー
+    public static func kanaCount(
+        of typed: String,
+        converter: RomajiConverter = RomajiConverter()
+    ) -> Int {
+        var count = 0
+        var word = ""
+        var afterRomaji = false
+        func countWord(isLast: Bool) {
+            defer { word = "" }
+            guard !word.isEmpty else { return }
+            let romaji = word.lowercased()
+            if let kana = converter.hiragana(from: romaji) {
+                count += kana.count
+                afterRomaji = true
+            } else if isLast, let kana = converter.hiragana(from: romaji + "a") {
+                count += kana.count - 1
+                afterRomaji = true
+            } else {
+                afterRomaji = false
+            }
+        }
+        for character in typed {
+            if character.isASCII, character.isLetter {
+                word.append(character)
+                continue
+            }
+            countWord(isLast: false)
+            if character == "-", afterRomaji {
+                count += 1
+            } else {
+                afterRomaji = false
+            }
+        }
+        countWord(isLast: true)
+        return count
+    }
+
     /// Romaji as ordinary conversion reads ん, for the converter, which
     /// reads nn as ん and so konna as こんあ: an n before an n, or at the end
     /// of the letters, is ん and goes as nn, so konna reads こんな and nihon2026

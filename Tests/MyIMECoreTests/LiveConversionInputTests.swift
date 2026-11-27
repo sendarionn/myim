@@ -93,4 +93,17 @@ struct LiveConversionInputTests {
         #expect(read("kan'no") == "kannno")
         #expect(read("raibuhenkannno") == "raibuhenkannnnno")
     }
+
+    /// Counted from the letters, as live conversion starts at 15 kana
+    @Test
+    func kanaAreCountedWithoutTheConverter() {
+        #expect(LiveConversionInput.kanaCount(of: "ki") == 1)
+        #expect(LiveConversionInput.kanaCount(of: "kyouhaii") == 6)
+        #expect(LiveConversionInput.kanaCount(of: "kyouhaiitenkidakaradekakeru") == 16)
+        // Romaji still being typed and a word that is not romaji
+        #expect(LiveConversionInput.kanaCount(of: "kyouk") == 3)
+        #expect(LiveConversionInput.kanaCount(of: "iPhone,wokatta") == 4)
+        #expect(LiveConversionInput.kanaCount(of: "ko-hi-") == 4)
+        #expect(LiveConversionInput.kanaCount(of: "3.14") == 0)
+    }
 }

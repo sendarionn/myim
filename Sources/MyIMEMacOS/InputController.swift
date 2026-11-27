@@ -4793,10 +4793,47 @@ final class InputController: IMKInputController {
             && !inputBuffer.isEmpty
     }
 
+    /// Live conversion runs once the letters read as enough kana, counted
+    /// without the converter, and not after Esc gave it up; until then only
+    /// ordinary conversion is used
+    private var runsLiveConversion: Bool {
+        usesLiveConversion && !isLiveAutoPreviewDeclined
+            && LiveConversionInput.kanaCount(of: inputBuffer) >= Self.liveAutoPreviewKanaCount
+    }
+
+    /// Back to ordinary conversion, as for letters too few to convert live:
+    /// nothing of the live conversion is left shown or offered
+    private func leaveLiveConversion(client sender: Any) {
+        let wasShown = isLiveAutoPreviewActive || livePreview != nil
+            || currentCandidateModels.contains { $0.hasSource(.liveConversion) }
+        guard wasShown || liveConversion != LiveConversionState() else { return }
+        closeLivePartCandidates(restoring: false)
+        if let index = selectedCandidateIndex,
+           currentCandidateModels.indices.contains(index),
+           currentCandidateModels[index].hasSource(.liveConversion) {
+            selectedCandidateIndex = nil
+        }
+        livePreview = nil
+        isLiveAutoPreviewActive = false
+        liveConversion.reset()
+        if let engine = Self.liveConversionEngine {
+            Self.liveConversionQueue.async { engine.reset() }
+        }
+        guard wasShown else { return }
+        replaceCurrentCandidates(with: currentCandidateModels.filter {
+            !$0.hasSource(.liveConversion)
+        })
+        updateMarkedText(in: sender)
+        showPrimaryCandidatePanel(client: sender)
+    }
+
     /// Converts the whole composition off the main thread; a result for
     /// letters since changed is dropped
     private func requestLiveConversion(client sender: Any) {
-        guard usesLiveConversion, let engine = Self.liveConversionEngine else { return }
+        guard runsLiveConversion, let engine = Self.liveConversionEngine else {
+            leaveLiveConversion(client: sender)
+            return
+        }
         let input = inputBuffer
         // Letters already converted keep their conversions
         if !liveConversion.candidates(for: input).isEmpty {
@@ -4806,7 +4843,7 @@ final class InputController: IMKInputController {
         Self.liveConversionQueue.async { [weak self] in
             let result = engine.convert(romaji: input)
             DispatchQueue.main.async {
-                guard let self, self.usesLiveConversion,
+                guard let self, self.runsLiveConversion,
                       self.inputBuffer == input, let result else { return }
                 self.applyLiveConversion(result, for: input, client: sender)
             }
@@ -4816,6 +4853,7 @@ final class InputController: IMKInputController {
     /// The conversions go first among the candidates; the letters stay as
     /// typed until one is chosen
     private func presentLiveConversion(client sender: Any) {
+        guard runsLiveConversion else { return }
         let converted = liveConversion.candidates(for: inputBuffer)
         // A conversion being corrected keeps its place
         guard !converted.isEmpty, !isPreviewingLiveConversion,
@@ -4830,7 +4868,7 @@ final class InputController: IMKInputController {
     }
 
     private func finishPendingLiveConversion(client sender: Any) {
-        guard usesLiveConversion,
+        guard runsLiveConversion,
               liveConversion.candidates(for: inputBuffer).isEmpty,
               let engine = Self.liveConversionEngine else { return }
         let input = inputBuffer
@@ -4849,6 +4887,7 @@ final class InputController: IMKInputController {
         for input: String,
         client sender: Any
     ) {
+        guard runsLiveConversion else { return }
         switch result.status {
         case .converted:
             guard !result.candidates.isEmpty else { return }
@@ -5085,10 +5124,10 @@ final class InputController: IMKInputController {
                 preview.clearSelection()
                 livePreview = preview
             } else if isAuto {
-                // The letters come back and stay until the composition ends
-                isLiveAutoPreviewActive = false
+                // The letters come back with ordinary conversion, which
+                // stays until the composition ends
                 isLiveAutoPreviewDeclined = true
-                livePreview = nil
+                leaveLiveConversion(client: sender)
                 updateMarkedText(in: sender)
                 showPrimaryCandidatePanel(client: sender)
                 return true
@@ -6909,10 +6948,8 @@ final class InputController: IMKInputController {
         // The conversion shown by itself gives way to the letters first,
         // and is not shown again for this composition
         if selectedCandidateIndex == nil, usesLiveConversion, isLiveAutoPreviewActive {
-            closeLivePartCandidates(restoring: false)
-            livePreview = nil
-            isLiveAutoPreviewActive = false
             isLiveAutoPreviewDeclined = true
+            leaveLiveConversion(client: sender)
             updateMarkedText(in: sender)
             showPrimaryCandidatePanel(client: sender)
             return true
