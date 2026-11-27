@@ -607,7 +607,7 @@ final class InputController: IMKInputController {
         }
 
         if selectionBracketChoice != nil,
-           let handled = handleSelectionBracketKey(event) {
+           let handled = handleSelectionBracketKey(event, client: sender) {
             return handled
         }
 
@@ -2680,17 +2680,14 @@ final class InputController: IMKInputController {
         showSelectionBracketChoice(client: sender)
     }
 
+    /// Every pair at once, rather than a page of the candidates' rows
     private func showSelectionBracketChoice(client sender: Any) {
         guard let choice = selectionBracketChoice else { return }
-        let pageSize = Self.maximumCandidateCount
-        let pageStart = choice.selectedIndex / pageSize * pageSize
-        let labels = choice.labels
         primaryCandidatePanel.show(
-            candidates: Array(
-                labels[pageStart..<min(pageStart + pageSize, labels.count)]
-            ),
-            selectedIndex: choice.selectedIndex - pageStart,
-            near: inputLocation(for: sender)
+            candidates: choice.labels,
+            selectedIndex: choice.selectedIndex,
+            near: inputLocation(for: sender),
+            maximumRows: choice.labels.count
         )
     }
 
@@ -2735,11 +2732,20 @@ final class InputController: IMKInputController {
         }
     }
 
-    /// Keys the hot keys take are not handled a second time here; any other
-    /// key closes the panel and is handled as usual
-    private func handleSelectionBracketKey(_ event: NSEvent) -> Bool? {
-        if PanelKeyCapture.selectionBracket.isCapturing,
-           [123, 124, 125, 126, 48, 36, 76, 53].contains(event.keyCode) {
+    /// The panel's keys that reach here rather than the hot keys are
+    /// handled the same way, since a hot key is not delivered here too; any
+    /// other key closes the panel and is handled as usual
+    private func handleSelectionBracketKey(_ event: NSEvent, client sender: Any) -> Bool? {
+        let command: SelectionBracketCommand? = switch event.keyCode {
+        case 123, 126: .previous
+        case 124, 125: .next
+        case 48: event.modifierFlags.contains(.shift) ? .previous : .next
+        case 36, 76: .apply
+        case 53: .cancel
+        default: nil
+        }
+        if let command {
+            handleSelectionBracketCommand(command, client: sender)
             return true
         }
         finishSelectionBracketChoice()

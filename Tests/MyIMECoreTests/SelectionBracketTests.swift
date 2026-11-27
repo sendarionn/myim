@@ -38,8 +38,8 @@ struct SelectionBracketTests {
     func everyPairOpensAndClosesInOrder() {
         let pairs = SelectionBracketPair.all.map { ($0.opening, $0.closing) }
         let expected = [
-            ("「", "」"), ("『", "』"), ("（", "）"), ("(", ")"),
-            ("［", "］"), ("[", "]"), ("【", "】"), ("｛", "｝"),
+            ("「", "」"), ("【", "】"), ("『", "』"), ("（", "）"),
+            ("(", ")"), ("［", "］"), ("[", "]"), ("｛", "｝"),
             ("{", "}"), ("〈", "〉"), ("《", "》"), ("“", "”")
         ]
         #expect(pairs.count == expected.count)
@@ -94,7 +94,7 @@ struct SelectionBracketTests {
 
         #expect(preference.pair == .standard)
 
-        preference.remember(SelectionBracketPair.all[6])
+        preference.remember(SelectionBracketPair.pair(labeled: "【】")!)
 
         #expect(SelectionBracketPreference(defaults: defaults).pair.label
             == "【】")
@@ -135,6 +135,16 @@ struct SelectionBracketTests {
 
         #expect(choice.handle(.apply) == .apply(SelectionBracketPair.all[1]))
         #expect(choice.handle(.cancel) == .cancel)
+    }
+
+    /// 【】 is one step from the default 「」
+    @Test
+    func lenticularBracketsFollowTheDefault() {
+        #expect(SelectionBracketPair.all.map(\.label).prefix(2) == ["「」", "【】"])
+        #expect(SelectionBracketPair.all.count == 12)
+        var choice = choice()
+        _ = choice.handle(.next)
+        #expect(choice.handle(.apply) == .apply(SelectionBracketPair.pair(labeled: "【】")!))
     }
 
     /// The brackets go in only where the panel was opened

@@ -602,8 +602,11 @@ final class CandidatePanelController: NSObject {
         isAccented: Bool = false,
         reservedRightWidth: CGFloat = 0,
         reservesEmptyRow: Bool = false,
-        minimumPanelText: String? = nil
+        minimumPanelText: String? = nil,
+        maximumRows: Int? = nil
     ) {
+        // A short fixed list, as the brackets, may show every row
+        let rowLimit = maximumRows ?? Self.maximumRows
         panel.contentView?.layer?.borderWidth = isAccented ? 2 : 0
         panel.contentView?.layer?.borderColor = isAccented
             ? NSColor.controlAccentColor.cgColor
@@ -711,12 +714,12 @@ final class CandidatePanelController: NSObject {
         }
         let visibleItemCount = candidates.isEmpty && reservesEmptyRow
             ? 1
-            : min(candidates.count, Self.maximumRows)
+            : min(candidates.count, rowLimit)
         let panelHeight = CGFloat(visibleItemCount) * Self.itemHeight
             + CGFloat(max(visibleItemCount - 1, 0))
                 * CandidatePanelItemStyle.spacing
-        let reservedPanelHeight = CGFloat(Self.maximumRows) * Self.itemHeight
-            + CGFloat(Self.maximumRows - 1) * CandidatePanelItemStyle.spacing
+        let reservedPanelHeight = CGFloat(rowLimit) * Self.itemHeight
+            + CGFloat(rowLimit - 1) * CandidatePanelItemStyle.spacing
         let guideContentWidth = max(
             guideWidth - PanelShortcutGuideStyle.horizontalPadding * 2,
             1

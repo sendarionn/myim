@@ -15,12 +15,13 @@ public struct SelectionBracketPair: Equatable, Sendable {
 
     public static let all: [SelectionBracketPair] = [
         .init(opening: "「", closing: "」"),
+        // Second, next to the default, as it is used nearly as often
+        .init(opening: "【", closing: "】"),
         .init(opening: "『", closing: "』"),
         .init(opening: "（", closing: "）"),
         .init(opening: "(", closing: ")"),
         .init(opening: "［", closing: "］"),
         .init(opening: "[", closing: "]"),
-        .init(opening: "【", closing: "】"),
         .init(opening: "｛", closing: "｝"),
         .init(opening: "{", closing: "}"),
         .init(opening: "〈", closing: "〉"),
