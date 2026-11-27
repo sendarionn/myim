@@ -41,6 +41,7 @@ public struct StandardConversionCandidateSource: Sendable {
     private let verbConjugationGenerator: VerbConjugationCandidateGenerator
     private let verbInflectionGenerator: VerbInflectionCandidateGenerator
     private let maximumSystemPrefixCandidates: Int
+    private let derivedExclusions: DerivedCandidateExclusions
     private let romajiConverter = RomajiConverter()
 
     /// `userEngine` holds only the user's own registrations so that bulk
@@ -58,8 +59,10 @@ public struct StandardConversionCandidateSource: Sendable {
             VerbConjugationDictionary(),
         adjectiveDictionary: JapaneseAdjectiveDictionary =
             JapaneseAdjectiveDictionary(),
-        maximumSystemPrefixCandidates: Int = 2048
+        maximumSystemPrefixCandidates: Int = 2048,
+        derivedExclusions: DerivedCandidateExclusions = DerivedCandidateExclusions()
     ) {
+        self.derivedExclusions = derivedExclusions
         self.userEngine = userEngine
         self.importedEngine = importedEngine
         self.basicEngine = basicEngine
@@ -82,7 +85,12 @@ public struct StandardConversionCandidateSource: Sendable {
     public func candidates(
         for context: StandardConversionCandidateContext
     ) -> [Candidate] {
-        let candidates = assembledCandidates(for: context)
+        // Generated candidates the user removed are left out once every
+        // source is merged, whichever made them
+        let candidates = derivedExclusions.filtering(
+            assembledCandidates(for: context),
+            reading: context.conversionReading
+        )
         // A time is committed as typed without choosing a candidate, so
         // only its formats are offered
         guard TimeShapedInput.matches(context.input) else { return candidates }

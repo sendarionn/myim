@@ -329,6 +329,28 @@ enum InputMethodData {
         }
     }
 
+    static func loadDerivedCandidateExclusions() -> DerivedCandidateExclusions {
+        loadUserData(
+            from: derivedCandidateExclusionsURL(),
+            empty: DerivedCandidateExclusions()
+        ) {
+            try? JSONDecoder().decode(DerivedCandidateExclusions.self, from: $0)
+        }
+    }
+
+    static func saveDerivedCandidateExclusions(_ exclusions: DerivedCandidateExclusions) throws {
+        let url = derivedCandidateExclusionsURL()
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try JSONEncoder().encode(exclusions).write(to: url, options: .atomic)
+    }
+
+    static func derivedCandidateExclusionsURL() -> URL {
+        userDataURL(fileName: "derived-candidate-exclusions.json")
+    }
+
     static func unselectedInputLearningHistoryURL() -> URL {
         userDataURL(fileName: "unselected-input-learning.json")
     }
