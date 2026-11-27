@@ -4743,6 +4743,9 @@ final class InputController: IMKInputController {
             updateFuzzyCandidatesIfNeeded()
             showInputPreview(client: sender)
             presentationDuration = performanceClock.now - presentationStart
+            // Letters ordinary conversion finds nothing for, as a sentence
+            // with a number in it, are still converted live
+            requestLiveConversion(client: sender)
             return
         }
 

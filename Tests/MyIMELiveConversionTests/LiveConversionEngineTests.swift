@@ -97,4 +97,26 @@ struct LiveConversionEngineTests {
             #expect(result.status == LiveConversionInput.Reading.converted, "\(keys)")
         }
     }
+
+    /// A sentence with a number in it reaches 15 kana only with the words
+    /// after the number, and is converted on through it: as a whole when
+    /// live conversion starts, and as typed on after it
+    @Test
+    func aSentenceGoesOnBeingConvertedAfterANumber() throws {
+        try #require(FileManager.default.fileExists(atPath: Self.dictionaryURL.path))
+        let engine = LiveConversionEngine(
+            dictionaryURL: Self.dictionaryURL,
+            workingDirectoryURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("myim-live-conversion-tests", isDirectory: true)
+        )
+        let sentence = "ashitaha2nindekaiginiikimasu"
+        #expect(LiveConversionInput.kanaCount(of: sentence) == 15)
+        engine.reset()
+        let whole = try #require(engine.convert(romaji: sentence))
+        #expect(whole.status == LiveConversionInput.Reading.converted)
+        #expect(whole.candidates.first == "明日は2人で会議に行きます")
+        let typedOn = try #require(typed(sentence + "ne", in: engine))
+        #expect(typedOn.reading == "あしたは2にんでかいぎにいきますね")
+        #expect(typedOn.candidates.first?.hasPrefix("明日は2人で会議に行きます") == true)
+    }
 }
