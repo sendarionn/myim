@@ -1390,7 +1390,6 @@ final class InputController: IMKInputController {
             emojiCandidates: Self.featureSettings.isEmojiCandidatesEnabled,
             liveConversion: Self.featureSettings.isLiveConversionEnabled,
             skkMode: Self.featureSettings.isSKKModeEnabled,
-            inputHistoryCount: Self.featureSettings.inputHistoryMaximumCount,
             passwordInputSourceRecovery:
                 Self.featureSettings.isPasswordInputSourceRecoveryEnabled,
             passwordInputSourceRecoveryStatus:
@@ -1435,7 +1434,6 @@ final class InputController: IMKInputController {
                 requestPasswordRecoveryAccessibilityPermission(_:)
             ),
             clearNextInputHistory: #selector(clearNextInputPredictionHistory(_:)),
-            changeInputHistoryCount: #selector(changeInputHistoryCount(_:)),
             clearInputHistory: #selector(clearInputHistory(_:)),
             toggleExternalInformationPanel: #selector(toggleExternalInformationPanel(_:)),
             toggleSystemDictionaryPreview: #selector(toggleSystemDictionaryPreview(_:)),
@@ -2277,23 +2275,6 @@ final class InputController: IMKInputController {
         Self.inputHistory.clear()
     }
 
-    /// The number field and the stepper beside it set the count together;
-    /// fewer drops the oldest entries
-    @objc
-    private func changeInputHistoryCount(_ sender: Any?) {
-        guard let control = sender as? NSControl else { return }
-        let count = InputHistoryStore.clamped(control.integerValue)
-        Self.featureSettings.inputHistoryMaximumCount = count
-        Self.inputHistory.maximumCount = count
-        for sibling in control.superview?.subviews ?? [] {
-            if let field = sibling as? NSTextField, field.isEditable {
-                field.integerValue = count
-            } else if let stepper = sibling as? NSStepper {
-                stepper.integerValue = count
-            }
-        }
-    }
-
     @objc
     private func clearNextInputPredictionHistory(_ sender: Any?) {
         guard confirmNextInputHistoryRemoval() else { return }
@@ -2791,9 +2772,7 @@ final class InputController: IMKInputController {
 
     /// What myim committed, shared by every controller of the process and
     /// gone when it ends
-    static let inputHistory = InputHistoryStore(
-        maximumCount: featureSettings.inputHistoryMaximumCount
-    )
+    static let inputHistory = InputHistoryStore()
 
     /// The controller whose input history panel the captured keys operate
     private static weak var inputHistoryController: InputController?
@@ -2817,25 +2796,21 @@ final class InputController: IMKInputController {
         Self.inputHistoryController = self
         // A click inserts the entry clicked
         primaryCandidatePanel.onSelectionChanged = { [weak self] item in
-            guard let self, let item, let selection = self.inputHistorySelection,
+            guard let self, let item, self.inputHistorySelection != nil,
                   let client = self.activeInputClient ?? (self.client() as Any?) else { return }
-            let pageStart = selection / Self.maximumCandidateCount * Self.maximumCandidateCount
-            self.inputHistorySelection = pageStart + item
+            self.inputHistorySelection = item
             self.handleInputHistoryCommand(.apply, client: client)
         }
         showInputHistory(client: sender)
     }
 
-    /// The newest first, a page of the candidate panel's rows at a time
+    /// Every entry, newest first; there are no more than the panel's rows
     private func showInputHistory(client sender: Any) {
         guard let selection = inputHistorySelection else { return }
-        let entries = Self.inputHistory.entries
-        let pageSize = Self.maximumCandidateCount
-        let pageStart = selection / pageSize * pageSize
         primaryCandidatePanel.show(
-            candidates: Array(entries[pageStart..<min(pageStart + pageSize, entries.count)])
+            candidates: Self.inputHistory.entries
                 .map { $0.replacingOccurrences(of: "\n", with: " ") },
-            selectedIndex: selection - pageStart,
+            selectedIndex: selection,
             near: inputLocation(for: sender)
         )
     }

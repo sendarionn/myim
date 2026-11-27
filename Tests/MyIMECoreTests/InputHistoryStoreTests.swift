@@ -4,41 +4,30 @@ import Testing
 
 @Suite
 struct InputHistoryStoreTests {
+    /// The last four commits are kept, newest first; empty text and the
+    /// same text again are not added
     @Test
-    func keepsCommitsNewestFirstUpToTheLimit() {
-        let store = InputHistoryStore(maximumCount: 3)
-        for text in ["一", "", "二", "二", "三", "四"] {
+    func keepsTheLastFourCommitsNewestFirst() {
+        let store = InputHistoryStore()
+        for text in ["一", "", "二", "二", "三", "四", "五"] {
             store.record(text: text)
         }
-        // Empty text and the same text again are not added
-        #expect(store.entries == ["四", "三", "二"])
+        #expect(store.entries == ["五", "四", "三", "二"])
         store.record(text: "三")
-        #expect(store.entries == ["三", "四", "三"])
-    }
-
-    @Test
-    func aSmallerLimitDropsTheOldest() {
-        let store = InputHistoryStore()
-        #expect(store.maximumCount == 10)
-        (1...10).forEach { store.record(text: String($0)) }
-        store.maximumCount = 4
-        #expect(store.entries == ["10", "9", "8", "7"])
-        store.maximumCount = 500
-        #expect(store.maximumCount == 100)
+        #expect(store.entries == ["三", "五", "四", "三"])
         store.clear()
         #expect(store.entries.isEmpty)
     }
 
+    /// A count kept by an earlier version is not read
     @Test
-    func theCountSettingIsTenUntilSetWithinOneToAHundred() {
+    func anEarlierCountSettingIsIgnored() {
         let defaults = UserDefaults(suiteName: "InputHistoryStoreTests")!
-        defaults.removePersistentDomain(forName: "InputHistoryStoreTests")
         defer { defaults.removePersistentDomain(forName: "InputHistoryStoreTests") }
-        let settings = InputFeatureSettings(defaults: defaults)
-        #expect(settings.inputHistoryMaximumCount == 10)
-        settings.inputHistoryMaximumCount = 0
-        #expect(settings.inputHistoryMaximumCount == 1)
-        settings.inputHistoryMaximumCount = 30
-        #expect(settings.inputHistoryMaximumCount == 30)
+        defaults.set(30, forKey: "InputHistoryMaximumCount")
+        let store = InputHistoryStore()
+        (1...10).forEach { store.record(text: String($0)) }
+        #expect(store.entries.count == InputHistoryStore.maximumCount)
+        #expect(InputHistoryStore.maximumCount == 4)
     }
 }

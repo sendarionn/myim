@@ -17,7 +17,6 @@ public struct InputFeatureSettings {
         static let emojiCandidates = "EmojiCandidatesEnabled"
         static let liveConversion = "LiveConversionEnabled"
         static let skkMode = "SKKModeEnabled"
-        static let inputHistoryCount = "InputHistoryMaximumCount"
         static let passwordInputSourceRecovery =
             "PasswordInputSourceRecoveryEnabled"
         static let disabledImportedDictionaries = "DisabledImportedDictionaries"
@@ -82,19 +81,6 @@ public struct InputFeatureSettings {
     public var isSKKModeEnabled: Bool {
         get { flag(Key.skkMode, default: false) }
         nonmutating set { setFlag(Key.skkMode, newValue) }
-    }
-
-    /// How many commits the input history keeps, 1 to 100
-    public var inputHistoryMaximumCount: Int {
-        get {
-            guard defaults.object(forKey: Key.inputHistoryCount) != nil else {
-                return InputHistoryStore.defaultMaximumCount
-            }
-            return InputHistoryStore.clamped(defaults.integer(forKey: Key.inputHistoryCount))
-        }
-        nonmutating set {
-            defaults.set(InputHistoryStore.clamped(newValue), forKey: Key.inputHistoryCount)
-        }
     }
 
     /// English words for the Japanese reading among the candidates; off

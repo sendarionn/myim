@@ -84,7 +84,6 @@ enum SettingsWindowBuilder {
         let emojiCandidates: Bool
         let liveConversion: Bool
         let skkMode: Bool
-        let inputHistoryCount: Int
         let passwordInputSourceRecovery: Bool
         let passwordInputSourceRecoveryStatus: String
         let passwordInputSourceRecoveryNeedsPermission: Bool
@@ -108,7 +107,6 @@ enum SettingsWindowBuilder {
         let togglePasswordInputSourceRecovery: Selector
         let requestAccessibilityPermission: Selector
         let clearNextInputHistory: Selector
-        let changeInputHistoryCount: Selector
         let clearInputHistory: Selector
         let toggleExternalInformationPanel: Selector
         let toggleSystemDictionaryPreview: Selector
@@ -176,12 +174,6 @@ enum SettingsWindowBuilder {
             to: stack
         )
         addSection("履歴・学習", to: stack)
-        addInputHistoryCount(
-            states.inputHistoryCount,
-            action: actions.changeInputHistoryCount,
-            target: target,
-            to: stack
-        )
         addButtons([
             ("入力履歴を削除", actions.clearInputHistory),
             ("次入力履歴を削除", actions.clearNextInputHistory)
@@ -297,38 +289,6 @@ enum SettingsWindowBuilder {
                 NSButton(title: title, target: target, action: selector)
             )
         }
-    }
-
-    /// The number and a stepper beside it, both sending `action`; the
-    /// history is kept in memory only, which the label says
-    private static func addInputHistoryCount(
-        _ count: Int,
-        action: Selector,
-        target: AnyObject,
-        to stack: NSStackView
-    ) {
-        let label = NSTextField(labelWithString: "入力履歴の保存件数（myimの終了時に消去）")
-        let field = NSTextField(string: String(count))
-        let formatter = NumberFormatter()
-        formatter.minimum = NSNumber(value: InputHistoryStore.allowedCounts.lowerBound)
-        formatter.maximum = NSNumber(value: InputHistoryStore.allowedCounts.upperBound)
-        formatter.allowsFloats = false
-        field.formatter = formatter
-        field.alignment = .right
-        field.target = target
-        field.action = action
-        field.widthAnchor.constraint(equalToConstant: 48).isActive = true
-        let stepper = NSStepper()
-        stepper.minValue = Double(InputHistoryStore.allowedCounts.lowerBound)
-        stepper.maxValue = Double(InputHistoryStore.allowedCounts.upperBound)
-        stepper.integerValue = count
-        stepper.valueWraps = false
-        stepper.target = target
-        stepper.action = action
-        let row = NSStackView(views: [label, field, stepper])
-        row.orientation = .horizontal
-        row.spacing = 6
-        stack.addArrangedSubview(row)
     }
 
     private static func addTranslationLanguageCheckboxes(
