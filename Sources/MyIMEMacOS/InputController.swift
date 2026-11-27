@@ -780,15 +780,9 @@ final class InputController: IMKInputController {
             return false
         }
 
-        // A capital typed with Shift in SKK mode commits what was being
-        // typed, as Return would, and starts an SKK conversion
+        // A capital typed with Shift in SKK mode starts an SKK conversion
+        // only with nothing being typed
         let startsSKK = startsSKKConversion(event, characters: characters)
-        if startsSKK, selectedCandidateValue == nil, !inputBuffer.isEmpty {
-            _ = handleReturnKey(client: sender)
-            if !inputBuffer.isEmpty {
-                commit(compositionAsTyped, to: sender)
-            }
-        }
 
         // A conversion shown by itself and worked on is committed before
         // typing on, so the corrections are kept
@@ -821,9 +815,11 @@ final class InputController: IMKInputController {
     }
 
     /// In SKK mode a letter typed with Shift, which is a capital, starts an
-    /// SKK conversion when none is being typed. Caps Lock alone is not Shift
+    /// SKK conversion when nothing is being typed; one typed in a word, as
+    /// the C of iCal, is a letter of it. Caps Lock alone is not Shift
     private func startsSKKConversion(_ event: NSEvent, characters: String) -> Bool {
         guard Self.featureSettings.isSKKModeEnabled, skkComposition == nil,
+              inputBuffer.isEmpty,
               reconversionOriginal == nil, dictionaryRegistrationSession == nil,
               !bookmarkSearchSession.isSearching,
               event.modifierFlags.contains(.shift),
