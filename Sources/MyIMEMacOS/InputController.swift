@@ -4997,6 +4997,7 @@ final class InputController: IMKInputController {
             }
             if let livePreview {
                 setLivePreviewMarkedText(livePreview, in: sender)
+                hideCandidatePanelsForLivePreview()
                 return
             }
         } else {
@@ -5111,6 +5112,7 @@ final class InputController: IMKInputController {
         if let candidates = livePartCandidates {
             showLivePartCandidates(candidates, client: sender)
         } else {
+            // Back to the conversion shown in place, with no panel
             showPrimaryCandidatePanel(client: sender)
         }
         return true
@@ -5455,6 +5457,7 @@ final class InputController: IMKInputController {
     }
 
     private func showInitialFuzzyCandidates() {
+        guard !hidesCandidatesForLivePreview else { return }
         guard let page = fuzzyCandidateSession.initialPage(
                   maximumCount: Self.initialFuzzyCandidateCount
               ) else {
@@ -5798,6 +5801,7 @@ final class InputController: IMKInputController {
         selectedIndex: Int,
         client sender: Any
     ) {
+        guard !hidesCandidatesForLivePreview else { return }
         guard fuzzyCandidateSession.selectedIndex == selectedIndex,
               let page = fuzzyCandidateSession.selectedPage(
                   maximumCount: Self.maximumCandidateCount
@@ -5984,6 +5988,10 @@ final class InputController: IMKInputController {
     ) {
         cancelCandidateTranslation()
         candidateSearchCoordinator.cancel(.javaScriptExtensions)
+        if case .standard = destination, hidesCandidatesForLivePreview {
+            hideTranslationCandidatePanels()
+            return
+        }
         if case .fuzzy = destination {
             candidateSearchCoordinator.cancel(.fuzzy)
         }
@@ -6516,7 +6524,34 @@ final class InputController: IMKInputController {
             || event.charactersIgnoringModifiers?.lowercased() == "x"
     }
 
+    /// While a live conversion is shown in place of the letters, by itself
+    /// or chosen with Tab, the candidates and the panels beside them stay
+    /// hidden; they are kept, and only the conversions of a selected part,
+    /// asked for with Tab, are shown
+    private var hidesCandidatesForLivePreview: Bool {
+        guard usesLiveConversion, livePartCandidates == nil,
+              selectedFuzzyCandidateIndex == nil else { return false }
+        if let index = selectedCandidateIndex {
+            return currentCandidateModels.indices.contains(index)
+                && currentCandidateModels[index].hasSource(.liveConversion)
+        }
+        return isLiveAutoPreviewActive
+    }
+
+    private func hideCandidatePanelsForLivePreview() {
+        cancelCandidateLocationRetry()
+        primaryCandidatePanel.hide()
+        secondaryCandidatePanel.hide()
+        hideTranslationCandidatePanels()
+        previewWindow.hide()
+        symbolTipsWindow.hide()
+    }
+
     private func showPrimaryCandidatePanel(client sender: Any) {
+        if hidesCandidatesForLivePreview {
+            hideCandidatePanelsForLivePreview()
+            return
+        }
         guard !currentCandidates.isEmpty else {
             primaryCandidatePanel.hide()
             return
@@ -7895,6 +7930,10 @@ final class InputController: IMKInputController {
     }
 
     private func showInputPreview(client sender: Any) {
+        guard !hidesCandidatesForLivePreview else {
+            previewWindow.hide()
+            return
+        }
         let selectedCandidate = selectedCandidateIndex.flatMap { index in
             currentCandidates.indices.contains(index)
                 ? candidateDisplayValue(currentCandidates[index])
@@ -7943,6 +7982,11 @@ final class InputController: IMKInputController {
     }
 
     private func showPreview(for candidate: String) {
+        guard !hidesCandidatesForLivePreview else {
+            previewWindow.hide()
+            symbolTipsWindow.hide()
+            return
+        }
         var anchorFrame = primaryCandidatePanel.visibleFrame
             ?? primaryCandidatePanel.frame
         if let inputClient = client() {
